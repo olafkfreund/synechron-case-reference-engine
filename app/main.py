@@ -107,6 +107,17 @@ def create_app() -> FastAPI:
             if length is None or not length.isdigit() or int(length) > cap + 64 * 1024:
                 return JSONResponse({"detail": f"body missing a length or larger than {cap} bytes"}, status_code=413)
         return await call_next(request)
+
+    @app.exception_handler(401)
+    async def unauthorized(request: Request, exc):
+        # browsers go to the login page; API clients keep the JSON 401. Not for /auth itself,
+        # or a failing IdP would bounce the browser between /auth and /login forever.
+        if "text/html" in request.headers.get("accept", "") and request.url.path != "/auth":
+            return RedirectResponse("/login", status_code=303)
+        return JSONResponse({"detail": exc.detail}, status_code=401)
+
+    from app import review  # here: review imports require() from this module
+    app.include_router(review.router)
     oauth = OAuth()
     app.state.oauth = oauth
     if all(os.environ.get(k) for k in ("OIDC_METADATA_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET")):

@@ -16,3 +16,4 @@ packages = ["app"]
 
 [tool.pytest.ini_options]
 addopts = "-p no:cacheprovider"  # /app is read-only for the app user
+pythonpath = ["."]  # tests import shared helpers from tests.test_auth

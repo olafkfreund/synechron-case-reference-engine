@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Case {{ id }}</h1>
+<p>Document: <b>{{ document }}</b> · source: {{ source }} · <code>{{ external_id }}</code> · status: {{ status }}</p>
+{% for n in notes %}<div class="note">{{ n }}</div>{% endfor %}
+<table><tr><th>Field</th><th>Value</th><th>Source quote</th><th></th></tr>
+{% for r in rows %}{% set f = "f" ~ loop.index %}<tr>
+<td>{{ r.label }}<br>
+{% if r.no_quote %}<span class="badge empty">no quote (generated)</span>
+{% elif r.unsourced %}<span class="badge bad">unsourced</span>
+{% elif r.quote %}<span class="badge ok">sourced</span>
+{% else %}<span class="badge empty">empty</span>{% endif %}</td>
+<td>{% for name, val in r.inputs %}<input type="text" form="{{ f }}" name="{{ name }}" value="{{ val }}" aria-label="{{ r.label }} {{ name }}">{% endfor %}</td>
+<td>{% if not r.no_quote %}<textarea form="{{ f }}" name="quote" rows="2" aria-label="{{ r.label }} quote">{{ r.quote }}</textarea>{% endif %}</td>
+<td>{% if reviewable %}<button form="{{ f }}">Save</button>{% endif %}</td></tr>{% endfor %}</table>
+{% for r in rows %}<form id="f{{ loop.index }}" method="post" action="/review/{{ id }}/edit"><input type="hidden" name="field" value="{{ r.path }}"><input type="hidden" name="v" value="{{ v }}"></form>{% endfor %}
+{% if reviewable %}
+<form method="post" action="/review/{{ id }}/approve" style="display:inline"><input type="hidden" name="v" value="{{ v }}">
+<button>Approve (unsourced fields are emptied)</button></form>
+<form method="post" action="/review/{{ id }}/reject" style="display:inline"><input type="hidden" name="v" value="{{ v }}"><button>Reject</button></form>
+{% else %}<p>This case is not open for review.</p>{% endif %}
+{% endblock %}

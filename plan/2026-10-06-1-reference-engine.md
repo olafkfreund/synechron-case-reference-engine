@@ -306,6 +306,25 @@ spec: spec/2026-10-06-1-reference-engine.md
    `review_due`.
 
    → verify by `pytest tests/test_review.py`.
+   Done (deviations after review):
+   - Plain HTML forms (POST + 303), not HTMX; Jinja autoescape is on. Pages:
+     `/` landing, `/review` list, `/review/{id}` detail. Browser 401s redirect
+     to `/login` (not `/auth`).
+   - Need-to-know applies to every review query: `d.deleted_at is null and
+     d.acl_groups && user.groups`. A case the reviewer can't see returns 404,
+     never confirming that it exists.
+   - Every write form carries `v = md5(cases.data)`. A case that changed
+     since the page loaded (e.g. re-extracted) returns 409 "reload", so nothing
+     is approved unseen. Writes lock the row (`for update`). A decided case
+     returns 409.
+   - Edits re-run `extract.check()` on the document text; `unsourced` is never
+     read from the form.
+   - Approve empties the unsourced fields, drops unsourced list items, blanks
+     an unsupported summary, and clears `needs_attention`. It refuses an empty
+     title and sets `review_due` = +12 months.
+   - Not yet possible: adding or removing list items (reviewers edit existing
+     ones).
+   - `pytest` uses `pythonpath = ["."]`, so single test files run on their own.
 10. **Client registry + anonymiser.** Add an admin CRUD page and `app/anonymise.py`:
     - `apply(text, clients)` replaces names and aliases with labels unless
       `referenceable`

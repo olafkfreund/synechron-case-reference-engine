@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Review queue</h1>
+{% if not cases %}<p>Nothing to review.</p>{% else %}
+<table><tr><th>Case</th><th>Source document</th><th>Status</th><th>Needs attention</th><th>Unsourced</th></tr>
+{% for c in cases %}<tr>
+<td><a href="/review/{{ c.id }}">{{ c.title or "(untitled)" }}</a></td><td>{{ c.document }}</td>
+<td>{{ "re-review due" if c.status == "approved" else "new" }}</td><td>{{ c.attention }}</td><td>{{ c.unsourced }}</td>
+</tr>{% endfor %}</table>{% endif %}
+{% endblock %}
