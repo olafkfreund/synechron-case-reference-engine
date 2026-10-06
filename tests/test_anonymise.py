@@ -126,3 +126,10 @@ def test_resolve_exact_only():
     reg = [dict(id=1, **C("Acme Bank", ["Acme"])), dict(id=2, **C("Globex", ref=True))]
     assert an.resolve("ACME-bank", reg) == 1 and an.resolve("acme", reg) == 1
     assert an.resolve("Acme Insurance", reg) is None and an.resolve("", reg) is None and an.resolve(None, reg) is None
+
+
+def test_name_or_alias_shared_with_another_client_refused(reg):
+    c = client([ADMIN])
+    c.post("/admin/clients", data={"name": f"Insurer {reg}", "aliases": f"Acme {reg}", "anonymised_label": "an insurer"})
+    r = c.post("/admin/clients", data={"name": f"acme-{reg}", "anonymised_label": "a bank"})
+    assert r.status_code == 400 and "already used" in r.text

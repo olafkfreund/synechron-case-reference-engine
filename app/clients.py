@@ -24,6 +24,12 @@ def clean(name, aliases, label, cid=None):
                               "and id is distinct from %s", (cid,)).fetchall()
     if anonymise.has_name(label, [n for nm, al in others for n in [nm, *al]]):
         raise HTTPException(400, "the label must not contain another client's name or alias")
+    # a name or alias shared with another client would attribute cases to the wrong client
+    with db.connect() as conn:
+        taken = conn.execute("select name, aliases from clients where id is distinct from %s", (cid,)).fetchall()
+    taken_keys = {anonymise._key(n) for nm, al in taken for n in [nm, *al]}
+    if any(anonymise._key(n) in taken_keys for n in [name, *aliases]):
+        raise HTTPException(400, "a name or alias is already used by another client")
     return name, aliases, label
 
 
@@ -53,6 +59,9 @@ def create(name: str = Form(), aliases: str = Form(""), anonymised_label: str = 
 def update(cid: int, name: str = Form(), aliases: str = Form(""), anonymised_label: str = Form(),
            v: str = Form(), referenceable: bool = Form(False), logo_allowed: bool = Form(False),
            user: User = Depends(require("admin"))):
+    with db.connect() as conn:  # unknown id is 404 before any validation message
+        if not conn.execute("select 1 from clients where id=%s", (cid,)).fetchone():
+            raise HTTPException(404, "no such client")
     name, alias_list, label = clean(name, aliases, anonymised_label, cid)
     try:
         with db.connect() as conn:

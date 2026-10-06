@@ -408,10 +408,41 @@ spec: spec/2026-10-06-1-reference-engine.md
     `{{`, blocked name stops render).
     Traps: until marketing delivers, use a placeholder `brand/reference.docx`
     clearly marked DRAFT.
+    Done (deviations after review):
+    - Downloads hold the approved record only: no AI-tailored search text,
+      quotes, organisations or needs_attention. The server reloads the records
+      from `case_ids`; no client text reaches a document.
+    - `protect()` = `apply()` on every string, then `blocked()` over the whole
+      output → 409 "output withheld", with no audit row. A grep of every docx
+      part found no protected name.
+    - Interfaces: `to_docx(sections)` and `to_markdown(sections)`. The template
+      context is `cases[]` with title, client, summary, `details[]` (label,
+      value), `blocks[]` (heading, text) and `lists[]` (heading, bullets).
+      Marketing's template must use this context. docxtpl runs with
+      autoescape; core properties are set to neutral values (no template
+      metadata).
+    - Markdown escaping covers `\ ` * _ [ ] < > # | ~` and a leading list or
+      numbered marker. Newlines are folded, so values can't create structure.
+    - `POST /generate` (user): 1–3 ids, the same restrictions as search (404
+      before any 409), format docx|md, attachment with a fixed filename. The
+      audit row has `anonymised` = any case shown with a label or "a client".
+    - Client display: a linked referenceable client shows its name, otherwise
+      its label, otherwise "a client". The registry now refuses a name or
+      alias that another client already uses (folded), which would attribute
+      cases to the wrong client.
+    - `scripts/make_reference_template.py` regenerates the placeholder.
 
 **Phase 1 exit:** on docker compose, upload 5 sanitised case docs → extracted with
 quotes → approve → bid search returns the expected case in the top 3 → docx/md
 download.
+Result (2026-10-07, LLM, S3 and the top-3 pick mocked, because there's no AWS
+access yet):
+- 5 generated docx went through real Docling `ingest()` → `extract()` →
+  approve (303), all linked to the registry client.
+- `POST /search` returned the expected case, and the client name was absent.
+- `/generate` docx (37 KB) and md both came back 200, with "a UK bank" shown.
+- Still to run on real Bedrock and real sample cases, once the prerequisites
+  are met: AWS access and 5 sanitised cases from the bid team.
 
 ### Phase 2: Brand outputs
 
