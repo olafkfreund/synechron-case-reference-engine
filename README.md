@@ -16,4 +16,4 @@ Both are private until shared from their Share menu.
 
 - [Intent](intent/2026-10-06-1-reference-engine.md): why (approved)
 - [Spec](spec/2026-10-06-1-reference-engine.md): what (approved)
-- [Plan](plan/2026-10-06-1-reference-engine.md): how (draft)
+- [Plan](plan/2026-10-06-1-reference-engine.md): how (approved)
