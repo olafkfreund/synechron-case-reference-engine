@@ -160,6 +160,30 @@ spec: spec/2026-10-06-1-reference-engine.md
    acceptable before setting the env defaults. Send `schema.llm_schema()`, not
    `model_json_schema()`, and confirm in the manual Bedrock call that it is
    accepted (strict mode, `$defs`).
+   Done (deviations after review, LiteLLM 1.104.0 source checked):
+   - `complete_json` sends `temperature=0` and `max_tokens=8192`. A reply cut
+     off at the limit (`finish_reason=length`) raises "truncated"; it is never
+     parsed.
+   - Validation errors omit input values, so document text never reaches
+     stored job errors. `litellm.turn_off_message_logging = True` and
+     `LITELLM_LOG=WARNING` are set in the image.
+   - On Bedrock Converse, LiteLLM uses native structured output for the
+     Claude models in its cost map. Others fall back to a forced tool call, so
+     only use model IDs LiteLLM knows. `strict` is ignored by LiteLLM. Prompt
+     caching needs about 4,096 tokens on the small model, so short prompts
+     won't cache (harmless).
+   - Pending, needs AWS access: the live check in the target account.
+     ```
+     docker compose run --rm -e AWS_REGION_NAME -e AWS_ACCESS_KEY_ID \
+       -e AWS_SECRET_ACCESS_KEY -e AWS_SESSION_TOKEN \
+       -e EXTRACT_MODEL=bedrock/<small-claude-model-id> app python -c "
+     from app.llm import complete_json; from app.schema import ReferenceCase
+     doc = 'Acme Bank cut onboarding from 12 days to 3 days using a KYC workflow built on AWS.'
+     print(complete_json('EXTRACT_MODEL', 'Extract a ReferenceCase. Quote the source verbatim for every field.', doc, ReferenceCase).model_dump_json(indent=1))"
+     ```
+     It passes if it returns a valid `ReferenceCase` with no BadRequest. Repeat
+     it with `DRAFT_MODEL`. If Bedrock rejects `$defs`, inline them in
+     `llm_schema()` and update this step.
 5. **Ingest + triage.** Write `app/ingest.py`:
    - fetch bytes → sha256 → skip if seen; a new version re-opens its case
    - store the original in S3 and convert with Docling to markdown

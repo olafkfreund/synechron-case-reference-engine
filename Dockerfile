@@ -3,7 +3,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends libreoffice-core libreoffice-writer libreoffice-impress libgl1 libglib2.0-0 \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-ENV PIP_NO_CACHE_DIR=1 DOCLING_ARTIFACTS_PATH=/opt/docling-models HF_HUB_OFFLINE=1
+ENV PIP_NO_CACHE_DIR=1 LITELLM_LOG=WARNING DOCLING_ARTIFACTS_PATH=/opt/docling-models HF_HUB_OFFLINE=1
 # CPU-only torch, own layer and index: Fargate has no GPU
 RUN pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 COPY pyproject.toml .
