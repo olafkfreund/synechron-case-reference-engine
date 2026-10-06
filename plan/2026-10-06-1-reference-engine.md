@@ -198,6 +198,26 @@ spec: spec/2026-10-06-1-reference-engine.md
    Traps: a changed checksum = `update documents set checksum, text, acl_groups,
    deleted_at = null where (source_id, external_id)` + `update cases set
    status = 'extracted' where document_id = …`, never a new row.
+   Done (deviations after review):
+   - The upload route moved to step 8, so it never exists without login.
+   - `ingest()` upserts on (source_id, external_id). Same bytes → skip (ACL
+     refreshed, `deleted_at` cleared). A changed document re-opens its case and
+     queues an extract job, or sets the case `rejected` if triage says it no
+     longer describes delivered work.
+   - Triage reads the first 8,000 characters (a plain cut). Extraction runs
+     when kind = case, or proposal/deck with `describes_delivered_work`.
+   - `crawl_s3()`:
+     - takes `pg_try_advisory_lock(2, source_id)`, so a second concurrent
+       crawl returns `{"status": "running"}`.
+     - fetches unknown keys and keys modified since cursor − 1 day (multipart
+       uploads are dated at upload start).
+     - catches one failing object, counts it (`failed_keys` holds the key and
+       exception type, never the message) and continues; the cursor advances.
+     - applies the source ACL and live/deleted state to every document in one
+       statement over the full listing.
+     - treats an empty listing with live documents as a mistake, not a mass delete.
+   - The S3 write and Docling run outside the DB transaction. Orphan
+     `originals/<sha256>` objects after a crash are harmless (content-addressed).
 6. **Extraction.** Write `app/extract.py`: `EXTRACT_MODEL` → `ReferenceCase`,
    quote check per field, write `cases` with status `extracted`.
 
@@ -217,6 +237,8 @@ spec: spec/2026-10-06-1-reference-engine.md
    - OIDC login with authlib and a session cookie
    - roles from the groups claim
    - a `current_user` dependency exposing groups
+   - the upload route (moved from step 5): `admin` role, stores the file under
+     the upload prefix of the S3 source, then calls `crawl_s3` for that source
 
    → verify by `pytest tests/test_auth.py` (role guard).
    Traps: do not trust group headers from the client, only the token.

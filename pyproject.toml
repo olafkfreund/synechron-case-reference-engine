@@ -8,7 +8,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "moto[s3]"]
 
 [tool.setuptools]
 packages = ["app"]
