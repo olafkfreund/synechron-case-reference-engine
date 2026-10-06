@@ -28,9 +28,17 @@ An org-wide, cloud-hosted portal where a user:
 3. Gets client names anonymised by default ("a Tier-1 UK bank"), unless the
    client is approved as publicly referenceable.
 
-In the background, the portal ingests existing documents from those sources,
+4. Researches a capability online ("how is SSO federation typically done in
+   Salesforce?") and gets a cited comparison of how vendors and the industry do
+   it. This also covers capabilities we have not delivered ourselves, so a bid
+   can say a feature is standard, out of the box, or industry practice, backed
+   by public sources and clearly kept apart from our own case evidence.
+
+In the background, the portal crawls the configured sources (SharePoint sites,
+Confluence spaces, file shares) for case documents and information, rather than
+relying only on uploads. It finds the documents that describe client work,
 extracts one structured, reviewable reference record per case, and keeps those
-records current.
+records current as the sources change.
 
 ## Affected users and systems
 
@@ -41,6 +49,7 @@ records current.
   models remain selectable per deployment.
 - Corporate Word and PowerPoint templates (brand owner: marketing).
 - Corporate identity provider, for SSO.
+- A public web search API (outbound only), for online research.
 - Hosting: AWS (decided at intent review). Default LLM route is AWS Bedrock.
 
 ## Constraints
@@ -55,7 +64,11 @@ records current.
 - Must work with more than one LLM provider and not be locked to one.
 - Org-wide use requires SSO, role-based access, and an audit trail of what was
   generated and for whom.
-- Scale: hundreds to low thousands of source documents.
+- Scale: hundreds to low thousands of case documents, found among a larger
+  crawled corpus.
+- Online research never presents public or industry practice as work we have
+  delivered. Every public claim carries its source link, and client details are
+  never sent to search engines.
 
 ## Open questions
 

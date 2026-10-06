@@ -20,14 +20,21 @@ UK") is a filter plus a ranking over a few thousand records. Postgres does this
 directly, and every record stays reviewable and auditable. Two independent
 research passes (Fable web research, Codex) reached the same conclusion.
 
+Two additions sit beside that core:
+- A **crawler** walks the configured sources and decides which documents
+  describe client work before anything is extracted.
+- An **online research** module answers "how does the industry or a vendor do
+  X?" with cited public sources. Its output is kept apart from case records and
+  is never presented as our own delivery.
+
 ### Components
 
 One Python 3.12 service with two entrypoints from the same container image:
 
 | Entrypoint | Role |
 | ---------- | ---- |
-| `web` | FastAPI + Jinja + HTMX portal: search, review queue, client registry, downloads |
-| `worker` | Ingest and extraction jobs, pulled from a Postgres job table |
+| `web` | FastAPI + Jinja + HTMX portal: search, research, review queue, client registry, sources, downloads |
+| `worker` | Crawl, triage, extraction and research jobs, pulled from a Postgres job table |
 
 Repo layout (flat; split only when a file outgrows itself):
 
@@ -36,8 +43,9 @@ app/
   main.py        FastAPI routes + OIDC login
   db.py          psycopg connection, queries
   schema.py      ReferenceCase pydantic model (also the LLM JSON schema)
-  connectors.py  SharePoint (Graph), Confluence (REST), S3 upload drop
-  ingest.py      fetch → checksum → Docling → markdown → enqueue extract
+  crawl.py       crawlers: SharePoint (Graph delta), Confluence (REST/CQL), S3 prefixes
+  ingest.py      fetch → checksum → Docling → markdown → triage → enqueue extract
+  research.py    web search → fetch → cited claims → comparison
   extract.py     LLM structured extraction + provenance check
   search.py      FTS + filters → candidates → LLM rank/tailor
   anonymise.py   client registry replacement + unlisted-name flagging
@@ -53,9 +61,13 @@ tests/
 
 ### Data model (Postgres 16, `sql/schema.sql`)
 
-- `documents`: id, source (`sharepoint|confluence|upload`), source_uri,
-  checksum (sha256, unique, for dedupe), version, acl_groups `text[]`, s3_key of
-  the original, markdown, fetched_at.
+- `sources`: id, kind (`sharepoint|confluence|s3`), root (site/drive, space key,
+  or bucket prefix), include/exclude patterns, enabled, schedule, and the crawl
+  cursor (Graph delta link, last-modified time, or S3 listing marker).
+- `documents`: id, source_id, source_uri, title, checksum (sha256, unique, for
+  dedupe), version, acl_groups `text[]`, s3_key of the original, markdown,
+  `kind` from triage (`case|proposal|deck|other`), `tsv` over markdown,
+  fetched_at, deleted_at.
 - `cases`: id, document_id, `data jsonb` (the `ReferenceCase`), status
   (`extracted|approved|rejected`), approved_by, approved_at, review_due
   (approved_at + 12 months), `tsv tsvector` (generated from title, industry,
@@ -64,6 +76,9 @@ tests/
   referenceable `bool`, logo_allowed `bool`, owner.
 - `jobs`: id, kind, payload jsonb, status, attempts, error. Workers claim jobs with
   `FOR UPDATE SKIP LOCKED`, so v1 needs no SQS.
+- `research`: id, question, the query text actually sent out, results jsonb
+  (claims with URL, publisher, quote, retrieved_at), created_by, created_at.
+  Results are cached for 30 days and re-run on request.
 - `generations`: audit record of who generated which output, from which case IDs,
   in which format, and with which anonymisation setting.
 
@@ -76,15 +91,33 @@ Every non-empty field carries `source_quote`. `extract.py` rejects any field who
 quote does not appear verbatim (after whitespace normalisation) in the
 document markdown, and marks it `unsourced` for the reviewer.
 
-### Ingest flow
+### Crawl and ingest flow
 
-1. Connectors list changed items since the last run. Sources are SharePoint via
-   Microsoft Graph (app registration with `Sites.Selected`), Confluence via REST
-   (CQL on configured spaces), and manual upload to S3 from the portal for file
-   shares and anything else. Each document stores its source ACL groups.
-2. Checksum the content. An unchanged checksum is skipped, and a changed one
+Admins register sources in the portal. Every crawl is resumable from its
+stored cursor, so the first run is a full crawl and later runs are incremental.
+
+| Source | How it is crawled |
+| ------ | ------------------ |
+| SharePoint / OneDrive | Microsoft Graph `drive/root/delta` per configured site or drive. App registration with `Sites.Selected`, granted per site. The delta link is stored as the cursor. Item permissions are read for `acl_groups`. |
+| Confluence | REST API with CQL `space in (...) and lastmodified > cursor`. This covers pages (body as HTML) and attachments. Space and page restrictions are read for `acl_groups`. |
+| File shares | Synced to an S3 prefix with AWS DataSync (scheduled). The crawler lists the prefix. ACL groups are configured per prefix, because NTFS ACLs are not carried over. |
+| Manual upload | Lands in the S3 upload prefix and is crawled immediately. |
+
+Rules for every source:
+- Only include/exclude patterns and file types we can parse (docx, pptx, pdf,
+  html, Confluence pages) are fetched. Archives and media are skipped.
+- Items deleted at the source get `deleted_at`, and their cases leave search.
+- Crawls are rate-limited and back off on HTTP 429 (Graph and Confluence both throttle).
+
+Per document:
+1. Checksum the content. An unchanged checksum is skipped, and a changed one
    becomes a new version that re-opens the case for review.
-3. Docling converts docx/pptx/pdf/html to markdown. The original goes to S3.
+2. Docling converts docx/pptx/pdf/html to markdown. The original goes to S3.
+3. **Triage:** the extraction model reads the first ~2,000 tokens and returns a
+   `kind` (structured output). Only `case` (and `proposal`/`deck` when it
+   describes delivered work) goes on to extraction. Everything else stays
+   indexed in `documents.tsv` as searchable background information, and is shown
+   to users as "related documents", but never turned into a reference.
 4. An extract job calls the extraction model with structured output
    (the pydantic schema). The cached prefix holds the system prompt, schema and
    style guide. A bulk backfill uses the Bedrock batch API.
@@ -93,8 +126,9 @@ document markdown, and marks it `unsourced` for the reviewer.
    both.
 6. The case lands in the review queue as `extracted`.
 
-A daily EventBridge schedule starts the `worker` sync. Uploads enqueue a job
-immediately.
+A daily EventBridge schedule enqueues a crawl job per enabled source. Admins can
+also start a crawl from the sources page, which shows the last run, counts
+(found, new, changed, triaged as case, failed) and errors.
 
 ### Query and generate flow
 
@@ -117,6 +151,44 @@ immediately.
    - **markdown**: a Jinja text template, shown with a copy button
 5. An audit row goes to `generations`. The file streams back to the user and is
    not stored.
+
+### Online research (`research.py`)
+
+Purpose: cited public evidence that a capability is standard, out of the box,
+or common industry practice, and a comparison of how others approach it. It
+covers capabilities we have delivered as well as ones we have not.
+
+Flow:
+1. The user asks a question in the portal, either free text or "Research
+   this" on a case, which seeds the question from the case's capabilities and
+   tech stack.
+2. Before anything leaves AWS, the query is built **only from capability and
+   product terms**. The anonymiser removes every client name and alias in the
+   registry, and the query is shown to the user before it is sent.
+3. Web search API: **Brave Search API**, chosen for its independent index and
+   zero-data-retention option. It is one module behind an env key, so it can be
+   swapped for Tavily, Exa or another provider. Bedrock's Claude has no built-in
+   web search tool, so the app calls the search API itself.
+4. Fetch the top ~8 results with `httpx` and convert them to markdown with
+   Docling. Results are ranked to prefer vendor documentation, standards bodies
+   and analyst sources over blogs. Fetches respect robots.txt and a per-domain
+   rate limit.
+5. The drafting model returns structured claims. Each claim carries the
+   statement, the source URL, the publisher, a verbatim quote and a type
+   (`out_of_the_box | configuration | industry_practice | vendor_claim`). The
+   quote check from extraction is reused, so a claim whose quote is not on the
+   fetched page is dropped.
+6. Comparison view: a table of approaches across sources. When started from a
+   case, our approach sits beside them.
+
+Guardrails:
+- Research output is never written into `cases`.
+- Rendered outputs put it in a separate **"Industry context"** section, with
+  footnoted links and the retrieval date. Wording is fixed to "is standard in /
+  is supported out of the box by", never "we have delivered".
+- Generating a docx or pptx with industry context and **no** supporting case
+  requires the user to tick an "industry context only" acknowledgement, which is
+  recorded in `generations`.
 
 ### LLM layer (`llm.py`)
 
@@ -144,10 +216,13 @@ Document visibility is the intersection of the user's groups and the document's
   a service with 1 task plus the scheduled sync.
 - RDS PostgreSQL 16, single-AZ in v1, encrypted, automated backups.
 - S3 bucket for originals: SSE-KMS, private, versioned.
-- Secrets Manager for Graph, Confluence and OIDC secrets.
+- Secrets Manager for Graph, Confluence, OIDC and search API secrets.
 - A Bedrock model-access IAM policy, scoped to the two model IDs.
 - Private subnets with a VPC endpoint for Bedrock, so traffic stays off the public
   internet.
+- NAT gateway for outbound HTTPS only (Graph, Confluence, search API, research
+  page fetches). The worker reaches the internet; the web service does not need to.
+- DataSync agent and task syncing on-prem file shares to the S3 crawl prefix.
 - CloudWatch logs. Document text is never logged.
 
 The container image includes LibreOffice (headless) and the Docling models,
@@ -155,10 +230,14 @@ baked in so they are not downloaded at runtime.
 
 ### Delivery phases
 
-1. **Core loop:** S3 upload ingest → extract → review → search → docx/md output.
+1. **Core loop:** S3 prefix crawl and upload → triage → extract → review → search
+   → docx/md output.
 2. **Brand outputs:** pptx and pdf on the real brand templates.
-3. **Connectors:** SharePoint, then Confluence, with ACL capture.
-4. **Hardening:** audit views, review-due reminders, recall test set, and
+3. **Crawlers:** SharePoint (Graph delta), then Confluence, with ACL capture,
+   plus DataSync for file shares.
+4. **Online research:** search, cited claims, comparison view, and the
+   "Industry context" output section.
+5. **Hardening:** audit views, review-due reminders, recall test set, and
    `pgvector` only if recall < 90%.
 
 ## Alternatives rejected
@@ -180,6 +259,18 @@ baked in so they are not downloaded at runtime.
 - **LiteLLM Proxy as a separate service:** another service to run. Adopt it only when
   central budgets or keys across apps are needed.
 - **SQS/Step Functions for jobs:** a Postgres job table is enough at this volume.
+- **Webhooks / change notifications instead of scheduled crawls:** lower lag,
+  but subscriptions expire and need renewal infrastructure. Delta crawls are
+  enough with a daily lag. Revisit if same-day freshness matters.
+- **Crawling file shares directly over SMB from Fargate:** needs network paths
+  into on-prem and SMB credentials in the app. DataSync to S3 keeps the app
+  cloud-only.
+- **Extracting every crawled document:** this wastes LLM spend on non-case
+  documents and floods the review queue. A cheap triage step goes first.
+- **Claude's built-in web search tool:** not available on Bedrock. It would also
+  tie research to the Anthropic API route.
+- **Tavily / Exa as the default search provider:** both are viable and easy to
+  swap in. Brave is the default because of its zero-data-retention option.
 - **Buy (Loopio, Responsive, AutogenAI):** these are RFP answer-library tools that
   don't generate branded reference cases from closure reports. Revisit if the bid
   team wants a full answer library.
@@ -204,6 +295,18 @@ baked in so they are not downloaded at runtime.
   enabled, and low-text documents are flagged in the review queue.
 - **Model availability or terms on Bedrock change.** Models are env aliases, and the
   provider can be swapped through LiteLLM.
+- **Overstated industry claims.** A bid says "standard" based on a vendor blog
+  or an outdated page. Mitigated by verbatim quotes, source type ranking,
+  retrieval dates in the output, and a fixed "Industry context" section that
+  never merges with our case claims.
+- **Query leakage.** A client name or confidential detail goes to the search
+  provider. Mitigated by building queries from capability terms only, scrubbing
+  them with the registry, previewing the query, and the zero-retention plan.
+- **Crawl volume and throttling.** The first SharePoint crawl can be large, and
+  Graph throttles. Mitigated by resumable cursors, backoff, include patterns,
+  and triage keeping LLM cost proportional to case documents only.
+- **Over-broad Graph permissions.** Use `Sites.Selected` per site, never
+  tenant-wide `Sites.Read.All`.
 - **Stale cases.** `review_due` hides expired cases from search until a reviewer
   re-approves them.
 
@@ -215,10 +318,19 @@ baked in so they are not downloaded at runtime.
   - anonymiser replaces names and aliases and blocks non-referenceable ones
   - ACL filter hides a document from a user outside its groups
   - render produces docx and pptx that reopen cleanly and contain no unfilled `{{ }}`
+  - crawl resumes from its cursor and marks deleted items
+  - triage routes a non-case document away from extraction
+  - research drops a claim whose quote is not on the fetched page, and strips a
+    registry client name from the outgoing query
 - End to end on a local stack (docker compose with Postgres): upload 5 real
   (sanitised) case documents → records extracted with quotes → approve → a search
   for a bid context returns the expected case in the top 3 → docx, pptx, pdf and
   md download and open.
+- Crawl check: point a test SharePoint site and Confluence space with known
+  contents at the crawler. The full crawl finds every file, a second run fetches
+  nothing new, and editing one file re-ingests only that file.
+- Research check: 10 capability questions with known out-of-the-box answers
+  (e.g. vendor docs). Each claim links to a page containing its quote.
 - Recall set: 50 bid queries with expected cases, written with the bid team.
   Target ≥ 90% expected-case-in-top-3 before rollout.
 - `terraform plan` is clean in the target account. A smoke test after deploy
