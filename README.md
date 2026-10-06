@@ -14,6 +14,6 @@ Both are private until shared from their Share menu.
 
 ## Design artifacts
 
-- [Intent](intent/2026-10-06-0-reference-engine.md): why (approved)
-- [Spec](spec/2026-10-06-0-reference-engine.md): what (approved)
-- [Plan](plan/2026-10-06-0-reference-engine.md): how (draft)
+- [Intent](intent/2026-10-06-1-reference-engine.md): why (approved)
+- [Spec](spec/2026-10-06-1-reference-engine.md): what (approved)
+- [Plan](plan/2026-10-06-1-reference-engine.md): how (draft)

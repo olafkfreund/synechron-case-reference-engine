@@ -1,7 +1,7 @@
 ---
 status: approved
-issue: 0
-intent: intent/2026-10-06-0-reference-engine.md
+issue: 1
+intent: intent/2026-10-06-1-reference-engine.md
 ---
 
 # Spec: Customer reference engine

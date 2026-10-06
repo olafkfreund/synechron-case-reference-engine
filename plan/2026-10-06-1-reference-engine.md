@@ -1,7 +1,7 @@
 ---
 status: draft
-issue: 0
-spec: spec/2026-10-06-0-reference-engine.md
+issue: 1
+spec: spec/2026-10-06-1-reference-engine.md
 ---
 
 # Plan: Customer reference engine
@@ -78,7 +78,7 @@ spec: spec/2026-10-06-0-reference-engine.md
 
 | Needed by | Item | Owner |
 | --------- | ---- | ----- |
-| Step 1 | GitHub repo + issue number (replaces `0` in slugs/branch) | Engineering lead |
+| Step 1 | GitHub repo + issue number: done, private repo olafkfreund/synechron-case-reference-engine, issue #1 | Engineering lead |
 | Step 4 | AWS account, region, Bedrock model access enabled | Cloud team |
 | Step 8 | IdP app registration (OIDC), group names for the three roles | IT / identity |
 | Step 10 | Who approves cases, who sets `referenceable` | Sales leadership + legal |

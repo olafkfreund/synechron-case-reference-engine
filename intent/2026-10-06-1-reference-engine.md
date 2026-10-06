@@ -1,6 +1,6 @@
 ---
 status: approved
-issue: 0
+issue: 1
 author: olafkfreund
 ---
 
@@ -72,8 +72,6 @@ records current as the sources change.
 
 ## Open questions
 
-- Issue tracker/repo: create a GitHub (or other) issue and repo, replacing `0`
-  in this slug?
 - Who approves extracted records, and who decides that a client is publicly
   referenceable (legal/account owner)?
 - Where are the current corporate Word/PowerPoint templates, and who owns them?
