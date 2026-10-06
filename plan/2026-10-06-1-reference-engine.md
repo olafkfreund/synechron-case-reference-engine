@@ -137,6 +137,18 @@ spec: spec/2026-10-06-1-reference-engine.md
    normalised).
 
    → verify by `pytest tests/test_schema.py` (round-trip, invented quote rejected).
+   Done (deviations after review):
+   - Fields are `Sourced[T]` (value + source_quote). `summary` is unquoted, at
+     most 80 words; `client_mention` is the raw name (client_id is resolved later).
+   - `quote_in` is case-insensitive. It folds curly quotes, dashes, ellipsis,
+     soft hyphens and zero-width spaces, and also matches across PDF
+     line-break hyphenation.
+   - `sourced(value, quote, text)` also requires the value's numbers to be in
+     the quote, and a quote of ≥ 4 words unless it contains the value.
+   - `summary_sourced()`: every summary number must appear in some source quote.
+   - Every model forbids extra keys (`additionalProperties: false`).
+     `unsourced` is hidden from the LLM schema. `llm_schema()` strips pydantic
+     defaults, which would otherwise leak it.
 4. **LLM layer.** Write `app/llm.py`:
    - `complete_json(alias, system, user, model_cls)` via LiteLLM with structured
      output, and a prompt cache marker on the system block
@@ -145,7 +157,9 @@ spec: spec/2026-10-06-1-reference-engine.md
    → verify by `pytest tests/test_llm.py` (LiteLLM mock), plus one manual call to
    Bedrock in the target account.
    Traps: confirm the exact Bedrock model IDs and that their data terms are
-   acceptable before setting the env defaults.
+   acceptable before setting the env defaults. Send `schema.llm_schema()`, not
+   `model_json_schema()`, and confirm in the manual Bedrock call that it is
+   accepted (strict mode, `$defs`).
 5. **Ingest + triage.** Write `app/ingest.py`:
    - fetch bytes → sha256 → skip if seen; a new version re-opens its case
    - store the original in S3 and convert with Docling to markdown
@@ -165,7 +179,10 @@ spec: spec/2026-10-06-1-reference-engine.md
 
    → verify by `pytest tests/test_extract.py` (invented metric → `unsourced`).
    Traps: write `cases.search_text` from field values only (no keys or quotes);
-   upsert on `document_id`.
+   upsert on `document_id`. Use `schema.sourced(value, quote, markdown)` per
+   field and ALWAYS assign `unsourced = not ok`, never OR it with the model's
+   output. If `summary_sourced()` is false, blank the summary and flag the case
+   for review.
 7. **Worker.** Write `app/worker.py`: a job loop that claims with
    `FOR UPDATE SKIP LOCKED`, retries 3 times, and records the error.
 
@@ -203,6 +220,8 @@ spec: spec/2026-10-06-1-reference-engine.md
     new number rejected).
     Traps: ACL and deletion filter via `join documents d` with
     `d.acl_groups && :groups and d.deleted_at is null`; cases have no ACL column.
+    "No new numbers" compares against `numbers()` of sourced field values only,
+    never the summary.
 12. **docx + Markdown output.** Write `app/render.py`:
     - `to_docx(cases, anonymised)` with docxtpl
     - `to_markdown`
