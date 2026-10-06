@@ -6,8 +6,8 @@ import psycopg
 SCHEMA = Path(__file__).resolve().parent.parent / "sql" / "schema.sql"
 
 
-def connect():
-    return psycopg.connect(os.environ["DATABASE_URL"])
+def connect(autocommit=False):
+    return psycopg.connect(os.environ["DATABASE_URL"], autocommit=autocommit)
 
 
 def init():

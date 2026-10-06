@@ -17,7 +17,8 @@ def crawl_s3(source_id: int) -> dict:
     Fetched: keys not yet known, plus keys modified since cursor - CURSOR_SLACK (repeats are a
     cheap checksum skip). One failing object is counted and skipped; the crawl and cursor go on.
     """
-    with db.connect() as lock:
+    # autocommit: the session lock must not keep a transaction open for an hours-long crawl
+    with db.connect(autocommit=True) as lock:
         # one crawl per source: the schedule and a manual trigger must not race (released on close)
         if not lock.execute("select pg_try_advisory_lock(2, %s)", (source_id,)).fetchone()[0]:
             return {"status": "running"}

@@ -249,6 +249,23 @@ spec: spec/2026-10-06-1-reference-engine.md
    → verify by `pytest tests/test_worker.py` (two workers never take the same job).
    Traps: also reclaim `running` jobs whose `updated_at` is older than 15 min
    (a worker died).
+   Done (deviations after review):
+   - The claim commits before the handler runs.
+   - Stale window: 15 min for `extract`, 6 h for `crawl_%` (first crawls run
+     for hours; the daily schedule covers a dead crawl worker).
+   - `finish()` updates `where id and attempts`, so a worker whose job was
+     reclaimed can't overwrite the newer status.
+   - At most 3 runs. A reclaim beyond that is marked `failed` ("abandoned").
+     An unknown kind fails on its first run.
+   - SIGTERM exits cleanly (stop takes ~1 s instead of a SIGKILL), and the
+     interrupted job is requeued with its attempt given back.
+   - Errors are stored as type + 200 characters. Job kinds are `extract` and
+     `crawl_s3`. The compose `worker` service runs `python -m app.worker`.
+   - `crawl_s3`'s lock connection is autocommit, so it holds no open
+     transaction during long crawls.
+   - Known gap: if a worker dies after `extract` succeeds but before `done`,
+     the rerun resets the case to `extracted`. An approval given within that
+     window is lost. This is rare; accepted.
 8. **Auth.** In `app/main.py`:
    - OIDC login with authlib and a session cookie
    - roles from the groups claim
@@ -318,6 +335,10 @@ download.
 ### Phase 3: Crawlers
 
 15. **SharePoint.** In `crawl.py`:
+    Traps: catch per-item errors inside the crawler like `crawl_s3` does,
+    storing only the key and exception type. Graph and Confluence error
+    messages contain site paths and file names. Job kind `crawl_sharepoint`
+    gets the 6 h stale window automatically (`crawl_%`).
     - Graph `drives/{id}/root/delta` per configured drive, storing `deltaLink`
       as the cursor
     - item permissions → `acl_groups`

@@ -15,3 +15,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
+  worker:
+    build: .
+    command: python -m app.worker
+    environment:
+      DATABASE_URL: postgresql://postgres:dev@db/refs
+    depends_on:
+      db:
+        condition: service_healthy
