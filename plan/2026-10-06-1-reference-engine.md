@@ -275,7 +275,33 @@ spec: spec/2026-10-06-1-reference-engine.md
 
    → verify by `pytest tests/test_auth.py` (role guard).
    Traps: do not trust group headers from the client, only the token.
-9. **Review queue.** Add pages under `app/templates/`. A reviewer sees each field
+   Done (deviations after security review):
+   - App: `create_app()` factory, run with `uvicorn --factory`. Startup
+     requires `SESSION_SECRET` (≥ 32 characters when https-only) and
+     `APP_ORIGIN`.
+   - Session cookie: 8 h, `same_site=lax`, holding sub, name and groups. Groups
+     are filtered to role-mapped plus ACL groups, so the cookie stays small.
+   - Login refuses an Entra groups overage with a 403 and a log line. A
+     cancelled or failed login returns 401, not a 500. `OIDC_REDIRECT_URI`
+     sets a fixed callback URL.
+   - Request guard middleware, which runs before any body is read or any auth
+     dependency runs:
+     - Unsafe methods need `Origin == APP_ORIGIN`, or `Sec-Fetch-Site:
+       same-origin` (CSRF).
+     - The body must have a Content-Length within the cap: upload 50 MB,
+       otherwise 1 MB. Verified live: a 200 MB anonymous upload gets 413 in
+       12 ms.
+   - `/logout` is a POST. `/me` returns the current user.
+   - `POST /admin/upload` (admin): docx/pptx/pdf only (no html), checked by
+     magic bytes. The S3 key is a uuid plus a sanitised name of at most ~110
+     characters. It queues `crawl_s3` and returns 202.
+   - Known gap: the session lives 8 h, and logout cannot revoke a stolen
+     cookie. This is within the accepted one-day ACL lag.
+9. **Review queue.** Traps: every page uses `require("user")` or stronger,
+   never bare `current_user`. Add the `/` landing page (login redirects there),
+   and turn browser 401s into a redirect to `/login`. Forms POST same-origin,
+   so the CSRF guard passes them unchanged.
+   Add pages under `app/templates/`. A reviewer sees each field
    next to its source quote, can edit, approve or reject, and approval sets
    `review_due`.
 
@@ -389,6 +415,14 @@ download.
 ### Phase 5: Deploy and harden
 
 21. **Terraform `infra/`:**
+    Traps from step 8, all required for login to work:
+    - `APP_ORIGIN` = the public https URL.
+    - `OIDC_REDIRECT_URI` = `<APP_ORIGIN>/auth`.
+    - `FORWARDED_ALLOW_IPS` = the VPC CIDR, never `*` unless the security
+      group allows only the ALB.
+    - `SESSION_SECRET` (≥ 32 random characters) from Secrets Manager.
+    - Entra app: "Groups assigned to the application", so tokens don't
+      overflow.
     - VPC (private subnets, NAT, Bedrock VPC endpoint), ECS Fargate web + worker,
       internal ALB with ACM cert
     - RDS Postgres 16, S3 + KMS, Secrets Manager, IAM scoped to the two Bedrock

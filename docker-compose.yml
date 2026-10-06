@@ -23,3 +23,16 @@ services:
     depends_on:
       db:
         condition: service_healthy
+  web:
+    build: .
+    command: uvicorn --factory app.main:create_app --host 0.0.0.0 --port 8000 --proxy-headers
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:dev@db/refs
+      SESSION_SECRET: dev-only-not-a-secret
+      SESSION_HTTPS_ONLY: "false"  # dev over http only
+      APP_ORIGIN: http://localhost:8000
+    depends_on:
+      db:
+        condition: service_healthy

@@ -5,6 +5,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi", "uvicorn", "jinja2", "psycopg[binary]", "pydantic", "litellm",
   "docling", "docxtpl", "python-pptx", "httpx", "authlib", "boto3",
+  "python-multipart", "itsdangerous",
 ]
 
 [project.optional-dependencies]
