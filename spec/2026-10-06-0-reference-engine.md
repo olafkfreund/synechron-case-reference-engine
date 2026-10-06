@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 0
 intent: intent/2026-10-06-0-reference-engine.md
 ---
