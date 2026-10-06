@@ -1,4 +1,5 @@
 import uuid
+import zipfile
 from io import BytesIO
 
 import pytest
@@ -128,3 +129,130 @@ def test_markdown_values_cannot_create_structure():
     for raw in ("# Heading", "- # x", "2) item", "+ plus", "| a | b |", "~~strike~~"):
         out = render.md(raw)
         assert not out.startswith(("#", "-", "+", "2)", "|", "~")), (raw, out)
+
+
+from pptx import Presentation  # noqa: E402
+
+PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+NAMES = ("Title", "Client", "Summary", "Challenge", "Solution", "Outcomes", "Technology")
+
+
+def slides(content):
+    """[{placeholder name: [paragraph texts]}] per slide, names taken from the slide's layout."""
+    prs = Presentation(BytesIO(content))
+    out = []
+    for s in prs.slides:
+        names = {p.placeholder_format.idx: p.name for p in s.slide_layout.placeholders}
+        out.append({names[p.placeholder_format.idx]: [x.text for x in p.text_frame.paragraphs] for p in s.placeholders})
+    return prs, out
+
+
+def test_pptx_fills_named_placeholders(approved, reg):
+    _, cid_client = reg("Zorp", "a UK retailer")
+    a = approved(full().model_copy(update={"solution": Sourced[str](value="Cloud KYC", source_quote="q")}))
+    b = approved(data(title="Second case"))
+    link(a, cid_client)
+    r = gen([a, b], "pptx")
+    assert r.status_code == 200 and r.headers["content-type"] == PPTX
+    assert r.headers["content-disposition"].endswith('reference-cases.pptx"')
+    prs, out = slides(r.content)
+    assert len(out) == 2 and all(set(s) == set(NAMES) for s in out)
+    first = out[0]
+    assert first["Title"] == ["Faster onboarding"] and first["Client"] == ["a UK retailer"]
+    assert first["Summary"] == ["Onboarding fell from 12 days to 3 days."]
+    assert first["Challenge"] == ["Slow manual KYC & checks"] and first["Solution"] == ["Cloud KYC"]
+    assert first["Outcomes"] == ["onboarding: 12 to 3 days"] and first["Technology"] == ["Kubernetes"]
+    assert out[1]["Solution"] == [""] and out[1]["Client"] == ["a client"]  # no content: empty, not prompt text
+    everything = "\n".join(t for s in out for ps in s.values() for t in ps)
+    for bad in ("Click to add", "Hidden quote", "Secret Org", "Hidden attention"):
+        assert bad not in everything, bad
+    cp = prs.core_properties
+    assert (cp.title, cp.author, cp.last_modified_by, cp.comments) == ("Reference cases", "Reference Engine", "Reference Engine", "")
+
+
+def test_pptx_slide_shaping(approved):
+    long = "word " * 120
+    c = data(tech=("Kubernetes", "Kafka", "Terraform"), challenge=Sourced[str](value=long.strip(), source_quote="q"))
+    c = c.model_copy(update={"outcomes": [Outcome(metric=f"m{i}", value=f"{i}", source_quote="q") for i in range(7)]})
+    _, out = slides(gen([approved(c)], "pptx").content)
+    assert out[0]["Technology"] == ["Kubernetes, Kafka, Terraform"]  # one line
+    assert len(out[0]["Outcomes"]) == render.SLIDE_OUTCOMES
+    assert out[0]["Challenge"][0].endswith(" …") and len(out[0]["Challenge"][0]) <= render.SLIDE_TEXT + 2
+
+
+def test_pptx_protected_name_withheld(approved, reg):
+    name, _ = reg("Zorp", "a UK retailer")
+    bad = approved(full().model_copy(update={"challenge": Sourced[str](value=name.replace("o", "ö"), source_quote="q")}))
+    r = gen([bad], "pptx")
+    assert r.status_code == 409 and r.json()["detail"] == render.WITHHELD
+
+
+def test_pptx_missing_placeholder_or_layout_fails_loudly(tmp_path, monkeypatch):
+    prs = Presentation(render.MASTER)
+    layout = next(l for l in prs.slide_layouts if l.name == "Reference case")
+    next(p for p in layout.placeholders if p.name == "Solution").name = "Soluton"
+    broken = tmp_path / "broken.pptx"
+    prs.save(broken)
+    monkeypatch.setattr(render, "MASTER", broken)
+    with pytest.raises(ValueError, match="missing placeholders: Solution"):
+        render.to_pptx([])
+    layout.name = "Other"
+    prs.save(broken)
+    with pytest.raises(ValueError, match="no slide layout named 'Reference case'"):
+        render.to_pptx([])
+
+
+def test_master_template_is_marked_draft():
+    prs = Presentation(render.MASTER)
+    layout = next(l for l in prs.slide_layouts if l.name == "Reference case")
+    assert any("DRAFT TEMPLATE" in s.text_frame.text for s in layout.shapes if s.has_text_frame)
+
+
+def test_control_character_cannot_rebuild_a_protected_name(approved, reg):
+    name, _ = reg("Zorp", "a UK retailer")
+    sneaky = name[:2] + "\x01" + name[2:]  # stripped after the check, this used to become the name again
+    cid = approved(full().model_copy(update={"challenge": Sourced[str](value=sneaky, source_quote="q")}))
+    for fmt in ("md", "docx", "pptx"):
+        r = gen([cid], fmt)
+        assert r.status_code == 200, fmt  # stripped first, then replaced by the label
+        body = r.content if fmt == "md" else b"".join(
+            z.read(n) for z in [zipfile.ZipFile(BytesIO(r.content))] for n in z.namelist())
+        assert name.encode() not in body and b"a UK retailer" in body, fmt
+
+
+def test_master_layout_has_unique_idx_and_no_slides():
+    prs = Presentation(render.MASTER)
+    layout = next(l for l in prs.slide_layouts if l.name == "Reference case")
+    idx = [p.placeholder_format.idx for p in layout.placeholders]
+    assert len(idx) == len(set(idx)) and len(prs.slides) == 0
+    assert {p.name for p in layout.placeholders} == set(NAMES)
+
+
+def test_extra_layout_placeholder_is_removed_and_sample_slides_refused(tmp_path, monkeypatch, approved):
+    import copy
+    prs = Presentation(render.MASTER)
+    layout = next(l for l in prs.slide_layouts if l.name == "Reference case")
+    extra = copy.deepcopy(next(p for p in layout.placeholders if p.name == "Summary")._element)
+    extra.nvSpPr.cNvPr.set("name", "Logo")
+    extra.nvSpPr.nvPr.ph.set("idx", "99")
+    layout.shapes._spTree.append(extra)
+    extended = tmp_path / "extended.pptx"
+    prs.save(extended)
+    monkeypatch.setattr(render, "MASTER", extended)
+    out = Presentation(BytesIO(render.to_pptx([render.section(data(), "a client")])))
+    assert len(list(out.slides[0].placeholders)) == len(NAMES)  # the logo placeholder was removed
+    prs.slides.add_slide(layout)  # a master that ships its own sample slide
+    prs.save(extended)
+    with pytest.raises(ValueError, match="no slides"):
+        render.to_pptx([])
+
+
+def test_broken_template_writes_no_audit_row(approved, monkeypatch):
+    cid = approved()
+    monkeypatch.setattr(render, "MASTER", render.MASTER.with_name("missing.pptx"))
+    with db.connect() as c:
+        before = c.execute("select count(*) from generations").fetchone()[0]
+    with pytest.raises(Exception):
+        gen([cid], "pptx")
+    with db.connect() as c:
+        assert c.execute("select count(*) from generations").fetchone()[0] == before

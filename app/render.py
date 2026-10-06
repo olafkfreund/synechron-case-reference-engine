@@ -6,6 +6,7 @@ from docxtpl import DocxTemplate
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import Response
 from jinja2 import Environment
+from pptx import Presentation
 
 from app import anonymise, db
 from app.main import User, require
@@ -14,7 +15,13 @@ from app.schema import ReferenceCase
 
 router = APIRouter()
 TEMPLATE = Path(__file__).resolve().parent.parent / "brand" / "reference.docx"
+MASTER = Path(__file__).resolve().parent.parent / "brand" / "master.pptx"
+LAYOUT = "Reference case"
+PLACEHOLDERS = ("Title", "Client", "Summary", "Challenge", "Solution", "Outcomes", "Technology")
 WITHHELD = "output withheld: a protected client name is present"
+CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")  # invalid in XML; also used to split names
+SLIDE_TEXT = 300  # challenge/solution excerpt on a slide; the Word version has the full text
+SLIDE_OUTCOMES = 5
 
 
 class Withheld(Exception):
@@ -61,7 +68,8 @@ def _strings(o):
 
 def protect(sections: list[dict], clients) -> list[dict]:
     """apply() on every string, then fail closed: blocked() must find nothing in the whole output."""
-    out = _walk(sections, lambda s: anonymise.apply(s, clients))
+    # strip control characters FIRST: stripped after the check, "Zo\x01rp" would turn back into "Zorp"
+    out = _walk(sections, lambda s: anonymise.apply(CTRL.sub("", s), clients))
     if anonymise.blocked("\n".join(_strings(out)), clients):
         raise Withheld(WITHHELD)  # never name the client
     return out
@@ -75,6 +83,53 @@ def to_docx(sections: list[dict]) -> bytes:
     props.comments = props.subject = props.keywords = props.category = ""
     buf = BytesIO()
     tpl.save(buf)
+    return buf.getvalue()
+
+
+def excerpt(s: str, limit: int = SLIDE_TEXT) -> str:
+    return s if len(s) <= limit else s[:limit].rsplit(" ", 1)[0].rstrip(",;:.") + " …"
+
+
+def to_pptx(sections: list[dict]) -> bytes:
+    prs = Presentation(MASTER)
+    if len(prs.slides):  # a master's sample slides (and their text) must never ship
+        raise ValueError(f"{MASTER.name} must contain no slides, only layouts")
+    layout = next((l for l in prs.slide_layouts if l.name == LAYOUT), None)
+    if layout is None:
+        raise ValueError(f"{MASTER.name} has no slide layout named {LAYOUT!r}")
+    # slide placeholders get generic names when cloned, so the layout's names are the source of
+    # truth: its placeholder idx is only the join key, never a position we rely on
+    names = {ph.placeholder_format.idx: ph.name for ph in layout.placeholders}
+    if len(names) != len(list(layout.placeholders)):
+        raise ValueError(f"layout {LAYOUT!r} has duplicate placeholder idx values")
+    if missing := [n for n in PLACEHOLDERS if n not in names.values()]:
+        raise ValueError(f"layout {LAYOUT!r} is missing placeholders: {', '.join(missing)}")
+    for c in sections:
+        block = lambda h: next((b["text"] for b in c["blocks"] if b["heading"] == h), "")  # noqa: E731
+        bullets = lambda h: next((l["bullets"] for l in c["lists"] if l["heading"] == h), [])  # noqa: E731
+        content = {"Title": [c["title"]], "Client": [c["client"]], "Summary": [c["summary"]],
+                   "Challenge": [excerpt(block("Challenge"))], "Solution": [excerpt(block("Solution"))],
+                   "Outcomes": bullets("Outcomes")[:SLIDE_OUTCOMES],
+                   "Technology": [", ".join(bullets("Technology"))]}
+        slide = prs.slides.add_slide(layout)
+        filled = set()
+        for ph in list(slide.placeholders):
+            name = names.get(ph.placeholder_format.idx)
+            if name not in content:  # logo/subtitle/footer etc.: removed, so no "Click to add text"
+                ph._element.getparent().remove(ph._element)
+                continue
+            first, *rest = content[name] or [""]  # no content: empty text
+            ph.text_frame.text = first
+            for item in rest:
+                ph.text_frame.add_paragraph().text = item
+            filled.add(name)
+        if filled != set(PLACEHOLDERS):
+            raise ValueError(f"layout {LAYOUT!r} did not yield placeholders: {', '.join(sorted(set(PLACEHOLDERS) - filled))}")
+    props = prs.core_properties
+    props.title, props.author, props.last_modified_by = "Reference cases", "Reference Engine", "Reference Engine"
+    props.comments = props.subject = props.keywords = props.category = ""
+    buf = BytesIO()
+    prs.save(buf)
     return buf.getvalue()
 
 
@@ -126,13 +181,19 @@ def to_markdown(sections: list[dict]) -> str:
     return MD.render(cases=sections)
 
 
+OFFICE = "application/vnd.openxmlformats-officedocument."
+OUTPUTS = {"docx": (to_docx, OFFICE + "wordprocessingml.document"),
+           "pptx": (to_pptx, OFFICE + "presentationml.presentation"),
+           "md": (lambda s: to_markdown(s).encode(), "text/markdown; charset=utf-8")}
+
+
 @router.post("/generate")
 def generate(case_ids: list[int] = Form(), format: str = Form(), user: User = Depends(require("user"))):
     ids = list(dict.fromkeys(case_ids))
     if not 1 <= len(ids) <= 3:
         raise HTTPException(400, "choose 1 to 3 cases")
-    if format not in ("docx", "md"):
-        raise HTTPException(400, "format must be docx or md")
+    if format not in OUTPUTS:
+        raise HTTPException(400, f"format must be one of {', '.join(OUTPUTS)}")
     with db.connect() as conn:
         # same restrictions as search: approved, in date, and the user can open the source document
         rows = conn.execute(
@@ -154,9 +215,9 @@ def generate(case_ids: list[int] = Form(), format: str = Form(), user: User = De
             sections = protect(sections, clients)
         except Withheld as e:
             raise HTTPException(409, str(e)) from None
+        make, mime = OUTPUTS[format]
+        body = make(sections)  # before the audit row: a broken template must not log a generation
         conn.execute("insert into generations(user_id, format, case_ids, anonymised, industry_context_ack) "
                      "values (%s,%s,%s,%s,false)", (user.sub, format, ids, anonymised))
-    body, mime = (to_docx(sections), "application/vnd.openxmlformats-officedocument.wordprocessingml.document") \
-        if format == "docx" else (to_markdown(sections).encode(), "text/markdown; charset=utf-8")
     return Response(body, media_type=mime, headers={
         "Content-Disposition": f'attachment; filename="reference-cases.{format}"', "X-Content-Type-Options": "nosniff"})

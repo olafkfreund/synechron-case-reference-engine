@@ -452,6 +452,29 @@ access yet):
     → verify by `pytest tests/test_render.py::pptx` (reopens; every named
     placeholder filled).
     Traps: never index placeholders by position. Fail loudly if a name is missing.
+    Done (deviations after review and a visual check):
+    - `brand/master.pptx` is a generated placeholder
+      (`scripts/make_reference_master.py`). Its "Reference case" layout holds
+      exactly 7 named placeholders (Title, Client, Summary, Challenge,
+      Solution, Outcomes, Technology) with unique idx values, explicit
+      positions and font sizes, `normAutofit`, static section headings, and a
+      DRAFT notice. The first version rendered at the default 32 pt and
+      overlapped badly, which only a LibreOffice PNG render showed.
+    - Slide content: challenge and solution are cut to a 300-character excerpt
+      ending "…" (the Word version has the full text). Outcomes are capped at
+      5. Technology is one comma-separated line. Capabilities and details are
+      left out (they're in Word and Markdown).
+    - `to_pptx` fails loudly if the master contains slides, if the layout is
+      missing, if placeholder idx values are duplicated, or if a named
+      placeholder is missing. Any other placeholder (logo, footer) is removed
+      from the slide, so no "Click to add text" remains. Placeholder names come
+      from the layout; idx is only the join key.
+    - Security fix covering every format: `protect()` strips XML-invalid
+      control characters BEFORE `apply()`/`blocked()`. Stripped afterwards,
+      "Zo\x01rp" would rebuild the protected name. The new test fails on the
+      pre-review code.
+    - `/generate` renders before writing the audit row, so a broken template
+      logs no generation.
 14. **PDF.** `render.to_pdf(path)` runs `soffice --headless --convert-to pdf` in a
     temp dir with a timeout. A CI job renders a sample against the real `brand/`
     files.
