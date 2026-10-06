@@ -29,7 +29,7 @@ def quote_in(text: str, quote: str) -> bool:
 
 
 def numbers(s: object) -> set[str]:
-    return {n.replace(",", "") for n in re.findall(r"\d+(?:[.,]\d+)*", str(s or ""))}
+    return {n.replace(",", "") for n in re.findall(r"\d+(?:[.,]\d+)*", "" if s is None else str(s))}
 
 
 def sourced(value: object, quote: str, text: str) -> bool:
@@ -83,6 +83,8 @@ class ReferenceCase(_Model):
     period: Period = Period()
     # synthesised by the LLM, so no verbatim quote; its numbers must come from sourced quotes
     summary: str = Field("", description="At most 80 words. Use only numbers that appear in the source quotes.")
+    # reviewer notes set by extract.py only (hidden from the LLM, like `unsourced`)
+    needs_attention: SkipJsonSchema[list[str]] = []
 
     @field_validator("summary")
     @classmethod
@@ -95,7 +97,8 @@ class ReferenceCase(_Model):
         items = [self.title, self.client_mention, self.industry, self.region, self.engagement_type,
                  self.challenge, self.solution, *self.capabilities, *self.tech_stack,
                  self.duration_months, self.team_size, *self.outcomes, self.period]
-        return [i.source_quote for i in items if i.source_quote]
+        # an unsourced quote must not vouch for summary numbers
+        return [i.source_quote for i in items if i.source_quote and not i.unsourced]
 
     def summary_sourced(self) -> bool:
         """Every number in the summary appears in some source quote (else it launders invented numbers)."""

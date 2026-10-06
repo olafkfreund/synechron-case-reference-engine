@@ -227,6 +227,22 @@ spec: spec/2026-10-06-1-reference-engine.md
    field and ALWAYS assign `unsourced = not ok`, never OR it with the model's
    output. If `summary_sourced()` is false, blank the summary and flag the case
    for review.
+   Done (deviations after review):
+   - The document is cut at 150,000 characters (no chunking) and wrapped in
+     `<document>` tags.
+   - `check()` sets `unsourced` from the document alone; empty values are not
+     flagged.
+   - Literal fields (client_mention, tech_stack) must also appear in their quote.
+   - Outcomes are checked as "metric value". The period is checked by years only
+     ("2023-01" vs "January 2023").
+   - `ReferenceCase.needs_attention` (hidden from the LLM, always assigned)
+     records truncation and a blanked summary. Steps 9, 11 and 12 rebuild cases
+     with `ReferenceCase.model_validate(data)`, and step 9 shows these notes.
+   - `quotes()` ignores unsourced quotes, so a fake quote can't vouch for a
+     summary number.
+   - Fixed `numbers(0)`, which had read as empty.
+   - Known gaps, left to the reviewer: number words ("fourteen") are flagged,
+     and the European "1.200" format is flagged.
 7. **Worker.** Write `app/worker.py`: a job loop that claims with
    `FOR UPDATE SKIP LOCKED`, retries 3 times, and records the error.
 
