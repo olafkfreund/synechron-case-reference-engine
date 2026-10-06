@@ -178,8 +178,10 @@ def approve(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))
         if not case.summary_sourced():
             case.summary = ""
         save(conn, cid, case)
-        conn.execute("update cases set status='approved', approved_by=%s, approved_at=now(), "
-                     "review_due=now() + interval '12 months' where id=%s", (user.sub, cid))
+        # link the case to its registry client, so outputs use its curated label and referenceability
+        client_id = anonymise.resolve(case.client_mention.value, anonymise.load_clients(conn))
+        conn.execute("update cases set status='approved', approved_by=%s, approved_at=now(), client_id=%s, "
+                     "review_due=now() + interval '12 months' where id=%s", (user.sub, client_id, cid))
     return RedirectResponse("/review", status_code=303)
 
 

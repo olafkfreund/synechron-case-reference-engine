@@ -120,3 +120,9 @@ def test_label_may_not_contain_another_clients_protected_name(reg):
     c.post("/admin/clients", data={"name": f"Globex {reg}", "anonymised_label": "a manufacturer"})
     r = c.post("/admin/clients", data={"name": f"Acme {reg}", "anonymised_label": f"a Globex {reg} supplier"})
     assert r.status_code == 400 and "another client" in r.text
+
+
+def test_resolve_exact_only():
+    reg = [dict(id=1, **C("Acme Bank", ["Acme"])), dict(id=2, **C("Globex", ref=True))]
+    assert an.resolve("ACME-bank", reg) == 1 and an.resolve("acme", reg) == 1
+    assert an.resolve("Acme Insurance", reg) is None and an.resolve("", reg) is None and an.resolve(None, reg) is None

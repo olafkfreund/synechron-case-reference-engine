@@ -120,6 +120,8 @@ def create_app() -> FastAPI:
     app.include_router(review.router)
     from app import clients
     app.include_router(clients.router)
+    from app import search
+    app.include_router(search.router)
     oauth = OAuth()
     app.state.oauth = oauth
     if all(os.environ.get(k) for k in ("OIDC_METADATA_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET")):

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Find reference cases</h1>
+<form method="post" action="/search">
+<p><textarea name="bid_text" rows="5" aria-label="bid text" placeholder="Paste the bid requirement">{{ bid_text }}</textarea></p>
+<p><input type="text" name="industry" value="{{ f.industry }}" placeholder="industry" aria-label="industry">
+<input type="text" name="region" value="{{ f.region }}" placeholder="region" aria-label="region">
+<input type="text" name="tech" value="{{ f.tech }}" placeholder="technology" aria-label="technology"></p>
+<button>Search</button></form>
+{% for n in notes %}<div class="note">{{ n }}</div>{% endfor %}
+{% if ran and not top %}<p>No matching approved cases.</p>{% endif %}
+{% for p in top %}
+<h2>{{ p.title }}</h2><p><i>{{ p.label }}</i></p>
+{% if p.reason %}<p><b>Why it fits:</b> {{ p.reason }}</p>{% endif %}
+<p>{{ p.tailored }}</p>
+{% if p.outcomes %}<ul>{% for o in p.outcomes %}<li>{{ o }}</li>{% endfor %}</ul>{% endif %}
+{% endfor %}
+{% if others %}<h2>Other matches</h2><ul>
+{% for o in others %}<li><b>{{ o.title }}</b> ({{ o.label }}): {{ o.summary }}</li>{% endfor %}</ul>{% endif %}
+{% endblock %}

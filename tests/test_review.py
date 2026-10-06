@@ -163,3 +163,19 @@ def test_detail_forms_carry_version_and_row_ids(make):
     page = client(R).get(f"/review/{cid}").text
     assert page.count(f'name="v" value="{ver(cid)}"') >= 3
     assert 'form="f1"' in page and 'id="f1"' in page and "<tr>\n<form" not in page
+
+
+def test_approve_links_case_to_registry_client(make):
+    tag = uuid.uuid4().hex[:8]
+    with db.connect() as c:
+        client_id = c.execute("insert into clients(name, aliases, anonymised_label) "
+                              "values (%s, '{Acme}', 'a bank') returning id", (f"Acme {tag}",)).fetchone()[0]
+    try:  # the mention must be sourced, or approval empties it (and nothing is linked)
+        cid = make(data=case_data(client_mention=Sourced[str](value="Acme", source_quote=Q_TITLE)))
+        client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)})
+        with db.connect() as c:
+            assert c.execute("select client_id from cases where id=%s", (cid,)).fetchone()[0] == client_id
+    finally:
+        with db.connect() as c:
+            c.execute("update cases set client_id=null where client_id=%s", (client_id,))
+            c.execute("delete from clients where id=%s", (client_id,))

@@ -13,7 +13,7 @@ _JOIN = r"[\s\-‐‑–—]*"
 
 
 def load_clients(conn=None) -> list[dict]:
-    sql = "select name, aliases, anonymised_label, referenceable from clients"
+    sql = "select id, name, aliases, anonymised_label, referenceable from clients"
     if conn:
         return conn.cursor(row_factory=dict_row).execute(sql).fetchall()
     with db.connect() as c:
@@ -78,6 +78,12 @@ def scrub(text: str, clients) -> str:
 
 def _key(s: str) -> str:
     return " ".join(re.sub(r"[\W_]+", " ", fold(s)).split())
+
+
+def resolve(mention: str | None, clients) -> int | None:
+    """The registry id whose name or alias is exactly this mention (folded), else None."""
+    k = _key(mention or "")
+    return next((c["id"] for c in clients if k and k in {_key(n) for n in _names(c)}), None)
 
 
 def unlisted(organisations: list[str], clients) -> list[str]:

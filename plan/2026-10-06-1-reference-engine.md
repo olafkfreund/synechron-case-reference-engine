@@ -366,9 +366,36 @@ spec: spec/2026-10-06-1-reference-engine.md
     `d.acl_groups && :groups and d.deleted_at is null`; cases have no ACL column.
     "No new numbers" compares against `numbers()` of sourced field values only,
     never the summary.
+    Done (deviations after review):
+    - Query: `plainto_tsquery` rewritten to OR (not `websearch_to_tsquery`,
+      which ANDs and emits phrase operators). Ranked with
+      `ts_rank_cd(..., 1)`. Stop-words-only text lets the filters decide.
+      Bid text is capped at 4,000 characters, filters at 200 (`position()`,
+      no wildcards).
+    - Every query is limited to approved, in-date cases that pass the ACL.
+    - `pick()` (DRAFT_MODEL) sends sourced values plus the summary, after
+      `apply()`, capped at 1,500 characters per case.
+    - Pick checks:
+      - unknown or duplicate ids are dropped, at most 3 are kept, and a note
+        appears when all are dropped.
+      - Both `tailored` and `reason` must use only numbers from sourced field
+        values. A failing tailored text falls back to the approved summary; a
+        failing reason is blanked.
+      - Everything shown goes through `apply()` then `blocked()`; leftovers
+        are dropped or shown as `[withheld]`.
+      - An LLM failure falls back to rank order with a note. No internal case
+        ids appear in user-facing notes.
+    - `/search`: GET shows the form, POST runs the search, so confidential bid
+      text stays out of URLs, access logs and history.
+    - Approve now links `cases.client_id` through `anonymise.resolve()`, an
+      exact folded match on name or alias of the sourced client mention.
 12. **docx + Markdown output.** Traps: always `apply()` then `blocked()`,
     and refuse to render if `blocked()` is non-empty. Never render
-    `ReferenceCase.organisations`, and keep it out of search.
+    `ReferenceCase.organisations`, and keep it out of search. The client
+    name is shown only when the linked `clients.referenceable` is true;
+    otherwise use its `anonymised_label`, or "a client" when unlinked. The
+    tailored text can contain a prospect name from the bid text that the
+    registry doesn't know; that is acceptable, because the user typed it.
     Write `app/render.py`:
     - `to_docx(cases, anonymised)` with docxtpl
     - `to_markdown`
