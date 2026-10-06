@@ -109,7 +109,7 @@ spec: spec/2026-10-06-1-reference-engine.md
    PyTorch CPU index. Models go to `/opt/docling-models`, with
    `DOCLING_ARTIFACTS_PATH` set and `HF_HUB_OFFLINE=1`; this was verified by a
    PDF conversion under `--network none`. The image runs as the non-root user
-   `app`. `.dockerignore` excludes `.env*` and the design folders.
+   `app` (code copied with `--chown`, pytest cache off since `/app` is read-only). `.dockerignore` excludes `.env*` and the design folders.
    `tests/test_smoke.py` exists because pytest exits 5 with 0 tests. CI runs
    compose build + pytest. Image is ~6.5 GB.
 2. **Schema.** Write `sql/schema.sql` with the tables `sources, documents, cases,

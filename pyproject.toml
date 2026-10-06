@@ -12,3 +12,6 @@ dev = ["pytest"]
 
 [tool.setuptools]
 packages = ["app"]
+
+[tool.pytest.ini_options]
+addopts = "-p no:cacheprovider"  # /app is read-only for the app user

@@ -11,5 +11,5 @@ RUN mkdir app && touch app/__init__.py && pip install -e ".[dev]"
 # Docling models at build time: web has no internet egress at runtime
 RUN HF_HUB_OFFLINE=0 python -c "from pathlib import Path; from docling.utils.model_downloader import download_models; download_models(output_dir=Path('/opt/docling-models'))"
 RUN useradd --create-home app
-COPY . .
+COPY --chown=app:app . .
 USER app
