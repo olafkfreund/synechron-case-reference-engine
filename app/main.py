@@ -118,6 +118,8 @@ def create_app() -> FastAPI:
 
     from app import review  # here: review imports require() from this module
     app.include_router(review.router)
+    from app import clients
+    app.include_router(clients.router)
     oauth = OAuth()
     app.state.oauth = oauth
     if all(os.environ.get(k) for k in ("OIDC_METADATA_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET")):

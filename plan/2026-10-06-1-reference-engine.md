@@ -334,6 +334,26 @@ spec: spec/2026-10-06-1-reference-engine.md
 
     → verify by `pytest tests/test_anonymise.py` (aliases, case-insensitive,
     word boundaries, blocked names).
+    Done (deviations after review):
+    - Matcher:
+      - Words inside a name may be joined by any spacing or dash, so "AcmeBank"
+        and "jane@acmebank.co.uk" match "Acme Bank".
+      - Short all-caps aliases are case-sensitive.
+      - `blocked()` matches on folded text (NFKC, casefold, accents removed),
+        so it fails closed: "Straße" ↔ "STRASSE", "İ", decomposed accents.
+      - `apply()` is a best effort on the text as written; `blocked()` must run
+        after it.
+      - `scrub()` returns folded (lowercase, accent-free) text.
+    - Unlisted organisations come from a new `ReferenceCase.organisations`
+      field that extraction fills (step 6 change, no extra LLM call). It is
+      compared by exact folded equality, so a sister company like "Acme
+      Insurance" is not hidden by the alias "Acme". No LLM call on page view.
+    - Registry admin (`/admin/clients`): plain forms, md5 version → 409. The
+      label must not contain the client's own names or any other protected
+      client's names. The page tells admins to add domain stems as aliases and
+      to avoid common-word aliases.
+    - Known gaps: an alias can't contain a comma (the form splits on commas);
+      no delete.
 11. **Search.** Write `app/search.py`:
     - `websearch_to_tsquery` + jsonb filters, restricted to `status = approved`,
       `review_due > now()`, and ACL overlap → top 20
@@ -346,7 +366,10 @@ spec: spec/2026-10-06-1-reference-engine.md
     `d.acl_groups && :groups and d.deleted_at is null`; cases have no ACL column.
     "No new numbers" compares against `numbers()` of sourced field values only,
     never the summary.
-12. **docx + Markdown output.** Write `app/render.py`:
+12. **docx + Markdown output.** Traps: always `apply()` then `blocked()`,
+    and refuse to render if `blocked()` is non-empty. Never render
+    `ReferenceCase.organisations`, and keep it out of search.
+    Write `app/render.py`:
     - `to_docx(cases, anonymised)` with docxtpl
     - `to_markdown`
     - a `generations` audit row
@@ -407,7 +430,10 @@ download.
 
 ### Phase 4: Online research
 
-18. **Search + fetch.** Write `app/research.py`:
+18. **Search + fetch.** Traps: `anonymise.scrub()` returns folded text
+    (lowercase, accents removed). That is fine for a query; show the user the
+    scrubbed query before sending it.
+    Write `app/research.py`:
     - `build_query(question, case?)` uses capability/product terms only and runs
       `anonymise.scrub`
     - Brave Search API → top ~8 → `httpx` fetch (robots.txt, per-domain limit,

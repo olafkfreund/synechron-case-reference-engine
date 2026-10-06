@@ -83,6 +83,9 @@ class ReferenceCase(_Model):
     period: Period = Period()
     # synthesised by the LLM, so no verbatim quote; its numbers must come from sourced quotes
     summary: str = Field("", description="At most 80 words. Use only numbers that appear in the source quotes.")
+    # every organisation the document names, compared with the client registry at review time
+    # (comes free with extraction, so viewing a case costs no LLM call); never searched or rendered
+    organisations: list[str] = Field([], description="Every company, bank or other organisation named in the document, as written.")
     # reviewer notes set by extract.py only (hidden from the LLM, like `unsourced`)
     needs_attention: SkipJsonSchema[list[str]] = []
 

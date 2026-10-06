@@ -5,7 +5,7 @@ from pathlib import Path
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
-from app import db
+from app import anonymise, db
 from app.extract import MAX_CHARS, check
 from app.main import User, require
 from app.schema import Outcome, ReferenceCase, Sourced
@@ -108,10 +108,15 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
             f"select c.data, c.status, d.title, d.external_id, s.name, {OPEN}, {VERSION} "
             f"from cases c join documents d on d.id = c.document_id join sources s on s.id = d.source_id "
             f"where c.id = %s and {ACL}", (cid, list(user.groups))).fetchone()
+        registry = anonymise.load_clients(conn)
     if not r:
         raise HTTPException(404, "no such case")
     case = ReferenceCase.model_validate(r[0])  # the document text is deliberately not shown
-    return page(request, "review_detail.html", user, id=cid, rows=rows(case), notes=case.needs_attention,
+    notes = list(case.needs_attention)
+    if r[5]:  # organisations come from extraction; no LLM call on page view
+        notes += [f"organisation not in client registry: {o}"
+                  for o in anonymise.unlisted([*case.organisations, case.client_mention.value or ""], registry)]
+    return page(request, "review_detail.html", user, id=cid, rows=rows(case), notes=notes,
                 status=r[1], document=r[2], external_id=r[3], source=r[4], reviewable=r[5], v=r[6])
 
 
