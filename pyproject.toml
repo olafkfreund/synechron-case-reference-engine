@@ -1,0 +1,14 @@
+[project]
+name = "reference-engine"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi", "uvicorn", "jinja2", "psycopg[binary]", "pydantic", "litellm",
+  "docling", "docxtpl", "python-pptx", "httpx", "authlib", "boto3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools]
+packages = ["app"]

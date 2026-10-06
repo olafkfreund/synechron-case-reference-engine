@@ -104,6 +104,14 @@ spec: spec/2026-10-06-1-reference-engine.md
 
    → verify by `docker compose build && docker compose run app pytest` (0 tests ok).
    Traps: download the Docling models at build time, not at runtime (no NAT for web).
+   Done (deviations): the apt install adds `libgl1 libglib2.0-0` (rapidocr imports cv2).
+   CPU-only torch and torchvision are installed in their own layer from the
+   PyTorch CPU index. Models go to `/opt/docling-models`, with
+   `DOCLING_ARTIFACTS_PATH` set and `HF_HUB_OFFLINE=1`; this was verified by a
+   PDF conversion under `--network none`. The image runs as the non-root user
+   `app`. `.dockerignore` excludes `.env*` and the design folders.
+   `tests/test_smoke.py` exists because pytest exits 5 with 0 tests. CI runs
+   compose build + pytest. Image is ~6.5 GB.
 2. **Schema.** Write `sql/schema.sql` with the tables `sources, documents, cases,
    clients, jobs, research, generations` as in the decisions above. Include the
    `tsv` generated columns + GIN indexes and the unique `documents.checksum`.
