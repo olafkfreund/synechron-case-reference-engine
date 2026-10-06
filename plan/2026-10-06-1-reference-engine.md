@@ -119,6 +119,19 @@ spec: spec/2026-10-06-1-reference-engine.md
 
    → verify by `docker compose up -d db && pytest tests/test_db.py` (tables exist).
    Traps: no migration framework until a second schema change exists.
+   Done (deviations after review):
+   - Document identity is `unique (source_id, external_id)`; `checksum` is a
+     plain index, not unique. The same file in two sources stays two documents,
+     each with its own ACL and deletion tracking. A new version updates its row
+     in place.
+   - ACL groups live on `documents` only (GIN index). Cases join to them, so a
+     crawl's ACL refresh applies at once.
+   - `cases.document_id` is unique (one case per document).
+   - `cases.search_text` (field values only) feeds `cases.tsv`, not `data::text`.
+   - `documents.tsv` indexes `left(text, 500000)` (tsvector 1 MB cap).
+   - `schema.sql` starts with `pg_advisory_xact_lock(1)`. Concurrent `init()`
+     on an empty db otherwise fails 3/3 with a `pg_type` UniqueViolation;
+     `tests/test_db.py::test_concurrent_init` proves the fix.
 3. **ReferenceCase model.** Write `app/schema.py` (pydantic) with every field
    carrying a `source_quote`, and a `quote_in(text, quote)` helper (whitespace
    normalised).
@@ -144,14 +157,21 @@ spec: spec/2026-10-06-1-reference-engine.md
 
    → verify by `pytest tests/test_ingest.py` (dedupe, non-case routed away,
    S3 via moto or a local bucket).
+   Traps: a changed checksum = `update documents set checksum, text, acl_groups,
+   deleted_at = null where (source_id, external_id)` + `update cases set
+   status = 'extracted' where document_id = …`, never a new row.
 6. **Extraction.** Write `app/extract.py`: `EXTRACT_MODEL` → `ReferenceCase`,
    quote check per field, write `cases` with status `extracted`.
 
    → verify by `pytest tests/test_extract.py` (invented metric → `unsourced`).
+   Traps: write `cases.search_text` from field values only (no keys or quotes);
+   upsert on `document_id`.
 7. **Worker.** Write `app/worker.py`: a job loop that claims with
    `FOR UPDATE SKIP LOCKED`, retries 3 times, and records the error.
 
    → verify by `pytest tests/test_worker.py` (two workers never take the same job).
+   Traps: also reclaim `running` jobs whose `updated_at` is older than 15 min
+   (a worker died).
 8. **Auth.** In `app/main.py`:
    - OIDC login with authlib and a session cookie
    - roles from the groups claim
@@ -181,6 +201,8 @@ spec: spec/2026-10-06-1-reference-engine.md
 
     → verify by `pytest tests/test_search.py` (ACL hides doc; expired hidden;
     new number rejected).
+    Traps: ACL and deletion filter via `join documents d` with
+    `d.acl_groups && :groups and d.deleted_at is null`; cases have no ACL column.
 12. **docx + Markdown output.** Write `app/render.py`:
     - `to_docx(cases, anonymised)` with docxtpl
     - `to_markdown`
