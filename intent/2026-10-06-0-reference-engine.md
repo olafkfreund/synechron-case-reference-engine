@@ -37,10 +37,11 @@ records current.
 - Users: bid/presales teams, account leads, marketing (case-study owners), and
   delivery leads who approve records for their own cases.
 - Source systems (read only): SharePoint/OneDrive, file shares, Confluence.
-- LLM providers: AWS Bedrock, Anthropic API, Azure (OpenAI/Foundry) and local
-  models, chosen per deployment.
+- LLM providers: AWS Bedrock by default; Anthropic API, Azure OpenAI and local
+  models remain selectable per deployment.
 - Corporate Word and PowerPoint templates (brand owner: marketing).
 - Corporate identity provider, for SSO.
+- Hosting: AWS (decided at intent review). Default LLM route is AWS Bedrock.
 
 ## Constraints
 
@@ -60,7 +61,6 @@ records current.
 
 - Issue tracker/repo: create a GitHub (or other) issue and repo, replacing `0`
   in this slug?
-- Hosting cloud (AWS or Azure)? This sets the default LLM route and the SSO provider.
 - Who approves extracted records, and who decides that a client is publicly
   referenceable (legal/account owner)?
 - Where are the current corporate Word/PowerPoint templates, and who owns them?
