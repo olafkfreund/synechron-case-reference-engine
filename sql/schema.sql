@@ -105,3 +105,20 @@ create table if not exists generations (
 );
 -- which research (if any) fed an output's industry context: part of what was generated and for whom
 alter table generations add column if not exists research_id bigint references research(id) on delete set null;
+
+-- how sensitive a source's documents are: decides which models may read them (app/llm.py)
+alter table sources add column if not exists data_class text not null default 'confidential';
+alter table sources drop constraint if exists sources_data_class_check;
+alter table sources add constraint sources_data_class_check
+  check (data_class in ('confidential','sanitised','public'));
+
+-- admin-approved exceptions: one exact model may read one data class until expires_at
+create table if not exists model_approvals (
+  id bigserial primary key,
+  model text not null,
+  data_class text not null check (data_class in ('confidential','sanitised','public')),
+  approved_by text not null,
+  approved_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  note text not null default ''
+);

@@ -71,6 +71,8 @@ spec: spec/2026-10-07-53-llm-local-models.md
 
    → verify by `pytest tests/test_db.py`. Extend it: the column defaults to
    confidential and the table exists.
+   Done: as planned, plus a check constraint on
+   `model_approvals.data_class` so an approval can't name an unknown class.
    Traps:
    - Additive only; `init()` runs as the master user (`app/migrate.py`).
    - `refs_app` gets rights through the default privileges in
