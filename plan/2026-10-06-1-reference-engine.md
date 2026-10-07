@@ -602,6 +602,40 @@ access yet):
 
     → verify by `pytest tests/test_research.py` (registry name stripped from
     query; robots-disallowed URL skipped).
+    Done (deviations after security review and a live TLS check):
+    - Research is a worker job (only the worker has egress).
+      - `GET /research` shows a form.
+      - `POST /research` previews the exact query.
+      - `POST /research/send` re-finalises the query server-side and queues
+        a `research` job.
+      - `/research/{id}` (creator only, otherwise 404) refreshes until done.
+      - A failed job marks the row `failed`, without worker retries (a retry
+        would repeat the fetches).
+    - Query: `EXTRACT_MODEL` rewrites the question into generic terms. Then
+      emails, URLs, `www.` hosts and long numbers are stripped, `scrub()`
+      runs, the result is capped at 200 characters, and it's refused if
+      `blocked()` still finds a name. Person names outside the registry are a
+      residual risk the user sees in the preview.
+    - Brave Search API (`BRAVE_API_KEY`), top 8, with a 30-day cache by
+      identical query. Schema: additive columns `created_by`, `status`,
+      `error`, `results`; the unique constraint on `query` is dropped.
+    - SSRF-safe fetcher, run inside the VPC:
+      - http/https on ports 80/443 only, no userinfo.
+      - DNS is resolved once, and every address must be public: no loopback,
+        private, link-local or metadata, CGNAT, ULA, multicast, IPv4-mapped
+        or NAT64-wrapped addresses.
+      - It connects to the vetted IP, with Host and TLS SNI set to the name.
+        Verified live: example.com succeeds; hostname mismatch, expired and
+        self-signed certificates fail.
+      - Manual redirects (max 3), each re-vetted, with robots.txt checked per
+        host on every hop.
+      - 10 s timeout, a 5 MB streaming cap, html/pdf only, 1 request per
+        second per domain, and `trust_env=False` (an env proxy would bypass
+        the pinning).
+      - Docling is capped at 40 pages for fetched PDFs.
+    - Pages are stored as markdown (capped at 20,000 characters) with url,
+      publisher and retrieval time. Errors are recorded as domain plus
+      exception type only, and the Brave key is never stored.
 19. **Claims + comparison.** `DRAFT_MODEL` → typed claims with quote, URL,
     publisher and date. Drop claims whose quote is not in the fetched page.
     Rank sources vendor docs/standards > analyst > blog. Cache in `research`
@@ -621,6 +655,13 @@ access yet):
 ### Phase 5: Deploy and harden
 
 21. **Terraform `infra/`:**
+    Traps from step 18: keep DNS64/NAT64 off on the worker subnets (the
+    fetcher also unwraps NAT64 as a backstop). Give the worker task a memory
+    limit, because Docling converts untrusted web content there. Set no
+    HTTP(S)_PROXY on the worker.
+    Step 17 (the DataSync task syncing file shares to `s3://.../shares/<name>/`)
+    is built here with the rest of the Terraform; the S3 crawler already
+    handles the prefix.
     Traps from step 8, all required for login to work:
     - `APP_ORIGIN` = the public https URL.
     - `OIDC_REDIRECT_URI` = `<APP_ORIGIN>/auth`.

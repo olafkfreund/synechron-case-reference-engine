@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Research</h1>
+<p>Query: <code>{{ query }}</code></p>
+{% if status in ("queued", "running") %}
+<p>Running&hellip; this page refreshes by itself.</p><meta http-equiv="refresh" content="5">
+{% elif status == "failed" %}<div class="note">Research failed: {{ error }}</div>
+{% else %}
+{% for p in pages %}<p><b>{{ p.publisher }}</b> &middot; <a href="{{ p.url }}" rel="noopener noreferrer">{{ p.url }}</a>
+&middot; retrieved {{ p.retrieved_at[:10] }}</p>{% endfor %}
+{% if not pages %}<p>No usable sources found.</p>{% endif %}
+{% if skipped %}<p><small>{{ skipped | length }} source(s) skipped.</small></p>{% endif %}
+{% endif %}
+{% endblock %}

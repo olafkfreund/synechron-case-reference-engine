@@ -2,7 +2,7 @@ import signal
 import sys
 import time
 
-from app import crawl, db, extract
+from app import crawl, db, extract, research
 
 MAX_ATTEMPTS = 3
 HANDLERS = {
@@ -10,6 +10,7 @@ HANDLERS = {
     "crawl_s3": lambda p: crawl.crawl_s3(p["source_id"]),
     "crawl_sharepoint": lambda p: crawl.crawl_sharepoint(p["source_id"]),
     "crawl_confluence": lambda p: crawl.crawl_confluence(p["source_id"]),
+    "research": lambda p: research.run(p["research_id"]),
 }
 
 # a running job this old belongs to a dead worker; first crawls can run for hours, and the

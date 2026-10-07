@@ -84,6 +84,15 @@ create table if not exists research (
   retrieved_at timestamptz not null default now()
 );
 
+-- online research: one row per question, filled by the worker. Additive changes to the original table;
+-- the query is looked up for the 30-day cache, so it is no longer unique.
+alter table research drop constraint if exists research_query_key;
+alter table research add column if not exists created_by text not null default '';
+alter table research add column if not exists status text not null default 'queued';
+alter table research add column if not exists error text;
+alter table research add column if not exists results jsonb not null default '{}';
+create index if not exists research_query_idx on research (query, retrieved_at);
+
 create table if not exists generations (
   id bigserial primary key,
   user_id text not null,

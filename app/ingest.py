@@ -34,9 +34,10 @@ def _converter():
     return DocumentConverter()
 
 
-def to_markdown(data: bytes, name: str) -> str:
+def to_markdown(data: bytes, name: str, max_pages: int | None = None) -> str:
     from docling.datamodel.base_models import DocumentStream
-    res = _converter().convert(DocumentStream(name=name, stream=BytesIO(data)))
+    kw = {"max_num_pages": max_pages} if max_pages else {}
+    res = _converter().convert(DocumentStream(name=name, stream=BytesIO(data)), **kw)
     return res.document.export_to_markdown()
 
 
