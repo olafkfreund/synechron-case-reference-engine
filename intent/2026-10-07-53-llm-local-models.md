@@ -22,6 +22,12 @@ only works in the shape our mocked tests assume:
   The thinking used up the output budget, and the default context cut the
   5,000–10,000-word documents short. Turning thinking off and setting a 32K
   context fixes both, but the code can't pass those settings today.
+- **Small models can't produce our nested record.** Asked for the full record
+  (every field an object with a value and a quote), `gemma4:e4b`, `gemma4:12b`
+  and `qwen3:14b` all returned malformed shapes, such as a title as plain text
+  or extra keys. Validation rejects them, so nothing is extracted. Large models
+  (27B) manage the shape, but they overflow the 20 GB GPU onto the CPU and
+  freeze the workstation.
 - **One over-long summary loses the whole case.** A summary over 80 words
   fails validation, and every other field extracted from that document is
   thrown away with it.
@@ -37,6 +43,14 @@ Bedrock, including the SOW change in #52.
   models for development and on Bedrock for production.
 - An over-long summary is trimmed or blanked and flagged for the reviewer; the
   rest of the case survives.
+- Development runs on **small models that fit entirely in GPU memory**
+  (about 12 GB or less, with their context), so the workstation stays usable.
+  Extraction must work with them, for example by asking for a simpler format
+  that our code assembles into the strict record.
+- **Ollama Cloud models are allowed only for sanitised or synthetic
+  documents.** Decided 2026-10-07. This is enforced in code: a `-cloud` model
+  can't process documents from a source not marked as sanitised. The Ollama
+  API key comes from the existing agenix secret.
 - A repeatable development evaluation, run on a local model, reports per
   document: fields filled, items sourced, time.
 
@@ -55,8 +69,9 @@ Bedrock, including the SOW change in #52.
 - JSON mode is weaker than an enforced schema, so the reply must still be fully
   validated against `ReferenceCase`. Invalid output fails the job; it is never
   partially trusted.
-- Local models only through a local Ollama. A `-cloud` Ollama model must be
-  impossible to configure by accident.
+- Real client documents only go to local models (or Bedrock in production).
+  Cloud models only ever get sanitised or synthetic sources; the rule fails
+  closed when a source isn't marked.
 - Production on Bedrock is unchanged unless #26 shows that Claude
   under-extracts with enforced schemas too.
 
