@@ -84,7 +84,7 @@ spec: spec/2026-10-06-1-reference-engine.md
 | Step 10 | Who approves cases, who sets `referenceable` | Sales leadership + legal |
 | Step 10 | Seed client list with reference permissions | Sales ops |
 | Step 13 | Brand `reference.docx` and `master.pptx` with a "Reference case" layout | Marketing |
-| Step 15 | Graph `Sites.Selected` consent per site; list of sites | M365 admin |
+| Step 15 | Graph `Sites.Selected` consent per site with the **fullcontrol** role (read can't see all permissions); list of sites and the Entra groups that may read each | M365 admin |
 | Step 16 | Confluence service account + spaces | Confluence admin |
 | Step 17 | File shares to include, DataSync agent host | Infra |
 | Step 18 | Brave Search API key (ZDR plan) | Procurement |
@@ -517,6 +517,38 @@ access yet):
 
     → verify against a test site: full crawl finds every file, the second run
     fetches 0, one edit re-ingests 1.
+    Done (deviations after security review; lead's decision, flagged to the
+    user):
+    - ACL is source-level and fails closed. Each SharePoint source carries
+      admin-set Entra groups. A file is ingested only if its permission
+      signature (grantee and roles, ignoring where they're inherited from)
+      EQUALS the drive root's. A file under a restricted folder, with its own
+      grant, or with a sharing link is skipped and counted
+      (`skipped_unique_permissions`); if it was ingested before, it's
+      withdrawn.
+    - Invisible root permissions fail the crawl loudly. The Graph app needs
+      `Sites.Selected` with fullcontrol: a read-only caller sees only the
+      permissions that apply to itself.
+    - Delta doesn't report permission changes on descendants. So every crawl
+      (daily) re-checks the permissions of every live document, and withdraws
+      it if they differ or can't be verified (`withdrawn_on_recheck`). That's
+      ~5k GETs a day for 5k documents, within the accepted one-day lag.
+    - Mechanics:
+      - Graph app-only client credentials, through plain httpx (no msal).
+      - Delta cursor = `deltaLink`, saved only once the enumeration finishes;
+        410 → full resync, which marks unseen items deleted.
+      - Retry-After is honoured (≤ 60 s × 3).
+      - A per-item failure withdraws the item (fail closed), records its id
+        and exception type only, and is retried by id on the next run.
+      - Same per-source lock as `crawl_s3`. `sources.acl_groups` is
+        re-stamped on every crawl.
+    - Added `/admin/sources` (admin): list with last run and counts, add
+      (config checked per kind, at least one access group required), edit
+      access groups or enabled, and "Crawl now" (queues a `crawl_s3` or
+      `crawl_sharepoint` job).
+    - Not yet run against a real tenant. On the test site, check that
+      `skipped_unique_permissions` isn't equal to the file count, which would
+      mean the app lacks fullcontrol.
 16. **Confluence.** In `crawl.py`: CQL `space in (...) and lastmodified >
     cursor`, page body (storage HTML) and attachments, with space/page
     restrictions → `acl_groups`.

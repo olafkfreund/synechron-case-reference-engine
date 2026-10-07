@@ -8,6 +8,7 @@ MAX_ATTEMPTS = 3
 HANDLERS = {
     "extract": lambda p: extract.extract(p["document_id"]),
     "crawl_s3": lambda p: crawl.crawl_s3(p["source_id"]),
+    "crawl_sharepoint": lambda p: crawl.crawl_sharepoint(p["source_id"]),
 }
 
 # a running job this old belongs to a dead worker; first crawls can run for hours, and the

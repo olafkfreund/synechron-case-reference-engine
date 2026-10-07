@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Sources</h1>
+<p>Access groups: the Entra groups whose members can read this source. Every document from it gets these groups.
+SharePoint files whose permissions differ from the site root are skipped.</p>
+<table><tr><th>Name</th><th>Kind</th><th>Config</th><th>Access groups</th><th>Enabled</th><th>Last run</th><th>Counts</th><th></th></tr>
+{% for id, kind, name, config, acl, enabled, last_run, counts in sources %}{% set f = "s" ~ id %}<tr>
+<td>{{ name }}</td><td>{{ kind }}</td><td><code>{{ config | tojson }}</code></td>
+<td><input type="text" form="{{ f }}" name="acl_groups" value="{{ acl | join(', ') }}" aria-label="access groups"></td>
+<td><input type="checkbox" form="{{ f }}" name="enabled" {{ "checked" if enabled }} aria-label="enabled"></td>
+<td>{{ last_run or "never" }}</td>
+<td>{% if counts %}{% for k, v in counts.items() if k not in ("failed_keys", "retry_ids") %}{{ k }}: {{ v }}<br>{% endfor %}{% endif %}</td>
+<td><button form="{{ f }}">Save</button>
+<form method="post" action="/admin/sources/{{ id }}/crawl" style="display:inline"><button>Crawl now</button></form></td></tr>{% endfor %}
+</table>
+{% for id, kind, name, config, acl, enabled, last_run, counts in sources %}<form id="s{{ id }}" method="post" action="/admin/sources/{{ id }}"></form>{% endfor %}
+<h2>Add source</h2>
+<form method="post" action="/admin/sources">
+<p><select name="kind" aria-label="kind">{% for k in kinds %}<option>{{ k }}</option>{% endfor %}</select>
+<input type="text" name="name" aria-label="name" placeholder="name" required></p>
+<p><textarea name="config" rows="2" aria-label="config" placeholder='{"tenant_id": "...", "drive_id": "..."} or {"bucket": "...", "prefix": "..."}' required></textarea></p>
+<p><input type="text" name="acl_groups" aria-label="access groups" placeholder="group ids, comma-separated" required>
+<button>Add</button></p></form>
+{% endblock %}
