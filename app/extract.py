@@ -39,11 +39,12 @@ def check(case: ReferenceCase, text: str) -> None:
 
 def extract(document_id: int) -> None:
     with db.connect() as conn:
-        row = conn.execute("select text from documents where id=%s", (document_id,)).fetchone()
+        row = conn.execute("select d.text, s.data_class from documents d join sources s on s.id=d.source_id where d.id=%s", (document_id,)).fetchone()
         if not row:
             raise LookupError(f"document {document_id} not found")
         text = row[0][:MAX_CHARS]
-        case = complete_json("EXTRACT_MODEL", SYSTEM, f"<document>\n{text}\n</document>", ReferenceCase)
+        case = complete_json("EXTRACT_MODEL", SYSTEM, f"<document>\n{text}\n</document>", ReferenceCase,
+                             data_class=row[1])
         check(case, text)
         notes = []  # always assigned: anything the model sent is overwritten
         if len(row[0]) > MAX_CHARS:

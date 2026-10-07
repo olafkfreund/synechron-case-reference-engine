@@ -91,7 +91,8 @@ def pick(bid_text: str, candidates: list[dict], clients) -> tuple[list[dict], li
         listing = "\n".join(
             f"case_id {c['id']}: {anonymise.apply(' | '.join([*facts(c['case']), c['case'].summary]), clients)[:MAX_CANDIDATE_CHARS]}"
             for c in candidates)
-        reply = complete_json("DRAFT_MODEL", SYSTEM, f"BID:\n{bid_text[:MAX_BID_CHARS]}\n\nCANDIDATES:\n{listing}", Picks)
+        reply = complete_json("DRAFT_MODEL", SYSTEM, f"BID:\n{bid_text[:MAX_BID_CHARS]}\n\nCANDIDATES:\n{listing}", Picks,
+                              data_class="confidential")
         for p in reply.picks:
             c = by_id.get(p.case_id)
             if not c or any(p.case_id == q["id"] for q in picks):

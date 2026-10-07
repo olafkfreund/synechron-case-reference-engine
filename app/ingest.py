@@ -57,11 +57,12 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, acl_groups
             conn.execute("update documents set acl_groups=%s, deleted_at=null where id=%s",
                          (acl_groups, row[0]))
             return "skipped"
+        data_class = conn.execute("select data_class from sources where id=%s", (source_id,)).fetchone()[0]
 
     key = f"originals/{checksum}"
     boto3.client("s3").put_object(Bucket=os.environ["S3_BUCKET"], Key=key, Body=data)
     text = to_markdown(data, title or PurePosixPath(external_id).name)  # title carries the extension; SharePoint/Confluence ids do not
-    triage = complete_json("EXTRACT_MODEL", TRIAGE_SYSTEM, text[:TRIAGE_CHARS], Triage)
+    triage = complete_json("EXTRACT_MODEL", TRIAGE_SYSTEM, text[:TRIAGE_CHARS], Triage, data_class=data_class)
 
     extract = wants_extraction(triage)
     with db.connect() as conn:

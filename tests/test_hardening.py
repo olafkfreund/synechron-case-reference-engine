@@ -186,8 +186,8 @@ def test_document_text_never_reaches_logs_or_stdout(approved, monkeypatch, caplo
         monkeypatch.setenv(k, "x")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
     monkeypatch.setenv("S3_BUCKET", "orig")
-    monkeypatch.setenv("EXTRACT_MODEL", "m")
-    monkeypatch.setenv("DRAFT_MODEL", "m")
+    monkeypatch.setenv("EXTRACT_MODEL", "bedrock/m")
+    monkeypatch.setenv("DRAFT_MODEL", "bedrock/m")
     monkeypatch.setattr(ing, "to_markdown", lambda data, name: data.decode())
 
     def completion(**kw):  # the real llm.complete_json runs; only the network call is replaced
