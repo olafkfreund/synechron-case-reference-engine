@@ -480,6 +480,25 @@ access yet):
     files.
 
     → verify by a CI render test producing non-empty PDFs from docx and pptx.
+    Done (deviations after review and a visual check):
+    - `to_pdf(data, suffix)` (not a path). Each call gets a fresh temp dir and
+      its own LibreOffice profile (the parallel test catches the shared-profile
+      bug), a minimal env (PATH and HOME only: no DB or AWS secrets), and a
+      60 s timeout that kills the process group. The output is read only from
+      the expected file name, and the temp dir is always removed.
+    - The profile is locked down (`BlockUntrustedRefererLinks`,
+      `DisableMacrosExecution`), so a marketing template can't make soffice
+      fetch linked content: it can still reach the VPC and the ECS metadata
+      endpoint. The test fails without the lockdown.
+    - At most 2 conversions run at once (`BoundedSemaphore`, ~235 MB each).
+      A request that can't get a slot within 10 s → `PdfError` → 503. Any
+      `PdfError` returns 503 with no case content and no audit row.
+    - Formats `pdf_docx` and `pdf_pptx` go through the same `protect()` path.
+      PDF metadata is neutral; docx/pptx created and modified dates are set
+      to now (not the template's).
+    - Visual check: the Word PDF has one case per page with no blank first
+      page; the slide PDF matches the step 13 layout. CI covers the render
+      test through the full pytest run against `brand/`.
 
 ### Phase 3: Crawlers
 

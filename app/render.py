@@ -1,4 +1,11 @@
+import os
 import re
+import shutil
+import signal
+import subprocess
+import tempfile
+import threading
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 
@@ -81,6 +88,7 @@ def to_docx(sections: list[dict]) -> bytes:
     props = tpl.docx.core_properties  # never ship the template's own metadata
     props.title, props.author, props.last_modified_by = "Reference cases", "Reference Engine", "Reference Engine"
     props.comments = props.subject = props.keywords = props.category = ""
+    props.created = props.modified = datetime.now(timezone.utc).replace(tzinfo=None)  # not the template's dates
     buf = BytesIO()
     tpl.save(buf)
     return buf.getvalue()
@@ -128,9 +136,64 @@ def to_pptx(sections: list[dict]) -> bytes:
     props = prs.core_properties
     props.title, props.author, props.last_modified_by = "Reference cases", "Reference Engine", "Reference Engine"
     props.comments = props.subject = props.keywords = props.category = ""
+    props.created = props.modified = datetime.now(timezone.utc).replace(tzinfo=None)  # not the template's dates
     buf = BytesIO()
     prs.save(buf)
     return buf.getvalue()
+
+
+SOFFICE = "soffice"
+PDF_TIMEOUT = 60  # seconds
+
+
+class PdfError(RuntimeError):
+    """Conversion failed. Messages never carry case content."""
+
+
+# The template comes from marketing: never let it fetch linked images/remote content (the task can
+# still reach the VPC and the ECS metadata endpoint) or run macros.
+LOCKDOWN = """<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="BlockUntrustedRefererLinks" oor:op="fuse"><value>true</value></prop></item>
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="DisableMacrosExecution" oor:op="fuse"><value>true</value></prop></item>
+</oor:items>
+"""
+# ~235 MB per soffice; the threadpool would otherwise allow ~40 at once
+PDF_SLOTS = threading.BoundedSemaphore(2)
+PDF_WAIT = 10
+
+
+def to_pdf(data: bytes, suffix: str) -> bytes:
+    """Convert docx/pptx bytes with headless LibreOffice. Own temp dir and profile per call:
+    concurrent soffice runs share (and lock) one profile otherwise."""
+    if not PDF_SLOTS.acquire(timeout=PDF_WAIT):
+        raise PdfError("PDF service busy; try again shortly")
+    tmp = tempfile.mkdtemp(prefix="pdf-")
+    try:
+        src = Path(tmp) / f"in{suffix}"
+        src.write_bytes(data)
+        profile = Path(tmp) / "profile"
+        (profile / "user").mkdir(parents=True)
+        (profile / "user" / "registrymodifications.xcu").write_text(LOCKDOWN)
+        # new session so a timeout can kill soffice's child processes too; minimal env: no DB or AWS secrets
+        proc = subprocess.Popen(
+            [SOFFICE, f"-env:UserInstallation={profile.as_uri()}", "--headless", "--norestore",
+             "--convert-to", "pdf", "--outdir", tmp, str(src)],
+            env={"PATH": os.environ.get("PATH", ""), "HOME": tmp}, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True)
+        try:
+            code = proc.wait(timeout=PDF_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+            raise PdfError("PDF conversion timed out") from None
+        out = Path(tmp) / "in.pdf"
+        if code or not out.exists():
+            raise PdfError(f"PDF conversion failed (exit {code})")
+        return out.read_bytes()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        PDF_SLOTS.release()
 
 
 def md(s: str) -> str:
@@ -184,7 +247,10 @@ def to_markdown(sections: list[dict]) -> str:
 OFFICE = "application/vnd.openxmlformats-officedocument."
 OUTPUTS = {"docx": (to_docx, OFFICE + "wordprocessingml.document"),
            "pptx": (to_pptx, OFFICE + "presentationml.presentation"),
-           "md": (lambda s: to_markdown(s).encode(), "text/markdown; charset=utf-8")}
+           "md": (lambda s: to_markdown(s).encode(), "text/markdown; charset=utf-8"),
+           # one format value per source keeps the form a single field
+           "pdf_docx": (lambda s: to_pdf(to_docx(s), ".docx"), "application/pdf"),
+           "pdf_pptx": (lambda s: to_pdf(to_pptx(s), ".pptx"), "application/pdf")}
 
 
 @router.post("/generate")
@@ -216,8 +282,11 @@ def generate(case_ids: list[int] = Form(), format: str = Form(), user: User = De
         except Withheld as e:
             raise HTTPException(409, str(e)) from None
         make, mime = OUTPUTS[format]
-        body = make(sections)  # before the audit row: a broken template must not log a generation
+        try:
+            body = make(sections)  # before the audit row: a broken template must not log a generation
+        except PdfError as e:
+            raise HTTPException(503, str(e)) from None
         conn.execute("insert into generations(user_id, format, case_ids, anonymised, industry_context_ack) "
                      "values (%s,%s,%s,%s,false)", (user.sub, format, ids, anonymised))
     return Response(body, media_type=mime, headers={
-        "Content-Disposition": f'attachment; filename="reference-cases.{format}"', "X-Content-Type-Options": "nosniff"})
+        "Content-Disposition": f'attachment; filename="reference-cases.{format.split('_')[0]}"', "X-Content-Type-Options": "nosniff"})

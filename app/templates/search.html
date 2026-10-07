@@ -15,10 +15,10 @@
 <p>{{ p.tailored }}</p>
 {% if p.outcomes %}<ul>{% for o in p.outcomes %}<li>{{ o }}</li>{% endfor %}</ul>{% endif %}
 {% with ids=[p.id], what="Download this case" %}<form method="post" action="/generate">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}
-<button name="format" value="docx">{{ what }} (Word)</button> <button name="format" value="pptx">{{ what }} (PowerPoint)</button> <button name="format" value="md">{{ what }} (Markdown)</button></form>{% endwith %}
+<button name="format" value="docx">{{ what }} (Word)</button> <button name="format" value="pptx">{{ what }} (PowerPoint)</button> <button name="format" value="pdf_docx">{{ what }} (PDF)</button> <button name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button name="format" value="md">{{ what }} (Markdown)</button></form>{% endwith %}
 {% endfor %}
 {% if top | length > 1 %}{% with ids=top | map(attribute="id") | list, what="Download all" %}<form method="post" action="/generate">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}
-<button name="format" value="docx">{{ what }} (Word)</button> <button name="format" value="pptx">{{ what }} (PowerPoint)</button> <button name="format" value="md">{{ what }} (Markdown)</button></form>{% endwith %}{% endif %}
+<button name="format" value="docx">{{ what }} (Word)</button> <button name="format" value="pptx">{{ what }} (PowerPoint)</button> <button name="format" value="pdf_docx">{{ what }} (PDF)</button> <button name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button name="format" value="md">{{ what }} (Markdown)</button></form>{% endwith %}{% endif %}
 <p><small>Downloads contain the approved case record only, not the suggested text above.</small></p>
 {% if others %}<h2>Other matches</h2><ul>
 {% for o in others %}<li><b>{{ o.title }}</b> ({{ o.label }}): {{ o.summary }}</li>{% endfor %}</ul>{% endif %}

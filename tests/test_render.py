@@ -256,3 +256,120 @@ def test_broken_template_writes_no_audit_row(approved, monkeypatch):
         gen([cid], "pptx")
     with db.connect() as c:
         assert c.execute("select count(*) from generations").fetchone()[0] == before
+
+
+import threading  # noqa: E402
+
+import pypdfium2 as pdfium  # noqa: E402
+
+
+def pdf_text(content):
+    pdf = pdfium.PdfDocument(content)
+    return "\n".join(p.get_textpage().get_text_range() for p in pdf), pdf.get_metadata_dict()
+
+
+@pytest.mark.parametrize("fmt", ["pdf_docx", "pdf_pptx"])
+def test_pdf_from_route_has_label_not_name(approved, reg, fmt):
+    name, cid_client = reg("Zorp", "a UK retailer")
+    c = approved(full().model_copy(update={"challenge": Sourced[str](value=f"Built for {name} in 2024", source_quote="q")}))
+    link(c, cid_client)
+    r = gen([c], fmt)
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
+    assert r.headers["content-disposition"].endswith('reference-cases.pdf"') and r.content.startswith(b"%PDF")
+    text, meta = pdf_text(r.content)
+    assert "Faster onboarding" in text and "a UK retailer" in text and name not in text
+    assert name not in " ".join(meta.values()) and "Secret Org" not in text and "Hidden quote" not in text
+    assert meta.get("Author") == "Reference Engine"
+
+
+def test_pdf_failures_are_clear_and_leak_nothing(monkeypatch):
+    docx = render.to_docx([])
+    monkeypatch.setattr(render, "PDF_TIMEOUT", 0.01)
+    with pytest.raises(render.PdfError, match="timed out"):
+        render.to_pdf(docx, ".docx")
+    monkeypatch.setattr(render, "PDF_TIMEOUT", 60)
+    monkeypatch.setattr(render, "SOFFICE", "false")
+    with pytest.raises(render.PdfError, match=r"failed \(exit 1\)"):
+        render.to_pdf(docx, ".docx")
+    monkeypatch.setattr(render, "SOFFICE", "true")  # exits 0 but writes nothing
+    with pytest.raises(render.PdfError, match="failed"):
+        render.to_pdf(docx, ".docx")
+
+
+def test_pdf_route_reports_503_and_no_audit_row(approved, monkeypatch):
+    cid = approved()
+    monkeypatch.setattr(render, "SOFFICE", "false")
+    r = gen([cid], "pdf_docx")
+    assert r.status_code == 503 and "PDF conversion failed" in r.json()["detail"]
+    with db.connect() as conn:
+        assert conn.execute("select count(*) from generations where %s = any(case_ids)", (cid,)).fetchone()[0] == 0
+
+
+def test_parallel_conversions_do_not_collide():
+    docx = render.to_docx([])
+    results, errors = [], []
+
+    def run():
+        try:
+            results.append(render.to_pdf(docx, ".docx"))
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+    ts = [threading.Thread(target=run) for _ in range(3)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert not errors and len(results) == 3 and all(r.startswith(b"%PDF") for r in results)
+
+
+def test_pdf_conversion_does_not_fetch_linked_content():
+    """A marketing template could link images by URL; soffice must not fetch them."""
+    import http.server
+    import threading as th
+    hits = []
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            hits.append(self.path)
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    th.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_port}/linked.png"
+    d = Document()
+    d.add_paragraph("before")
+    # a linked (not embedded) picture, as Word writes it: external relationship + r:link on the blip
+    rid = d.part.relate_to(url, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", is_external=True)
+    from docx.oxml import parse_xml
+    d.paragraphs[0]._p.append(parse_xml(
+        '<w:r xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:drawing>'
+        '<wp:inline><wp:extent cx="914400" cy="914400"/><wp:docPr id="1" name="linked"/><a:graphic>'
+        '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>'
+        '<pic:nvPicPr><pic:cNvPr id="1" name="linked"/><pic:cNvPicPr/></pic:nvPicPr>'
+        f'<pic:blipFill><a:blip r:link="{rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+        '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>'
+        '</wp:inline></w:drawing></w:r>'))
+    buf = BytesIO()
+    d.save(buf)
+    try:
+        assert render.to_pdf(buf.getvalue(), ".docx").startswith(b"%PDF")
+    finally:
+        srv.shutdown()
+    assert hits == []
+
+
+def test_pdf_busy_when_slots_are_taken(monkeypatch):
+    monkeypatch.setattr(render, "PDF_WAIT", 0.1)
+    held = [render.PDF_SLOTS.acquire() for _ in range(2)]
+    try:
+        with pytest.raises(render.PdfError, match="busy"):
+            render.to_pdf(b"x", ".docx")
+    finally:
+        for _ in held:
+            render.PDF_SLOTS.release()
