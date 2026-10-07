@@ -737,6 +737,56 @@ access yet):
     → verify `terraform plan` is clean, then deploy to staging, then smoke-test
     SSO login, one crawl, and one generation.
     Traps: the web task has no internet egress; the worker egress is HTTPS only.
+    → CHANGED with user approval (2026-10-07): the web task gets HTTPS (443) out
+    via the NAT. The OIDC login calls Entra ID server-side, and Entra has no
+    small stable address range. The web task never parses untrusted documents.
+    Rejected: an allow-list proxy (another service to run, and a single point
+    of failure for login) and AWS Network Firewall (~$290 a month per AZ).
+    Done (deviations after security review; validated only, since there are
+    no AWS credentials):
+    - Validation: `terraform fmt -check`, `init -backend=false` and `validate`
+      all pass. The hashicorp/aws provider is pinned `~> 5.90` and locked.
+      `terraform plan` is still to run in the target account.
+    - Network: 2 AZs, NAT (one by default, or one per AZ), interface
+      endpoints (bedrock-runtime, secretsmanager, logs, ecr.api, ecr.dkr,
+      sts) plus the S3 gateway, and DNS64 off. Security groups:
+      - web: from the ALB only, out to the endpoints, RDS, S3 and 443 (above).
+      - worker: 443 out plus RDS.
+      - crawl (the daily enqueue task): RDS and endpoints only.
+      - RDS: from web, worker and crawl.
+    - Compute and data:
+      - ECS Fargate: web (internal ALB, TLS 1.3 policy, HTTP→HTTPS redirect,
+        `/healthz` health check), worker (8 GB, stopTimeout 120 s), and the
+        crawl task run by EventBridge Scheduler (`python -m app.enqueue_crawls`,
+        which skips sources with a crawl already queued or running).
+      - ECR: immutable tags, scan on push.
+      - RDS PG16: CMK-encrypted, deletion protection, 14-day backups, and a
+        master password managed by RDS.
+      - S3: CMK, versioned, TLS-only, public access blocked.
+      - Five empty Secrets Manager secrets, each injected only into the task
+        that needs it.
+    - Database credentials: RDS rotates the managed secret every 7 days, so
+      the app reads it at runtime (`DB_SECRET_ARN`, task role) and fetches it
+      again after an auth failure. An injected `DB_PASSWORD` would have broken
+      within 7 days. TLS to RDS is `verify-full` against the RDS CA bundle
+      baked into the image.
+    - IAM:
+      - Exec roles per task read only that task's secrets.
+      - Task roles: Bedrock on `bedrock_model_arns`. In EU regions that
+        means cross-region inference profiles: allow both the profile and the
+        foundation-model ARNs (see the example tfvars).
+      - The web role can only PutObject on the upload prefix; the worker gets
+        S3 rw; crawl reads only the DB secret.
+      - The scheduler can pass only the crawl roles.
+    - `alb_allowed_cidrs` is required and refuses 0.0.0.0/0.
+    - DataSync (step 17): per share, an SMB location → S3 `shares/<name>/`,
+      scheduled, with deletions propagated. The agent is activated out of
+      band. The SMB password ends up in Terraform state, so restrict the
+      state bucket.
+    - App additions: an unauthenticated `GET /healthz` (no DB call, no
+      cookie), `db.url()` built from parts, `app/enqueue_crawls.py`.
+    - Open for step 22: a non-superuser DB role for the app (it uses the RDS
+      master user today), alarms and dashboards, ALB access logs.
 22. **Recall set + hardening.** Add `tests/recall.yaml` (50 bid queries →
     expected case IDs) and `scripts/recall.py` to report top-3 hit rate. Add an
     audit view, review-due reminders (email list on the review page), and a log

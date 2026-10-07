@@ -4,3 +4,7 @@ __pycache__/
 .venv/
 # builds install with pip in Docker; add a real (CPU-torch) lock deliberately, not as a side effect of `uv run`
 uv.lock
+infra/.terraform/
+infra/*.tfstate*
+infra/*.tfvars
+!infra/*.tfvars.example

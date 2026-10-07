@@ -8,7 +8,7 @@ from pathlib import PurePosixPath
 import boto3
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import db
@@ -90,6 +90,10 @@ def create_app() -> FastAPI:
         yield
 
     app = FastAPI(lifespan=lifespan)
+
+    @app.get("/healthz", include_in_schema=False)
+    def healthz():  # load balancer check: no session, no database, nothing to leak
+        return PlainTextResponse("ok")
     app.add_middleware(
         SessionMiddleware, secret_key=secret, max_age=SESSION_MAX_AGE, same_site="lax", https_only=https_only)
 

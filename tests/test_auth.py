@@ -194,3 +194,9 @@ def test_cancelled_login_is_401_not_500(env, monkeypatch):
 def test_long_filename_truncated():
     n = main.safe_name("a" * 2000 + ".pdf")
     assert n.endswith(".pdf") and len(n) <= 110
+
+
+def test_healthz_needs_no_login_and_no_database(env, monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)  # would raise if the route touched the database
+    r = client().get("/healthz")
+    assert r.status_code == 200 and r.text == "ok" and "set-cookie" not in r.headers

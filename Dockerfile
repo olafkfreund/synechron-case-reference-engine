@@ -10,6 +10,8 @@ COPY pyproject.toml .
 RUN mkdir app && touch app/__init__.py && pip install -e ".[dev]"
 # Docling models at build time: web has no internet egress at runtime
 RUN HF_HUB_OFFLINE=0 python -c "from pathlib import Path; from docling.utils.model_downloader import download_models; download_models(output_dir=Path('/opt/docling-models'))"
+# RDS CA bundle: the app connects with sslmode=verify-full in AWS
+RUN python -c "import urllib.request; urllib.request.urlretrieve('https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem', '/opt/rds-ca.pem')"
 RUN useradd --create-home app
 COPY --chown=app:app . .
 USER app

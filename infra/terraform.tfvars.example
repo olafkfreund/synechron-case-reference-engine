@@ -1,0 +1,32 @@
+# Copy to <env>.tfvars (ignored by git) and fill in. Required values only; see variables.tf for the rest.
+region            = "eu-west-2"
+image_tag         = "2026-10-07-1"
+app_origin        = "https://references.example.com"
+certificate_arn   = "arn:aws:acm:eu-west-2:111111111111:certificate/..."
+alb_allowed_cidrs = ["10.20.0.0/16"] # VPN / corporate ranges only; keep the VPC's own range out
+
+# Current Claude models in EU regions are reached through cross-region inference profiles
+# ("eu.anthropic...."). Use the PROFILE id in the model aliases, and allow BOTH the profile ARN and the
+# foundation-model ARN in every EU destination region (wildcard region) in bedrock_model_arns.
+extract_model = "bedrock/eu.anthropic.<small-claude-model-id>"
+draft_model   = "bedrock/eu.anthropic.<mid-claude-model-id>"
+bedrock_model_arns = [
+  "arn:aws:bedrock:eu-west-2:<account>:inference-profile/eu.anthropic.<small-claude-model-id>",
+  "arn:aws:bedrock:eu-west-2:<account>:inference-profile/eu.anthropic.<mid-claude-model-id>",
+  "arn:aws:bedrock:*::foundation-model/anthropic.<small-claude-model-id>",
+  "arn:aws:bedrock:*::foundation-model/anthropic.<mid-claude-model-id>",
+]
+
+oidc_metadata_url = "https://login.microsoftonline.com/<tenant>/v2.0/.well-known/openid-configuration"
+oidc_client_id    = "<app registration client id>"
+
+role_user_groups     = "<entra group object id>"
+role_reviewer_groups = "<entra group object id>"
+role_admin_groups    = "<entra group object id>"
+
+# graph_client_id  = "<SharePoint crawler app registration>"
+# confluence_email = "bot@example.com"   # Cloud only; omit for a Data Center token
+# datasync_shares = [{
+#   name = "projects", smb_server = "files.corp.example", path = "/projects", user = "svc-sync",
+#   password_secret_arn = "arn:aws:secretsmanager:...", agent_arn = "arn:aws:datasync:..."
+# }]
