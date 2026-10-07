@@ -85,7 +85,7 @@ spec: spec/2026-10-06-1-reference-engine.md
 | Step 10 | Seed client list with reference permissions | Sales ops |
 | Step 13 | Brand `reference.docx` and `master.pptx` with a "Reference case" layout | Marketing |
 | Step 15 | Graph `Sites.Selected` consent per site with the **fullcontrol** role (read can't see all permissions); list of sites and the Entra groups that may read each | M365 admin |
-| Step 16 | Confluence service account + spaces | Confluence admin |
+| Step 16 | Confluence service account (dedicated, non-admin, never named in a restriction) + spaces and the Entra groups that may read each | Confluence admin |
 | Step 17 | File shares to include, DataSync agent host | Infra |
 | Step 18 | Brave Search API key (ZDR plan) | Procurement |
 | Step 22 | 50 bid queries with expected cases | Bid team |
@@ -554,6 +554,35 @@ access yet):
     restrictions → `acl_groups`.
 
     → verify the same three checks against a test space.
+    Done (deviations after security review):
+    - ACL is source-level and fails closed, like SharePoint. A page is
+      ingested only if neither it nor any ancestor has a read restriction
+      (`byOperation/read` returns direct restrictions only, hence the
+      ancestor walk). On Cloud, ancestors come from v2
+      `/api/v2/pages/{id}/ancestors` (complete, paged, typed), and any
+      non-page ancestor (a folder) fails closed: the API reports no folder
+      restrictions (CONFCLOUD-82920). Data Center (`api_prefix: ""`) uses v1
+      `expand=ancestors`.
+    - Space permissions can't be verified by a non-admin crawler. Admins enter
+      only groups that can read the whole space; the sources page says so.
+    - CQL `type in (page, attachment)`, so a new attachment on an unchanged
+      page is found (its page is crawled once per run). The cursor is the
+      newest `version.when` minus 1 day of slack (CQL uses the caller's
+      timezone). Space keys are validated on save and escaped in CQL.
+    - external_id is `page:{id}` or `att:{page_id}:{att_id}`. Pages are
+      wrapped in `<html><body>`; real Docling converts storage HTML,
+      including tables, lists and macro text.
+    - Every crawl re-checks all live documents. It withdraws any that are
+      gone, not current, restricted (itself, an ancestor or a folder), or
+      unverifiable, and any attachment no longer on the same page. Failures
+      withdraw and are retried by page id.
+    - Auth: `CONFLUENCE_EMAIL` + `CONFLUENCE_TOKEN` (basic, Cloud), or the
+      token alone (bearer, Data Center). Errors carry the status only. httpx
+      drops Authorization on the cross-host media redirect (verified).
+    - `ingest()` now passes the title (with its extension) to Docling.
+      SharePoint and Confluence ids have no extension, so real SharePoint
+      ingest would have failed.
+    - Not yet run against a real Confluence.
 17. **File shares.** Terraform the DataSync task (share → `s3://.../shares/<name>/`)
     on a schedule. The S3 crawler from step 5 reads it, and ACL groups come from
     the source config.

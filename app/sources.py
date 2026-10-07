@@ -1,4 +1,5 @@
 import json
+import re
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -11,8 +12,10 @@ from app.review import page
 
 router = APIRouter()
 # which crawler runs a source; upload sources are S3 prefixes too
-JOB = {"s3": "crawl_s3", "upload": "crawl_s3", "sharepoint": "crawl_sharepoint"}
-REQUIRED = {"s3": ("bucket",), "upload": ("bucket",), "sharepoint": ("tenant_id", "drive_id")}
+JOB = {"s3": "crawl_s3", "upload": "crawl_s3", "sharepoint": "crawl_sharepoint",
+       "confluence": "crawl_confluence"}
+REQUIRED = {"s3": ("bucket",), "upload": ("bucket",), "sharepoint": ("tenant_id", "drive_id"),
+            "confluence": ("base_url", "spaces")}
 
 
 def groups(raw: str) -> list[str]:
@@ -38,6 +41,9 @@ def create(kind: str = Form(), name: str = Form(), config: str = Form(), acl_gro
         raise HTTPException(400, f"config for {kind} needs: {', '.join(REQUIRED.get(kind, ()))}")
     if not groups(acl_groups):  # an empty ACL would make every document invisible, or worse, mislead
         raise HTTPException(400, "at least one access group is required")
+    if kind == "confluence" and (not isinstance(cfg["spaces"], list) or not all(
+            isinstance(k, str) and re.fullmatch(r"~?[A-Za-z0-9_-]+", k) for k in cfg["spaces"])):
+        raise HTTPException(400, "spaces must be a list of Confluence space keys")
     try:
         with db.connect() as conn:
             conn.execute("insert into sources(kind, name, config, acl_groups) values (%s,%s,%s,%s)",

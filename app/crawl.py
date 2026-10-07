@@ -2,6 +2,7 @@ import os
 import time
 from datetime import datetime, timedelta
 from pathlib import PurePosixPath
+from urllib.parse import urlencode
 
 import boto3
 import httpx
@@ -272,4 +273,206 @@ def crawl_sharepoint(source_id: int) -> dict:
                      (acl, source_id, acl))  # admin ACL changes apply to everything already ingested
         lock.execute("update sources set cursor=%s, last_run_at=now(), last_counts=%s where id=%s",
                      (delta_link, Jsonb({**counts, "failed_keys": failed, "retry_ids": retry}), source_id))
+    return counts
+
+
+class ConfluenceError(RuntimeError):
+    """Never carries Confluence's error text: it contains space and page names."""
+
+    def __init__(self, what, status):
+        super().__init__(f"{what} ({status})")
+        self.status = status
+
+
+class Confluence:
+    """Confluence REST client: basic auth (Cloud: email + API token) or bearer (Data Center PAT)."""
+
+    def __init__(self, base_url, prefix="/wiki"):
+        self.root = base_url.rstrip("/")
+        self.base = self.root + prefix  # Cloud serves everything under /wiki
+        self.cloud = prefix == "/wiki"  # Data Center has no v2 API and no folders
+        self.api = self.base + "/rest/api"
+        email, token = os.environ.get("CONFLUENCE_EMAIL"), os.environ.get("CONFLUENCE_TOKEN")
+        if not token:
+            raise RuntimeError("CONFLUENCE_TOKEN is required (with CONFLUENCE_EMAIL for Cloud)")
+        self.auth = httpx.BasicAuth(email, token) if email else None
+        self.headers = {} if email else {"Authorization": f"Bearer {token}"}
+        self.http = httpx.Client(transport=TRANSPORT, timeout=60, follow_redirects=True)
+
+    def get(self, url):
+        for attempt in range(RETRIES + 1):
+            r = self.http.get(url, headers=self.headers, auth=self.auth)
+            if r.status_code in (429, 503):
+                if attempt == RETRIES:
+                    raise ConfluenceError("Confluence throttled", r.status_code)
+                retry = r.headers.get("Retry-After", "")
+                time.sleep(min(int(retry) if retry.isdigit() else 5, MAX_RETRY_AFTER))
+                continue
+            if r.status_code >= 400:
+                raise ConfluenceError("Confluence request failed", r.status_code)
+            return r
+
+    def paged(self, url):
+        """Yield (results, links_base) per page, following _links.next."""
+        while url:
+            body = self.get(url).json()
+            links = body.get("_links", {})
+            yield body.get("results", []), links.get("base") or self.base
+            url = (links.get("base") or self.base) + links["next"] if links.get("next") else None
+
+
+def crawl_confluence(source_id: int) -> dict:
+    """Crawl Confluence spaces by CQL lastmodified; cursor = newest version.when seen.
+
+    ACL is source-level and fails closed, like SharePoint: a page is ingested only if neither it nor
+    any ancestor has a read restriction (view restrictions inherit down the tree); its attachments
+    follow the page. A restricted page is skipped and withdrawn if ingested before. CQL never reports
+    deletions or restriction changes, so every crawl re-checks every live document and withdraws any
+    that is gone, trashed, restricted or cannot be verified. A failure withdraws the item and is retried
+    by page id on the next run. external_id: `page:{id}` and `att:{page_id}:{attachment_id}`: the
+    parent page id lives in the key (no schema change), which is how the re-check finds it.
+    """
+    with db.connect(autocommit=True) as lock:
+        if not lock.execute("select pg_try_advisory_lock(2, %s)", (source_id,)).fetchone()[0]:
+            return {"status": "running"}
+        config, acl, cursor, last = lock.execute(
+            "select config, acl_groups, cursor, last_counts from sources where id=%s", (source_id,)).fetchone()
+        spaces = config["spaces"]
+        if not isinstance(spaces, list) or not spaces:
+            raise ValueError("config.spaces must be a non-empty list of space keys")
+        c = Confluence(config["base_url"], config.get("api_prefix", "/wiki"))
+        cap = int(os.environ.get("CONFLUENCE_MAX_BYTES", 50 * 1024 * 1024))
+        exts = {"docx", "pptx", "pdf"}
+        counts = {"new": 0, "updated": 0, "skipped": 0, "failed": 0, "skipped_restricted": 0, "skipped_type": 0,
+                  "skipped_too_large": 0, "withdrawn_on_recheck": 0}
+        failed, retry, done, cache, visited = [], [], set(), {}, set()
+
+        def restricted(cid):  # one lookup per content id per crawl
+            if cid not in cache:
+                r = c.get(f"{c.api}/content/{cid}/restriction/byOperation/read").json()["restrictions"]
+                cache[cid] = any(r[k].get("results") or r[k].get("size") for k in ("user", "group"))
+            return cache[cid]
+
+        def allowed(pid, page):
+            """Neither the page nor any ancestor restricts reading. Cloud: v2 ancestors (complete, paged,
+            typed); a non-page ancestor (a folder) fails closed, because the API reports no restrictions
+            for folders (CONFCLOUD-82920). Data Center: v1 expand=ancestors (pages only)."""
+            if c.cloud:
+                ids, url = [], f"{c.base}/api/v2/pages/{pid}/ancestors?limit=250"
+                while url:
+                    body = c.get(url).json()
+                    for a in body.get("results", []):
+                        if a.get("type") != "page":
+                            return False
+                        ids.append(a["id"])
+                    nxt = body.get("_links", {}).get("next")
+                    url = c.root + nxt if nxt else None
+            else:
+                ids = [a["id"] for a in page.get("ancestors", [])]
+            return not any(restricted(i) for i in [*ids, pid])
+
+        def withdraw(ext, prefix=False):
+            return lock.execute(
+                "update documents set deleted_at=coalesce(deleted_at, now()) where source_id=%s and deleted_at is null "
+                f"and {'starts_with(external_id, %s)' if prefix else 'external_id = %s'}", (source_id, ext)).rowcount
+
+        def do_page(page):
+            pid = page["id"]
+            visited.add(pid)  # once per run, whatever the outcome (its attachments may be hits too)
+            try:
+                if not allowed(pid, page):
+                    counts["skipped_restricted"] += 1
+                    withdraw(f"page:{pid}")
+                    withdraw(f"att:{pid}:", prefix=True)
+                    return
+                html = f"<html><body>{page['body']['storage']['value']}</body></html>".encode()
+                counts[ingest(source_id, f"page:{pid}", f"{page['title']}.html", html, acl)] += 1
+                done.add(f"page:{pid}")
+                for results, base in c.paged(f"{c.api}/content/{pid}/child/attachment?" + urlencode({"expand": "version", "limit": 50})):
+                    for att in results:
+                        ext = f"att:{pid}:{att['id']}"
+                        title = att.get("title", "")
+                        if PurePosixPath(title).suffix.lower().lstrip(".") not in exts:
+                            counts["skipped_type"] += 1
+                            continue
+                        if att.get("extensions", {}).get("fileSize", 0) > cap:
+                            counts["skipped_too_large"] += 1
+                            continue
+                        try:
+                            data = c.get(base + att["_links"]["download"]).content
+                            if len(data) > cap:
+                                counts["skipped_too_large"] += 1
+                                continue
+                            counts[ingest(source_id, ext, title, data, acl)] += 1
+                            done.add(ext)
+                        except Exception as e:  # noqa: BLE001
+                            fail(pid, ext, e, page_ok=True)
+            except Exception as e:  # noqa: BLE001 - one bad page must not stop the crawl
+                fail(pid, f"page:{pid}", e)
+
+        def fail(pid, ext, e, page_ok=False):
+            withdraw(ext)  # fail closed: an unverified item must not stay searchable
+            if not page_ok:
+                withdraw(f"att:{pid}:", prefix=True)
+            counts["failed"] += 1
+            if pid not in retry:
+                retry.append(pid)
+            if len(failed) < MAX_FAILED_KEYS:
+                failed.append({"key": ext, "error": type(e).__name__})  # id and type only: messages hold titles
+
+        keys = ", ".join('"' + k.replace("\\", "\\\\").replace('"', '\\"') + '"' for k in spaces)
+        # attachments too: a new attachment does not change its page's lastmodified
+        cql = f"space in ({keys}) and type in (page, attachment)"
+        if cursor:  # slack: CQL compares in the caller's timezone; repeats are a cheap checksum skip
+            cql += f' and lastmodified > "{datetime.fromisoformat(cursor) - CURSOR_SLACK:%Y/%m/%d %H:%M}"'
+        newest = datetime.fromisoformat(cursor) if cursor else None
+        search = f"{c.api}/content/search?" + urlencode(
+            {"cql": cql, "expand": "body.storage,version,ancestors,container", "limit": 25})
+        for results, _ in c.paged(search):  # an error here raises: the cursor stays
+            for hit in results:
+                if hit.get("type") == "attachment":  # crawl its page (and so all its attachments) once
+                    pid = hit.get("container", {}).get("id")
+                    if pid and pid not in visited:
+                        try:
+                            do_page(c.get(f"{c.api}/content/{pid}?expand=body.storage,version,ancestors").json())
+                        except ConfluenceError as e:
+                            fail(pid, f"page:{pid}", e)
+                else:
+                    do_page(hit)
+                when = datetime.fromisoformat(hit["version"]["when"])
+                newest = max(newest or when, when)
+
+        for pid in (last or {}).get("retry_ids", []):  # last run's failures: CQL will not offer them again
+            if f"page:{pid}" in done:
+                continue
+            try:
+                do_page(c.get(f"{c.api}/content/{pid}?expand=body.storage,version,ancestors").json())
+            except ConfluenceError as e:
+                if e.status == 404:
+                    withdraw(f"page:{pid}")
+                    withdraw(f"att:{pid}:", prefix=True)
+                else:
+                    retry.append(pid)
+
+        live = [r[0] for r in lock.execute(
+            "select external_id from documents where source_id=%s and deleted_at is null", (source_id,))]
+        for ext in live:
+            if ext in done:
+                continue
+            _, pid, *att = ext.split(":")
+            try:
+                page = c.get(f"{c.api}/content/{pid}?expand=ancestors").json()
+                ok = page.get("status") == "current" and allowed(pid, page)
+                if ok and att:  # still current AND still on the same (allowed) page: it may have been moved
+                    a = c.get(f"{c.api}/content/{att[0]}?expand=container").json()
+                    ok = a.get("status") == "current" and str(a.get("container", {}).get("id")) == pid
+            except Exception:  # noqa: BLE001 - 404, throttled, unreadable: fail closed
+                ok = False
+            if not ok:
+                counts["withdrawn_on_recheck"] += withdraw(ext)
+
+        lock.execute("update documents set acl_groups=%s where source_id=%s and acl_groups is distinct from %s",
+                     (acl, source_id, acl))
+        lock.execute("update sources set cursor=%s, last_run_at=now(), last_counts=%s where id=%s",
+                     (newest.isoformat() if newest else None, Jsonb({**counts, "failed_keys": failed, "retry_ids": retry}), source_id))
     return counts

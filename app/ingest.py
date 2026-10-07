@@ -59,7 +59,7 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, acl_groups
 
     key = f"originals/{checksum}"
     boto3.client("s3").put_object(Bucket=os.environ["S3_BUCKET"], Key=key, Body=data)
-    text = to_markdown(data, PurePosixPath(external_id).name or title)
+    text = to_markdown(data, title or PurePosixPath(external_id).name)  # title carries the extension; SharePoint/Confluence ids do not
     triage = complete_json("EXTRACT_MODEL", TRIAGE_SYSTEM, text[:TRIAGE_CHARS], Triage)
 
     extract = wants_extraction(triage)

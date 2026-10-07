@@ -2,7 +2,9 @@
 {% block body %}
 <h1>Sources</h1>
 <p>Access groups: the Entra groups whose members can read this source. Every document from it gets these groups.
-SharePoint files whose permissions differ from the site root are skipped.</p>
+SharePoint files whose permissions differ from the site root, and Confluence pages with a read restriction on themselves or an ancestor (or under a folder), are skipped.
+The crawler cannot see who may read a whole site or space: enter only groups whose members can read all of it.
+The Confluence crawler account must be a dedicated non-admin account that no restriction names.</p>
 <table><tr><th>Name</th><th>Kind</th><th>Config</th><th>Access groups</th><th>Enabled</th><th>Last run</th><th>Counts</th><th></th></tr>
 {% for id, kind, name, config, acl, enabled, last_run, counts in sources %}{% set f = "s" ~ id %}<tr>
 <td>{{ name }}</td><td>{{ kind }}</td><td><code>{{ config | tojson }}</code></td>
@@ -18,7 +20,7 @@ SharePoint files whose permissions differ from the site root are skipped.</p>
 <form method="post" action="/admin/sources">
 <p><select name="kind" aria-label="kind">{% for k in kinds %}<option>{{ k }}</option>{% endfor %}</select>
 <input type="text" name="name" aria-label="name" placeholder="name" required></p>
-<p><textarea name="config" rows="2" aria-label="config" placeholder='{"tenant_id": "...", "drive_id": "..."} or {"bucket": "...", "prefix": "..."}' required></textarea></p>
+<p><textarea name="config" rows="2" aria-label="config" placeholder='{"tenant_id": "...", "drive_id": "..."} or {"bucket": "...", "prefix": "..."} or {"base_url": "https://x.atlassian.net", "spaces": ["KEY"]}' required></textarea></p>
 <p><input type="text" name="acl_groups" aria-label="access groups" placeholder="group ids, comma-separated" required>
 <button>Add</button></p></form>
 {% endblock %}
