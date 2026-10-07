@@ -35,6 +35,48 @@ class Withheld(Exception):
     pass
 
 
+COMPANY = "Synechron"
+INDUSTRY_HEADING = "Industry context (public sources)"
+INDUSTRY_DISCLAIMER = f"These are public statements by third parties, not {COMPANY} delivery evidence."
+# fixed wording per claim type: the AI's own statement is never presented as fact
+PHRASES = {"out_of_the_box": "Supported out of the box", "configuration": "Available through configuration",
+           "industry_practice": "Common industry practice", "vendor_claim": "Vendor statement"}
+SLIDE_ITEMS = 5
+
+
+def industry_section(claims: list[dict], clients) -> dict | None:
+    """Verbatim quotes with their source, from research claims only. apply() then blocked() PER CLAIM:
+    one that still names a protected client is dropped (and counted), not the whole document."""
+    items, omitted = [], 0
+    for c in claims:
+        if c.get("type") not in PHRASES:
+            continue
+        # only the quote is anonymised: rewriting a publisher or URL would forge the citation
+        safe = {k: CTRL.sub("", str(c.get(k, ""))) for k in ("quote", "publisher", "url", "retrieved_at")}
+        safe["quote"], safe["date"] = anonymise.apply(safe["quote"], clients), safe.pop("retrieved_at")[:10]
+        if anonymise.blocked("\n".join(safe.values()), clients):  # incl. a client's own site as the source
+            omitted += 1
+            continue
+        phrase = PHRASES[c["type"]]
+        items.append({**safe, "phrase": phrase,
+                      "text": f"{phrase}: \u201c{safe['quote']}\u201d \u2014 {safe['publisher']}, {safe['url']}, retrieved {safe['date']}"})
+    if not items and not omitted:
+        return None
+    note = (f"{omitted} public statement{'s' if omitted != 1 else ''} omitted: "
+            f"{'they' if omitted != 1 else 'it'} named a protected client") if omitted else ""
+    return {"heading": INDUSTRY_HEADING, "disclaimer": INDUSTRY_DISCLAIMER, "statements": items, "note": note}
+
+
+SLIDE_QUOTE = 140
+
+
+def slide_statements(ind: dict) -> list[str]:
+    """Every slide line keeps its verbatim quote next to the phrase: the phrase comes from an AI-chosen
+    type, the quote is what lets a reader check it."""
+    return [f"{i['phrase']}: \u201c{excerpt(i['quote'], SLIDE_QUOTE)}\u201d \u2014 {i['publisher']}, {i['date']}"
+            for i in ind["statements"]][:SLIDE_ITEMS]
+
+
 def section(case: ReferenceCase, client: str) -> dict:
     """Only the approved record: no quotes, organisations, needs_attention or AI-tailored text."""
     v = lambda s: None if s.unsourced else s.value  # noqa: E731
@@ -82,9 +124,9 @@ def protect(sections: list[dict], clients) -> list[dict]:
     return out
 
 
-def to_docx(sections: list[dict]) -> bytes:
+def to_docx(sections: list[dict], industry: dict | None = None) -> bytes:
     tpl = DocxTemplate(TEMPLATE)
-    tpl.render({"cases": sections}, autoescape=True)  # autoescape: & and < must not break the XML
+    tpl.render({"cases": sections, "industry": industry}, autoescape=True)  # autoescape: & and < must not break the XML
     props = tpl.docx.core_properties  # never ship the template's own metadata
     props.title, props.author, props.last_modified_by = "Reference cases", "Reference Engine", "Reference Engine"
     props.comments = props.subject = props.keywords = props.category = ""
@@ -98,41 +140,67 @@ def excerpt(s: str, limit: int = SLIDE_TEXT) -> str:
     return s if len(s) <= limit else s[:limit].rsplit(" ", 1)[0].rstrip(",;:.") + " …"
 
 
-def to_pptx(sections: list[dict]) -> bytes:
+INDUSTRY_LAYOUT = "Industry context"
+INDUSTRY_PLACEHOLDERS = ("Title", "Summary", "Statements")
+
+
+def _layout(prs, name: str, required) -> tuple | None:
+    """(layout, idx -> placeholder name) after validation; None when the master has no such layout.
+    Slide placeholders get generic names when cloned, so the layout's names are the source of truth:
+    its placeholder idx is only the join key, never a position we rely on."""
+    layout = next((l for l in prs.slide_layouts if l.name == name), None)
+    if layout is None:
+        return None
+    names = {ph.placeholder_format.idx: ph.name for ph in layout.placeholders}
+    if len(names) != len(list(layout.placeholders)):
+        raise ValueError(f"layout {name!r} has duplicate placeholder idx values")
+    if missing := [n for n in required if n not in names.values()]:
+        raise ValueError(f"layout {name!r} is missing placeholders: {', '.join(missing)}")
+    return layout, names
+
+
+def _fill(prs, layout, names, content: dict, required) -> None:
+    slide = prs.slides.add_slide(layout)
+    filled = set()
+    for ph in list(slide.placeholders):
+        name = names.get(ph.placeholder_format.idx)
+        if name not in content:  # logo/subtitle/footer etc.: removed, so no "Click to add text"
+            ph._element.getparent().remove(ph._element)
+            continue
+        first, *rest = content[name] or [""]  # no content: empty text
+        ph.text_frame.text = first
+        for item in rest:
+            ph.text_frame.add_paragraph().text = item
+        filled.add(name)
+    if filled != set(required):
+        raise ValueError(f"layout {layout.name!r} did not yield placeholders: {', '.join(sorted(set(required) - filled))}")
+
+
+def to_pptx(sections: list[dict], industry: dict | None = None) -> bytes:
     prs = Presentation(MASTER)
     if len(prs.slides):  # a master's sample slides (and their text) must never ship
         raise ValueError(f"{MASTER.name} must contain no slides, only layouts")
-    layout = next((l for l in prs.slide_layouts if l.name == LAYOUT), None)
-    if layout is None:
+    case_layout = _layout(prs, LAYOUT, PLACEHOLDERS)
+    if case_layout is None:
         raise ValueError(f"{MASTER.name} has no slide layout named {LAYOUT!r}")
-    # slide placeholders get generic names when cloned, so the layout's names are the source of
-    # truth: its placeholder idx is only the join key, never a position we rely on
-    names = {ph.placeholder_format.idx: ph.name for ph in layout.placeholders}
-    if len(names) != len(list(layout.placeholders)):
-        raise ValueError(f"layout {LAYOUT!r} has duplicate placeholder idx values")
-    if missing := [n for n in PLACEHOLDERS if n not in names.values()]:
-        raise ValueError(f"layout {LAYOUT!r} is missing placeholders: {', '.join(missing)}")
     for c in sections:
         block = lambda h: next((b["text"] for b in c["blocks"] if b["heading"] == h), "")  # noqa: E731
         bullets = lambda h: next((l["bullets"] for l in c["lists"] if l["heading"] == h), [])  # noqa: E731
-        content = {"Title": [c["title"]], "Client": [c["client"]], "Summary": [c["summary"]],
-                   "Challenge": [excerpt(block("Challenge"))], "Solution": [excerpt(block("Solution"))],
-                   "Outcomes": bullets("Outcomes")[:SLIDE_OUTCOMES],
-                   "Technology": [", ".join(bullets("Technology"))]}
-        slide = prs.slides.add_slide(layout)
-        filled = set()
-        for ph in list(slide.placeholders):
-            name = names.get(ph.placeholder_format.idx)
-            if name not in content:  # logo/subtitle/footer etc.: removed, so no "Click to add text"
-                ph._element.getparent().remove(ph._element)
-                continue
-            first, *rest = content[name] or [""]  # no content: empty text
-            ph.text_frame.text = first
-            for item in rest:
-                ph.text_frame.add_paragraph().text = item
-            filled.add(name)
-        if filled != set(PLACEHOLDERS):
-            raise ValueError(f"layout {LAYOUT!r} did not yield placeholders: {', '.join(sorted(set(PLACEHOLDERS) - filled))}")
+        _fill(prs, *case_layout, {
+            "Title": [c["title"]], "Client": [c["client"]], "Summary": [c["summary"]],
+            "Challenge": [excerpt(block("Challenge"))], "Solution": [excerpt(block("Solution"))],
+            "Outcomes": bullets("Outcomes")[:SLIDE_OUTCOMES], "Technology": [", ".join(bullets("Technology"))]},
+            PLACEHOLDERS)
+    if industry:
+        if own := _layout(prs, INDUSTRY_LAYOUT, INDUSTRY_PLACEHOLDERS):
+            _fill(prs, *own, {"Title": [industry["heading"]], "Summary": [industry["disclaimer"]],
+                              "Statements": slide_statements(industry)}, INDUSTRY_PLACEHOLDERS)
+        else:  # fallback: the case layout, its case-only boxes left empty
+            publishers = list(dict.fromkeys(i["publisher"] for i in industry["statements"]))
+            _fill(prs, *case_layout, {
+                "Title": [industry["heading"]], "Client": [""], "Summary": [industry["disclaimer"]],
+                "Challenge": [""], "Solution": [""], "Outcomes": slide_statements(industry),
+                "Technology": ["Sources: " + ", ".join(publishers)] if publishers else [""]}, PLACEHOLDERS)
     props = prs.core_properties
     props.title, props.author, props.last_modified_by = "Reference cases", "Reference Engine", "Reference Engine"
     props.comments = props.subject = props.keywords = props.category = ""
@@ -237,30 +305,61 @@ MD = _env.from_string("""\
 
 {% endif %}
 {% endfor %}
+{% if industry %}
+{% if cases %}
+---
+
+{% endif %}
+# {{ industry.heading | md }}
+
+*{{ industry.disclaimer | md }}*
+
+{% for i in industry["statements"] %}
+- {{ i.phrase | md }}: \u201c{{ i.quote | md }}\u201d \u2014 {{ i.publisher | md }}, {{ i.url | md }}, retrieved {{ i.date | md }}
+{% endfor %}
+{% if industry.note %}
+
+{{ industry.note | md }}
+{% endif %}
+{% endif %}
 """)
 
 
-def to_markdown(sections: list[dict]) -> str:
-    return MD.render(cases=sections)
+def to_markdown(sections: list[dict], industry: dict | None = None) -> str:
+    return MD.render(cases=sections, industry=industry)
 
 
 OFFICE = "application/vnd.openxmlformats-officedocument."
 OUTPUTS = {"docx": (to_docx, OFFICE + "wordprocessingml.document"),
            "pptx": (to_pptx, OFFICE + "presentationml.presentation"),
-           "md": (lambda s: to_markdown(s).encode(), "text/markdown; charset=utf-8"),
+           "md": (lambda s, i: to_markdown(s, i).encode(), "text/markdown; charset=utf-8"),
            # one format value per source keeps the form a single field
-           "pdf_docx": (lambda s: to_pdf(to_docx(s), ".docx"), "application/pdf"),
-           "pdf_pptx": (lambda s: to_pdf(to_pptx(s), ".pptx"), "application/pdf")}
+           "pdf_docx": (lambda s, i: to_pdf(to_docx(s, i), ".docx"), "application/pdf"),
+           "pdf_pptx": (lambda s, i: to_pdf(to_pptx(s, i), ".pptx"), "application/pdf")}
 
 
 @router.post("/generate")
-def generate(case_ids: list[int] = Form(), format: str = Form(), user: User = Depends(require("user"))):
+def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: int | None = Form(None),
+             industry_context_ack: bool = Form(False), user: User = Depends(require("user"))):
     ids = list(dict.fromkeys(case_ids))
-    if not 1 <= len(ids) <= 3:
-        raise HTTPException(400, "choose 1 to 3 cases")
+    if len(ids) > 3:
+        raise HTTPException(400, "choose up to 3 cases")
+    if not ids:  # industry context alone is never presented as our delivery without an explicit acknowledgement
+        if research_id is None:
+            raise HTTPException(400, "choose 1 to 3 cases, or a research result for an industry-context-only output")
+        if not industry_context_ack:
+            raise HTTPException(400, "an output with no case needs the acknowledgement that it contains public "
+                                     "third-party statements only, not delivery evidence")
     if format not in OUTPUTS:
         raise HTTPException(400, f"format must be one of {', '.join(OUTPUTS)}")
     with db.connect() as conn:
+        claims = []
+        if research_id is not None:  # only your own, finished research
+            row = conn.execute("select results from research where id=%s and created_by=%s and status='done'",
+                               (research_id, user.sub)).fetchone()
+            if not row:
+                raise HTTPException(404, "no such research")
+            claims = row[0].get("claims", [])
         # same restrictions as search: approved, in date, and the user can open the source document
         rows = conn.execute(
             "select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null "
@@ -281,12 +380,16 @@ def generate(case_ids: list[int] = Form(), format: str = Form(), user: User = De
             sections = protect(sections, clients)
         except Withheld as e:
             raise HTTPException(409, str(e)) from None
+        industry = industry_section(claims, clients) if research_id is not None else None
+        if not ids and not (industry and industry["statements"]):
+            raise HTTPException(400, "the research has no usable public statements")
         make, mime = OUTPUTS[format]
         try:
-            body = make(sections)  # before the audit row: a broken template must not log a generation
+            body = make(sections, industry)  # before the audit row: a broken template must not log a generation
         except PdfError as e:
             raise HTTPException(503, str(e)) from None
-        conn.execute("insert into generations(user_id, format, case_ids, anonymised, industry_context_ack) "
-                     "values (%s,%s,%s,%s,false)", (user.sub, format, ids, anonymised))
+        conn.execute("insert into generations(user_id, format, case_ids, anonymised, industry_context_ack, research_id) "
+                     "values (%s,%s,%s,%s,%s,%s)", (user.sub, format, ids, anonymised, industry_context_ack and not ids,
+                                                    research_id if industry else None))
     return Response(body, media_type=mime, headers={
         "Content-Disposition": f'attachment; filename="reference-cases.{format.split('_')[0]}"', "X-Content-Type-Options": "nosniff"})

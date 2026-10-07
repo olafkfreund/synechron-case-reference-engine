@@ -21,6 +21,14 @@
 {% for publisher, items in groups.items() %}<tr><td>{{ publisher }}</td><td>{% for c in items %}<q>{{ c.quote }}</q> <small>({{ c.type | replace("_", " ") }})</small><br>{% endfor %}</td></tr>{% endfor %}
 </table>
 {% endif %}
+{% if claims %}
+<h2>Download</h2>
+<form method="post" action="/generate"><input type="hidden" name="research_id" value="{{ research_id }}">
+{% if case_id %}<p><label><input type="checkbox" name="case_ids" value="{{ case_id }}" checked> Include the reference case this research started from</label></p>{% endif %}
+<p><label><input type="checkbox" name="industry_context_ack"> I understand the industry context section contains public statements by third parties, not our delivery evidence (required when no case is included).</label></p>
+<p><select name="format" aria-label="format"><option value="docx">Word</option><option value="pptx">PowerPoint</option><option value="pdf_docx">PDF</option><option value="pdf_pptx">PDF slides</option><option value="md">Markdown</option></select>
+<button>Download</button></p></form>
+{% endif %}
 <h2>Sources</h2>
 {% for p in pages %}<p><b>{{ p.publisher }}</b> &middot; <a href="{{ p.url }}" rel="noopener noreferrer">{{ p.url }}</a>
 &middot; retrieved {{ p.retrieved_at[:10] }}</p>{% endfor %}

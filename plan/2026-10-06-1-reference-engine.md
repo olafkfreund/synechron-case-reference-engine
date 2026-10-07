@@ -676,6 +676,39 @@ access yet):
 
     → verify by `pytest` (no-case output refused without the acknowledgement;
     research text never appears in `cases`).
+    Done (deviations after review and a visual check):
+    - `/generate` takes 0–3 `case_ids`, plus `research_id` (own and done,
+      otherwise 404) and `industry_context_ack`.
+      - With 0 cases, research and the acknowledgement are required (400
+        otherwise), checked on the server.
+      - The ack is logged true only for 0-case outputs.
+      - `generations.research_id` (an additive column) records which
+        research fed the output.
+    - The section "Industry context (public sources)" opens with the
+      disclaimer "These are public statements by third parties, not
+      Synechron delivery evidence."
+      - Each item is a fixed phrase from the approved wording ("Supported out
+        of the box", "Available through configuration", "Common industry
+        practice", "Vendor statement"), then the VERBATIM quote, then
+        publisher, URL and date. Links are inline rather than footnoted.
+      - The phrase comes from an AI-chosen type, so it never appears without
+        its quote in any format, slides included: a reader can always check
+        it.
+      - The AI's own statement and page markdown never reach an output.
+      - We kept the approved type phrases instead of the reviewer's neutral
+        "X states:". The lead flagged this to the user.
+    - Anonymisation applies to the quote only. Publisher and URL are never
+      rewritten, since that would forge the citation. A claim that still
+      matches `blocked()` (including a protected client's own site as the
+      source) is dropped and counted in a note. The case sections keep the
+      whole-output fail-closed `protect()`.
+    - pptx: the generated master has an optional "Industry context" layout
+      (Title, Summary, Statements). Without it, the slide falls back to the
+      case layout with the case-only boxes left empty. Lines read
+      `phrase: "quote (≤140 chars)" — publisher, date`.
+    - Word, Markdown and PDF get the full section after the cases. The
+      research page offers a download form with an "include case" checkbox
+      and the acknowledgement.
 
 ### Phase 5: Deploy and harden
 

@@ -1,7 +1,8 @@
 """Write the placeholder PowerPoint master. Marketing's real brand/master.pptx replaces it and needs:
 a layout named "Reference case" whose placeholders are named exactly Title, Client, Summary,
 Challenge, Solution, Outcomes, Technology (unique idx values; other placeholders are removed from
-generated slides), and no slides of its own. Usage: make_reference_master.py <out.pptx>"""
+generated slides), and no slides of its own. Optionally a layout "Industry context" with Title,
+Summary, Statements; without it the industry slide falls back to "Reference case". Usage: make_reference_master.py <out.pptx>"""
 import sys
 
 from pptx import Presentation
@@ -38,24 +39,33 @@ def shape(id_, name, x, y, w, h, nv, lvl1, body):
         f'<p:txBody><a:bodyPr wrap="square"><a:normAutofit/></a:bodyPr><a:lstStyle>{lvl1}</a:lstStyle>{body}</p:txBody></p:sp>')
 
 
+INDUSTRY = [("Title", .5, .3, 9, .8, 24, True, False, None, False),
+            ("Summary", .5, 1.1, 9, .5, 12, False, True, GREY, False),
+            ("Statements", .5, 1.8, 9, 5.0, 11, False, False, None, True)]
+
+
+def build(layout, name, placeholders, headings):
+    layout.name = name
+    tree = layout.shapes._spTree
+    for ph in list(layout.placeholders):  # drop title/date/footer/number: only ours remain, idx unique
+        tree.remove(ph._element)
+    for i, (pname, x, y, w, h, size, bold, italic, colour, bullets) in enumerate(placeholders):
+        ph = '<p:ph type="title"/>' if pname == "Title" else f'<p:ph type="body" sz="quarter" idx="{20 + i}"/>'
+        marks = "" if bullets else '<a:buNone/>'
+        indent = 'marL="228600" indent="-228600"' if bullets else 'marL="0" indent="0"'
+        lvl1 = f'<a:lvl1pPr {indent} algn="l">{marks}<a:defRPr {rpr(size, bold, italic, colour)}</a:defRPr></a:lvl1pPr>'
+        tree.append(shape(100 + i, pname, x, y, w, h, ph, lvl1, f'<a:p><a:r><a:rPr lang="en-US"/><a:t>{pname}</a:t></a:r></a:p>'))
+    for i, (text, x, y) in enumerate(headings):
+        tree.append(shape(150 + i, f"{text} heading", x, y, 4.4, .3, "", "",
+                          f'<a:p><a:r><a:rPr lang="en-US" {rpr(12, True, colour=GREY)}</a:rPr><a:t>{text}</a:t></a:r></a:p>'))
+    tree.append(shape(200, "Draft notice", .5, 6.95, 9, .35, "", "",
+                      f'<a:p><a:r><a:rPr lang="en-US" {rpr(12, True, colour=RED)}</a:rPr>'
+                      f'<a:t>DRAFT TEMPLATE – replace with the marketing master</a:t></a:r></a:p>'))
+
+
 prs = Presentation()
-layout = prs.slide_layouts[5]
-layout.name = "Reference case"
-tree = layout.shapes._spTree
-for ph in list(layout.placeholders):  # drop title/date/footer/number: only ours remain, idx unique
-    tree.remove(ph._element)
-for i, (name, x, y, w, h, size, bold, italic, colour, bullets) in enumerate(PLACEHOLDERS):
-    ph = '<p:ph type="title"/>' if name == "Title" else f'<p:ph type="body" sz="quarter" idx="{20 + i}"/>'
-    marks = "" if bullets else '<a:buNone/>'
-    indent = 'marL="228600" indent="-228600"' if bullets else 'marL="0" indent="0"'
-    lvl1 = f'<a:lvl1pPr {indent} algn="l">{marks}<a:defRPr {rpr(size, bold, italic, colour)}</a:defRPr></a:lvl1pPr>'
-    tree.append(shape(100 + i, name, x, y, w, h, ph, lvl1, f'<a:p><a:r><a:rPr lang="en-US"/><a:t>{name}</a:t></a:r></a:p>'))
-for i, (text, x, y) in enumerate(HEADINGS):
-    tree.append(shape(150 + i, f"{text} heading", x, y, 4.4, .3, "", "",
-                      f'<a:p><a:r><a:rPr lang="en-US" {rpr(12, True, colour=GREY)}</a:rPr><a:t>{text}</a:t></a:r></a:p>'))
-tree.append(shape(200, "Draft notice", .5, 6.95, 9, .35, "", "",
-                  f'<a:p><a:r><a:rPr lang="en-US" {rpr(12, True, colour=RED)}</a:rPr>'
-                  f'<a:t>DRAFT TEMPLATE – replace with the marketing master</a:t></a:r></a:p>'))
+build(prs.slide_layouts[5], "Reference case", PLACEHOLDERS, HEADINGS)
+build(prs.slide_layouts[6], "Industry context", INDUSTRY, [])  # optional in a marketing master
 p = prs.core_properties
 p.title, p.author, p.last_modified_by = "Reference cases", "Reference Engine", "Reference Engine"
 p.comments = p.subject = p.keywords = p.category = ""

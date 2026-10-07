@@ -103,3 +103,5 @@ create table if not exists generations (
   industry_context_ack boolean not null default false,
   created_at timestamptz not null default now()
 );
+-- which research (if any) fed an output's industry context: part of what was generated and for whom
+alter table generations add column if not exists research_id bigint references research(id) on delete set null;

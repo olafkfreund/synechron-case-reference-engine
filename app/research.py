@@ -169,7 +169,7 @@ def research_view(rid: int, request: Request, user: User = Depends(require("user
         groups.setdefault(c["publisher"], []).append(c)
     return page(request, "research_view.html", user, query=row[0], status=row[1], error=row[2], ours=ours,
                 pages=row[3].get("pages", []), skipped=row[3].get("skipped", []), claims=claims, groups=groups,
-                note=row[3].get("note"))
+                note=row[3].get("note"), case_id=row[4] if case else None, research_id=rid)
 
 
 # --- the worker job ---------------------------------------------------------------------------------
