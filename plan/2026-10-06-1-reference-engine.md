@@ -794,6 +794,43 @@ access yet):
 
     → verify recall ≥ 90% before org rollout. Below that, add `pgvector` on
     `summary` and re-measure.
+    Done (deviations after security review):
+    - Recall:
+      - `tests/recall.yaml` holds the format plus 3 marked samples; the bid
+        team supplies the real 50.
+      - `scripts/recall.py` (read-only) runs `search.search()` as a synthetic
+        user without the LLM pick, matches on document external_id or title,
+        reports top-3 and top-20, and exits 0, 1 (below `--min`) or 2
+        (nothing to score).
+      - Gate as written: top-3 ≥ 90% of FTS ranking. Top-20 measures the
+        retrieval that the pgvector decision is really about. If they
+        disagree, decide with the bid team.
+      - Prefer external_id over title in expectations, since titles can
+        repeat.
+    - `/admin/audit` (admin): paged and filterable; case links go to the
+      ACL-checked review detail.
+    - Review-due reminders are an on-page "Due for re-review within 30 days"
+      section with the same ACL. No email; "email list" was read as a list on
+      the page.
+    - Log-leak test: real ingest → extract → search → generate at DEBUG. A
+      distinctive document sentence must not appear in logs or stdout
+      (mutation-checked). Plus a print() allowlist and the LiteLLM logging
+      settings.
+    - Restricted DB role `refs_app` (`sql/roles.sql`): rows only, no DDL or
+      superuser.
+      - `app.migrate` runs `init()` as the master user and applies the role;
+        the password is hashed on the client (SCRAM), so the plaintext never
+        reaches the server.
+      - web, worker and crawl connect as refs_app and never run DDL at start.
+        `DB_INIT_ON_START=1` exists for local compose only.
+      - Only the migrate task can read the master secret.
+      - Rotation: update the secret, then run migrate.
+    - Terraform:
+      - CloudWatch alarms to SNS: ALB 5xx as `FILL(elb,0)+FILL(target,0)`,
+        because each series exists only when non-zero; unhealthy web hosts;
+        no running worker (Container Insights); RDS CPU; low RDS storage.
+      - ALB access logs to a dedicated bucket: SSE-S3, 90 days, blocked public
+        access, TLS-only.
 
 ## Tests
 

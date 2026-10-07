@@ -19,6 +19,16 @@ output "rds_endpoint" {
   value = aws_db_instance.main.endpoint
 }
 
+output "migrate_task" {
+  description = "Run once after every deploy that changes the schema: aws ecs run-task (see README)."
+  value = {
+    cluster         = aws_ecs_cluster.main.name
+    task_definition = aws_ecs_task_definition.app["migrate"].family
+    subnets         = aws_subnet.private[*].id
+    security_group  = aws_security_group.crawl.id
+  }
+}
+
 output "db_master_secret_arn" {
   description = "RDS-managed master credentials (read by the tasks; do not copy)."
   value       = local.db_secret

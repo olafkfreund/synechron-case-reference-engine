@@ -95,10 +95,16 @@ def review_list(request: Request, user: User = Depends(require("reviewer"))):
         found = conn.execute(
             f"select c.id, c.status, c.data, d.title from cases c join documents d on d.id = c.document_id "
             f"where {ACL} and {OPEN} order by c.id", (list(user.groups),)).fetchall()
+        # reminders: approvals that expire within 30 days (the list above only has the expired ones)
+        soon = conn.execute(
+            "select c.id, c.data, d.title, c.review_due from cases c join documents d on d.id = c.document_id "
+            f"where {ACL} and c.status = 'approved' and c.review_due > now() "
+            "and c.review_due <= now() + interval '30 days' order by c.review_due", (list(user.groups),)).fetchall()
     cases = [dict(id=i, status=s, title=d["title"]["value"], document=t,
                   attention=len(d.get("needs_attention", [])), unsourced=count_unsourced(d))
              for i, s, d, t in found]
-    return page(request, "review_list.html", user, cases=cases)
+    due_soon = [dict(id=i, title=d["title"]["value"], document=t, due=due.strftime("%Y-%m-%d")) for i, d, t, due in soon]
+    return page(request, "review_list.html", user, cases=cases, due_soon=due_soon)
 
 
 @router.get("/review/{cid}")

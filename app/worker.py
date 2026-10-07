@@ -70,7 +70,7 @@ def run_one() -> bool:
 
 def main():
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # PID 1 ignores SIGTERM by default
-    db.init()
+    db.init_if_requested()
     while True:
         if not run_one():
             time.sleep(5)  # one job at a time per process; scale with more containers

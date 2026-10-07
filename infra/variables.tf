@@ -222,6 +222,23 @@ variable "bucket_name" {
   default     = null
 }
 
+variable "alarm_email" {
+  description = "Subscribe this address to the alarm topic (it must confirm the subscription). Empty: topic only."
+  type        = string
+  default     = ""
+}
+
+variable "alb_log_retention_days" {
+  type    = number
+  default = 90
+}
+
+variable "alb_logs_elb_account" {
+  description = "Grant the regional ELB account write access to the log bucket. True for regions opened before Aug 2022 (eu-west-2 is); set false for newer regions, which use the log delivery service."
+  type        = bool
+  default     = true
+}
+
 variable "alb_deletion_protection" {
   type    = bool
   default = true

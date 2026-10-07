@@ -4,7 +4,7 @@ from app.sources import JOB
 
 
 def main() -> int:
-    db.init()
+    db.init_if_requested()
     queued = 0
     with db.connect() as conn:
         for sid, kind in conn.execute("select id, kind from sources where enabled order by id").fetchall():

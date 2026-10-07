@@ -71,7 +71,7 @@ def test_plain_user_forbidden(make):
 
 def test_list_shows_extracted_and_expired_only(make):
     new, expired = make(), make("approved", "-1 day")
-    fresh = make("approved", "30 days")
+    fresh = make("approved", "60 days")
     r = client(R).get("/review").text
     assert f"/review/{new}\"" in r and f"/review/{expired}\"" in r and f"/review/{fresh}\"" not in r
 

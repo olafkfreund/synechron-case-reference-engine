@@ -86,7 +86,7 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_):
-        db.init()
+        db.init_if_requested()
         yield
 
     app = FastAPI(lifespan=lifespan)
@@ -132,6 +132,8 @@ def create_app() -> FastAPI:
     app.include_router(sources.router)
     from app import research
     app.include_router(research.router)
+    from app import audit
+    app.include_router(audit.router)
     oauth = OAuth()
     app.state.oauth = oauth
     if all(os.environ.get(k) for k in ("OIDC_METADATA_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET")):

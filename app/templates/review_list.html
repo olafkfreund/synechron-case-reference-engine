@@ -7,4 +7,9 @@
 <td><a href="/review/{{ c.id }}">{{ c.title or "(untitled)" }}</a></td><td>{{ c.document }}</td>
 <td>{{ "re-review due" if c.status == "approved" else "new" }}</td><td>{{ c.attention }}</td><td>{{ c.unsourced }}</td>
 </tr>{% endfor %}</table>{% endif %}
+<h2>Due for re-review within 30 days</h2>
+{% if not due_soon %}<p>None.</p>{% else %}
+<table><tr><th>Case</th><th>Source document</th><th>Approval expires</th></tr>
+{% for c in due_soon %}<tr><td><a href="/review/{{ c.id }}">{{ c.title or "(untitled)" }}</a></td><td>{{ c.document }}</td><td>{{ c.due }}</td></tr>{% endfor %}</table>
+<p><small>An approval expires after 12 months; the case leaves search until it is approved again.</small></p>{% endif %}
 {% endblock %}

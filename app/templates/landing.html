@@ -2,5 +2,5 @@
 {% block body %}
 <h1>Customer reference engine</h1>
 <p>Signed in as {{ user.name }} ({{ user.roles | sort | join(", ") }}).</p>
-<ul><li><a href="/search">Find reference cases</a></li><li><a href="/research">Online research</a></li>{% if 'reviewer' in user.roles %}<li><a href="/review">Review queue</a></li>{% endif %}{% if 'admin' in user.roles %}<li><a href="/admin/clients">Client registry</a></li><li><a href="/admin/sources">Sources</a></li>{% endif %}</ul>
+<ul><li><a href="/search">Find reference cases</a></li><li><a href="/research">Online research</a></li>{% if 'reviewer' in user.roles %}<li><a href="/review">Review queue</a></li>{% endif %}{% if 'admin' in user.roles %}<li><a href="/admin/clients">Client registry</a></li><li><a href="/admin/sources">Sources</a></li><li><a href="/admin/audit">Audit</a></li>{% endif %}</ul>
 {% endblock %}

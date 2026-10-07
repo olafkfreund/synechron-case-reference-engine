@@ -1,16 +1,28 @@
 locals {
   image = "${aws_ecr_repository.app.repository_url}:${var.image_tag}"
 
-  db_env = {
-    DB_HOST = aws_db_instance.main.address
-    DB_PORT = tostring(aws_db_instance.main.port)
-    DB_NAME = var.db_name
-    DB_USER = var.db_username
-    # read at runtime by the task role (RDS rotates it); never injected once at task start
-    DB_SECRET_ARN  = local.db_secret
+  db_base = {
+    DB_HOST        = aws_db_instance.main.address
+    DB_PORT        = tostring(aws_db_instance.main.port)
+    DB_NAME        = var.db_name
     DB_SSLMODE     = "verify-full"
     DB_SSLROOTCERT = "/opt/rds-ca.pem" # baked into the image
   }
+
+  # web, worker and crawl connect as the restricted role refs_app (rows only, no DDL); the password is
+  # read at runtime from its secret, never injected once at task start
+  db_env = merge(local.db_base, {
+    DB_USER       = "refs_app"
+    DB_SECRET_ARN = local.secret_arn["db-app-password"]
+  })
+
+  # the migrate task connects as the master user (the RDS-managed, rotating secret), applies the schema
+  # and creates/updates refs_app from its secret
+  migrate_env = merge(local.db_base, {
+    DB_USER                = var.db_username
+    DB_SECRET_ARN          = local.db_secret
+    DB_APP_ROLE_SECRET_ARN = local.secret_arn["db-app-password"]
+  })
 
   # No HTTP_PROXY/HTTPS_PROXY anywhere: the research fetcher vets addresses itself and ignores them.
   common_env = merge(local.db_env, {
@@ -80,6 +92,16 @@ locals {
       env     = local.db_env
       secrets = {}
       role    = aws_iam_role.crawl.arn
+      ports   = []
+      stop    = 30
+    }
+    migrate = {
+      cpu     = 256
+      memory  = 512
+      command = ["python", "-m", "app.migrate"]
+      env     = local.migrate_env
+      secrets = {}
+      role    = aws_iam_role.migrate.arn
       ports   = []
       stop    = 30
     }

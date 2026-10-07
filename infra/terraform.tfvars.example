@@ -24,6 +24,7 @@ role_user_groups     = "<entra group object id>"
 role_reviewer_groups = "<entra group object id>"
 role_admin_groups    = "<entra group object id>"
 
+# alarm_email = "oncall@example.com"
 # graph_client_id  = "<SharePoint crawler app registration>"
 # confluence_email = "bot@example.com"   # Cloud only; omit for a Data Center token
 # datasync_shares = [{

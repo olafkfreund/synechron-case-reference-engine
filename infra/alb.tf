@@ -7,6 +7,14 @@ resource "aws_lb" "main" {
   drop_invalid_header_fields = true
   idle_timeout               = 120 # PDF conversion and research pages can be slow
   enable_deletion_protection = var.alb_deletion_protection
+
+  access_logs {
+    bucket  = aws_s3_bucket.alb_logs.id
+    prefix  = "alb"
+    enabled = true
+  }
+
+  depends_on = [aws_s3_bucket_policy.alb_logs]
 }
 
 resource "aws_lb_target_group" "web" {

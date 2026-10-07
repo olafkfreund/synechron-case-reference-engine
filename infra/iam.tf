@@ -13,9 +13,10 @@ data "aws_iam_policy_document" "ecs_tasks_assume" {
 
 locals {
   exec_secrets = {
-    web    = [local.secret_arn["session-secret"], local.secret_arn["oidc-client-secret"]]
-    worker = [local.secret_arn["graph-client-secret"], local.secret_arn["confluence-token"], local.secret_arn["brave-api-key"]]
-    crawl  = []
+    web     = [local.secret_arn["session-secret"], local.secret_arn["oidc-client-secret"]]
+    worker  = [local.secret_arn["graph-client-secret"], local.secret_arn["confluence-token"], local.secret_arn["brave-api-key"]]
+    crawl   = []
+    migrate = []
   }
 }
 
@@ -68,11 +69,19 @@ data "aws_iam_policy_document" "bedrock" {
   }
 }
 
-# the RDS-managed master secret: read at runtime by the app (it rotates), so by the TASK roles
+# the app's own database password (restricted role refs_app): read at runtime, by the TASK roles
 data "aws_iam_policy_document" "db_secret" {
   statement {
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = [local.db_secret]
+    resources = [local.secret_arn["db-app-password"]]
+  }
+}
+
+# the migrate task alone holds the RDS master secret (it owns the schema) and sets refs_app's password
+data "aws_iam_policy_document" "migrate" {
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [local.db_secret, local.secret_arn["db-app-password"]]
   }
 }
 
@@ -140,4 +149,15 @@ resource "aws_iam_role_policy" "crawl" { # enqueues jobs: the database only
   name   = "app"
   role   = aws_iam_role.crawl.id
   policy = data.aws_iam_policy_document.db_secret.json
+}
+
+resource "aws_iam_role" "migrate" {
+  name               = "${var.name}-migrate"
+  assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
+}
+
+resource "aws_iam_role_policy" "migrate" {
+  name   = "app"
+  role   = aws_iam_role.migrate.id
+  policy = data.aws_iam_policy_document.migrate.json
 }
