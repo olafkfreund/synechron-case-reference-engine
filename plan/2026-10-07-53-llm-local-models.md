@@ -21,8 +21,8 @@ spec: spec/2026-10-07-53-llm-local-models.md
   (`schema`|`json`) and `api_base`.
   - `mode` defaults to `json` for `ollama*/` models and `schema` otherwise.
   - `think` and `num_ctx` are sent only to Ollama.
-  - Ollama Cloud uses `api_base=https://ollama.com` and `OLLAMA_API_KEY`
-    (from agenix on dev machines).
+  - Ollama Cloud uses `api_base=https://ollama.com` and `OLLAMA_CLOUD_KEY`
+    (exported from the agenix Ollama key on dev machines).
   - Local default: `ollama_chat/qwen3:14b`, `think:false`, `num_ctx:24576`.
 - **Destination inference (fails closed):**
   - `bedrock/` → `our-cloud`.
@@ -89,7 +89,7 @@ spec: spec/2026-10-07-53-llm-local-models.md
      append "Reply with JSON matching this schema: <llm_schema(model_cls)>" to
      the system text;
    - for Ollama, pass `think`, `num_ctx` and `api_base`, plus `api_key` from
-     `OLLAMA_API_KEY` when `api_base` is ollama.com.
+     `OLLAMA_CLOUD_KEY` when `api_base` is ollama.com.
 
    → verify by `pytest tests/test_llm.py`, extended to cover:
    - inference for each prefix and `api_base`, and the explicit override;
@@ -99,6 +99,16 @@ spec: spec/2026-10-07-53-llm-local-models.md
    - json-mode request shape;
    - think/num_ctx sent only to Ollama;
    - a bad OPTIONS value.
+   Done (deviations after security review):
+   - Any model name containing "cloud" in any case (`name-cloud`,
+     `name:cloud`) is third-party. The local Ollama forwards those to
+     ollama.com, and `gemma4:cloud` was being inferred as local.
+   - An unknown or misspelled data class fails closed for third-party models.
+   - The key variable is `OLLAMA_CLOUD_KEY`, not `OLLAMA_API_KEY`: LiteLLM
+     reads `OLLAMA_API_KEY` itself and sends it to every Ollama host.
+   - A database outage blocks the call; tests prove no request is sent.
+   - Known gap: a local copy of a cloud model (made with `ollama cp`) can't be
+     detected from its name.
    Traps:
    - Keep the existing guarantees: errors without input values, the
      truncation check, `turn_off_message_logging`.
@@ -168,7 +178,7 @@ spec: spec/2026-10-07-53-llm-local-models.md
    no document text, run on a fixture docx with a fake model), then a real
    run (Tests below).
 7. **Docs.** `README.md` gets a "Local development with Ollama" section
-   (pull `qwen3:14b`, the `EXTRACT_MODEL` and OPTIONS env, `OLLAMA_API_KEY`
+   (pull `qwen3:14b`, the `EXTRACT_MODEL` and OPTIONS env, `OLLAMA_CLOUD_KEY`
    only for sanitised or public sources, and why not the 27B models).
    `infra/README.md` notes that Bedrock needs no OPTIONS (mode `schema`) until
    #26 decides otherwise.
