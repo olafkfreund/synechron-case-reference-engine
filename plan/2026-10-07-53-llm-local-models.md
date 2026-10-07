@@ -17,13 +17,14 @@ spec: spec/2026-10-07-53-llm-local-models.md
     freeze the workstation (CPU spill), and Gemma 4 runs mostly on the CPU on
     this AMD card.
 - **Model profiles:** an optional `EXTRACT_MODEL_OPTIONS` / `DRAFT_MODEL_OPTIONS`
-  holds JSON with these keys: `destination`, `think`, `num_ctx`, `mode`
-  (`schema`|`json`) and `api_base`.
+  holds JSON with these keys: `destination`, `think`, `num_ctx`,
+  `repeat_penalty`, `mode` (`schema`|`json`) and `api_base`.
   - `mode` defaults to `json` for `ollama*/` models and `schema` otherwise.
-  - `think` and `num_ctx` are sent only to Ollama.
+  - `think`, `num_ctx` and `repeat_penalty` are sent only to Ollama.
   - Ollama Cloud uses `api_base=https://ollama.com` and `OLLAMA_CLOUD_KEY`
     (exported from the agenix Ollama key on dev machines).
-  - Local default: `ollama_chat/qwen3:14b`, `think:false`, `num_ctx:24576`.
+  - Local default: `ollama_chat/qwen3:14b`, `think:false`, `num_ctx:24576`,
+    `repeat_penalty:1.05`.
 - **Destination inference (fails closed):**
   - `bedrock/` → `our-cloud`.
   - `ollama*/` with a localhost/loopback `api_base` and no `-cloud` in the
@@ -88,7 +89,7 @@ spec: spec/2026-10-07-53-llm-local-models.md
    - for `mode == "json"`, send `response_format={"type":"json_object"}` and
      append "Reply with JSON matching this schema: <llm_schema(model_cls)>" to
      the system text;
-   - for Ollama, pass `think`, `num_ctx` and `api_base`, plus `api_key` from
+   - for Ollama, pass `think`, `num_ctx`, `repeat_penalty` and `api_base`, plus `api_key` from
      `OLLAMA_CLOUD_KEY` when `api_base` is ollama.com.
 
    → verify by `pytest tests/test_llm.py`, extended to cover:
@@ -261,6 +262,21 @@ spec: spec/2026-10-07-53-llm-local-models.md
     the summary. Not in this plan.
   - Contracts, change orders and amendments are classed as `case` or
     `proposal` until #52 adds `contract`.
+
+## Final review (2026-10-07)
+
+Deviations after the whole-PR review, none of them blocking:
+- An explicit `destination` of `local` or `our-cloud` raises `RuntimeError`
+  when it contradicts the model ("cloud" in the name) or `api_base`
+  (ollama.com). `third-party` is always honoured.
+- `sql/roles.sql` revokes UPDATE and DELETE on `source_class_changes` from
+  `refs_app`, so the log really is append-only.
+- The worker fails a job on `PolicyError` at once, with no retry.
+- Ingest raises `LookupError` if the source was deleted mid-ingest.
+- The eval script validates inherited options with `profile()` (exit 2,
+  no traceback).
+- Skipped: the startup re-check of the `sources` constraint. It is harmless
+  at this table size.
 
 ## Rollback
 

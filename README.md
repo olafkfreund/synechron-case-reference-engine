@@ -38,7 +38,8 @@ runs mostly on the CPU on this AMD card.
 
 **Data policy.** Every source has a data class: `confidential` (the default), `sanitised` or `public`.
 Confidential documents go only to `local` (Ollama on loopback) or `our-cloud` (Bedrock) models; anything
-else, and any model with "cloud" in its name, is `third-party`. An admin can approve one exact model id
+else, and any model with "cloud" in its name, is `third-party`. An explicit `destination` covers the Docker
+case above, but `local` is refused for a "cloud" model or `ollama.com`. An admin can approve one exact model id
 for confidential data, for at most 12 months, at `/admin/models`; approvals and source class changes are
 audited at `/admin/audit`.
 

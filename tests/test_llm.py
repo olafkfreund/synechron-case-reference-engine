@@ -79,6 +79,11 @@ def test_destination_inference_and_override():
     assert d("openai/gpt", {}) == "third-party"
     assert d("openai/gpt", {"destination": "local"}) == "local"
     assert d("bedrock/x", {"destination": "bogus"}) == "our-cloud"
+    assert d("ollama_chat/gemma4:cloud", {"destination": "third-party"}) == "third-party"
+    for model, opts in (("ollama_chat/gemma4:cloud", {"destination": "local"}),
+                        (LOCAL, {"destination": "our-cloud", "api_base": "https://ollama.com"})):
+        with pytest.raises(RuntimeError, match="contradicts"):
+            d(model, opts)
 
 
 @pytest.mark.parametrize("dc", ["confidential", "sanitised", "public"])

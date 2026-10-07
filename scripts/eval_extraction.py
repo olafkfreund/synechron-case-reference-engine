@@ -54,8 +54,12 @@ def main(argv: list[str] | None = None) -> int:
         print("no .docx/.pptx/.pdf documents found", file=sys.stderr)
         return 2
     inherited = os.environ.get("EXTRACT_MODEL_OPTIONS")
-    if inherited and "destination" in json.loads(inherited):
-        print("refused: EXTRACT_MODEL_OPTIONS may not set destination here", file=sys.stderr)
+    try:
+        if inherited and "destination" in profile("EXTRACT_MODEL"):
+            print("refused: EXTRACT_MODEL_OPTIONS may not set destination here", file=sys.stderr)
+            return 2
+    except RuntimeError as e:  # not a JSON object
+        print(f"refused: {e}", file=sys.stderr)
         return 2
     texts, failed = {}, False
     for p in files:

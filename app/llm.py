@@ -17,7 +17,7 @@ class PolicyError(Exception):
 
 
 def profile(alias: str) -> dict:
-    """Optional JSON in <ALIAS>_OPTIONS: destination, think, num_ctx, mode, api_base."""
+    """Optional JSON in <ALIAS>_OPTIONS: destination, think, num_ctx, repeat_penalty, mode, api_base."""
     var = f"{alias}_OPTIONS"
     try:
         opts = json.loads(os.environ.get(var) or "{}")
@@ -30,8 +30,14 @@ def profile(alias: str) -> dict:
 
 def destination(model: str, opts: dict) -> str:
     """local | our-cloud | third-party. Fails closed: anything unknown is third-party."""
-    if opts.get("destination") in ("local", "our-cloud", "third-party"):
-        return opts["destination"]
+    dest = opts.get("destination")
+    if dest == "third-party":
+        return dest
+    if dest in ("local", "our-cloud"):
+        # an override may name a host the inference cannot see (Docker), never contradict a known third party
+        if "cloud" in model.lower() or urlparse(opts.get("api_base", "")).hostname == "ollama.com":
+            raise RuntimeError(f"destination {dest!r} contradicts the model or api_base; fix the *_OPTIONS")
+        return dest
     if model.startswith("bedrock/"):
         return "our-cloud"
     # "cloud" anywhere (name-cloud, name:cloud, any case): the local Ollama forwards those to ollama.com

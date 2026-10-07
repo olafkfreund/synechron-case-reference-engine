@@ -2,7 +2,7 @@ import signal
 import sys
 import time
 
-from app import crawl, db, extract, research
+from app import crawl, db, extract, llm, research
 
 MAX_ATTEMPTS = 3
 HANDLERS = {
@@ -54,7 +54,8 @@ def run_one() -> bool:
         HANDLERS[kind](payload)
     except Exception as e:
         # type + 200 chars: crawlers catch per-item errors themselves, llm.py strips input values
-        status = "queued" if attempts < MAX_ATTEMPTS else "failed"
+        retry = attempts < MAX_ATTEMPTS and not isinstance(e, llm.PolicyError)  # a retry cannot change the policy
+        status = "queued" if retry else "failed"
         finish(job_id, attempts, status, f"{type(e).__name__}: {str(e)[:200]}")
         print(f"job {job_id} {kind} {status}: {type(e).__name__}", flush=True)
     except BaseException:

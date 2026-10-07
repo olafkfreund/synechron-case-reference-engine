@@ -61,7 +61,10 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, acl_groups
             conn.execute("update documents set acl_groups=%s, deleted_at=null where id=%s",
                          (acl_groups, row[0]))
             return "skipped"
-        data_class = conn.execute("select data_class from sources where id=%s", (source_id,)).fetchone()[0]
+        src = conn.execute("select data_class from sources where id=%s", (source_id,)).fetchone()
+        if not src:
+            raise LookupError(f"source {source_id} no longer exists")
+        data_class = src[0]
 
     key = f"originals/{checksum}"
     boto3.client("s3").put_object(Bucket=os.environ["S3_BUCKET"], Key=key, Body=data)
