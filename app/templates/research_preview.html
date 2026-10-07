@@ -4,7 +4,7 @@
 {% if note %}<div class="note">{{ note }}</div>{% endif %}
 <p>This exact text will be sent to a public web search engine:</p>
 <p><code>{{ query }}</code></p>
-<form method="post" action="/research/send" style="display:inline"><input type="hidden" name="query" value="{{ query }}">
+<form method="post" action="/research/send" style="display:inline"><input type="hidden" name="query" value="{{ query }}">{% if case_id %}<input type="hidden" name="case_id" value="{{ case_id }}">{% endif %}
 <button>Send</button></form>
 <a href="/research">Cancel</a>
 {% endblock %}

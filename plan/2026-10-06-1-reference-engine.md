@@ -644,6 +644,31 @@ access yet):
 
     → verify on 10 known out-of-the-box questions: every claim's URL contains
     its quote.
+    Done (deviations after review):
+    - Claims come from DRAFT_MODEL over each page's first 6,000 characters.
+      A claim is kept only if:
+      - its quote is at least 4 words and appears verbatim (`quote_in`) in
+        that same window;
+      - the statement uses only numbers that are in the quote;
+      - its page index and type are valid, and it isn't a duplicate.
+      A statement can still overstate its quote ("can be configured" →
+      "out of the box"). So the view shows the QUOTE first, labels the
+      summary and type as the AI's reading, and the comparison lists quotes.
+    - Rank: an explicit vendor/standards list plus `*.gov`/`*.gov.uk` = 1,
+      analysts = 2, anything else = 3. No `docs.*`/`developer.*` prefixes,
+      since anyone can register those. Rank only orders results; it's never
+      shown.
+    - The 30-day cache re-runs claim extraction from the stored pages when
+      the cached row has no claims or failed, with no re-fetch.
+    - "Research this" on a search result (`POST /research/from-case`) applies
+      the /generate restrictions. The question is built from engagement type,
+      capabilities and tech only, then the normal rewrite, scrub and preview.
+      `case_id` is re-checked on send and visibility on every view. "Our
+      approach" shows sourced solution and tech through apply/blocked.
+      `research.case_id` is added with `on delete set null`.
+    - External links carry `rel="noopener noreferrer"`.
+    - Deferred: the live check on 10 known out-of-the-box questions needs a
+      Brave key and Bedrock.
 20. **Industry context in outputs.** Add a separate "Industry context" section to
     the docx/pptx/md templates with footnoted links and dates, in fixed wording.
     Output with no case requires the acknowledgement checkbox, which is logged

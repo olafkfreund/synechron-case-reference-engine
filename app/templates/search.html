@@ -16,6 +16,7 @@
 {% if p.outcomes %}<ul>{% for o in p.outcomes %}<li>{{ o }}</li>{% endfor %}</ul>{% endif %}
 {% with ids=[p.id], what="Download this case" %}<form method="post" action="/generate">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}
 <button name="format" value="docx">{{ what }} (Word)</button> <button name="format" value="pptx">{{ what }} (PowerPoint)</button> <button name="format" value="pdf_docx">{{ what }} (PDF)</button> <button name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button name="format" value="md">{{ what }} (Markdown)</button></form>{% endwith %}
+<form method="post" action="/research/from-case"><input type="hidden" name="case_id" value="{{ p.id }}"><button>Research this (public sources)</button></form>
 {% endfor %}
 {% if top | length > 1 %}{% with ids=top | map(attribute="id") | list, what="Download all" %}<form method="post" action="/generate">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}
 <button name="format" value="docx">{{ what }} (Word)</button> <button name="format" value="pptx">{{ what }} (PowerPoint)</button> <button name="format" value="pdf_docx">{{ what }} (PDF)</button> <button name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button name="format" value="md">{{ what }} (Markdown)</button></form>{% endwith %}{% endif %}

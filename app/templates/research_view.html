@@ -6,6 +6,22 @@
 <p>Running&hellip; this page refreshes by itself.</p><meta http-equiv="refresh" content="5">
 {% elif status == "failed" %}<div class="note">Research failed: {{ error }}</div>
 {% else %}
+{% if note %}<div class="note">{{ note }}</div>{% endif %}
+<p><small>Public sources only. This is industry context, not our own delivery.</small></p>
+{% if claims %}
+<h2>Claims</h2>
+<p><small>The quote is what the source says; the summary and type are the AI's reading of it. Rely on the quote.</small></p>
+<table><tr><th>Source says</th><th>Summary</th><th>Type</th><th>Source</th><th>Retrieved</th></tr>
+{% for c in claims %}<tr><td><q>{{ c.quote }}</q></td><td>{{ c.statement }}</td><td><span class="badge empty">{{ c.type | replace("_", " ") }}</span></td>
+<td>{% if c.url.startswith(("http://", "https://")) %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.publisher }}</a>{% else %}{{ c.publisher }}{% endif %}</td>
+<td>{{ c.retrieved_at[:10] }}</td></tr>{% endfor %}</table>
+<h2>Comparison</h2>
+<table><tr><th>Who</th><th>What they say</th></tr>
+{% if ours %}<tr><td><b>Our approach</b></td><td>{{ ours }}</td></tr>{% endif %}
+{% for publisher, items in groups.items() %}<tr><td>{{ publisher }}</td><td>{% for c in items %}<q>{{ c.quote }}</q> <small>({{ c.type | replace("_", " ") }})</small><br>{% endfor %}</td></tr>{% endfor %}
+</table>
+{% endif %}
+<h2>Sources</h2>
 {% for p in pages %}<p><b>{{ p.publisher }}</b> &middot; <a href="{{ p.url }}" rel="noopener noreferrer">{{ p.url }}</a>
 &middot; retrieved {{ p.retrieved_at[:10] }}</p>{% endfor %}
 {% if not pages %}<p>No usable sources found.</p>{% endif %}

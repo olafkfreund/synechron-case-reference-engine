@@ -91,6 +91,7 @@ alter table research add column if not exists created_by text not null default '
 alter table research add column if not exists status text not null default 'queued';
 alter table research add column if not exists error text;
 alter table research add column if not exists results jsonb not null default '{}';
+alter table research add column if not exists case_id bigint references cases(id) on delete set null;
 create index if not exists research_query_idx on research (query, retrieved_at);
 
 create table if not exists generations (
