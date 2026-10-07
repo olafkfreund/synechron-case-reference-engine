@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 52
 intent: intent/2026-10-07-52-sow-engagement-references.md
 ---
