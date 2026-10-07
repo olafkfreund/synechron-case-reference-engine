@@ -1,0 +1,29 @@
+# Recall set: bid queries with the cases (documents) a good search must return.
+#
+#   queries:
+#     - id: short-name             # shown in the report
+#       sample: true               # optional: illustrative only, skipped unless `recall.py --samples`
+#       bid_text: "..."            # what the bid team would paste
+#       filters: {industry: ..., region: ..., tech: ...}   # optional, same as the search page
+#       expected: ["..."]          # documents that must come back: their external_id OR title
+#                                  # (stable identifiers; never database ids). Any one of them counts as a hit.
+#
+# Run (inside the app container, with the groups of a user who may see the documents):
+#   python scripts/recall.py --groups g-docs [--file tests/recall.yaml] [--min 0.90]
+# It measures retrieval only (full-text search + filters, top 20): the LLM pick is not involved.
+# Replace the samples with the bid team's 50 real queries before rollout. Below 90% top-3: add pgvector on `summary`.
+queries:
+  - id: sample-kyc-bank
+    sample: true
+    bid_text: "A UK retail bank wants to automate customer onboarding and KYC checks on a cloud platform"
+    filters: {industry: banking}
+    expected: ["Core banking onboarding modernisation"]
+  - id: sample-insurance-claims
+    sample: true
+    bid_text: "Insurer needs to speed up claims handling with workflow automation and document processing"
+    expected: ["Claims automation for a European insurer"]
+  - id: sample-kubernetes-migration
+    sample: true
+    bid_text: "Migrate legacy applications to Kubernetes with infrastructure as code"
+    filters: {tech: kubernetes}
+    expected: ["Platform migration to Kubernetes"]

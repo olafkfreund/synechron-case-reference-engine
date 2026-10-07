@@ -1,0 +1,186 @@
+import io
+import uuid
+
+import boto3
+import pytest
+from docx import Document
+from moto import mock_aws
+
+from app import crawl, db, ingest as ing
+
+CASE = ing.Triage(kind="case", describes_delivered_work=True)
+TRIAGE = {}
+
+
+@pytest.fixture
+def env(monkeypatch):
+    for k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+        monkeypatch.setenv(k, "x")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.setenv("S3_BUCKET", "orig")
+    monkeypatch.setattr(ing, "to_markdown", lambda data, name: data.decode())
+    monkeypatch.setattr(ing, "complete_json", lambda *a, **k: TRIAGE["v"])
+    TRIAGE["v"] = CASE
+    db.init()
+    with mock_aws():
+        s3 = boto3.client("s3")
+        s3.create_bucket(Bucket="orig")
+        s3.create_bucket(Bucket="src")
+        with db.connect() as c:
+            sid = c.execute(
+                "insert into sources(kind,name,config,acl_groups) values ('s3',%s,%s,%s) returning id",
+                (uuid.uuid4().hex, '{"bucket":"src","prefix":"in/"}', ["g1"])).fetchone()[0]
+        SID["v"] = sid
+        yield s3, sid
+        with db.connect() as c:
+            c.execute("delete from jobs where (payload->>'document_id')::bigint in "
+                      "(select id from documents where source_id=%s)", (sid,))
+            c.execute("delete from sources where id=%s", (sid,))
+
+
+SID = {}
+JOBS_OF = ("select count(*) from jobs where (payload->>'document_id')::bigint in "
+           "(select id from documents where source_id=%s)")
+
+
+def jobs():
+    with db.connect() as c:
+        return c.execute(JOBS_OF, (SID["v"],)).fetchone()[0]
+
+
+def test_dedupe(env):
+    _, sid = env
+    assert ing.ingest(sid, "a", "a", b"one", ["g"]) == "new"
+    assert ing.ingest(sid, "a", "a", b"one", ["g"]) == "skipped"
+    with db.connect() as c:
+        assert c.execute("select count(*) from documents where source_id=%s", (sid,)).fetchone()[0] == 1
+    assert jobs() == 1
+
+
+def test_new_version_updates_in_place_and_reopens_case(env):
+    _, sid = env
+    ing.ingest(sid, "a", "a", b"one", ["g"])
+    with db.connect() as c:
+        did = c.execute("select id from documents where source_id=%s", (sid,)).fetchone()[0]
+        c.execute("insert into cases(document_id,status) values (%s,'approved')", (did,))
+    assert ing.ingest(sid, "a", "a", b"two", ["g2"]) == "updated"
+    with db.connect() as c:
+        rows = c.execute("select text, acl_groups from documents where source_id=%s", (sid,)).fetchall()
+        assert rows == [("two", ["g2"])]
+        assert c.execute("select status from cases where document_id=%s", (did,)).fetchone()[0] == "extracted"
+
+
+def test_non_case_routed_away(env):
+    _, sid = env
+    TRIAGE["v"] = ing.Triage(kind="proposal", describes_delivered_work=False)
+    ing.ingest(sid, "a", "a", b"x", [])
+    assert jobs() == 0
+    TRIAGE["v"] = ing.Triage(kind="deck", describes_delivered_work=True)
+    ing.ingest(sid, "b", "b", b"y", [])
+    assert jobs() == 1
+
+
+def test_crawl_cursor_and_deletion(env):
+    s3, sid = env
+    s3.put_object(Bucket="src", Key="in/a.txt", Body=b"aaa")
+    s3.put_object(Bucket="src", Key="in/b.txt", Body=b"bbb")
+    assert crawl.crawl_s3(sid) == {"new": 2, "updated": 0, "skipped": 0, "deleted": 0, "failed": 0}
+    again = crawl.crawl_s3(sid)
+    assert again["new"] == 0 and again["updated"] == 0 and again["skipped"] == 2  # inside cursor slack
+    s3.delete_object(Bucket="src", Key="in/b.txt")
+    assert crawl.crawl_s3(sid)["deleted"] == 1
+    with db.connect() as c:
+        assert c.execute("select deleted_at is not null from documents where external_id='in/b.txt'").fetchone()[0]
+        assert c.execute("select acl_groups from documents where external_id='in/a.txt'").fetchone()[0] == ["g1"]
+
+
+def test_real_docling_conversion():
+    buf = io.BytesIO()
+    d = Document()
+    d.add_heading("Bank onboarding", 1)
+    d.add_paragraph("We cut onboarding from 12 days to 3 days.")
+    d.save(buf)
+    md = ing.to_markdown(buf.getvalue(), "case.docx")
+    assert "Bank onboarding" in md and "12 days to 3 days" in md
+
+
+def set_cursor(sid, iso):
+    with db.connect() as c:
+        c.execute("update sources set cursor=%s where id=%s", (iso, sid))
+
+
+def test_cursor_skips_known_old_keys_but_fetches_unknown(env):
+    s3, sid = env
+    s3.put_object(Bucket="src", Key="in/a.txt", Body=b"aaa")
+    crawl.crawl_s3(sid)
+    set_cursor(sid, "2999-01-01T00:00:00+00:00")  # everything is now "old"
+    s3.put_object(Bucket="src", Key="in/late.txt", Body=b"late")  # multipart-style: dated behind cursor
+    r = crawl.crawl_s3(sid)
+    assert r["skipped"] == 0 and r["new"] == 1  # a.txt not re-downloaded, unknown late.txt fetched
+
+
+def test_bad_document_does_not_stop_crawl(env, monkeypatch):
+    s3, sid = env
+    real = ing.to_markdown
+    def boom(data, name):
+        if data == b"bad":
+            raise ValueError("corrupt SECRET-CLIENT file")
+        return real(data, name)
+    monkeypatch.setattr(ing, "to_markdown", boom)
+    s3.put_object(Bucket="src", Key="in/a.txt", Body=b"bad")
+    s3.put_object(Bucket="src", Key="in/b.txt", Body=b"good")
+    r = crawl.crawl_s3(sid)
+    assert r["failed"] == 1 and r["new"] == 1
+    with db.connect() as c:
+        cursor, counts = c.execute("select cursor, last_counts from sources where id=%s", (sid,)).fetchone()
+    assert cursor and counts["failed_keys"] == [{"key": "in/a.txt", "error": "ValueError"}]
+    assert "SECRET" not in str(counts)
+
+
+def test_acl_change_and_reappearing_key_apply_without_redownload(env):
+    s3, sid = env
+    s3.put_object(Bucket="src", Key="in/a.txt", Body=b"aaa")
+    s3.put_object(Bucket="src", Key="in/b.txt", Body=b"bbb")
+    crawl.crawl_s3(sid)
+    s3.delete_object(Bucket="src", Key="in/b.txt")
+    crawl.crawl_s3(sid)
+    s3.put_object(Bucket="src", Key="in/b.txt", Body=b"bbb")
+    with db.connect() as c:
+        c.execute("update sources set acl_groups='{g9}' where id=%s", (sid,))
+    set_cursor(sid, "2999-01-01T00:00:00+00:00")
+    assert crawl.crawl_s3(sid)["skipped"] == 0  # nothing re-downloaded
+    with db.connect() as c:
+        rows = c.execute("select acl_groups, deleted_at is null from documents where source_id=%s", (sid,)).fetchall()
+    assert rows == [(["g9"], True), (["g9"], True)]
+
+
+def test_empty_listing_is_not_a_mass_delete(env):
+    s3, sid = env
+    s3.put_object(Bucket="src", Key="in/a.txt", Body=b"aaa")
+    crawl.crawl_s3(sid)
+    s3.delete_object(Bucket="src", Key="in/a.txt")
+    r = crawl.crawl_s3(sid)
+    assert r["deleted"] == 0 and r["empty_listing"] is True
+    with db.connect() as c:
+        assert c.execute("select deleted_at is null from documents where source_id=%s", (sid,)).fetchone()[0]
+
+
+def test_concurrent_crawl_returns_running(env):
+    _, sid = env
+    with db.connect() as other:
+        other.execute("select pg_advisory_lock(2, %s)", (sid,))
+        assert crawl.crawl_s3(sid) == {"status": "running"}
+
+
+def test_changed_document_no_longer_a_case_retires_it(env):
+    _, sid = env
+    ing.ingest(sid, "a", "a", b"one", ["g"])
+    with db.connect() as c:
+        did = c.execute("select id from documents where source_id=%s", (sid,)).fetchone()[0]
+        c.execute("insert into cases(document_id,status) values (%s,'approved')", (did,))
+    TRIAGE["v"] = ing.Triage(kind="other", describes_delivered_work=False)
+    before = jobs()
+    ing.ingest(sid, "a", "a", b"two", ["g"])
+    with db.connect() as c:
+        assert c.execute("select status from cases where document_id=%s", (did,)).fetchone()[0] == "rejected"
+    assert jobs() == before

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>{% block title %}Reference engine{% endblock %}</title>
+{% block head %}{% endblock %}<style>
+body{font:15px/1.4 system-ui,sans-serif;max-width:60rem;margin:1.5rem auto;padding:0 1rem}
+table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:.4rem;vertical-align:top;text-align:left}
+.bad{background:#fde8e8;color:#9b1c1c}.ok{background:#e6f4ea;color:#1e6b34}.empty{color:#777}
+.badge{padding:0 .4rem;border-radius:3px;font-size:.8rem}
+textarea,input[type=text]{width:100%;box-sizing:border-box}
+.note{background:#fff8e1;padding:.5rem;margin:.5rem 0}
+</style></head><body>
+<nav><a href="/">Home</a>{% if user and 'reviewer' in user.roles %} · <a href="/review">Review queue</a>{% endif %}
+{% if user %}
+<form method="post" action="/logout" style="display:inline;float:right">{{ user.name }} <button>Log out</button></form>
+{% endif %}</nav>
+{% block body %}{% endblock %}
+</body></html>

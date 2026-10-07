@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Audit: generated outputs</h1>
+<form method="get" action="/admin/audit"><input type="text" name="user" value="{{ who }}" placeholder="user (exact sub)" aria-label="user">
+<button>Filter</button></form>
+{% if not rows %}<p>No generations.</p>{% else %}
+<table><tr><th>When</th><th>User</th><th>Format</th><th>Cases</th><th>Anonymised</th><th>Industry-only ack</th><th>Research</th></tr>
+{% for id, at, who_, fmt, cases, anon, ack, research in rows %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ who_ }}</td><td>{{ fmt }}</td>
+<td>{% for c in cases %}<a href="/review/{{ c }}">{{ c }}</a> {% endfor %}</td>
+<td>{{ "yes" if anon else "no" }}</td><td>{{ "yes" if ack else "no" }}</td><td>{{ research or "" }}</td></tr>{% endfor %}</table>
+<p>{% if prev %}<a href="{{ prev }}">&laquo; newer</a>{% endif %} page {{ p }} {% if next %}<a href="{{ next }}">older &raquo;</a>{% endif %}</p>
+{% endif %}
+{% endblock %}

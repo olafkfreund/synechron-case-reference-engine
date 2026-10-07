@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: refs
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      retries: 15
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://postgres:dev@db/refs
+    depends_on:
+      db:
+        condition: service_healthy
+  worker:
+    build: .
+    command: python -m app.worker
+    environment:
+      DATABASE_URL: postgresql://postgres:dev@db/refs
+      DB_INIT_ON_START: "1"  # local only; in AWS app.migrate does this
+    depends_on:
+      db:
+        condition: service_healthy
+  web:
+    build: .
+    command: uvicorn --factory app.main:create_app --host 0.0.0.0 --port 8000 --proxy-headers
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:dev@db/refs
+      DB_INIT_ON_START: "1"  # local only; in AWS app.migrate does this
+      SESSION_SECRET: dev-only-not-a-secret
+      SESSION_HTTPS_ONLY: "false"  # dev over http only
+      APP_ORIGIN: http://localhost:8000
+    depends_on:
+      db:
+        condition: service_healthy

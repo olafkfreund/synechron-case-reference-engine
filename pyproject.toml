@@ -1,0 +1,19 @@
+[project]
+name = "reference-engine"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi", "uvicorn", "jinja2", "psycopg[binary]", "pydantic", "litellm",
+  "docling", "docxtpl", "python-pptx", "httpx", "authlib", "boto3",
+  "python-multipart", "itsdangerous",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "moto[s3]"]
+
+[tool.setuptools]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+addopts = "-p no:cacheprovider"  # /app is read-only for the app user
+pythonpath = ["."]  # tests import shared helpers from tests.test_auth
