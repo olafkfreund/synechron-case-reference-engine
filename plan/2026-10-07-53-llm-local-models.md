@@ -147,6 +147,18 @@ spec: spec/2026-10-07-53-llm-local-models.md
      digits and outcome splits;
    - an over-long summary is trimmed and flagged, and the case survives;
    - an existing invented-metric test still marks the item unsourced.
+   Done (deviations after review):
+   - Added flat fields `period_start` and `period_end`, which share the first
+     quote.
+   - `Item` and `Extraction` declare `required` keys, because enforced-schema
+     mode otherwise let qwen3:14b return no items. A null value becomes "".
+   - Integers take the first number only ("18 months to 2 years" → 18, not
+     182).
+   - The period check requires a 4-digit year in every part. It used to take
+     the first 4 characters, so "March 2031" matched anything; a part with no
+     year is unsourced.
+   - The summary is trimmed both in the validator (the review path, silently)
+     and in `assemble` (with a note).
    Traps:
    - Review edits (`app/review.py`) rebuild `ReferenceCase`. Trimming there is
      fine, but keep the edit flow's 400 for invalid input.

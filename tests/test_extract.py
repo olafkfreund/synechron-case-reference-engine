@@ -3,7 +3,7 @@ import uuid
 import pytest
 
 from app import db, extract as ex
-from app.schema import Outcome, Period, ReferenceCase, Sourced
+from app.schema import Extraction, Item, ReferenceCase
 
 DOC = ("Acme Bank cut customer onboarding from 12 days to 3 days. "
        "The programme ran for 18 months with a team of 8 engineers, "
@@ -11,13 +11,11 @@ DOC = ("Acme Bank cut customer onboarding from 12 days to 3 days. "
 Q = "cut customer onboarding from 12 days to 3 days"
 
 
-def case(**kw):
-    base = dict(
-        title=Sourced[str](value="Faster onboarding", source_quote=Q),
-        outcomes=[Outcome(metric="onboarding time", value="12 days to 3 days", source_quote=Q)],
-        summary="Onboarding fell from 12 days to 3 days.",
-    )
-    return ReferenceCase(**{**base, **kw})
+def case(*extra, summary="Onboarding fell from 12 days to 3 days.", title=("title", "Faster onboarding", Q),
+         outcome=("outcome", "onboarding time: 12 days to 3 days", Q)):
+    """What the model replies: flat items; (field, value, quote) tuples."""
+    items = [Item(field=f, value=v, quote=q) for f, v, q in (title, outcome, *extra) if f]
+    return Extraction(items=items, summary=summary)
 
 
 @pytest.fixture
@@ -53,13 +51,14 @@ def test_good_fields_sourced(doc):
 
 
 def test_invented_metric_unsourced(doc):
-    c = case(outcomes=[Outcome(metric="onboarding time", value="12 days to 1 day", source_quote=Q)])
+    c = case(outcome=("outcome", "onboarding time: 12 days to 1 day", Q))
     assert run(doc, c)[0]["outcomes"][0]["unsourced"] is True
 
 
 def test_missing_quote_unsourced_and_model_cannot_vouch(doc):
-    c = case(title=Sourced[str](value="Faster onboarding", source_quote="", unsourced=False))
-    c.outcomes[0].source_quote = "a sentence that is not in the document at all"
+    c = case(title=("title", "Faster onboarding", ""),
+             outcome=("outcome", "onboarding time: 12 days to 3 days", "a sentence that is not in the document at all"))
+    c.items[0] = Item.model_validate({"field": "title", "value": "Faster onboarding", "quote": "", "unsourced": False})
     data = run(doc, c)[0]
     assert data["title"]["unsourced"] is True and data["outcomes"][0]["unsourced"] is True
 
@@ -89,24 +88,24 @@ def test_reextraction_resets_approval_and_search_text_has_no_quotes(doc):
 
 
 def test_unsourced_quote_cannot_launder_summary_number(doc):
-    c = case(title=Sourced[str](value="Onboarding in 1 day", source_quote="onboarding now takes 1 day only"),
+    c = case(title=("title", "Onboarding in 1 day", "onboarding now takes 1 day only"),
              summary="Onboarding fell to 1 day.")
     data, summary, _, _ = run(doc, c)
     assert data["title"]["unsourced"] is True and summary == ""
 
 
 def test_period_years_and_zero_team(doc):
-    c = case(period=Period(start="2023-01", end="2024-06", source_quote="from January 2023 to June 2024"),
-             team_size=Sourced[int](value=0, source_quote="with a team of 8 engineers"))
+    pq = "from January 2023 to June 2024"
+    c = case(("period_start", "2023-01", pq), ("period_end", "2024-06", pq),
+             ("team_size", "0 engineers", "with a team of 8 engineers"))
     data = run(doc, c)[0]
     assert data["period"]["unsourced"] is False and data["team_size"]["unsourced"] is True
 
 
 def test_literal_fields_must_appear_in_quote(doc):
     q = "from January 2023 to June 2024 on AWS and Kubernetes"
-    c = case(tech_stack=[Sourced[str](value="Kubernetes", source_quote=q),
-                         Sourced[str](value="Azure", source_quote=q)],
-             client_mention=Sourced[str](value="Contoso Bank", source_quote=Q))
+    c = case(("technology", "Kubernetes", q), ("technology", "Azure", q),
+             ("client_mention", "Contoso Bank", Q))
     data = run(doc, c)[0]
     assert [t["unsourced"] for t in data["tech_stack"]] == [False, True]
     assert data["client_mention"]["unsourced"] is True
@@ -115,3 +114,21 @@ def test_literal_fields_must_appear_in_quote(doc):
 def test_truncation_is_flagged(doc, monkeypatch):
     monkeypatch.setattr(ex, "MAX_CHARS", 20)
     assert any("truncated" in n for n in run(doc, case())[0]["needs_attention"])
+
+
+def test_malformed_and_overlong_are_noted_and_case_survives(doc):
+    c = case(("bogus", "x", Q), ("technology", "", Q), summary="word " * 100)
+    data, summary, _, _ = run(doc, c)
+    notes = data["needs_attention"]
+    assert any("2 malformed" in n for n in notes) and any("trimmed" in n for n in notes)
+    assert data["title"]["value"] == "Faster onboarding" and data["tech_stack"] == []
+
+
+def test_invented_period_with_month_names_is_unsourced(doc):
+    pq = "from January 2023 to June 2024"
+    data = run(doc, case(("period_start", "March 2031", pq), ("period_end", "December 2039", pq)))[0]
+    assert data["period"]["unsourced"] is True  # "Marc"[:4] used to match anything
+    data = run(doc, case(("period_start", "March", pq)))[0]
+    assert data["period"]["unsourced"] is True  # no year at all never passes
+    data = run(doc, case(("period_start", "January 2023", pq), ("period_end", "June 2024", pq)))[0]
+    assert data["period"]["unsourced"] is False
