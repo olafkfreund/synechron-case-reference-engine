@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Model approvals</h1>
+<p>Confidential documents are only sent to local or own-cloud models. An approval lets one exact model id
+read one data class until it expires (12 months at most). Revoking ends it now.</p>
+<table><tr><th>Model</th><th>Data class</th><th>Approved by</th><th>Approved</th><th>Expires</th><th>Note</th><th></th></tr>
+{% for id, model, dc, by, at, exp, active, note, revoked_by in approvals %}<tr><td>{{ model }}</td><td>{{ dc }}</td><td>{{ by }}</td>
+<td>{{ at.strftime("%Y-%m-%d") }}</td><td>{{ exp.strftime("%Y-%m-%d %H:%M") }}{{ "" if active else " (expired)" }}</td><td>{{ note }}</td>
+<td>{% if active %}<form method="post" action="/admin/models/{{ id }}/revoke"><button>Revoke</button></form>{% endif %}</td></tr>{% endfor %}
+</table>
+<h2>Approve a model</h2>
+<form method="post" action="/admin/models">
+<p><input type="text" name="model" aria-label="model id" placeholder="exact LiteLLM model id" required>
+<input type="hidden" name="data_class" value="confidential">
+<input type="date" name="expires" aria-label="expires" required>
+<input type="text" name="note" aria-label="note" placeholder="note">
+<button>Approve</button></p></form>
+{% endblock %}

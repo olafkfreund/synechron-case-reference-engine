@@ -122,3 +122,16 @@ create table if not exists model_approvals (
   expires_at timestamptz not null,
   note text not null default ''
 );
+
+-- who ended an approval early
+alter table model_approvals add column if not exists revoked_by text;
+
+-- append-only: lowering a source's class opens its documents to more models, so every change is recorded
+create table if not exists source_class_changes (
+  id bigserial primary key,
+  source_id bigint not null,
+  old_class text,
+  new_class text not null,
+  changed_by text not null,
+  changed_at timestamptz not null default now()
+);

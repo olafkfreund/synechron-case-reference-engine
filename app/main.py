@@ -134,6 +134,8 @@ def create_app() -> FastAPI:
     app.include_router(research.router)
     from app import audit
     app.include_router(audit.router)
+    from app import models_admin
+    app.include_router(models_admin.router)
     oauth = OAuth()
     app.state.oauth = oauth
     if all(os.environ.get(k) for k in ("OIDC_METADATA_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET")):

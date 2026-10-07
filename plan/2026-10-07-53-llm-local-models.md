@@ -173,6 +173,19 @@ spec: spec/2026-10-07-53-llm-local-models.md
      select on create and update.
    - `/admin/audit` (`app/audit.py:14`): a section listing approvals.
 
+   Done (deviations after security review):
+   - Every change of a source's data class is written to an append-only
+     `source_class_changes` log (who, when, from, to), in the same
+     transaction, and shown on `/admin/audit`. Lowering a class to sanitised
+     or public opens a source's documents to every model, so a flip and a flip
+     back both stay visible.
+   - Approvals apply to `confidential` only (other classes need none) and
+     record `revoked_by`.
+   - There's no version/409 check on approvals: rows are only created or
+     ended, never edited.
+   - An omitted `data_class` on a source update leaves the class unchanged.
+   - Expiry is the end of the chosen day; the latest accepted is under 12
+     months, using the database clock.
    → verify with a new `pytest tests/test_models_admin.py`: admin only;
    expiry > 12 months refused; revoke works; sources data class saved; audit
    shows approvals.
