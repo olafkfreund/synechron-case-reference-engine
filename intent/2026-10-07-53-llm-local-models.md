@@ -47,10 +47,22 @@ Bedrock, including the SOW change in #52.
   (about 12 GB or less, with their context), so the workstation stays usable.
   Extraction must work with them, for example by asking for a simpler format
   that our code assembles into the strict record.
-- **Ollama Cloud models are allowed only for sanitised or synthetic
-  documents.** Decided 2026-10-07. This is enforced in code: a `-cloud` model
-  can't process documents from a source not marked as sanitised. The Ollama
-  API key comes from the existing agenix secret.
+- **A data policy decides which model may see which document.** It is
+  enforced in code before every AI call, and fails closed:
+  - Each source has a data class: `confidential` (the default), `sanitised`
+    or `public`.
+  - Each model alias declares where data goes: `local` (Ollama on this
+    machine), `our-cloud` (Bedrock in our AWS account) or `third-party`
+    (Ollama Cloud, Anthropic API, others).
+  - Confidential documents go to local or our-cloud models only.
+    Third-party models get sanitised and public documents.
+  - External models stay possible for confidential data in future scenarios,
+    but only when an admin explicitly approves that model for confidential
+    data. The approval is recorded in the audit trail, where a data-policy
+    sign-off plugs in.
+  - Today's decision (2026-10-07): Ollama Cloud for sanitised or synthetic
+    documents only. The Ollama API key comes from the existing agenix
+    secret.
 - A repeatable development evaluation, run on a local model, reports per
   document: fields filled, items sourced, time.
 
@@ -69,13 +81,16 @@ Bedrock, including the SOW change in #52.
 - JSON mode is weaker than an enforced schema, so the reply must still be fully
   validated against `ReferenceCase`. Invalid output fails the job; it is never
   partially trusted.
-- Real client documents only go to local models (or Bedrock in production).
-  Cloud models only ever get sanitised or synthetic sources; the rule fails
-  closed when a source isn't marked.
+- Real client documents only go to local or our-cloud models unless a
+  recorded approval says otherwise. An unmarked source counts as
+  confidential.
 - Production on Bedrock is unchanged unless #26 shows that Claude
   under-extracts with enforced schemas too.
 
 ## Open questions
+
+- Who may approve a third-party model for confidential data (role or person),
+  and must the approval name a specific model and expire?
 
 - Should the over-long summary be trimmed to 80 words, or blanked and
   flagged? Trimming keeps something usable but may cut mid-sentence.
