@@ -46,22 +46,28 @@ def check(case: ReferenceCase, text: str) -> None:
         mark(case.period, " ".join(y for ys in years for y in ys))
 
 
+def build(full_text: str, data_class: str) -> ReferenceCase:
+    """The extraction steps on a text, without the database (also run by scripts/eval_extraction.py)."""
+    text = full_text[:MAX_CHARS]
+    reply = complete_json("EXTRACT_MODEL", SYSTEM, f"<document>\n{text}\n</document>", Extraction,
+                          data_class=data_class)
+    case, notes = assemble(reply)  # notes always assigned: anything the model sent is overwritten
+    check(case, text)
+    if len(full_text) > MAX_CHARS:
+        notes.append(f"document truncated at {MAX_CHARS:,} of {len(full_text):,} characters")
+    if not case.summary_sourced():
+        case.summary = ""
+        notes.append("summary used numbers absent from the sourced quotes; blanked")
+    case.needs_attention = notes
+    return case
+
+
 def extract(document_id: int) -> None:
     with db.connect() as conn:
         row = conn.execute("select d.text, s.data_class from documents d join sources s on s.id=d.source_id where d.id=%s", (document_id,)).fetchone()
         if not row:
             raise LookupError(f"document {document_id} not found")
-        text = row[0][:MAX_CHARS]
-        reply = complete_json("EXTRACT_MODEL", SYSTEM, f"<document>\n{text}\n</document>", Extraction,
-                              data_class=row[1])
-        case, notes = assemble(reply)  # notes always assigned: anything the model sent is overwritten
-        check(case, text)
-        if len(row[0]) > MAX_CHARS:
-            notes.append(f"document truncated at {MAX_CHARS:,} of {len(row[0]):,} characters")
-        if not case.summary_sourced():
-            case.summary = ""
-            notes.append("summary used numbers absent from the sourced quotes; blanked")
-        case.needs_attention = notes
+        case = build(row[0], row[1])
         data = case.model_dump()
         conn.execute(
             "insert into cases(document_id, data, summary, search_text, status) "

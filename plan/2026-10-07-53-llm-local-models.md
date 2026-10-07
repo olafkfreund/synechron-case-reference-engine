@@ -202,6 +202,25 @@ spec: spec/2026-10-07-53-llm-local-models.md
    third-party model on a confidential folder → PolicyError; the output has
    no document text, run on a fixture docx with a fake model), then a real
    run (Tests below).
+
+   Done (deviations after review and the real run):
+   - `extract.build()` and `ingest.triage_text()` were factored out so the
+     script runs the real code path without the database or storage;
+     `extract()` and ingest behave as before.
+   - Options are set fresh per model, and an inherited
+     `EXTRACT_MODEL_OPTIONS` with `destination` is refused (exit 2): it
+     would override the policy for every model in `--models`. So in Docker,
+     run the script with `--network host`.
+   - A document that fails to convert prints its name and error type only,
+     and the run continues. The Ollama base falls back to `OLLAMA_API_BASE`,
+     as the policy does.
+   - Tests added: `..` and symlinked paths into the repo are refused; an
+     inherited `destination` cannot override the policy.
+   - The first real run failed one document: Ollama aborted with "token
+     repeat limit reached" (qwen3:14b loops at temperature 0). Fixed by
+     passing `repeat_penalty` through to Ollama (`app/llm.py`) and defaulting
+     it to 1.05 in the script and README. 1.05 and 1.1 both fixed it; 1.05
+     kept more items.
 7. **Docs.** `README.md` gets a "Local development with Ollama" section
    (pull `qwen3:14b`, the `EXTRACT_MODEL` and OPTIONS env, `OLLAMA_CLOUD_KEY`
    only for sanitised or public sources, and why not the 27B models).
@@ -209,6 +228,9 @@ spec: spec/2026-10-07-53-llm-local-models.md
    #26 decides otherwise.
 
    → verify by reading. No code.
+
+   Done: as planned, plus a note that the script needs `--network host` in
+   Docker. The README options include `repeat_penalty: 1.05` (step 6).
 
 ## Tests
 
@@ -220,6 +242,25 @@ spec: spec/2026-10-07-53-llm-local-models.md
   - at least 2 technologies where the document names several;
   - VRAM below 16 GB.
   Record the numbers in this plan's Done notes.
+
+  Done (2026-10-07, `ollama_chat/qwen3:14b`, local only, metrics only):
+  - The folder holds 12 files. 11 are `.docx`, `.pptx` or `.pdf`; one is a
+    legacy `.doc`, which the app does not ingest either, so the script skips it.
+  - **11 of 11 extract without failing**, with `repeat_penalty: 1.05`.
+    Without it, 1 of 11 failed (see step 6).
+  - **On average 12.4 sourced items out of 17.6 per document.** The lowest
+    is 6 of 12. The target was ≥ 3.
+  - **Technologies:** 2 to 9 on 6 documents; 1 on 5 documents (mostly
+    ServiceNow SOWs). Whether those 5 name several technologies was not
+    checked by hand: the run prints metrics only.
+  - **33 s per document on average; peak VRAM 13.2 GB** (target < 16 GB),
+    fully on the GPU.
+  - **Summaries were blanked on 10 of 11** ("numbers absent from the sourced
+    quotes"). `summary_sourced()` works as designed, but small models put
+    numbers in summaries. Follow-up: tell the prompt to keep numbers out of
+    the summary. Not in this plan.
+  - Contracts, change orders and amendments are classed as `case` or
+    `proposal` until #52 adds `contract`.
 
 ## Rollback
 

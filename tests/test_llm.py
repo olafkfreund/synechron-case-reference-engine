@@ -115,16 +115,16 @@ def test_policy_error_has_no_content_and_blocks_before_request(monkeypatch):
 
 
 def test_json_mode_request_shape(monkeypatch):
-    _, kw = run(monkeypatch, '{"title": {}}', model=LOCAL, opts={"think": False, "num_ctx": 24576})
+    _, kw = run(monkeypatch, '{"title": {}}', model=LOCAL, opts={"think": False, "num_ctx": 24576, "repeat_penalty": 1.05})
     assert kw["response_format"] == {"type": "json_object"}
     assert "Reply with JSON matching this schema" in kw["messages"][0]["content"][0]["text"]
-    assert kw["think"] is False and kw["num_ctx"] == 24576 and "api_key" not in kw
+    assert kw["think"] is False and kw["num_ctx"] == 24576 and kw["repeat_penalty"] == 1.05 and "api_key" not in kw
 
 
 def test_schema_mode_default_for_bedrock_and_ollama_only_options(monkeypatch):
-    _, kw = run(monkeypatch, '{"title": {}}', opts={"think": False, "num_ctx": 1})
+    _, kw = run(monkeypatch, '{"title": {}}', opts={"think": False, "num_ctx": 1, "repeat_penalty": 1.05})
     assert kw["response_format"]["type"] == "json_schema"
-    assert "think" not in kw and "num_ctx" not in kw
+    assert "think" not in kw and "num_ctx" not in kw and "repeat_penalty" not in kw
 
 
 def test_ollama_cloud_key_only_for_ollama_com(monkeypatch):

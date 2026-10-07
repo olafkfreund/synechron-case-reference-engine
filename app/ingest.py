@@ -41,6 +41,10 @@ def to_markdown(data: bytes, name: str, max_pages: int | None = None) -> str:
     return res.document.export_to_markdown()
 
 
+def triage_text(text: str, data_class: str) -> Triage:
+    return complete_json("EXTRACT_MODEL", TRIAGE_SYSTEM, text[:TRIAGE_CHARS], Triage, data_class=data_class)
+
+
 def wants_extraction(t: Triage) -> bool:
     return t.kind == "case" or (t.kind in ("proposal", "deck") and t.describes_delivered_work)
 
@@ -62,7 +66,7 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, acl_groups
     key = f"originals/{checksum}"
     boto3.client("s3").put_object(Bucket=os.environ["S3_BUCKET"], Key=key, Body=data)
     text = to_markdown(data, title or PurePosixPath(external_id).name)  # title carries the extension; SharePoint/Confluence ids do not
-    triage = complete_json("EXTRACT_MODEL", TRIAGE_SYSTEM, text[:TRIAGE_CHARS], Triage, data_class=data_class)
+    triage = triage_text(text, data_class)
 
     extract = wants_extraction(triage)
     with db.connect() as conn:

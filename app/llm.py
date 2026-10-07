@@ -72,7 +72,7 @@ def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: t
         extra["response_format"] = {"type": "json_schema", "json_schema": {
             "name": model_cls.__name__, "schema": schema, "strict": True}}
     if ollama:
-        for k in ("think", "num_ctx", "api_base"):
+        for k in ("think", "num_ctx", "repeat_penalty", "api_base"):
             if k in opts:
                 extra[k] = opts[k]
         # not OLLAMA_API_KEY: LiteLLM reads that one itself and sends it to every Ollama host
