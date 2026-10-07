@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 53
 intent: intent/2026-10-07-53-llm-local-models.md
 ---
