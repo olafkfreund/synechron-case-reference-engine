@@ -30,7 +30,7 @@ create table if not exists documents (
   checksum text not null,
   s3_key text,
   text text not null default '',
-  kind text check (kind in ('case','proposal','deck','other')),
+  kind text check (kind in ('case','contract','proposal','deck','other')),
   acl_groups text[] not null default '{}',
   deleted_at timestamptz,
   created_at timestamptz not null default now(),
@@ -63,6 +63,11 @@ create table if not exists cases (
 );
 create index if not exists cases_tsv_idx on cases using gin (tsv);
 create index if not exists cases_data_idx on cases using gin (data);
+
+-- triage may now classify a statement of work or change order as 'contract'
+alter table documents drop constraint if exists documents_kind_check;
+alter table documents add constraint documents_kind_check
+  check (kind in ('case','contract','proposal','deck','other'));
 
 -- what a case claims: work delivered, or scope contracted (signed SOW / change order)
 alter table cases add column if not exists basis text not null default 'delivered';

@@ -80,6 +80,47 @@ def test_non_case_routed_away(env):
     assert jobs() == 1
 
 
+@pytest.mark.parametrize("kind,deliv,executed,flag,want", [
+    ("case", False, False, False, "delivered"),
+    ("proposal", True, False, False, "delivered"),
+    ("deck", True, False, False, "delivered"),
+    ("proposal", False, True, False, None),
+    ("deck", False, False, False, None),
+    ("other", True, True, True, None),
+    ("contract", False, True, False, "engagement"),
+    ("contract", True, False, False, None),
+    ("contract", False, False, True, "engagement"),
+])
+def test_basis_for_routing_table(kind, deliv, executed, flag, want):
+    t = ing.Triage(kind=kind, describes_delivered_work=deliv, executed=executed)
+    assert ing.basis_for(t, {"executed_contracts": True} if flag else {}) == want
+
+
+def test_contract_payload_and_source_flag(env):
+    _, sid = env
+    TRIAGE["v"] = ing.Triage(kind="contract", describes_delivered_work=False, executed=False)
+    ing.ingest(sid, "a", "a", b"x", [])
+    assert jobs() == 0
+    with db.connect() as c:
+        c.execute("update sources set config=config || '{\"executed_contracts\": true}' where id=%s", (sid,))
+    ing.ingest(sid, "b", "b", b"y", [])
+    TRIAGE["v"] = ing.Triage(kind="contract", describes_delivered_work=False, executed=True)
+    ing.ingest(sid, "c", "c", b"z", [])
+    with db.connect() as c:
+        got = c.execute("select payload->>'basis', payload->>'basis_reason' from jobs where (payload->>'document_id')::bigint in "
+                        "(select id from documents where source_id=%s) order by id", (sid,)).fetchall()
+    assert got == [("engagement", "source marked executed"), ("engagement", "executed contract")]
+
+
+def test_triage_input_includes_the_tail(monkeypatch):
+    seen = []
+    monkeypatch.setattr(ing, "complete_json", lambda m, s, text, *a, **k: seen.append(text) or CASE)
+    ing.triage_text("H" * 9000 + "M" * 9000 + "SIGNED", "confidential")
+    assert seen[0].endswith("SIGNED") and len(seen[0]) < 12100 and "M" * 3000 not in seen[0][8000:8010]
+    ing.triage_text("short", "confidential")
+    assert seen[1] == "short"
+
+
 def test_crawl_cursor_and_deletion(env):
     s3, sid = env
     s3.put_object(Bucket="src", Key="in/a.docx", Body=b"aaa")

@@ -63,7 +63,7 @@ def test_case_basis_defaults_to_delivered_and_is_checked():
     with db.connect() as c:
         try:
             sid = c.execute("insert into sources(kind,name) values ('s3','bs') returning id").fetchone()[0]
-            did = c.execute("insert into documents(source_id,external_id) values (%s,'b') returning id", (sid,)).fetchone()[0]
+            did = c.execute("insert into documents(source_id,external_id,checksum) values (%s,'b','x') returning id", (sid,)).fetchone()[0]
             assert c.execute("insert into cases(document_id) values (%s) returning basis", (did,)).fetchone()[0] == "delivered"
             with pytest.raises(psycopg.errors.CheckViolation):
                 c.execute("update cases set basis='promised' where document_id=%s", (did,))

@@ -82,6 +82,11 @@ after #53 merges, then start at step 1.
      exactly as today (`rejected` when there's no basis).
    - The worker's `extract` handler must pass the payload through
      (`app/worker.py` HANDLERS).
+   *Done, with deviations:* `sql/schema.sql` also widens `documents_kind_check`
+   to allow `contract` (an insert fails without it); `extract()` takes
+   `basis`/`basis_reason` now so the worker cannot crash before step 3;
+   `ingest` derives `basis_reason` (`executed contract` if triage said
+   executed, else `source marked executed`).
 3. **Engagement extraction.** In `app/extract.py`:
    - `extract(document_id, basis="delivered", basis_reason="")` picks the
      contract prompt when `basis == "engagement"`;
@@ -137,6 +142,7 @@ after #53 merges, then start at step 1.
 ## Tests
 
 - `docker compose run --rm app pytest` is green.
+  Trap: compose has no bind mount; run `docker compose build app` first.
 - Evaluation on the 12 presale documents with `qwen3:14b` (#53's script),
   local only. Record per document: kind, executed, basis, and outcomes count
   (must be 0 for engagements). Pass when:

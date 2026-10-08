@@ -62,7 +62,7 @@ def build(full_text: str, data_class: str) -> ReferenceCase:
     return case
 
 
-def extract(document_id: int) -> None:
+def extract(document_id: int, basis: str = "delivered", basis_reason: str = "") -> None:  # basis used from step 3
     with db.connect() as conn:
         row = conn.execute("select d.text, s.data_class from documents d join sources s on s.id=d.source_id where d.id=%s", (document_id,)).fetchone()
         if not row:
