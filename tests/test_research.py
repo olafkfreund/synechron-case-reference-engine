@@ -261,11 +261,15 @@ def test_cache_hit_within_30_days_skips_brave(web, cleanup):
     web.html("docs.example", "/guide")
     first = make_row(q)
     rs.run(first)
+    with db.connect() as c:  # only the original fetch is old
+        c.execute("update research set retrieved_at = now() - interval '29 days' where id=%s", (first,))
     second = make_row(q)
     rs.run(second)
     assert len(web.brave_calls) == 1 and row(second)[0] == "done" and row(second)[2] == row(first)[2]
-    with db.connect() as c:  # an old result is not reused
-        c.execute("update research set retrieved_at = now() - interval '31 days' where id in (%s,%s)", (first, second))
+    with db.connect() as c:  # the copy keeps the fetch time, so the window does not restart
+        at = dict(c.execute("select id, retrieved_at from research where id in (%s,%s)", (first, second)).fetchall())
+        assert at[second] == at[first]
+        c.execute("update research set retrieved_at = retrieved_at - interval '2 days' where id in (%s,%s)", (first, second))
     third = make_row(q)
     rs.run(third)
     assert len(web.brave_calls) == 2

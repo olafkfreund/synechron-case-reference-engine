@@ -42,6 +42,9 @@ spec: spec/2026-10-08-59-research-cache-expiry.md
    Traps:
    - compose has no bind mount: build before each run;
    - `cached` is `None` on a miss, so guard `cached[1]`.
+   *Done:* the rewritten test failed on the old code (the copy's
+   `retrieved_at` was `now()`, not the original's) and passes with the fix.
+   Full suite: 399 passed. No deviations.
 
 ## Tests
 
