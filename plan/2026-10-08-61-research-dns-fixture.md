@@ -39,6 +39,10 @@ spec: spec/2026-10-08-61-research-dns-fixture.md
      `DATABASE_URL`, so this doesn't apply, but don't call `url()` per
      lookup: read it once in `__init__`.
 
+   *Done:* before the edit, the run under the db container's own name
+   passed 28 tests and then hung until `timeout` ended it (exit 124). After
+   the edit: 47 passed in 6 s. Full suite: 399 passed. No deviations.
+
 ## Tests
 
 - The research and claims tests pass with the database at a host other than

@@ -7,6 +7,7 @@ from base64 import b64encode
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from psycopg.conninfo import conninfo_to_dict
 from itsdangerous import TimestampSigner
 
 from app import anonymise as an, db, ingest, main, research as rs, worker
@@ -95,6 +96,7 @@ class Web:
 
     def __init__(self, monkeypatch):
         self.dns, self.real = {}, socket.getaddrinfo
+        self.db_host = conninfo_to_dict(db.url()).get("host")  # read once: with DB_SECRET_ARN, url() calls AWS
         self.pages = {}   # (host, path) -> (status, headers, body)
         self.seen = []    # (host, path)
         self.brave_calls = []
@@ -104,7 +106,7 @@ class Web:
         monkeypatch.setattr(rs.time, "sleep", self.sleeps.append)
 
     def getaddrinfo(self, host, port, *args, **kw):
-        if host == "db":  # psycopg resolves the database through the same function
+        if host == self.db_host:  # psycopg resolves the database through the same function
             return self.real(host, port, *args, **kw)
         ip = self.dns.get(host, host if host.replace(".", "").isdigit() or ":" in host else "93.184.216.34")
         if host.isdigit():  # "2130706433": the resolver turns it into 127.0.0.1
