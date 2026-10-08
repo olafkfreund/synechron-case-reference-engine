@@ -282,3 +282,23 @@ def test_failed_item_is_retried_next_run(sp):
     sp.delta[f"{ROOT}?token=d1"] = (200, page([], delta=f"{ROOT}?token=d2"))
     counts = crawl.crawl_sharepoint(sp.sid)
     assert counts["new"] == 1 and source(sp.sid)[1]["retry_ids"] == [] and docs(sp.sid)["f1"][0] is False
+
+def _change_groups_after_first_ingest(monkeypatch, sid):
+    """As an admin's save does mid-crawl: new groups on the source and on its documents already written."""
+    real, done = crawl.ingest, []
+
+    def wrapped(*a, **k):
+        out = real(*a, **k)
+        if not done:
+            done.append(1)
+            with db.connect() as c:
+                c.execute("update sources set acl_groups='{g-new}' where id=%s", (sid,))
+                c.execute("update documents set acl_groups='{g-new}' where source_id=%s", (sid,))
+        return out
+    monkeypatch.setattr(crawl, "ingest", wrapped)
+
+
+def test_crawl_does_not_write_back_groups_changed_mid_crawl(sp, monkeypatch):
+    _change_groups_after_first_ingest(monkeypatch, sp.sid)
+    first_run(sp)
+    assert {v[1][0] for v in docs(sp.sid).values()} == {"g-new"} and len(docs(sp.sid)) == 2

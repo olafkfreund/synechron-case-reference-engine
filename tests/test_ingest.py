@@ -304,3 +304,28 @@ def test_source_deleted_before_insert_raises(env, monkeypatch):
     monkeypatch.setattr(ing, "triage_text", triage_then_delete)
     with pytest.raises(LookupError):
         ing.ingest(sid, "a", "a", b"one")
+
+def _change_groups_after_first_ingest(monkeypatch, sid):
+    """As an admin's save does mid-crawl: new groups on the source and on its documents already written."""
+    real, done = crawl.ingest, []
+
+    def wrapped(*a, **k):
+        out = real(*a, **k)
+        if not done:
+            done.append(1)
+            with db.connect() as c:
+                c.execute("update sources set acl_groups='{g-new}' where id=%s", (sid,))
+                c.execute("update documents set acl_groups='{g-new}' where source_id=%s", (sid,))
+        return out
+    monkeypatch.setattr(crawl, "ingest", wrapped)
+
+
+def test_s3_crawl_does_not_write_back_groups_changed_mid_crawl(env, monkeypatch):
+    s3, sid = env
+    for k in "abc":
+        s3.put_object(Bucket="src", Key=f"in/{k}.docx", Body=k.encode())
+    _change_groups_after_first_ingest(monkeypatch, sid)
+    crawl.crawl_s3(sid)
+    with db.connect() as c:
+        rows = c.execute("select acl_groups from documents where source_id=%s", (sid,)).fetchall()
+    assert rows == [(["g-new"],)] * 3
