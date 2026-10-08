@@ -102,6 +102,15 @@ spec: spec/2026-10-08-42-dependency-lock.md
    (without constraints) on the committed lock: `requirements.lock` is
    unchanged (`git diff --exit-code`).
    Traps: the README command must be the same one step 1 used, minus `-c`.
+
+   *Done (coder; finished by the session model):* the README section and the
+   `cpu_architecture` note are in.
+   *Deviation:* the step 1 lock carried `-c constraints.txt` in its
+   `# via` comments, so the README command, which has no `-c`, could never
+   reproduce it byte for byte. The committed lock is now the README
+   command's own output: pins and hashes are identical to step 1 (the
+   non-comment diff is empty), and only the comments changed. Running the
+   README command again leaves the file unchanged.
 3. **Verification (session model).**
    - Two `--no-cache` builds give an identical `pip freeze`.
    - Drift check: add `"tomli-w"` to `pyproject.toml`, build, and expect a

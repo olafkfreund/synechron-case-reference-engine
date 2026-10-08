@@ -93,7 +93,7 @@ variable "worker_desired_count" {
 }
 
 variable "cpu_architecture" {
-  description = "Must match the image: X86_64 or ARM64."
+  description = "Must match the image: X86_64 or ARM64. ARM64 needs a re-lock (README: Dependency lock)."
   type        = string
   default     = "X86_64"
 }
