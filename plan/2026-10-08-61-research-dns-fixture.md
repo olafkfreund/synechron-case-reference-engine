@@ -43,6 +43,11 @@ spec: spec/2026-10-08-61-research-dns-fixture.md
    passed 28 tests and then hung until `timeout` ended it (exit 124). After
    the edit: 47 passed in 6 s. Full suite: 399 passed. No deviations.
 
+*Review (fresh Opus): approved, no blockers.* Only the exact DB host goes
+to real DNS; every test page host is `*.example` or an IP literal. Not
+taken: multi-host DSNs (`h1,h2`) and a host from `PGHOST` still hang as
+before (nobody runs tests that way), and an isort-only import move.
+
 ## Tests
 
 - The research and claims tests pass with the database at a host other than
