@@ -134,3 +134,12 @@ def test_extraction_schema_requires_its_keys():
     s = llm_schema(Extraction)
     assert set(s["required"]) == {"items", "summary"}
     assert set(s["$defs"]["Item"]["required"]) == {"field", "value", "quote"}
+
+
+def test_basis_hidden_from_llm_and_search():
+    c = make()
+    assert c.basis == "delivered"
+    assert "basis" not in json.dumps(llm_schema())
+    c.basis, c.basis_reason = "engagement", "ZZREASON"
+    assert "engagement" not in c.search_text() and "ZZREASON" not in c.search_text()
+    assert "ZZREASON" not in "".join(c.quotes())

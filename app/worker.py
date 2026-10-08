@@ -6,7 +6,7 @@ from app import crawl, db, extract, llm, research
 
 MAX_ATTEMPTS = 3
 HANDLERS = {
-    "extract": lambda p: extract.extract(p["document_id"]),
+    "extract": lambda p: extract.extract(p["document_id"], p.get("basis", "delivered"), p.get("basis_reason", "")),
     "crawl_s3": lambda p: crawl.crawl_s3(p["source_id"]),
     "crawl_sharepoint": lambda p: crawl.crawl_sharepoint(p["source_id"]),
     "crawl_confluence": lambda p: crawl.crawl_confluence(p["source_id"]),

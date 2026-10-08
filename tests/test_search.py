@@ -116,6 +116,27 @@ def test_llm_failure_uses_rank_order(approved, monkeypatch):
     assert notes == ["AI picks unavailable; showing the best text matches"]
 
 
+def set_basis(cid, basis):
+    with db.connect() as c:
+        c.execute("update cases set basis=%s where id=%s", (basis, cid))
+
+
+def test_engagement_ranks_after_delivered_on_tie_and_is_badged(approved, monkeypatch):
+    eng = approved()  # lower id, identical text: would win the tie on id alone
+    dlv = approved()
+    set_basis(eng, "engagement")
+    got = sr.search(ME, "onboarding", {})
+    assert [c["id"] for c in got] == [dlv, eng] and [c["basis"] for c in got] == ["delivered", "engagement"]
+    seen = []
+    monkeypatch.setattr(sr, "complete_json", lambda m, s, user, *a, **k: seen.append((s, user)) or sr.Picks(picks=[]))
+    sr.pick("onboarding", got, [])
+    assert f"case_id {eng} (basis: engagement)" in seen[0][1] and f"case_id {dlv} (basis: delivered)" in seen[0][1]
+    assert "never describe them as delivered" in seen[0][0]
+    monkeypatch.setattr(sr, "complete_json", lambda *a, **k: sr.Picks(picks=[sr.Pick(case_id=dlv, reason="", tailored="x")]))
+    r = client([USER, DOCS]).post("/search", data={"bid_text": "onboarding"})
+    assert "Delivered case" in r.text and "Engagement (contracted scope)" in r.text
+
+
 def test_page_for_plain_user_hides_quotes_and_orgs(approved, monkeypatch):
     c1 = approved(data(organisations=["Secret Org Ltd"]).model_copy(
         update={"title": S("Faster onboarding", "Hidden source quote text")}))

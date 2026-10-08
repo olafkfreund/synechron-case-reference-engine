@@ -1,5 +1,5 @@
 import re
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.json_schema import SkipJsonSchema
@@ -88,6 +88,8 @@ class ReferenceCase(_Model):
     organisations: list[str] = Field([], description="Every company, bank or other organisation named in the document, as written.")
     # reviewer notes set by extract.py only (hidden from the LLM, like `unsourced`)
     needs_attention: SkipJsonSchema[list[str]] = []
+    basis: SkipJsonSchema[Literal["delivered", "engagement"]] = "delivered"
+    basis_reason: SkipJsonSchema[str] = ""  # "executed contract" | "source marked executed"
 
     @field_validator("summary")
     @classmethod

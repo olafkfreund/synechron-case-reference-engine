@@ -2,6 +2,7 @@
 {% block body %}
 <h1>Case {{ id }}</h1>
 <p>Document: <b>{{ document }}</b> · source: {{ source }} · <code>{{ external_id }}</code> · status: {{ status }}</p>
+<p><span class="badge {{ "ok" if basis == "delivered" else "empty" }}">{{ "Engagement (contracted scope)" if basis == "engagement" else "Delivered case" }}</span>{% if basis_reason %} {{ basis_reason }}{% endif %}</p>
 {% for n in notes %}<div class="note">{{ n }}</div>{% endfor %}
 <table><tr><th>Field</th><th>Value</th><th>Source quote</th><th></th></tr>
 {% for r in rows %}{% set f = "f" ~ loop.index %}<tr>
