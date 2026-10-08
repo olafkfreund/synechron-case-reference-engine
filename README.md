@@ -43,6 +43,29 @@ docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e UV_CACHE_DIR=/tmp/uv 
 - A dependency that isn't in the lock fails the build at `pip check`.
 - The lock is x86_64 only: for ARM64, re-lock with `--python-platform aarch64-manylinux_2_28`.
 
+## Local login (test users)
+
+```sh
+docker compose up web worker    # starts db and idp too
+```
+
+Open http://localhost:8000. Login goes to a mock provider at `idp.localhost:8080`: type a username and
+paste the claims JSON from the table.
+
+| Username | Claims | Gets |
+| --- | --- | --- |
+| `admin` | `{"name": "Test Admin", "groups": ["refs-admins"]}` | admin, reviewer, user |
+| `reviewer` | `{"groups": ["refs-reviewers"]}` | reviewer, user |
+| `sales` | `{"groups": ["refs-users", "sales"]}` | user |
+| `nobody` | `{}` | no role |
+
+- `sales` sees a source only if it has the access group `sales`: as `admin`, give a source that group first.
+- If `idp.localhost` doesn't resolve in your browser, add `127.0.0.1 idp.localhost` to `/etc/hosts`.
+- Port 8080 appears in three places: the `idp` port, its `SERVER_PORT`, and `OIDC_METADATA_URL` in
+  `docker-compose.yml`. Change all three together.
+- Check all four logins with `scripts/check_local_login.sh` (`BASE` overrides `http://localhost:8000`).
+- **Local only:** this provider logs anyone in as anything. Never expose it.
+
 ## Local development with Ollama
 
 Extraction works with a local model, so real documents never leave the workstation.
