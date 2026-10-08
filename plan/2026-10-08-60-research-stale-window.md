@@ -62,6 +62,10 @@ spec: spec/2026-10-08-60-research-stale-window.md
    - keep the SIGTERM path (`except BaseException`) unchanged; `finally`
      runs after it.
 
+   *Done:* with the thread start disabled, the long-job test failed (the
+   second claim got the job); with it, it passes. Full suite: 402 passed.
+   No deviations.
+
 ## Tests
 
 - The full suite is green. The new long-job test fails without the
