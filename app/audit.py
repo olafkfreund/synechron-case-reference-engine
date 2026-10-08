@@ -24,6 +24,9 @@ def audit_page(request: Request, p: int = Query(1, ge=1, le=100000), who: str = 
         class_changes = conn.execute(
             "select c.changed_at, coalesce(s.name, '(deleted source)'), c.old_class, c.new_class, c.changed_by "
             "from source_class_changes c left join sources s on s.id = c.source_id order by c.id desc limit 100").fetchall()
+        acl_changes = conn.execute(
+            "select c.changed_at, coalesce(s.name, '(deleted source)'), c.old_groups, c.new_groups, c.changed_by "
+            "from source_acl_changes c left join sources s on s.id = c.source_id order by c.id desc limit 100").fetchall()
     link = lambda n: "/admin/audit?" + urlencode({"p": n, **({"user": who} if who else {})})  # noqa: E731
-    return page(request, "audit.html", user, rows=rows[:PAGE_SIZE], approvals=approvals, class_changes=class_changes, who=who, p=p,
+    return page(request, "audit.html", user, rows=rows[:PAGE_SIZE], approvals=approvals, class_changes=class_changes, acl_changes=acl_changes, who=who, p=p,
                 prev=link(p - 1) if p > 1 else None, next=link(p + 1) if len(rows) > PAGE_SIZE else None)

@@ -92,12 +92,14 @@ def test_removing_a_source_group_applies_to_documents_at_once_and_is_logged(make
     assert reader.get(f"/review/{cid}").status_code == 200
     a.post(f"/admin/sources/{sid}", data={"acl_groups": "g-other"})
     a.post(f"/admin/sources/{sid}", data={"acl_groups": "g-other"})  # same groups again: no row
+    page = a.get("/admin/audit").text
     with db.connect() as c:
         assert c.execute("select acl_groups from documents where source_id=%s", (sid,)).fetchone()[0] == ["g-other"]
         rows = c.execute("select old_groups, new_groups, changed_by from source_acl_changes where source_id=%s",
                          (sid,)).fetchall()
         c.execute("delete from source_acl_changes where source_id=%s", (sid,))
     assert rows == [(["g-docs", "g-other"], ["g-other"], "u1")]
+    assert "Access group changes" in page and "g-docs, g-other" in page
     assert reader.get(f"/review/{cid}").status_code == 404
 
 
