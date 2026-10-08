@@ -65,6 +65,16 @@ def test_app_role_is_idempotent_and_cannot_change_the_schema(app_role):
         assert c.execute("select to_regclass('public.sources')").fetchone()[0]
 
 
+def test_audit_log_tables_are_append_only_for_the_app(app_role):
+    with db.connect() as c:
+        db.apply_app_role(c, "pw-1")
+    for t in ("source_class_changes", "source_acl_changes"):
+        for stmt in (f"update {t} set changed_by='x'", f"delete from {t}"):
+            with as_app("pw-1") as a:
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    a.execute(stmt)
+
+
 def test_tables_created_later_are_covered_by_default_privileges(app_role):
     with db.connect() as c:
         db.apply_app_role(c, "pw-1")

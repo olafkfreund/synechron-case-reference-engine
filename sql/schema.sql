@@ -145,3 +145,13 @@ create table if not exists source_class_changes (
   changed_by text not null,
   changed_at timestamptz not null default now()
 );
+
+-- append-only: every change to a source's access groups, with the old and new groups
+create table if not exists source_acl_changes (
+  id bigserial primary key,
+  source_id bigint not null,
+  old_groups text[],
+  new_groups text[] not null,
+  changed_by text not null,
+  changed_at timestamptz not null default now()
+);

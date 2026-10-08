@@ -46,6 +46,9 @@ spec: spec/2026-10-08-58-source-acl-on-save.md
    `source_class_changes` test).
    Traps: compose has no bind mount, so run `docker compose build app` before
    every test run in every step.
+   *Done, with deviation:* no `source_class_changes` privilege test existed to
+   copy. The new test lives in `tests/test_hardening.py`, where the
+   `refs_app` fixture is, and covers both log tables.
 2. **Save applies at once.** `app/sources.py`:
    - line 77: select `data_class, acl_groups … for update`;
    - after the `update sources` statement (line 80): if
