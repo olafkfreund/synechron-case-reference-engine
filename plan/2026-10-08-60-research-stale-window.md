@@ -66,6 +66,15 @@ spec: spec/2026-10-08-60-research-stale-window.md
    second claim got the job); with it, it passes. Full suite: 402 passed.
    No deviations.
 
+*Review (fresh Opus): approved, no blockers.*
+- The long-job test sleeps 0.5 s instead of 0.3 s: 5 ticks of headroom on
+  a loaded CI runner.
+- GIL check: during a 187 s Docling conversion at `--cpus 2`, a 1 s
+  heartbeat ticked 186 times, max gap 1.19 s. Docling doesn't starve it.
+- Not taken: a `connect_timeout` on the tick (a hung connect delays only the
+  next tick), and starting the thread inside `try` (the SIGTERM gap already
+  existed between claim and `try`).
+
 ## Tests
 
 - The full suite is green. The new long-job test fails without the

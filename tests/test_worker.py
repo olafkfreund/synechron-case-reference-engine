@@ -135,7 +135,7 @@ def test_heartbeat_keeps_a_long_job_from_being_reclaimed(monkeypatch):
     def slow(p):
         with db.connect() as c:
             c.execute("update jobs set updated_at=now() - interval '20 min'")
-        time.sleep(0.3)
+        time.sleep(0.5)  # 5 ticks of headroom on a loaded runner
         with db.connect() as c:
             seen.append(worker.claim(c))
     monkeypatch.setitem(worker.HANDLERS, "extract", slow)
