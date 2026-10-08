@@ -33,6 +33,13 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:dev@db/refs
       DB_INIT_ON_START: "1"  # local only; in AWS app.migrate does this
+      EXTRACT_MODEL: ${EXTRACT_MODEL:-}
+      EXTRACT_MODEL_OPTIONS: ${EXTRACT_MODEL_OPTIONS:-}
+      DRAFT_MODEL: ${DRAFT_MODEL:-}
+      DRAFT_MODEL_OPTIONS: ${DRAFT_MODEL_OPTIONS:-}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
@@ -44,6 +51,11 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:dev@db/refs
       DB_INIT_ON_START: "1"  # local only; in AWS app.migrate does this
+      EXTRACT_MODEL: ${EXTRACT_MODEL:-}
+      EXTRACT_MODEL_OPTIONS: ${EXTRACT_MODEL_OPTIONS:-}
+      DRAFT_MODEL: ${DRAFT_MODEL:-}
+      DRAFT_MODEL_OPTIONS: ${DRAFT_MODEL_OPTIONS:-}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
       SESSION_SECRET: dev-only-not-a-secret
       SESSION_HTTPS_ONLY: "false"  # dev over http only
       APP_ORIGIN: http://localhost:8000
@@ -53,6 +65,8 @@ services:
       ROLE_USER_GROUPS: refs-users
       ROLE_REVIEWER_GROUPS: refs-reviewers
       ROLE_ADMIN_GROUPS: refs-admins
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy

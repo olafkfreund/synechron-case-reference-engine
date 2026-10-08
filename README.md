@@ -80,6 +80,7 @@ Inside Docker the app reaches the host's Ollama through `host.docker.internal`, 
 the destination must be stated or it is inferred `third-party` and refused:
 `{"think": false, "num_ctx": 24576, "repeat_penalty": 1.05, "api_base": "http://host.docker.internal:11434", "destination": "local"}`.
 `DRAFT_MODEL_OPTIONS` works the same way. Bedrock needs no options.
+Compose passes `EXTRACT_MODEL`, `EXTRACT_MODEL_OPTIONS`, `DRAFT_MODEL`, `DRAFT_MODEL_OPTIONS` and `BRAVE_API_KEY` from your shell to `web` and `worker`.
 
 Do not use the 27B or 26B models: they spill from the GPU to the CPU and freeze the workstation, and Gemma 4
 runs mostly on the CPU on this AMD card.
