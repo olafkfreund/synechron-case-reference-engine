@@ -327,6 +327,31 @@ def test_unchanged_reingest_waits_for_a_saving_admin(env):
         assert c.execute("select acl_groups from documents where source_id=%s", (sid,)).fetchone()[0] == ["new"]
 
 
+def test_migration_repair_waits_for_a_saving_admin(env):
+    """End to end: a migration during an open save ends with the save's groups. The schema's earlier
+    `alter table sources/documents` locks already serialise it; the repair's `for share` is the guard
+    if those statements are ever removed (a standalone repair without it can write back old groups)."""
+    import threading
+    _, sid = env
+    ing.ingest(sid, "a", "a", b"one")
+    with db.connect() as c:
+        c.execute("update documents set acl_groups='{stale,g1}' where source_id=%s", (sid,))  # pre-#58 damage
+    first = db.connect()
+    first.execute("select 1 from sources where id=%s for update", (sid,))
+    first.execute("update sources set acl_groups='{new}' where id=%s", (sid,))
+    first.execute("update documents set acl_groups='{new}' where source_id=%s", (sid,))
+    t = threading.Thread(target=db.init)
+    t.start()
+    try:
+        _wait_for_lock_wait(first)
+        first.commit()
+    finally:
+        first.close()
+    t.join(30)
+    with db.connect() as c:
+        assert c.execute("select acl_groups from documents where source_id=%s", (sid,)).fetchone()[0] == ["new"]
+
+
 def test_source_deleted_before_insert_raises(env, monkeypatch):
     _, sid = env
 

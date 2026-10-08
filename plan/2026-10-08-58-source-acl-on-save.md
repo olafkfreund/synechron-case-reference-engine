@@ -143,6 +143,13 @@ spec: spec/2026-10-08-58-source-acl-on-save.md
   `finally`, so a regression fails instead of hanging. A new test covers the
   unchanged-checksum branch. Mutation-checked: removing its `for share` fails.
 - The SharePoint mid-crawl test compares the full group list.
+- Re-review: the repair statement read `sources` without a lock. Run on its
+  own during a save, it could write back old groups. It now reads `(select id,
+  acl_groups from sources for share)`. Inside `db.init()` it is also
+  protected by the schema's earlier `alter table sources/documents`, whose
+  exclusive locks last until commit. So the new end-to-end test
+  (`test_migration_repair_waits_for_a_saving_admin`) passes with either
+  form: it proves the migration is safe, not the `for share` itself.
 
 ## Tests
 

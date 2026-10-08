@@ -33,6 +33,8 @@ def make(env):  # noqa: F811
     sids = []
 
     def make(status="extracted", due=None, data=None, acl=(DOCS,), deleted=False):
+        # the source gets no groups and the document gets `acl`: a later db.init() (schema repair, #58)
+        # copies the source's '{}' onto the document, so don't call it after make()
         with db.connect() as c:
             sid = c.execute("insert into sources(kind,name) values ('s3',%s) returning id",
                             (uuid.uuid4().hex,)).fetchone()[0]

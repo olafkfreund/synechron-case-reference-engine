@@ -158,5 +158,6 @@ create table if not exists source_acl_changes (
 
 -- documents carry a copy of their source's groups; repair any copy a crawl wrote back before #58
 -- (idempotent; re-run the migration once old worker tasks have stopped after a deploy)
-update documents d set acl_groups = s.acl_groups from sources s
+-- for share, as every other write: an unlocked read could write back groups a concurrent save replaced
+update documents d set acl_groups = s.acl_groups from (select id, acl_groups from sources for share) s
   where d.source_id = s.id and d.acl_groups is distinct from s.acl_groups;
