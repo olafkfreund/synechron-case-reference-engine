@@ -159,6 +159,15 @@ after #53 merges, then start at step 1.
   - every executed SOW or change order becomes an engagement;
   - no prices, rates or person names are in any engagement field (spot-check
     the review page in local compose).
+- *Result 2026-10-08, `qwen3:14b`, local, metrics only:* 11 of 12 documents
+  read (one legacy `.doc` is unsupported). Triage: 8 contract, 3 proposal.
+  2 contracts executed → engagement, 0 outcomes each, summary blanked by the
+  number check in both; 6 contracts not executed, including the one marked
+  draft; proposals not extracted. Whether those 6 are truly unsigned, and the
+  price/name spot-check, need a human: the documents are confidential and
+  never go to a third-party model. `scripts/eval_extraction.py` now routes
+  through `basis_for` and prints `executed` and `basis` (deviation: the plan
+  assumed the script needed no change).
 
 ## Rollback
 

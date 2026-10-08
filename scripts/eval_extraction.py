@@ -83,8 +83,12 @@ def main(argv: list[str] | None = None) -> int:
         for p, text in texts.items():
             t = time.time()
             try:
-                kind = ingest.triage_text(text, a.data_class).kind
-                case = extract.build(text, a.data_class)
+                tri = ingest.triage_text(text, a.data_class)
+                basis = ingest.basis_for(tri, {})  # no source flag: the triage verdict alone
+                if basis is None:
+                    print(f"{model} {p.name[:30]} kind={tri.kind} executed={tri.executed} basis=none (not extracted)")
+                    continue
+                case = extract.build(text, a.data_class, basis, "executed contract" if basis == "engagement" else "")
             except PolicyError as e:
                 print(f"refused by the data policy: {e}", file=sys.stderr)
                 return 2
@@ -99,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
             vram = ps[0].get("size_vram", 0) / 1e9 if ps else 0
             secs = time.time() - t
             rows.append((sourced, len(items), secs, vram))
-            print(f"{model} {p.name[:30]} kind={kind} sourced={sourced}/{len(items)} caps={len(case.capabilities)} "
+            print(f"{model} {p.name[:30]} kind={tri.kind} executed={tri.executed} basis={basis} sourced={sourced}/{len(items)} caps={len(case.capabilities)} "
                   f"tech={len(case.tech_stack)} outcomes={len(case.outcomes)} notes={case.needs_attention} "
                   f"{secs:.0f}s vram={vram:.1f}GB\n    fields: {filled}", flush=True)
         if rows:
