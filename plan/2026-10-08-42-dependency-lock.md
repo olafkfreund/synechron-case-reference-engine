@@ -123,6 +123,16 @@ spec: spec/2026-10-08-42-dependency-lock.md
    added to `pyproject.toml`, the build failed at `pip check`: "reference-engine
    0.1.0 requires tomli-w, which is not installed". Reverted.
 
+*Review (fresh Opus): approved, no blockers.*
+- *Deviation:* the Dockerfile copies `requirements.lock` and installs it
+  before copying `pyproject.toml`. An edit to `pyproject.toml` alone then
+  reuses the cached 147-package layer. CI always builds from scratch, so
+  this only speeds up local rebuilds.
+- Rollback note: reverting this PR also needs the `rapidocr<3.10` cap back
+  (as `## Rollback` says), or the build breaks again.
+- Not taken: pinning the `python:3.12-slim` base image by digest (out of
+  scope).
+
 ## Tests
 
 - `docker compose build --no-cache app && docker compose run --rm app
