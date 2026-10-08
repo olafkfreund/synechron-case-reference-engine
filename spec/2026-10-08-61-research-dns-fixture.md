@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 61
 intent: intent/2026-10-08-61-research-dns-fixture.md
 ---
