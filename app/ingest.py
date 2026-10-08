@@ -54,7 +54,7 @@ def basis_for(t: Triage, source_config: dict) -> str | None:
     """'delivered', 'engagement', or None (not extracted)."""
     if t.kind == "case" or (t.kind in ("proposal", "deck") and t.describes_delivered_work):
         return "delivered"
-    if t.kind == "contract" and (t.executed or (source_config or {}).get("executed_contracts")):
+    if t.kind == "contract" and (t.executed or (source_config or {}).get("executed_contracts") is True):
         return "engagement"
     return None
 

@@ -2,7 +2,7 @@
 {% block body %}
 <h1>Sources</h1>
 <p>Data class: confidential (the default) documents are only sent to local or own-cloud models unless <a href="/admin/models">approved</a>; mark a source sanitised or public only when that is true.</p>
-<p>Contracts executed: tick it only when every statement of work or change order in the source is signed; each then becomes an engagement reference without the signature check.</p>
+<p>Contracts executed: tick it only when every statement of work or change order in the source is signed; each then becomes an engagement reference without the signature check. A change applies to documents crawled or changed afterwards; contracts already crawled keep their current result.</p>
 <p>Access groups: the Entra groups whose members can read this source. Every document from it gets these groups.
 SharePoint files whose permissions differ from the site root, and Confluence pages with a read restriction on themselves or an ancestor (or under a folder), are skipped.
 The crawler cannot see who may read a whole site or space: enter only groups whose members can read all of it.

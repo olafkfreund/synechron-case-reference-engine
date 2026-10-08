@@ -109,11 +109,27 @@ after #53 merges, then start at step 1.
    `payable`, `invoice`), and rates are per day/hour only: bare "payments" is
    a banking capability and "/month" is usually a volume. Currency amounts
    still catch any price.
+   *Review fixes (fresh Opus review, PR #56):*
+   - the filter now also checks `duration_months`, `team_size` and `period`
+     with their quotes, and clears a matching item whole (digits are never
+     edited); a day rate hidden in a duration quote was the blocker;
+   - amounts also match currency words (pounds, euros, dollars, rupees,
+     lakh, crore), `₹`/`¥` and more ISO codes; rates match only without
+     ambiguity (`day/daily/hourly rate`, `p.d.`, `per diem`, `per man-day`),
+     because bare `/day` and `per day` are volumes in banking; terms no longer
+     match bare `fees`, `invoic…`, `payable` or `purchase order`, only
+     their commercial phrasings; `contract value` and `budget of` match;
+   - known gap: a bare `900/day` with no currency or rate word is not caught;
+     the prompt forbids it.
 4. **Executed-contracts flag.** In `app/sources.py` (create line 34, update
    line 57) and `sources.html`: an "All contracts here are executed" checkbox,
    stored as `config.executed_contracts`.
 
    → verify by `pytest tests/test_sources.py` (saved, and shown).
+   *Review fix:* the flag counts only when it is JSON `true`. Changing it
+   affects documents crawled or changed afterwards (an unchanged checksum is
+   skipped before triage). The help text says so; re-triage on change is
+   follow-up #64.
    *Done, with deviation:* the Add form also has the checkbox, and every
    update writes the key (`false` when unticked, same as missing).
 5. **Search.**

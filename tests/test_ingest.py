@@ -267,3 +267,9 @@ def test_changed_document_no_longer_a_case_retires_it(env):
     with db.connect() as c:
         assert c.execute("select status from cases where document_id=%s", (did,)).fetchone()[0] == "rejected"
     assert jobs() == before
+
+
+def test_executed_flag_must_be_true_not_truthy():
+    t = ing.Triage(kind="contract", describes_delivered_work=False, executed=False)
+    assert ing.basis_for(t, {"executed_contracts": "false"}) is None
+    assert ing.basis_for(t, {"executed_contracts": True}) == "engagement"
