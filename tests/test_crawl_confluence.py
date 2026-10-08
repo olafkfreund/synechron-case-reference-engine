@@ -279,3 +279,24 @@ def test_new_attachment_on_unchanged_page_is_found(cf):
     cf.attach("p3", "a7", "late.pdf", b"late", when="2026-06-01T00:00:00.000Z")  # p3 itself unchanged
     crawl.crawl_confluence(cf.sid)
     assert "att:p3:a7" in live(cf.sid)
+
+def _change_groups_after_first_ingest(monkeypatch, sid):
+    """As an admin's save does mid-crawl: new groups on the source and on its documents already written."""
+    real, done = crawl.ingest, []
+
+    def wrapped(*a, **k):
+        out = real(*a, **k)
+        if not done:
+            done.append(1)
+            with db.connect() as c:
+                c.execute("update sources set acl_groups='{g-new}' where id=%s", (sid,))
+                c.execute("update documents set acl_groups='{g-new}' where source_id=%s", (sid,))
+        return out
+    monkeypatch.setattr(crawl, "ingest", wrapped)
+
+
+def test_crawl_does_not_write_back_groups_changed_mid_crawl(cf, monkeypatch):
+    seed(cf)
+    _change_groups_after_first_ingest(monkeypatch, cf.sid)
+    crawl.crawl_confluence(cf.sid)
+    assert live(cf.sid) == {k: ["g-new"] for k in ("page:p1", "page:p2", "page:p3", "att:p1:a1")}

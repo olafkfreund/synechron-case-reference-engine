@@ -24,6 +24,11 @@ def log_class_change(conn, sid, old, new, who):
                  (sid, old, new, who))
 
 
+def log_acl_change(conn, sid, old, new, who):
+    conn.execute("insert into source_acl_changes(source_id, old_groups, new_groups, changed_by) values (%s,%s,%s,%s)",
+                 (sid, old, new, who))
+
+
 def groups(raw: str) -> list[str]:
     return list(dict.fromkeys(g.strip() for g in raw.split(",") if g.strip()))
 
@@ -74,12 +79,18 @@ def update(sid: int, acl_groups: str = Form(), enabled: bool = Form(False), data
     if not groups(acl_groups):
         raise HTTPException(400, "at least one access group is required")
     with db.connect() as conn:  # one transaction: the change and its log row commit together
-        old = conn.execute("select data_class from sources where id=%s for update", (sid,)).fetchone()
+        old = conn.execute("select data_class, acl_groups from sources where id=%s for update", (sid,)).fetchone()
         if not old:
             raise HTTPException(404, "no such source")
         conn.execute("update sources set acl_groups=%s, enabled=%s, data_class=coalesce(nullif(%s,''), data_class), "
                      "config=jsonb_set(config, '{executed_contracts}', to_jsonb(%s::bool)) "
                      "where id=%s", (groups(acl_groups), enabled, data_class, executed_contracts, sid))
+        # documents carry a copy of the groups: apply it in the same transaction, on every save, so a
+        # re-save also repairs copies a crawl wrote back before #58
+        conn.execute("update documents set acl_groups=%s where source_id=%s and acl_groups is distinct from %s",
+                     (groups(acl_groups), sid, groups(acl_groups)))
+        if groups(acl_groups) != old[1]:
+            log_acl_change(conn, sid, old[1], groups(acl_groups), user.sub)
         if data_class and data_class != old[0]:
             log_class_change(conn, sid, old[0], data_class, user.sub)
     return RedirectResponse("/admin/sources", status_code=303)

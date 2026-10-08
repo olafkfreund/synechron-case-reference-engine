@@ -145,3 +145,19 @@ create table if not exists source_class_changes (
   changed_by text not null,
   changed_at timestamptz not null default now()
 );
+
+-- append-only: every change to a source's access groups, with the old and new groups
+create table if not exists source_acl_changes (
+  id bigserial primary key,
+  source_id bigint not null,
+  old_groups text[],
+  new_groups text[] not null,
+  changed_by text not null,
+  changed_at timestamptz not null default now()
+);
+
+-- documents carry a copy of their source's groups; repair any copy a crawl wrote back before #58
+-- (idempotent; re-run the migration once old worker tasks have stopped after a deploy)
+-- for share, as every other write: an unlocked read could write back groups a concurrent save replaced
+update documents d set acl_groups = s.acl_groups from (select id, acl_groups from sources for share) s
+  where d.source_id = s.id and d.acl_groups is distinct from s.acl_groups;

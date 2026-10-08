@@ -59,7 +59,7 @@ def basis_for(t: Triage, source_config: dict) -> str | None:
     return None
 
 
-def ingest(source_id: int, external_id: str, title: str, data: bytes, acl_groups: list[str]) -> str:
+def ingest(source_id: int, external_id: str, title: str, data: bytes) -> str:
     """Returns 'skipped' (same bytes), 'updated' (new version) or 'new'."""
     checksum = hashlib.sha256(data).hexdigest()
     with db.connect() as conn:
@@ -68,8 +68,8 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, acl_groups
             (source_id, external_id)).fetchone()
         if row and row[1] == checksum:
             # same bytes; ACLs may still have changed, and a reappeared file is not deleted
-            conn.execute("update documents set acl_groups=%s, deleted_at=null where id=%s",
-                         (acl_groups, row[0]))
+            conn.execute("update documents set acl_groups=(select acl_groups from sources where id=%s for share), "
+                         "deleted_at=null where id=%s", (source_id, row[0]))
             return "skipped"
         src = conn.execute("select data_class, config from sources where id=%s", (source_id,)).fetchone()
         if not src:
@@ -85,12 +85,17 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, acl_groups
     reason = {"delivered": "", "engagement": "executed contract" if triage.executed else "source marked executed"}.get(basis)
     with db.connect() as conn:
         # upsert: an upload and a crawl of the same item may race past the select above
-        doc_id = conn.execute(
+        # the groups are read from the source here, under for share, so a concurrent save is never overwritten
+        got = conn.execute(
             "insert into documents(source_id, external_id, title, checksum, s3_key, text, kind, acl_groups) "
-            "values (%s,%s,%s,%s,%s,%s,%s,%s) on conflict (source_id, external_id) do update set "
+            "select %s,%s,%s,%s,%s,%s,%s, s.acl_groups from (select acl_groups from sources where id=%s for share) s "
+            "on conflict (source_id, external_id) do update set "
             "title=excluded.title, checksum=excluded.checksum, s3_key=excluded.s3_key, text=excluded.text, "
             "kind=excluded.kind, acl_groups=excluded.acl_groups, deleted_at=null returning id",
-            (source_id, external_id, title, checksum, key, text, triage.kind, acl_groups)).fetchone()[0]
+            (source_id, external_id, title, checksum, key, text, triage.kind, source_id)).fetchone()
+        if not got:
+            raise LookupError(f"source {source_id} no longer exists")
+        doc_id = got[0]
         # a changed document re-opens its case for review, or retires it when it no longer
         # describes delivered work (a stale case must not stay approvable)
         conn.execute("update cases set status=%s where document_id=%s",

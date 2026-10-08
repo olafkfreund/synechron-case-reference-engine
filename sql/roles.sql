@@ -17,3 +17,4 @@ alter default privileges in schema public grant select, insert, update, delete o
 alter default privileges in schema public grant usage, select on sequences to refs_app;
 -- audit logs are append-only for the app
 revoke update, delete on source_class_changes from refs_app;
+revoke update, delete on source_acl_changes from refs_app;

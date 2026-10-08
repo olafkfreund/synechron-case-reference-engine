@@ -50,8 +50,8 @@ def jobs():
 
 def test_dedupe(env):
     _, sid = env
-    assert ing.ingest(sid, "a", "a", b"one", ["g"]) == "new"
-    assert ing.ingest(sid, "a", "a", b"one", ["g"]) == "skipped"
+    assert ing.ingest(sid, "a", "a", b"one") == "new"
+    assert ing.ingest(sid, "a", "a", b"one") == "skipped"
     with db.connect() as c:
         assert c.execute("select count(*) from documents where source_id=%s", (sid,)).fetchone()[0] == 1
     assert jobs() == 1
@@ -59,11 +59,13 @@ def test_dedupe(env):
 
 def test_new_version_updates_in_place_and_reopens_case(env):
     _, sid = env
-    ing.ingest(sid, "a", "a", b"one", ["g"])
+    ing.ingest(sid, "a", "a", b"one")
     with db.connect() as c:
         did = c.execute("select id from documents where source_id=%s", (sid,)).fetchone()[0]
         c.execute("insert into cases(document_id,status) values (%s,'approved')", (did,))
-    assert ing.ingest(sid, "a", "a", b"two", ["g2"]) == "updated"
+    with db.connect() as c:
+        c.execute("update sources set acl_groups='{g2}' where id=%s", (sid,))
+    assert ing.ingest(sid, "a", "a", b"two") == "updated"
     with db.connect() as c:
         rows = c.execute("select text, acl_groups from documents where source_id=%s", (sid,)).fetchall()
         assert rows == [("two", ["g2"])]
@@ -73,10 +75,10 @@ def test_new_version_updates_in_place_and_reopens_case(env):
 def test_non_case_routed_away(env):
     _, sid = env
     TRIAGE["v"] = ing.Triage(kind="proposal", describes_delivered_work=False)
-    ing.ingest(sid, "a", "a", b"x", [])
+    ing.ingest(sid, "a", "a", b"x")
     assert jobs() == 0
     TRIAGE["v"] = ing.Triage(kind="deck", describes_delivered_work=True)
-    ing.ingest(sid, "b", "b", b"y", [])
+    ing.ingest(sid, "b", "b", b"y")
     assert jobs() == 1
 
 
@@ -99,13 +101,13 @@ def test_basis_for_routing_table(kind, deliv, executed, flag, want):
 def test_contract_payload_and_source_flag(env):
     _, sid = env
     TRIAGE["v"] = ing.Triage(kind="contract", describes_delivered_work=False, executed=False)
-    ing.ingest(sid, "a", "a", b"x", [])
+    ing.ingest(sid, "a", "a", b"x")
     assert jobs() == 0
     with db.connect() as c:
         c.execute("update sources set config=config || '{\"executed_contracts\": true}' where id=%s", (sid,))
-    ing.ingest(sid, "b", "b", b"y", [])
+    ing.ingest(sid, "b", "b", b"y")
     TRIAGE["v"] = ing.Triage(kind="contract", describes_delivered_work=False, executed=True)
-    ing.ingest(sid, "c", "c", b"z", [])
+    ing.ingest(sid, "c", "c", b"z")
     with db.connect() as c:
         got = c.execute("select payload->>'basis', payload->>'basis_reason' from jobs where (payload->>'document_id')::bigint in "
                         "(select id from documents where source_id=%s) order by id", (sid,)).fetchall()
@@ -257,13 +259,13 @@ def test_concurrent_crawl_returns_running(env):
 
 def test_changed_document_no_longer_a_case_retires_it(env):
     _, sid = env
-    ing.ingest(sid, "a", "a", b"one", ["g"])
+    ing.ingest(sid, "a", "a", b"one")
     with db.connect() as c:
         did = c.execute("select id from documents where source_id=%s", (sid,)).fetchone()[0]
         c.execute("insert into cases(document_id,status) values (%s,'approved')", (did,))
     TRIAGE["v"] = ing.Triage(kind="other", describes_delivered_work=False)
     before = jobs()
-    ing.ingest(sid, "a", "a", b"two", ["g"])
+    ing.ingest(sid, "a", "a", b"two")
     with db.connect() as c:
         assert c.execute("select status from cases where document_id=%s", (did,)).fetchone()[0] == "rejected"
     assert jobs() == before
@@ -273,3 +275,115 @@ def test_executed_flag_must_be_true_not_truthy():
     t = ing.Triage(kind="contract", describes_delivered_work=False, executed=False)
     assert ing.basis_for(t, {"executed_contracts": "false"}) is None
     assert ing.basis_for(t, {"executed_contracts": True}) == "engagement"
+
+
+def _wait_for_lock_wait(conn, timeout=10):
+    """Until another backend is waiting on a row lock (the ingest blocked by the open save)."""
+    import time
+    end = time.time() + timeout
+    with db.connect(autocommit=True) as c:
+        while time.time() < end:
+            if c.execute("select count(*) from pg_stat_activity where wait_event_type = 'Lock' "
+                         "and pid <> pg_backend_pid()").fetchone()[0]:
+                return
+            time.sleep(0.05)
+    raise AssertionError("ingest never waited for the save's lock")
+
+
+def test_ingest_waits_for_a_saving_admin_and_writes_the_new_groups(env):
+    import threading
+    _, sid = env
+    first = db.connect()
+    first.execute("select 1 from sources where id=%s for update", (sid,))
+    first.execute("update sources set acl_groups='{new}' where id=%s", (sid,))
+    t = threading.Thread(target=ing.ingest, args=(sid, "a", "a", b"one"))
+    t.start()
+    try:
+        _wait_for_lock_wait(first)
+        first.commit()
+    finally:
+        first.close()  # releases the lock (rolls back on failure), or teardown blocks on it
+    t.join(10)
+    with db.connect() as c:
+        assert c.execute("select acl_groups from documents where source_id=%s", (sid,)).fetchone()[0] == ["new"]
+
+
+def test_unchanged_reingest_waits_for_a_saving_admin(env):
+    import threading
+    _, sid = env
+    ing.ingest(sid, "a", "a", b"one")
+    first = db.connect()
+    first.execute("select 1 from sources where id=%s for update", (sid,))
+    first.execute("update sources set acl_groups='{new}' where id=%s", (sid,))
+    t = threading.Thread(target=ing.ingest, args=(sid, "a", "a", b"one"))  # same bytes: the skipped branch
+    t.start()
+    try:
+        _wait_for_lock_wait(first)
+        first.commit()
+    finally:
+        first.close()  # releases the lock (rolls back on failure), or teardown blocks on it
+    t.join(10)
+    with db.connect() as c:
+        assert c.execute("select acl_groups from documents where source_id=%s", (sid,)).fetchone()[0] == ["new"]
+
+
+def test_migration_repair_waits_for_a_saving_admin(env):
+    """End to end: a migration during an open save ends with the save's groups. The schema's earlier
+    `alter table sources/documents` locks already serialise it; the repair's `for share` is the guard
+    if those statements are ever removed (a standalone repair without it can write back old groups)."""
+    import threading
+    _, sid = env
+    ing.ingest(sid, "a", "a", b"one")
+    with db.connect() as c:
+        c.execute("update documents set acl_groups='{stale,g1}' where source_id=%s", (sid,))  # pre-#58 damage
+    first = db.connect()
+    first.execute("select 1 from sources where id=%s for update", (sid,))
+    first.execute("update sources set acl_groups='{new}' where id=%s", (sid,))
+    first.execute("update documents set acl_groups='{new}' where source_id=%s", (sid,))
+    t = threading.Thread(target=db.init)
+    t.start()
+    try:
+        _wait_for_lock_wait(first)
+        first.commit()
+    finally:
+        first.close()
+    t.join(30)
+    with db.connect() as c:
+        assert c.execute("select acl_groups from documents where source_id=%s", (sid,)).fetchone()[0] == ["new"]
+
+
+def test_source_deleted_before_insert_raises(env, monkeypatch):
+    _, sid = env
+
+    def triage_then_delete(text, data_class):
+        with db.connect() as c:
+            c.execute("delete from sources where id=%s", (sid,))
+        return CASE
+    monkeypatch.setattr(ing, "triage_text", triage_then_delete)
+    with pytest.raises(LookupError):
+        ing.ingest(sid, "a", "a", b"one")
+
+def _change_groups_after_first_ingest(monkeypatch, sid):
+    """As an admin's save does mid-crawl: new groups on the source and on its documents already written."""
+    real, done = crawl.ingest, []
+
+    def wrapped(*a, **k):
+        out = real(*a, **k)
+        if not done:
+            done.append(1)
+            with db.connect() as c:
+                c.execute("update sources set acl_groups='{g-new}' where id=%s", (sid,))
+                c.execute("update documents set acl_groups='{g-new}' where source_id=%s", (sid,))
+        return out
+    monkeypatch.setattr(crawl, "ingest", wrapped)
+
+
+def test_s3_crawl_does_not_write_back_groups_changed_mid_crawl(env, monkeypatch):
+    s3, sid = env
+    for k in "abc":
+        s3.put_object(Bucket="src", Key=f"in/{k}.docx", Body=k.encode())
+    _change_groups_after_first_ingest(monkeypatch, sid)
+    crawl.crawl_s3(sid)
+    with db.connect() as c:
+        rows = c.execute("select acl_groups from documents where source_id=%s", (sid,)).fetchall()
+    assert rows == [(["g-new"],)] * 3

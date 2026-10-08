@@ -22,4 +22,10 @@
 <table><tr><th>When</th><th>Source</th><th>From</th><th>To</th><th>By</th></tr>
 {% for at, name, old, new, by in class_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ old or "(new source)" }}</td><td>{{ new }}</td><td>{{ by }}</td></tr>{% endfor %}</table>
 {% endif %}
+<h2>Access group changes</h2>
+<p>Changes to a source's access groups apply to its documents at once.</p>
+{% if not acl_changes %}<p>None.</p>{% else %}
+<table><tr><th>When</th><th>Source</th><th>From</th><th>To</th><th>By</th></tr>
+{% for at, name, old, new, by in acl_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ (old or [])|join(", ") }}</td><td>{{ new|join(", ") }}</td><td>{{ by }}</td></tr>{% endfor %}</table>
+{% endif %}
 {% endblock %}

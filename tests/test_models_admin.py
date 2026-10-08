@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 from app import db
 from tests.test_auth import ADMIN, REV, client, env  # noqa: F401
+from tests.test_review import DOCS, R, make  # noqa: F401
 
 
 def cleanup(model):
@@ -79,6 +80,45 @@ def test_lowering_a_source_class_is_logged_and_audited(env):  # noqa: F811
         with db.connect() as c:
             c.execute("delete from source_class_changes where source_id=%s", (sid,))
             c.execute("delete from sources where id=%s", (sid,))
+
+
+def test_removing_a_source_group_applies_to_documents_at_once_and_is_logged(make):  # noqa: F811
+    cid = make(acl=("g-docs", "g-other"))
+    with db.connect() as c:
+        sid = c.execute("select d.source_id from cases c join documents d on d.id=c.document_id where c.id=%s",
+                        (cid,)).fetchone()[0]
+        c.execute("update sources set acl_groups='{g-docs,g-other}' where id=%s", (sid,))
+    a, reader = client([ADMIN]), client([REV, "g-docs"])
+    assert reader.get(f"/review/{cid}").status_code == 200
+    a.post(f"/admin/sources/{sid}", data={"acl_groups": "g-other"})
+    a.post(f"/admin/sources/{sid}", data={"acl_groups": "g-other"})  # same groups again: no row
+    page = a.get("/admin/audit").text
+    with db.connect() as c:
+        assert c.execute("select acl_groups from documents where source_id=%s", (sid,)).fetchone()[0] == ["g-other"]
+        rows = c.execute("select old_groups, new_groups, changed_by from source_acl_changes where source_id=%s",
+                         (sid,)).fetchall()
+        c.execute("delete from source_acl_changes where source_id=%s", (sid,))
+    assert rows == [(["g-docs", "g-other"], ["g-other"], "u1")]
+    assert "Access group changes" in page and "g-docs, g-other" in page
+    assert reader.get(f"/review/{cid}").status_code == 404
+
+
+def test_stale_document_groups_repaired_by_resave_and_by_migration(make):  # noqa: F811
+    # before #58 a crawl could write old groups back: source {g-other}, documents still {g-docs, g-other}
+    cid = make(acl=("g-docs", "g-other"))
+    with db.connect() as c:
+        sid = c.execute("select d.source_id from cases c join documents d on d.id=c.document_id where c.id=%s",
+                        (cid,)).fetchone()[0]
+        c.execute("update sources set acl_groups='{g-other}' where id=%s", (sid,))
+    reader = client([REV, "g-docs"])
+    assert reader.get(f"/review/{cid}").status_code == 200
+    client([ADMIN]).post(f"/admin/sources/{sid}", data={"acl_groups": "g-other"})  # same groups: still repairs
+    assert reader.get(f"/review/{cid}").status_code == 404
+    with db.connect() as c:
+        assert c.execute("select count(*) from source_acl_changes where source_id=%s", (sid,)).fetchone()[0] == 0
+        c.execute("update documents set acl_groups='{g-docs,g-other}' where source_id=%s", (sid,))
+    db.init()  # the migration repairs it too
+    assert reader.get(f"/review/{cid}").status_code == 404
 
 
 def test_approvals_only_for_confidential_and_revoker_recorded(env):  # noqa: F811

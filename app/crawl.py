@@ -27,8 +27,8 @@ def crawl_s3(source_id: int) -> dict:
         # one crawl per source: the schedule and a manual trigger must not race (released on close)
         if not lock.execute("select pg_try_advisory_lock(2, %s)", (source_id,)).fetchone()[0]:
             return {"status": "running"}
-        config, acl, cursor = lock.execute(
-            "select config, acl_groups, cursor from sources where id=%s", (source_id,)).fetchone()
+        config, cursor = lock.execute(
+            "select config, cursor from sources where id=%s", (source_id,)).fetchone()
         known = {r[0] for r in lock.execute(
             "select external_id from documents where source_id=%s", (source_id,))}
         since = datetime.fromisoformat(cursor) - CURSOR_SLACK if cursor else None
@@ -59,7 +59,7 @@ def crawl_s3(source_id: int) -> dict:
                     continue
                 try:
                     body = s3.get_object(Bucket=config["bucket"], Key=key)["Body"].read()
-                    counts[ingest(source_id, key, key.rsplit("/", 1)[-1], body, acl)] += 1
+                    counts[ingest(source_id, key, key.rsplit("/", 1)[-1], body)] += 1
                 except Exception as e:  # noqa: BLE001 - one bad file must not stop the crawl
                     counts["failed"] += 1
                     if len(failed) < MAX_FAILED_KEYS:
@@ -70,12 +70,13 @@ def crawl_s3(source_id: int) -> dict:
                 counts["deleted"] = conn.execute(
                     "select count(*) from documents where source_id=%s and deleted_at is null "
                     "and not (external_id = any(%s))", (source_id, seen)).fetchone()[0]
-                # one pass over the full listing: source ACL applies to every document, and a
-                # reappeared key is live again even if it was not re-downloaded
+                # one pass over the full listing: the source's current ACL (read here, under for share)
+                # applies to every document, and a reappeared key is live again even if it was not re-downloaded
                 conn.execute(
-                    "update documents set acl_groups=%s, deleted_at = case when external_id = any(%s) "
-                    "then null else coalesce(deleted_at, now()) end where source_id=%s",
-                    (acl, seen, source_id))
+                    "update documents d set acl_groups=s.acl_groups, deleted_at = case when external_id = any(%s) "
+                    "then null else coalesce(deleted_at, now()) end "
+                    "from (select acl_groups from sources where id=%s for share) s where d.source_id=%s",
+                    (seen, source_id, source_id))
             else:
                 # an empty listing with live documents is a prefix or permission mistake, not a mass delete
                 counts["empty_listing"] = True
@@ -164,7 +165,8 @@ def _signature(perms: list[dict]) -> frozenset:
 def crawl_sharepoint(source_id: int) -> dict:
     """Crawl one drive with Graph delta; the stored deltaLink is the cursor.
 
-    ACL is source-level and fails closed. A file is ingested only when its permissions are exactly
+    ACL is source-level and fails closed; the groups are read from the source when written, never at the
+    start of the crawl, so an admin's save during a crawl is not undone. A file is ingested only when its permissions are exactly
     the drive root's (the access the admin mapped to sources.acl_groups); a file under a restricted
     folder, with its own grants or with a sharing link is skipped, and withdrawn if ingested before.
     Delta does not report permission changes on descendants, so every crawl (daily) also re-checks
@@ -175,8 +177,8 @@ def crawl_sharepoint(source_id: int) -> dict:
     with db.connect(autocommit=True) as lock:
         if not lock.execute("select pg_try_advisory_lock(2, %s)", (source_id,)).fetchone()[0]:
             return {"status": "running"}
-        config, acl, cursor, last = lock.execute(
-            "select config, acl_groups, cursor, last_counts from sources where id=%s", (source_id,)).fetchone()
+        config, cursor, last = lock.execute(
+            "select config, cursor, last_counts from sources where id=%s", (source_id,)).fetchone()
         drive, exts = config["drive_id"], {e.lower().lstrip(".") for e in config.get("include_ext", ["docx", "pptx", "pdf"])}
         cap = int(os.environ.get("SHAREPOINT_MAX_BYTES", 50 * 1024 * 1024))
         g = Graph(config["tenant_id"])
@@ -223,7 +225,7 @@ def crawl_sharepoint(source_id: int) -> dict:
                 if len(data) > cap:
                     counts["skipped_too_large"] += 1
                     return
-                counts[ingest(source_id, iid, name, data, acl)] += 1
+                counts[ingest(source_id, iid, name, data)] += 1
             except Exception as e:  # noqa: BLE001 - one bad file must not stop the crawl
                 withdraw(iid)  # fail closed: an unverified file must not stay searchable on its old ACL
                 counts["failed"] += 1
@@ -279,8 +281,10 @@ def crawl_sharepoint(source_id: int) -> dict:
             if not ok:
                 counts["withdrawn_on_recheck"] += withdraw(iid)
 
-        lock.execute("update documents set acl_groups=%s where source_id=%s and acl_groups is distinct from %s",
-                     (acl, source_id, acl))  # admin ACL changes apply to everything already ingested
+        # the source's current groups, read in this one statement: admin ACL changes apply to everything ingested
+        lock.execute("update documents d set acl_groups=s.acl_groups "
+                     "from (select acl_groups from sources where id=%s for share) s "
+                     "where d.source_id=%s and d.acl_groups is distinct from s.acl_groups", (source_id, source_id))
         lock.execute("update sources set cursor=%s, last_run_at=now(), last_counts=%s where id=%s",
                      (delta_link, Jsonb({**counts, "failed_keys": failed, "retry_ids": retry}), source_id))
     return counts
@@ -334,7 +338,7 @@ class Confluence:
 def crawl_confluence(source_id: int) -> dict:
     """Crawl Confluence spaces by CQL lastmodified; cursor = newest version.when seen.
 
-    ACL is source-level and fails closed, like SharePoint: a page is ingested only if neither it nor
+    ACL is source-level and fails closed, like SharePoint (groups read from the source at write time): a page is ingested only if neither it nor
     any ancestor has a read restriction (view restrictions inherit down the tree); its attachments
     follow the page. A restricted page is skipped and withdrawn if ingested before. CQL never reports
     deletions or restriction changes, so every crawl re-checks every live document and withdraws any
@@ -345,8 +349,8 @@ def crawl_confluence(source_id: int) -> dict:
     with db.connect(autocommit=True) as lock:
         if not lock.execute("select pg_try_advisory_lock(2, %s)", (source_id,)).fetchone()[0]:
             return {"status": "running"}
-        config, acl, cursor, last = lock.execute(
-            "select config, acl_groups, cursor, last_counts from sources where id=%s", (source_id,)).fetchone()
+        config, cursor, last = lock.execute(
+            "select config, cursor, last_counts from sources where id=%s", (source_id,)).fetchone()
         spaces = config["spaces"]
         if not isinstance(spaces, list) or not spaces:
             raise ValueError("config.spaces must be a non-empty list of space keys")
@@ -396,7 +400,7 @@ def crawl_confluence(source_id: int) -> dict:
                     withdraw(f"att:{pid}:", prefix=True)
                     return
                 html = f"<html><body>{page['body']['storage']['value']}</body></html>".encode()
-                counts[ingest(source_id, f"page:{pid}", f"{page['title']}.html", html, acl)] += 1
+                counts[ingest(source_id, f"page:{pid}", f"{page['title']}.html", html)] += 1
                 done.add(f"page:{pid}")
                 for results, base in c.paged(f"{c.api}/content/{pid}/child/attachment?" + urlencode({"expand": "version", "limit": 50})):
                     for att in results:
@@ -413,7 +417,7 @@ def crawl_confluence(source_id: int) -> dict:
                             if len(data) > cap:
                                 counts["skipped_too_large"] += 1
                                 continue
-                            counts[ingest(source_id, ext, title, data, acl)] += 1
+                            counts[ingest(source_id, ext, title, data)] += 1
                             done.add(ext)
                         except Exception as e:  # noqa: BLE001
                             fail(pid, ext, e, page_ok=True)
@@ -481,8 +485,9 @@ def crawl_confluence(source_id: int) -> dict:
             if not ok:
                 counts["withdrawn_on_recheck"] += withdraw(ext)
 
-        lock.execute("update documents set acl_groups=%s where source_id=%s and acl_groups is distinct from %s",
-                     (acl, source_id, acl))
+        lock.execute("update documents d set acl_groups=s.acl_groups "
+                     "from (select acl_groups from sources where id=%s for share) s "
+                     "where d.source_id=%s and d.acl_groups is distinct from s.acl_groups", (source_id, source_id))
         lock.execute("update sources set cursor=%s, last_run_at=now(), last_counts=%s where id=%s",
                      (newest.isoformat() if newest else None, Jsonb({**counts, "failed_keys": failed, "retry_ids": retry}), source_id))
     return counts
