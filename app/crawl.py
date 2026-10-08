@@ -34,7 +34,10 @@ def crawl_s3(source_id: int) -> dict:
         since = datetime.fromisoformat(cursor) - CURSOR_SLACK if cursor else None
         s3 = boto3.client("s3")
         seen, newest = [], cursor
-        counts = {"new": 0, "updated": 0, "skipped": 0, "deleted": 0, "failed": 0}
+        exts = {e.lower().lstrip(".") for e in config.get("include_ext", ["docx", "pptx", "pdf"])}
+        cap = int(os.environ.get("S3_MAX_BYTES", 50 * 1024 * 1024))
+        counts = {"new": 0, "updated": 0, "skipped": 0, "deleted": 0, "failed": 0,
+                  "skipped_type": 0, "skipped_too_large": 0}
         failed = []
         for page in s3.get_paginator("list_objects_v2").paginate(
                 Bucket=config["bucket"], Prefix=config.get("prefix", "")):
@@ -42,7 +45,14 @@ def crawl_s3(source_id: int) -> dict:
                 key = obj["Key"]
                 if key.endswith("/"):
                     continue
-                seen.append(key)
+                seen.append(key)  # before the filters: a skipped key is not a deletion
+                # decided from the listing alone: a skipped file is never downloaded or copied
+                if PurePosixPath(key).suffix.lower().lstrip(".") not in exts:
+                    counts["skipped_type"] += 1
+                    continue
+                if obj["Size"] > cap:
+                    counts["skipped_too_large"] += 1
+                    continue
                 modified = obj["LastModified"]
                 newest = max(newest or modified.isoformat(), modified.isoformat())
                 if key in known and since and modified < since:
