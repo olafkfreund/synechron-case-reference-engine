@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 57
 intent: intent/2026-10-08-57-crawl-s3-limits.md
 ---
