@@ -114,6 +114,8 @@ after #53 merges, then start at step 1.
    stored as `config.executed_contracts`.
 
    → verify by `pytest tests/test_sources.py` (saved, and shown).
+   *Done, with deviation:* the Add form also has the checkbox, and every
+   update writes the key (`false` when unticked, same as missing).
 5. **Search.**
    - In `app/search.py`: add `c.basis` to the select; order by `rank desc,
      (c.basis = 'delivered') desc, c.id` (line 72); the badge in

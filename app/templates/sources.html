@@ -2,16 +2,18 @@
 {% block body %}
 <h1>Sources</h1>
 <p>Data class: confidential (the default) documents are only sent to local or own-cloud models unless <a href="/admin/models">approved</a>; mark a source sanitised or public only when that is true.</p>
+<p>Contracts executed: tick it only when every statement of work or change order in the source is signed; each then becomes an engagement reference without the signature check.</p>
 <p>Access groups: the Entra groups whose members can read this source. Every document from it gets these groups.
 SharePoint files whose permissions differ from the site root, and Confluence pages with a read restriction on themselves or an ancestor (or under a folder), are skipped.
 The crawler cannot see who may read a whole site or space: enter only groups whose members can read all of it.
 The Confluence crawler account must be a dedicated non-admin account that no restriction names.</p>
-<table><tr><th>Name</th><th>Kind</th><th>Config</th><th>Access groups</th><th>Data class</th><th>Enabled</th><th>Last run</th><th>Counts</th><th></th></tr>
+<table><tr><th>Name</th><th>Kind</th><th>Config</th><th>Access groups</th><th>Data class</th><th>Enabled</th><th>Contracts executed</th><th>Last run</th><th>Counts</th><th></th></tr>
 {% for id, kind, name, config, acl, enabled, last_run, counts, dc in sources %}{% set f = "s" ~ id %}<tr>
 <td>{{ name }}</td><td>{{ kind }}</td><td><code>{{ config | tojson }}</code></td>
 <td><input type="text" form="{{ f }}" name="acl_groups" value="{{ acl | join(', ') }}" aria-label="access groups"></td>
 <td><select form="{{ f }}" name="data_class" aria-label="data class">{% for k in classes %}<option{{ " selected" if k == dc }}>{{ k }}</option>{% endfor %}</select></td>
 <td><input type="checkbox" form="{{ f }}" name="enabled" {{ "checked" if enabled }} aria-label="enabled"></td>
+<td><input type="checkbox" form="{{ f }}" name="executed_contracts" {{ "checked" if config.get("executed_contracts") }} aria-label="all contracts here are executed"></td>
 <td>{{ last_run or "never" }}</td>
 <td>{% if counts %}{% for k, v in counts.items() if k not in ("failed_keys", "retry_ids") %}{{ k }}: {{ v }}<br>{% endfor %}{% endif %}</td>
 <td><button form="{{ f }}">Save</button>
@@ -25,5 +27,6 @@ The Confluence crawler account must be a dedicated non-admin account that no res
 <p><textarea name="config" rows="2" aria-label="config" placeholder='{"tenant_id": "...", "drive_id": "..."} or {"bucket": "...", "prefix": "..."} or {"base_url": "https://x.atlassian.net", "spaces": ["KEY"]}' required></textarea></p>
 <p><select name="data_class" aria-label="data class">{% for k in classes %}<option>{{ k }}</option>{% endfor %}</select>
 <input type="text" name="acl_groups" aria-label="access groups" placeholder="group ids, comma-separated" required>
+<label><input type="checkbox" name="executed_contracts"> All contracts here are executed</label>
 <button>Add</button></p></form>
 {% endblock %}

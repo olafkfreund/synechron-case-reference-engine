@@ -27,6 +27,13 @@ def test_sources_admin(env):  # noqa: F811
         a.post(f"/admin/sources/{sid}", data={"acl_groups": "g3"})  # unchecked "enabled" disables it
         assert a.post(f"/admin/sources/{sid}/crawl").status_code == 404
         assert name in a.get("/admin/sources").text
+        flag = "select config->'executed_contracts' from sources where id=%s"
+        with db.connect() as c:
+            assert c.execute(flag, (sid,)).fetchone()[0] is False
+        a.post(f"/admin/sources/{sid}", data={"acl_groups": "g3", "executed_contracts": "on"})
+        with db.connect() as c:
+            assert c.execute(flag, (sid,)).fetchone()[0] is True
+        assert 'name="executed_contracts" checked' in a.get("/admin/sources").text
     finally:
         with db.connect() as c:
             c.execute("delete from jobs where payload->>'source_id' = %s", (str(sid),))
