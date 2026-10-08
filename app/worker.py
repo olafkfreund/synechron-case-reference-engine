@@ -1,10 +1,12 @@
 import signal
 import sys
+import threading
 import time
 
 from app import crawl, db, extract, llm, research
 
 MAX_ATTEMPTS = 3
+HEARTBEAT = 60  # seconds; 15 ticks inside the shortest stale window
 HANDLERS = {
     "extract": lambda p: extract.extract(p["document_id"], p.get("basis", "delivered"), p.get("basis_reason", "")),
     "crawl_s3": lambda p: crawl.crawl_s3(p["source_id"]),
@@ -37,6 +39,17 @@ def finish(job_id, attempts, status, error=None):
                      (status, error, job_id, attempts))
 
 
+def heartbeat(job_id, attempts, stop):
+    """Keep a live job out of the stale window: research on 8 large PDFs runs ~75 min (#60)."""
+    while not stop.wait(HEARTBEAT):
+        try:
+            with db.connect() as conn:
+                conn.execute("update jobs set updated_at=now() where id=%s and attempts=%s and status='running'",
+                             (job_id, attempts))
+        except Exception:  # noqa: BLE001 - a DB blip skips one tick; the next one tries again
+            pass
+
+
 def run_one() -> bool:
     """Claim and run one job. False when the queue is empty."""
     with db.connect() as conn:
@@ -50,6 +63,8 @@ def run_one() -> bool:
     if kind not in HANDLERS:
         finish(job_id, attempts, "failed", f"unknown job kind {kind!r}")
         return True
+    stop = threading.Event()
+    threading.Thread(target=heartbeat, args=(job_id, attempts, stop), name="heartbeat", daemon=True).start()
     try:
         HANDLERS[kind](payload)
     except Exception as e:
@@ -66,6 +81,8 @@ def run_one() -> bool:
         raise
     else:
         finish(job_id, attempts, "done")
+    finally:
+        stop.set()
     return True
 
 

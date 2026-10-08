@@ -1,3 +1,6 @@
+import threading
+import time
+
 import pytest
 
 from app import db, worker
@@ -123,3 +126,37 @@ def test_sigterm_requeues_and_gives_attempt_back(monkeypatch):
     with pytest.raises(SystemExit):
         worker.run_one()
     assert row()[0][:2] == ("queued", 0)
+
+
+def test_heartbeat_keeps_a_long_job_from_being_reclaimed(monkeypatch):
+    monkeypatch.setattr(worker, "HEARTBEAT", 0.1)
+    add("extract")
+    seen = []
+    def slow(p):
+        with db.connect() as c:
+            c.execute("update jobs set updated_at=now() - interval '20 min'")
+        time.sleep(0.5)  # 5 ticks of headroom on a loaded runner
+        with db.connect() as c:
+            seen.append(worker.claim(c))
+    monkeypatch.setitem(worker.HANDLERS, "extract", slow)
+    worker.run_one()
+    assert seen == [None]
+    assert row()[0][:2] == ("done", 1)
+
+
+def heartbeats():
+    return [t for t in threading.enumerate() if t.name == "heartbeat" and t.is_alive()]
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_heartbeat_stops_when_the_job_ends(monkeypatch, fail):
+    monkeypatch.setattr(worker, "HEARTBEAT", 0.05)
+    add("extract")
+    def handler(p):
+        if fail:
+            raise ValueError("boom")
+    monkeypatch.setitem(worker.HANDLERS, "extract", handler)
+    worker.run_one()
+    for t in heartbeats():
+        t.join(1)
+    assert heartbeats() == []
