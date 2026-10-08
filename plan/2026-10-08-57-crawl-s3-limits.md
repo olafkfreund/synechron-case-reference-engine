@@ -69,6 +69,10 @@ spec: spec/2026-10-08-57-crawl-s3-limits.md
    `ingest` and records downloads by wrapping the moto client's
    `get_object`, instead of patching `ingest`; it checks `documents` rows
    rather than counting `originals/` objects.
+   The skip test is named `test_crawl_skips_type_and_size_without_downloading`;
+   the `include_ext` test uses `["txt", "docx"]` because the same source also
+   ingests a `.docx`. Ordering against `seen.append` is proven by the
+   oversized-existing-doc test (review mutation check).
 2. **Document the limits.** In `README.md`, add a short `## Limits` section
    before `## Local development with Ollama`, listing:
    - `S3_MAX_BYTES`, `SHAREPOINT_MAX_BYTES` and `CONFLUENCE_MAX_BYTES`
