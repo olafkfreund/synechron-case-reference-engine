@@ -84,6 +84,7 @@ def test_summary_with_invented_number_blanked_and_flagged(doc):
     ("per diem", True), ("total contract value 1.2m", True), ("budget of 2 million", True),
     ("GBP 1,200", True), ("£ 1,200", True), ("S$200k", True), ("professional fees of 40k", True),
     ("invoiced monthly in arrears", True), ("payable within 45 days", True),
+    ("Rs. 50,000", True), ("Rs 50,000", True), ("2.5 mn EUR", True), ("950k per day", True), ("80k/hour", True),
     # banking scope that must survive
     ("2 million payments/day", False), ("5m messages per day", False), ("interchange fees", False),
     ("fee and commission engine", False), ("e-invoicing platform", False), ("invoice financing", False),

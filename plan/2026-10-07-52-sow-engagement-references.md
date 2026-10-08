@@ -119,8 +119,13 @@ after #53 merges, then start at step 1.
      because bare `/day` and `per day` are volumes in banking; terms no longer
      match bare `fees`, `invoic…`, `payable` or `purchase order`, only
      their commercial phrasings; `contract value` and `budget of` match;
-   - known gap: a bare `900/day` with no currency or rate word is not caught;
-     the prompt forbids it.
+   - re-review added `Rs`, `mn` and a `k` multiplier before `/day`/`per hour`
+     (`950k per day`);
+   - known gaps: a bare `900/day`, `1,200 per day` or `the fee is 40,000`
+     (no currency, no rate word) is not caught, and payment terms phrased
+     freely ("payment shall be made within 30 days") carry no figure; the
+     prompt forbids both. Rare false positives remain ("service fees engine",
+     "contract value reporting") and are counted in `needs_attention`.
 4. **Executed-contracts flag.** In `app/sources.py` (create line 34, update
    line 57) and `sources.html`: an "All contracts here are executed" checkbox,
    stored as `config.executed_contracts`.

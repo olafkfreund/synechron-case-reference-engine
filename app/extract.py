@@ -32,13 +32,14 @@ CONTRACT_SYSTEM = (
 )
 
 _CUR = r"(?:USD|GBP|EUR|CHF|SEK|NOK|DKK|PLN|INR|AUD|NZD|CAD|SGD|HKD|JPY|CNY|ZAR|AED)"
-_MULT = r"(?:k|m|bn|million|thousand|lakh|crore)"
+_MULT = r"(?:k|m|mn|bn|million|thousand|lakh|crore)"
 COMMERCIAL = re.compile(
     # amounts: a symbol, an ISO code or a currency word next to a number
-    rf"[£$€₹¥]\s?\d|\b{_CUR}\s?\d|\d\s?{_MULT}?\s?{_CUR}\b"
+    rf"[£$€₹¥]\s?\d|\bRs\.?\s?\d|\b{_CUR}\s?\d|\d\s?{_MULT}?\s?{_CUR}\b"
     rf"|\d\s?{_MULT}?\s?(?:pounds?|sterling|euros?|dollars?|rupees?|francs?|yen)\b|\b\d+\s?(?:lakh|crore)\b"
     # rates without a currency: bare "per day" and "/day" are volumes in banking ("2m payments/day")
-    r"|\b(?:day|daily|hourly)\s+rates?\b|\bp\.d\b|\bper\s+diem\b|\d\s?(?:/|per)\s?(?:man|person)[- ]days?\b"
+    # "950k per day" is a rate ("2m/day" may be a volume, so only k)
+    r"|\d\s?k\s?(?:/|per)\s?(?:day|hour|hr)\b|\b(?:day|daily|hourly)\s+rates?\b|\bp\.d\b|\bper\s+diem\b|\d\s?(?:/|per)\s?(?:man|person)[- ]days?\b"
     # terms; bare "payments", "fees", "invoicing" and "payable" are banking capabilities
     r"|\bpayment\s+(?:terms?|within|schedule|milestones?|due)\b|\bpayable\s+(?:within|on|in|monthly|quarterly)\b"
     r"|\binvoiced\b|\b(?:professional|consulting|service|monthly|total)\s+fees?\b|\bfees?\s+(?:of|are|will|shall)\b"
