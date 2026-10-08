@@ -301,4 +301,4 @@ def _change_groups_after_first_ingest(monkeypatch, sid):
 def test_crawl_does_not_write_back_groups_changed_mid_crawl(sp, monkeypatch):
     _change_groups_after_first_ingest(monkeypatch, sp.sid)
     first_run(sp)
-    assert {v[1][0] for v in docs(sp.sid).values()} == {"g-new"} and len(docs(sp.sid)) == 2
+    assert [v[1] for v in docs(sp.sid).values()] == [["g-new"], ["g-new"]]

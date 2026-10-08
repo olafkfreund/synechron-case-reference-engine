@@ -277,6 +277,19 @@ def test_executed_flag_must_be_true_not_truthy():
     assert ing.basis_for(t, {"executed_contracts": True}) == "engagement"
 
 
+def _wait_for_lock_wait(conn, timeout=10):
+    """Until another backend is waiting on a row lock (the ingest blocked by the open save)."""
+    import time
+    end = time.time() + timeout
+    with db.connect(autocommit=True) as c:
+        while time.time() < end:
+            if c.execute("select count(*) from pg_stat_activity where wait_event_type = 'Lock' "
+                         "and pid <> pg_backend_pid()").fetchone()[0]:
+                return
+            time.sleep(0.05)
+    raise AssertionError("ingest never waited for the save's lock")
+
+
 def test_ingest_waits_for_a_saving_admin_and_writes_the_new_groups(env):
     import threading
     _, sid = env
@@ -285,10 +298,30 @@ def test_ingest_waits_for_a_saving_admin_and_writes_the_new_groups(env):
     first.execute("update sources set acl_groups='{new}' where id=%s", (sid,))
     t = threading.Thread(target=ing.ingest, args=(sid, "a", "a", b"one"))
     t.start()
-    t.join(0.5)
-    assert t.is_alive()  # blocked on the save's lock
-    first.commit()
-    first.close()
+    try:
+        _wait_for_lock_wait(first)
+        first.commit()
+    finally:
+        first.close()  # releases the lock (rolls back on failure), or teardown blocks on it
+    t.join(10)
+    with db.connect() as c:
+        assert c.execute("select acl_groups from documents where source_id=%s", (sid,)).fetchone()[0] == ["new"]
+
+
+def test_unchanged_reingest_waits_for_a_saving_admin(env):
+    import threading
+    _, sid = env
+    ing.ingest(sid, "a", "a", b"one")
+    first = db.connect()
+    first.execute("select 1 from sources where id=%s for update", (sid,))
+    first.execute("update sources set acl_groups='{new}' where id=%s", (sid,))
+    t = threading.Thread(target=ing.ingest, args=(sid, "a", "a", b"one"))  # same bytes: the skipped branch
+    t.start()
+    try:
+        _wait_for_lock_wait(first)
+        first.commit()
+    finally:
+        first.close()  # releases the lock (rolls back on failure), or teardown blocks on it
     t.join(10)
     with db.connect() as c:
         assert c.execute("select acl_groups from documents where source_id=%s", (sid,)).fetchone()[0] == ["new"]

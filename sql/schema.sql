@@ -155,3 +155,8 @@ create table if not exists source_acl_changes (
   changed_by text not null,
   changed_at timestamptz not null default now()
 );
+
+-- documents carry a copy of their source's groups; repair any copy a crawl wrote back before #58
+-- (idempotent; re-run the migration once old worker tasks have stopped after a deploy)
+update documents d set acl_groups = s.acl_groups from sources s
+  where d.source_id = s.id and d.acl_groups is distinct from s.acl_groups;

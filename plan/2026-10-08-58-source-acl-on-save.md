@@ -129,6 +129,21 @@ spec: spec/2026-10-08-58-source-acl-on-save.md
    `/admin/audit`), extended: a change shows on the page. Then the full
    suite.
 
+*Review fixes (fresh Opus review):*
+- **Stale copies from before this fix were never repaired** (the blocker).
+  The save now always runs `update documents … where acl_groups is distinct
+  from <new>`, and only the log stays conditional, so re-saving the same
+  groups repairs a source. `sql/schema.sql` ends with an idempotent repair,
+  `update documents … from sources … is distinct from`, which runs with every
+  migration. Deploy step: re-run the migration once the old worker tasks have
+  stopped (an old task's restamp could still revert a save during the
+  rollout). Noted on #37.
+- The lock-ordering tests wait for `pg_stat_activity.wait_event_type =
+  'Lock'` instead of a 0.5 s join. They close the save's connection in
+  `finally`, so a regression fails instead of hanging. A new test covers the
+  unchanged-checksum branch. Mutation-checked: removing its `for share` fails.
+- The SharePoint mid-crawl test compares the full group list.
+
 ## Tests
 
 - `docker compose build app && docker compose run --rm app pytest` is green.

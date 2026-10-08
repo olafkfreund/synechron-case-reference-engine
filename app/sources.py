@@ -85,8 +85,11 @@ def update(sid: int, acl_groups: str = Form(), enabled: bool = Form(False), data
         conn.execute("update sources set acl_groups=%s, enabled=%s, data_class=coalesce(nullif(%s,''), data_class), "
                      "config=jsonb_set(config, '{executed_contracts}', to_jsonb(%s::bool)) "
                      "where id=%s", (groups(acl_groups), enabled, data_class, executed_contracts, sid))
-        if groups(acl_groups) != old[1]:  # documents carry a copy of the groups: apply it in the same transaction
-            conn.execute("update documents set acl_groups=%s where source_id=%s", (groups(acl_groups), sid))
+        # documents carry a copy of the groups: apply it in the same transaction, on every save, so a
+        # re-save also repairs copies a crawl wrote back before #58
+        conn.execute("update documents set acl_groups=%s where source_id=%s and acl_groups is distinct from %s",
+                     (groups(acl_groups), sid, groups(acl_groups)))
+        if groups(acl_groups) != old[1]:
             log_acl_change(conn, sid, old[1], groups(acl_groups), user.sub)
         if data_class and data_class != old[0]:
             log_class_change(conn, sid, old[0], data_class, user.sub)
