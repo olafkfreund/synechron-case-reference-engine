@@ -63,6 +63,12 @@ spec: spec/2026-10-08-57-crawl-s3-limits.md
      marked deleted.
    - `test_auth.py` and `test_enqueue.py` only enqueue `crawl_s3`, but run
      the full suite in step 2 anyway.
+   *Done, with deviations:* four more S3 crawl tests in `tests/test_ingest.py`
+   used `.txt` keys (cursor, bad document, ACL/reappearing key, empty
+   listing) and moved to `.docx` as well. The skip test runs the real
+   `ingest` and records downloads by wrapping the moto client's
+   `get_object`, instead of patching `ingest`; it checks `documents` rows
+   rather than counting `originals/` objects.
 2. **Document the limits.** In `README.md`, add a short `## Limits` section
    before `## Local development with Ollama`, listing:
    - `S3_MAX_BYTES`, `SHAREPOINT_MAX_BYTES` and `CONFLUENCE_MAX_BYTES`

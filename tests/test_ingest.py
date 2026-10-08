@@ -82,16 +82,58 @@ def test_non_case_routed_away(env):
 
 def test_crawl_cursor_and_deletion(env):
     s3, sid = env
-    s3.put_object(Bucket="src", Key="in/a.txt", Body=b"aaa")
-    s3.put_object(Bucket="src", Key="in/b.txt", Body=b"bbb")
-    assert crawl.crawl_s3(sid) == {"new": 2, "updated": 0, "skipped": 0, "deleted": 0, "failed": 0}
+    s3.put_object(Bucket="src", Key="in/a.docx", Body=b"aaa")
+    s3.put_object(Bucket="src", Key="in/b.docx", Body=b"bbb")
+    assert crawl.crawl_s3(sid) == {"new": 2, "updated": 0, "skipped": 0, "deleted": 0, "failed": 0,
+                                   "skipped_type": 0, "skipped_too_large": 0}
     again = crawl.crawl_s3(sid)
     assert again["new"] == 0 and again["updated"] == 0 and again["skipped"] == 2  # inside cursor slack
-    s3.delete_object(Bucket="src", Key="in/b.txt")
+    s3.delete_object(Bucket="src", Key="in/b.docx")
     assert crawl.crawl_s3(sid)["deleted"] == 1
     with db.connect() as c:
-        assert c.execute("select deleted_at is not null from documents where external_id='in/b.txt'").fetchone()[0]
-        assert c.execute("select acl_groups from documents where external_id='in/a.txt'").fetchone()[0] == ["g1"]
+        assert c.execute("select deleted_at is not null from documents where external_id='in/b.docx'").fetchone()[0]
+        assert c.execute("select acl_groups from documents where external_id='in/a.docx'").fetchone()[0] == ["g1"]
+
+
+def test_crawl_skips_type_and_size_without_downloading(env, monkeypatch):
+    s3, sid = env
+    monkeypatch.setenv("S3_MAX_BYTES", "10")
+    for key, body in [("a.docx", b"aaa"), ("b.PDF", b"bbb"), ("c.mp4", b"c"), ("d.txt", b"d"), ("e.pdf", b"e" * 20)]:
+        s3.put_object(Bucket="src", Key=f"in/{key}", Body=body)
+    fetched, real = [], crawl.boto3.client
+
+    def client(*a, **k):  # the real moto client, with downloads recorded
+        c = real(*a, **k)
+        get = c.get_object
+        c.get_object = lambda **kw: (fetched.append(kw["Key"]), get(**kw))[1]
+        return c
+    monkeypatch.setattr(crawl.boto3, "client", client)
+    counts = crawl.crawl_s3(sid)
+    assert (counts["new"], counts["skipped_type"], counts["skipped_too_large"]) == (2, 2, 1)
+    assert sorted(fetched) == ["in/a.docx", "in/b.PDF"]
+    with db.connect() as c:
+        assert sorted(r[0] for r in c.execute("select external_id from documents where source_id=%s", (sid,))) == [
+            "in/a.docx", "in/b.PDF"]
+    fetched.clear()
+    again = crawl.crawl_s3(sid)
+    assert (again["skipped_type"], again["skipped_too_large"], again["deleted"]) == (2, 1, 0)
+    assert not set(fetched) & {"in/c.mp4", "in/d.txt", "in/e.pdf"}
+
+
+def test_crawl_include_ext_and_oversized_existing_doc_stays_live(env, monkeypatch):
+    s3, sid = env
+    monkeypatch.setenv("S3_MAX_BYTES", "10")
+    with db.connect() as c:
+        c.execute("""update sources set config = config || '{"include_ext": ["txt", "docx"]}' where id=%s""", (sid,))
+    s3.put_object(Bucket="src", Key="in/notes.txt", Body=b"notes")
+    s3.put_object(Bucket="src", Key="in/a.docx", Body=b"small")
+    assert crawl.crawl_s3(sid)["new"] == 2
+    s3.put_object(Bucket="src", Key="in/a.docx", Body=b"now far too large")
+    counts = crawl.crawl_s3(sid)
+    assert (counts["skipped_too_large"], counts["deleted"]) == (1, 0)
+    with db.connect() as c:
+        assert c.execute("select deleted_at is null, text from documents where external_id='in/a.docx'").fetchone() == (
+            True, "small")
 
 
 def test_real_docling_conversion():
@@ -111,12 +153,12 @@ def set_cursor(sid, iso):
 
 def test_cursor_skips_known_old_keys_but_fetches_unknown(env):
     s3, sid = env
-    s3.put_object(Bucket="src", Key="in/a.txt", Body=b"aaa")
+    s3.put_object(Bucket="src", Key="in/a.docx", Body=b"aaa")
     crawl.crawl_s3(sid)
     set_cursor(sid, "2999-01-01T00:00:00+00:00")  # everything is now "old"
-    s3.put_object(Bucket="src", Key="in/late.txt", Body=b"late")  # multipart-style: dated behind cursor
+    s3.put_object(Bucket="src", Key="in/late.docx", Body=b"late")  # multipart-style: dated behind cursor
     r = crawl.crawl_s3(sid)
-    assert r["skipped"] == 0 and r["new"] == 1  # a.txt not re-downloaded, unknown late.txt fetched
+    assert r["skipped"] == 0 and r["new"] == 1  # a.docx not re-downloaded, unknown late.docx fetched
 
 
 def test_bad_document_does_not_stop_crawl(env, monkeypatch):
@@ -127,24 +169,24 @@ def test_bad_document_does_not_stop_crawl(env, monkeypatch):
             raise ValueError("corrupt SECRET-CLIENT file")
         return real(data, name)
     monkeypatch.setattr(ing, "to_markdown", boom)
-    s3.put_object(Bucket="src", Key="in/a.txt", Body=b"bad")
-    s3.put_object(Bucket="src", Key="in/b.txt", Body=b"good")
+    s3.put_object(Bucket="src", Key="in/a.docx", Body=b"bad")
+    s3.put_object(Bucket="src", Key="in/b.docx", Body=b"good")
     r = crawl.crawl_s3(sid)
     assert r["failed"] == 1 and r["new"] == 1
     with db.connect() as c:
         cursor, counts = c.execute("select cursor, last_counts from sources where id=%s", (sid,)).fetchone()
-    assert cursor and counts["failed_keys"] == [{"key": "in/a.txt", "error": "ValueError"}]
+    assert cursor and counts["failed_keys"] == [{"key": "in/a.docx", "error": "ValueError"}]
     assert "SECRET" not in str(counts)
 
 
 def test_acl_change_and_reappearing_key_apply_without_redownload(env):
     s3, sid = env
-    s3.put_object(Bucket="src", Key="in/a.txt", Body=b"aaa")
-    s3.put_object(Bucket="src", Key="in/b.txt", Body=b"bbb")
+    s3.put_object(Bucket="src", Key="in/a.docx", Body=b"aaa")
+    s3.put_object(Bucket="src", Key="in/b.docx", Body=b"bbb")
     crawl.crawl_s3(sid)
-    s3.delete_object(Bucket="src", Key="in/b.txt")
+    s3.delete_object(Bucket="src", Key="in/b.docx")
     crawl.crawl_s3(sid)
-    s3.put_object(Bucket="src", Key="in/b.txt", Body=b"bbb")
+    s3.put_object(Bucket="src", Key="in/b.docx", Body=b"bbb")
     with db.connect() as c:
         c.execute("update sources set acl_groups='{g9}' where id=%s", (sid,))
     set_cursor(sid, "2999-01-01T00:00:00+00:00")
@@ -156,9 +198,9 @@ def test_acl_change_and_reappearing_key_apply_without_redownload(env):
 
 def test_empty_listing_is_not_a_mass_delete(env):
     s3, sid = env
-    s3.put_object(Bucket="src", Key="in/a.txt", Body=b"aaa")
+    s3.put_object(Bucket="src", Key="in/a.docx", Body=b"aaa")
     crawl.crawl_s3(sid)
-    s3.delete_object(Bucket="src", Key="in/a.txt")
+    s3.delete_object(Bucket="src", Key="in/a.docx")
     r = crawl.crawl_s3(sid)
     assert r["deleted"] == 0 and r["empty_listing"] is True
     with db.connect() as c:
