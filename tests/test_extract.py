@@ -73,6 +73,36 @@ def test_summary_with_invented_number_blanked_and_flagged(doc):
     assert summary == "" and data["summary"] == "" and data["needs_attention"]
 
 
+@pytest.mark.parametrize("s,hit", [
+    ("£1,200/day", True), ("USD 450 per hour", True), ("payment within 30 days", True),
+    ("€2.5m fixed price", True), ("1.2m GBP", True), ("rate of 900 p.d.", True),
+    ("30 servers", False), ("phase 2", False), ("18 months", False), ("a team of 8", False),
+    ("Payments modernisation", False), ("SWIFT payment messaging", False), ("10m transactions/month", False),
+])
+def test_commercial_filter_table(s, hit):
+    assert bool(ex.COMMERCIAL.search(s)) is hit
+
+
+def test_engagement_drops_outcomes_and_commercial_items(doc):
+    did, reply = doc
+    reply["v"] = case(("capability", "Onboarding", Q), ("capability", "Rate", "billed at £1,200/day for 18 months"),
+                      ("technology", "AWS", "on AWS and Kubernetes"), ("duration_months", "18 months", "ran for 18 months"),
+                      ("team_size", "8", "a team of 8 engineers"))
+    ex.extract(did, "engagement", "executed contract")
+    with db.connect() as c:
+        data, basis = c.execute("select data, basis from cases where document_id=%s", (did,)).fetchone()
+    assert basis == "engagement" and data["basis"] == "engagement" and data["basis_reason"] == "executed contract"
+    assert data["outcomes"] == []
+    assert [x["value"] for x in data["capabilities"]] == ["Onboarding"]
+    assert data["duration_months"]["value"] == 18 and data["team_size"]["value"] == 8
+    assert data["needs_attention"] == ["1 item(s) with prices, rates or payment terms removed"]
+
+
+def test_delivered_keeps_outcomes_and_default_basis(doc):
+    data, *_ = run(doc, case())
+    assert data["basis"] == "delivered" and len(data["outcomes"]) == 1
+
+
 def test_reextraction_resets_approval_and_search_text_has_no_quotes(doc):
     did, _ = doc
     run(doc, case())

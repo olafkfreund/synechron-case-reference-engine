@@ -102,6 +102,13 @@ after #53 merges, then start at step 1.
      as `30 servers`, `phase 2`);
    - basis stored; delivered extraction unchanged.
    Traps: the filter must not touch `duration_months` or `team_size` digits.
+   *Done, with deviations:* the filter also blanks a matching summary and
+   single-value text field (a price cannot leak there); `build()` takes
+   `basis`/`basis_reason` with defaults so the eval script still runs.
+   "Payment wording" means payment *terms* (`payment terms/within/schedule`,
+   `payable`, `invoice`), and rates are per day/hour only: bare "payments" is
+   a banking capability and "/month" is usually a volume. Currency amounts
+   still catch any price.
 4. **Executed-contracts flag.** In `app/sources.py` (create line 34, update
    line 57) and `sources.html`: an "All contracts here are executed" checkbox,
    stored as `config.executed_contracts`.
