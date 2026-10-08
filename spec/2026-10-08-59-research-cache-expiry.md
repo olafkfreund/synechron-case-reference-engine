@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 59
 intent: intent/2026-10-08-59-research-cache-expiry.md
 ---
