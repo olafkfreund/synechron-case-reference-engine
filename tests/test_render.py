@@ -67,6 +67,28 @@ def test_docx_content_and_leaks(approved, reg):
         assert bad not in t, bad
 
 
+def engagement():
+    return full().model_copy(update={"basis": "engagement", "basis_reason": "executed contract"})
+
+
+def test_engagement_has_note_and_no_outcomes_in_docx_md_pptx(approved):
+    cid = approved(engagement())  # the record still holds an outcome: output must drop it
+    note = render.ENGAGEMENT_NOTE
+    t = doc_text(gen([cid], "docx").content)
+    assert note in t and "Outcomes" not in t and "12 to 3 days" not in t
+    m = gen([cid], "md").text
+    assert note in m and "Outcomes" not in m and "12 to 3" not in m
+    _, out = slides(gen([cid], "pptx").content)
+    assert out[0]["Outcomes"] == [note]
+
+
+def test_delivered_has_no_note(approved):
+    cid = approved(full())
+    assert render.ENGAGEMENT_NOTE not in doc_text(gen([cid], "docx").content)
+    assert render.ENGAGEMENT_NOTE not in gen([cid], "md").text
+    assert "Outcomes" in gen([cid], "md").text
+
+
 def test_markdown_fields_and_escaping(approved):
     cid = approved(full(title="A *bold* [title]\n# x"))
     t = gen([cid]).text

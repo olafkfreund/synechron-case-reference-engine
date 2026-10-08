@@ -123,7 +123,8 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
         notes += [f"organisation not in client registry: {o}"
                   for o in anonymise.unlisted([*case.organisations, case.client_mention.value or ""], registry)]
     return page(request, "review_detail.html", user, id=cid, rows=rows(case), notes=notes,
-                status=r[1], document=r[2], external_id=r[3], source=r[4], reviewable=r[5], v=r[6])
+                basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
+                external_id=r[3], source=r[4], reviewable=r[5], v=r[6])
 
 
 @router.post("/review/{cid}/edit")

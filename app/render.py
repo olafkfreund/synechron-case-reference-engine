@@ -29,6 +29,7 @@ WITHHELD = "output withheld: a protected client name is present"
 CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")  # invalid in XML; also used to split names
 SLIDE_TEXT = 300  # challenge/solution excerpt on a slide; the Word version has the full text
 SLIDE_OUTCOMES = 5
+ENGAGEMENT_NOTE = "Engagement reference: contracted scope; no outcomes are claimed."
 
 
 class Withheld(Exception):
@@ -89,8 +90,12 @@ def section(case: ReferenceCase, client: str) -> dict:
     lists = [("Capabilities", [v(c) for c in case.capabilities]),
              ("Technology", [v(t) for t in case.tech_stack]),
              ("Outcomes", [f"{o.metric}: {o.value}" for o in case.outcomes if not o.unsourced])]
+    engagement = case.basis == "engagement"
+    if engagement:  # contracted scope claims no results, whatever the record holds
+        lists = [x for x in lists if x[0] != "Outcomes"]
     return dict(
         title=v(case.title) or "", client=client, summary=case.summary,
+        basis=case.basis, note=ENGAGEMENT_NOTE if engagement else "",
         details=[dict(label=a, value=str(b)) for a, b in details if b not in (None, "")],
         blocks=[dict(heading=a, text=b) for a, b in blocks if b],
         lists=[dict(heading=a, bullets=[str(i) for i in b if i]) for a, b in lists if any(b)])
@@ -189,7 +194,7 @@ def to_pptx(sections: list[dict], industry: dict | None = None) -> bytes:
         _fill(prs, *case_layout, {
             "Title": [c["title"]], "Client": [c["client"]], "Summary": [c["summary"]],
             "Challenge": [excerpt(block("Challenge"))], "Solution": [excerpt(block("Solution"))],
-            "Outcomes": bullets("Outcomes")[:SLIDE_OUTCOMES], "Technology": [", ".join(bullets("Technology"))]},
+            "Outcomes": [c["note"]] if c["note"] else bullets("Outcomes")[:SLIDE_OUTCOMES], "Technology": [", ".join(bullets("Technology"))]},
             PLACEHOLDERS)
     if industry:
         if own := _layout(prs, INDUSTRY_LAYOUT, INDUSTRY_PLACEHOLDERS):
@@ -280,6 +285,10 @@ MD = _env.from_string("""\
 
 *{{ c.client | md }}*
 
+{% if c.note %}
+{{ c.note | md }}
+
+{% endif %}
 {{ c.summary | md }}
 
 {% for x in c.details %}

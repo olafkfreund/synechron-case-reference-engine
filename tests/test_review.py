@@ -1,3 +1,4 @@
+import json
 import uuid
 
 import pytest
@@ -74,6 +75,13 @@ def test_list_shows_extracted_and_expired_only(make):
     fresh = make("approved", "60 days")
     r = client(R).get("/review").text
     assert f"/review/{new}\"" in r and f"/review/{expired}\"" in r and f"/review/{fresh}\"" not in r
+
+
+def test_detail_shows_basis_badge_and_reason(make):
+    assert "Delivered case" in client(R).get(f"/review/{make()}").text
+    cid = make(data=json.dumps({**json.loads(case_data()), "basis": "engagement", "basis_reason": "executed contract"}))
+    page = client(R).get(f"/review/{cid}").text
+    assert "Engagement (contracted scope)" in page and "executed contract" in page
 
 
 def test_detail_hides_document_text_and_escapes_script(make):
