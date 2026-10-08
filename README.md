@@ -27,6 +27,22 @@ Both are private until shared from their Share menu.
 - Uploads are capped by `UPLOAD_MAX_BYTES` (50 MB by default) and go through the S3 crawler, so keep it at or
   below `S3_MAX_BYTES`.
 
+## Dependency lock
+
+Every image installs `requirements.lock` with hashes. After editing `pyproject.toml`, re-lock:
+
+```sh
+docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e UV_CACHE_DIR=/tmp/uv -v "$PWD:/w" -w /w ghcr.io/astral-sh/uv:0.12.23-python3.12-trixie-slim \
+  uv pip compile pyproject.toml --extra dev --torch-backend cpu --python-version 3.12 \
+  --python-platform x86_64-manylinux_2_28 --generate-hashes \
+  --custom-compile-command "see README: Dependency lock" \
+  -o requirements.lock
+```
+
+- Add `--upgrade-package X` or `--upgrade` to move versions.
+- A dependency that isn't in the lock fails the build at `pip check`.
+- The lock is x86_64 only: for ARM64, re-lock with `--python-platform aarch64-manylinux_2_28`.
+
 ## Local development with Ollama
 
 Extraction works with a local model, so real documents never leave the workstation.

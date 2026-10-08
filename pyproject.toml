@@ -6,7 +6,6 @@ dependencies = [
   "fastapi", "uvicorn", "jinja2", "psycopg[binary]", "pydantic", "litellm",
   "docling", "docxtpl", "python-pptx", "httpx", "authlib", "boto3",
   "python-multipart", "itsdangerous", "pyyaml",
-  "rapidocr<3.10",  # 3.10.0 drops PP_OCRV6_LANGS, which docling 2.135 imports; remove once docling supports it (#42)
 ]
 
 [project.optional-dependencies]
