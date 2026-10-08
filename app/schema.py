@@ -93,7 +93,7 @@ class ReferenceCase(_Model):
     @classmethod
     def _max_80_words(cls, v: str) -> str:
         if len(v.split()) > 80:
-            raise ValueError("summary must be at most 80 words")
+            return " ".join(v.split()[:80])  # trimmed, never rejected
         return v
 
     def quotes(self) -> list[str]:
@@ -123,3 +123,73 @@ def llm_schema(model: type[BaseModel] = ReferenceCase) -> dict:
             return {k: strip(v) for k, v in o.items() if k != "default"}
         return [strip(v) for v in o] if isinstance(o, list) else o
     return strip(model.model_json_schema())
+
+
+class Item(_Model):
+    """One fact as the model states it; code assembles the strict ReferenceCase from a list of these."""
+    # lenient: a stray key or a number for a text never fails the whole reply
+    # "required": enforced-schema mode lets a model omit any optional key, and then it returns nothing
+    model_config = ConfigDict(extra="ignore", coerce_numbers_to_str=True,
+                              json_schema_extra={"additionalProperties": False, "required": ["field", "value", "quote"]})
+    field: str = ""
+    value: str = ""
+    quote: str = ""
+
+    @field_validator("field", "value", "quote", mode="before")
+    @classmethod
+    def _null_is_empty(cls, v):  # small models often emit null; one null must not fail the whole reply
+        return "" if v is None else v
+
+
+class Extraction(_Model):
+    model_config = ConfigDict(json_schema_extra={"required": ["items", "summary"]})
+    items: list[Item] = []
+    summary: str = Field("", description="At most 80 words. Use only numbers that appear in the quotes.")
+
+
+_TEXTS = ("title", "client_mention", "industry", "region", "engagement_type", "challenge", "solution")
+_INTS = ("duration_months", "team_size")
+FIELDS = (*_TEXTS, *_INTS, "period_start", "period_end", "capability", "technology", "outcome", "organisation")
+
+
+def assemble(x: Extraction) -> tuple[ReferenceCase, list[str]]:
+    """Build the case from flat items. Malformed or unknown items are skipped and counted."""
+    c = ReferenceCase(title=Sourced[str]())
+    period, bad = Period(), 0
+    for it in x.items:
+        f, v, q = it.field, it.value.strip(), it.quote.strip()
+        if not v:
+            bad += 1
+        elif f in _INTS:
+            # the first number only: joining digits would turn "18 months to 2 years" into an invented 182
+            first = re.search(r"\d[\d,]*", v)
+            if not first:
+                bad += 1
+            elif getattr(c, f).value is None:  # first value wins
+                setattr(c, f, Sourced[int](value=int(first.group().replace(",", "")), source_quote=q))
+        elif f in _TEXTS:
+            if not getattr(c, f).value:
+                setattr(c, f, Sourced[str](value=v, source_quote=q))
+        elif f in ("period_start", "period_end"):
+            if getattr(period, f[7:]) is None:
+                setattr(period, f[7:], v)
+                period.source_quote = period.source_quote or q
+        elif f == "capability":
+            c.capabilities.append(Sourced[str](value=v, source_quote=q))
+        elif f == "technology":
+            c.tech_stack.append(Sourced[str](value=v, source_quote=q))
+        elif f == "outcome":
+            metric, _, val = v.partition(":")
+            c.outcomes.append(Outcome(metric=metric.strip(), value=(val or metric).strip(), source_quote=q))
+        elif f == "organisation":
+            if v not in c.organisations:
+                c.organisations.append(v)
+        else:
+            bad += 1
+    c.period = period
+    notes = [f"{bad} malformed or unknown item(s) skipped"] if bad else []
+    words = x.summary.split()
+    if len(words) > 80:
+        notes.append("summary trimmed to 80 words")
+    c.summary = " ".join(words[:80])  # assignment skips the validator
+    return c, notes

@@ -1,7 +1,6 @@
 import json
 
 import pytest
-from pydantic import ValidationError
 
 from app.schema import Outcome, ReferenceCase, Sourced, llm_schema, quote_in, sourced
 
@@ -52,11 +51,6 @@ def test_quote_in_rejects_invented_metric():
     assert not quote_in(DOC, "cut onboarding from 12 days to 1 day")
 
 
-def test_summary_limit():
-    with pytest.raises(ValidationError):
-        ReferenceCase(title=Sourced[str](), summary="w " * 81)
-
-
 def test_search_text_excludes_quotes():
     t = make().search_text()
     assert "Onboarding" in t and "KYC" in t and "12 to 3 days" in t
@@ -91,3 +85,52 @@ def test_llm_schema_is_strict_and_hides_unsourced():
     objs = [d for d in schema["$defs"].values() if d.get("type") == "object"]
     assert objs and all(d.get("additionalProperties") is False for d in objs)
     assert schema.get("additionalProperties") is False
+
+
+def test_assemble_flat_items():
+    from app.schema import Extraction, Item, assemble
+    it = lambda f, v, q="some quote of four words": Item(field=f, value=v, quote=q)
+    x = Extraction(items=[
+        it("title", "First"), it("title", "Second"), it("team_size", "a team of 1,200"), it("team_size", "9"),
+        it("duration_months", "none"), it("capability", "A"), it("capability", "B"),
+        it("technology", "AWS"), it("technology", "Kubernetes"), it("organisation", "Acme"),
+        it("organisation", "Acme"), it("outcome", "onboarding: 12 days to 3"), it("outcome", "faster"),
+        it("period_start", "2023-01"), it("period_end", "2024-06"), it("nope", "x"), it("title", " ")],
+        summary="w " * 90)
+    c, notes = assemble(x)
+    assert c.title.value == "First" and c.team_size.value == 1200 and c.duration_months.value is None
+    assert [s.value for s in c.capabilities] == ["A", "B"] and [s.value for s in c.tech_stack] == ["AWS", "Kubernetes"]
+    assert c.organisations == ["Acme"] and (c.period.start, c.period.end) == ("2023-01", "2024-06")
+    assert (c.outcomes[0].metric, c.outcomes[0].value) == ("onboarding", "12 days to 3")
+    assert (c.outcomes[1].metric, c.outcomes[1].value) == ("faster", "faster")
+    assert len(c.summary.split()) == 80 and notes == ["3 malformed or unknown item(s) skipped", "summary trimmed to 80 words"]
+
+
+def test_item_is_lenient():
+    from app.schema import Extraction
+    x = Extraction.model_validate({"items": [{"field": "title", "value": 5, "extra": 1}], "summary": ""})
+    assert x.items[0].value == "5"
+
+
+def test_long_summary_is_trimmed_not_rejected():
+    assert len(ReferenceCase(title=Sourced[str](), summary="w " * 90).summary.split()) == 80
+
+
+def test_assemble_takes_the_first_number_only():
+    from app.schema import Extraction, Item, assemble
+    case, _ = assemble(Extraction(items=[Item(field="duration_months", value="18 months to 2 years", quote="q"),
+                                         Item(field="team_size", value="a team of 1,200", quote="q")]))
+    assert case.duration_months.value == 18 and case.team_size.value == 1200
+
+
+def test_null_values_do_not_fail_the_reply():
+    from app.schema import Extraction
+    x = Extraction.model_validate_json('{"items": [{"field": "industry", "value": null, "quote": null}], "summary": ""}')
+    assert x.items[0].value == ""
+
+
+def test_extraction_schema_requires_its_keys():
+    from app.schema import Extraction, llm_schema
+    s = llm_schema(Extraction)
+    assert set(s["required"]) == {"items", "summary"}
+    assert set(s["$defs"]["Item"]["required"]) == {"field", "value", "quote"}

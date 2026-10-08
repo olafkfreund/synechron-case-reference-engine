@@ -72,6 +72,16 @@ def test_failure_requeues_then_fails_after_3(monkeypatch):
     assert worker.run_one() is False
 
 
+def test_policy_error_fails_without_retry(monkeypatch):
+    add()
+
+    def refused(p):
+        raise worker.llm.PolicyError("EXTRACT_MODEL may not read confidential data")
+    monkeypatch.setitem(worker.HANDLERS, "t", refused)
+    worker.run_one()
+    assert row() == [("failed", 1, "PolicyError: EXTRACT_MODEL may not read confidential data")]
+
+
 def test_unknown_kind_fails_clearly():
     add("nope")
     worker.run_one()  # no retries: it can never succeed

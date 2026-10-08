@@ -43,6 +43,21 @@ def test_document_identity_is_source_and_external_id():
             c.rollback()
 
 
+def test_data_class_defaults_to_confidential_and_is_checked():
+    db.init()
+    with db.connect() as c:
+        try:
+            got = c.execute(
+                "insert into sources(kind,name) values ('s3','dc') returning data_class"
+            ).fetchone()[0]
+            assert got == "confidential"
+            c.execute("select 1 from model_approvals limit 1")  # the table exists
+            with pytest.raises(psycopg.errors.CheckViolation):
+                c.execute("update sources set data_class='secret' where name='dc'")
+        finally:
+            c.rollback()
+
+
 def test_url_from_parts_when_database_url_is_unset(monkeypatch):
     from psycopg.conninfo import conninfo_to_dict
     monkeypatch.delenv("DATABASE_URL", raising=False)

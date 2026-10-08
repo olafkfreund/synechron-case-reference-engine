@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import logging
 import os
 import re
@@ -12,7 +13,6 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from app import db, extract, ingest as ing, llm, search as sr, worker
 from app.main import User
-from app.schema import ReferenceCase, Sourced
 from tests.test_auth import ADMIN, REV, client, env  # noqa: F401
 from tests.test_review import DOCS, R, make  # noqa: F401
 from tests.test_search import approved, data  # noqa: F401
@@ -186,16 +186,16 @@ def test_document_text_never_reaches_logs_or_stdout(approved, monkeypatch, caplo
         monkeypatch.setenv(k, "x")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
     monkeypatch.setenv("S3_BUCKET", "orig")
-    monkeypatch.setenv("EXTRACT_MODEL", "m")
-    monkeypatch.setenv("DRAFT_MODEL", "m")
+    monkeypatch.setenv("EXTRACT_MODEL", "bedrock/m")
+    monkeypatch.setenv("DRAFT_MODEL", "bedrock/m")
     monkeypatch.setattr(ing, "to_markdown", lambda data, name: data.decode())
 
     def completion(**kw):  # the real llm.complete_json runs; only the network call is replaced
         schema = kw["response_format"]["json_schema"]["name"]
         body = {"Triage": '{"kind": "case", "describes_delivered_work": true}',
-                "ReferenceCase": ReferenceCase(
-                    title=Sourced[str](value="Ledger reconciliation", source_quote=SECRET_TEXT),
-                    summary="Nightly reconciliation.").model_dump_json(),
+                "Extraction": json.dumps({"items": [
+                    {"field": "title", "value": "Ledger reconciliation", "quote": SECRET_TEXT}],
+                    "summary": "Nightly reconciliation."}),
                 "Picks": '{"picks": []}'}[schema]
         from types import SimpleNamespace as N
         return N(choices=[N(finish_reason="stop", message=N(content=body))])

@@ -50,6 +50,7 @@ daily crawl schedule, optional DataSync. Nothing is applied by CI; run it from a
 - **Bedrock in EU regions uses cross-region inference profiles** (`eu.anthropic....`): put the profile id in
   `extract_model`/`draft_model`, and both the profile ARN and the foundation-model ARNs (any EU region) in
   `bedrock_model_arns`; see `terraform.tfvars.example`.
+- **Bedrock needs no `EXTRACT_MODEL_OPTIONS`/`DRAFT_MODEL_OPTIONS`** (mode `schema`, destination `our-cloud`) until #26 decides otherwise.
 - The worker has HTTPS egress through the NAT (research, Graph, Confluence). DNS64/NAT64 is off; set no proxy variables.
 - RDS creates the master password in Secrets Manager and rotates it every 7 days. The app reads it at runtime
   (`DB_SECRET_ARN`, task role) and fetches it again after a rotation; it is never injected at task start. TLS to RDS

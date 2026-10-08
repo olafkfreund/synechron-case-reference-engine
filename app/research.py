@@ -80,7 +80,7 @@ def finalize(text: str, clients) -> str:
 def build_query(question: str, clients) -> tuple[str, str | None]:
     question = question[:MAX_QUESTION]
     try:
-        raw, note = complete_json("EXTRACT_MODEL", SYSTEM, question, Query).query, None
+        raw, note = complete_json("EXTRACT_MODEL", SYSTEM, question, Query, data_class="confidential").query, None
     except Exception:  # noqa: BLE001 - research must work without the rewrite; no detail echoed
         raw, note = question, "The AI rewrite was unavailable: this is your question with client names removed."
     return finalize(raw, clients), note
@@ -332,7 +332,7 @@ def extract_claims(query: str, pages: list[dict]) -> tuple[list[dict], str | Non
     text = f"QUERY: {query}\n\n" + "\n\n".join(
         f"[page {i}] {p['publisher']}\n{p['markdown'][:PAGE_CHARS]}" for i, p in enumerate(pages))
     try:
-        reply = complete_json("DRAFT_MODEL", CLAIMS_SYSTEM, text, Claims)
+        reply = complete_json("DRAFT_MODEL", CLAIMS_SYSTEM, text, Claims, data_class="public")
     except Exception:  # noqa: BLE001 - pages are still useful; no detail echoed
         return [], "Claims could not be extracted; the sources are listed below."
     out, seen = [], set()

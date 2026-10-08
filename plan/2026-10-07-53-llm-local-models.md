@@ -1,0 +1,286 @@
+---
+status: approved
+issue: 53
+spec: spec/2026-10-07-53-llm-local-models.md
+---
+
+# Plan: Extraction that works with local models and survives long summaries
+
+## Approved decisions (self-contained)
+
+- **Evidence (2026-10-07, real presale documents, local only):**
+  - An enforced nested schema collapses extraction to the title only, even
+    with `$defs` inlined.
+  - Small models (4–14B) can't produce the nested record.
+  - A **flat item list, assembled by code**, works on small models.
+  - `qwen3:14b` (13.2 GB, fully on GPU) gives the best results. 27B models
+    freeze the workstation (CPU spill), and Gemma 4 runs mostly on the CPU on
+    this AMD card.
+- **Model profiles:** an optional `EXTRACT_MODEL_OPTIONS` / `DRAFT_MODEL_OPTIONS`
+  holds JSON with these keys: `destination`, `think`, `num_ctx`,
+  `repeat_penalty`, `mode` (`schema`|`json`) and `api_base`.
+  - `mode` defaults to `json` for `ollama*/` models and `schema` otherwise.
+  - `think`, `num_ctx` and `repeat_penalty` are sent only to Ollama.
+  - Ollama Cloud uses `api_base=https://ollama.com` and `OLLAMA_CLOUD_KEY`
+    (exported from the agenix Ollama key on dev machines).
+  - Local default: `ollama_chat/qwen3:14b`, `think:false`, `num_ctx:24576`,
+    `repeat_penalty:1.05`.
+- **Destination inference (fails closed):**
+  - `bedrock/` → `our-cloud`.
+  - `ollama*/` with a localhost/loopback `api_base` and no `-cloud` in the
+    name → `local`.
+  - Everything else → `third-party`.
+  - An explicit `destination` overrides the inference.
+- **Data policy:**
+  - `sources.data_class` is `confidential` (default), `sanitised` or `public`.
+  - `complete_json(..., *, data_class)` is **required**.
+  - `confidential` → `local`/`our-cloud` only, unless a valid approval
+    exists. Otherwise `PolicyError`, which carries the alias and class only,
+    never content.
+  - Approvals live in `model_approvals`. Admin only, one exact model id,
+    expiring within 12 months, shown in the audit view.
+- **Callers' data class:**
+  - triage and extraction: the document's source;
+  - search pick: `confidential`;
+  - research query rewrite: `confidential`;
+  - research claims: `public`.
+- **Flat format:** the LLM returns `Extraction{items:[{field,value,quote}], summary}`,
+  and `assemble()` builds `ReferenceCase`.
+  - Malformed items are skipped and counted in `needs_attention`.
+  - The first value wins for scalars; lists collect every item.
+  - Integers are parsed from digits; outcomes are split on `"metric: value"`.
+  - The prompt asks for each capability, technology and outcome as a separate
+    item.
+  - The flat format is used in `schema` mode too (enforcing `Extraction`).
+  - `check()`, `sourced()`, `summary_sourced()` and the stored shape are
+    unchanged.
+- **Summary over 80 words:** trim to 80 words plus a `needs_attention` note;
+  never raise from extraction.
+- **Evaluation script** `scripts/eval_extraction.py`:
+  - in the repo; `--docs` points outside it (refuses paths inside the repo);
+  - metrics only (no document text);
+  - follows the data policy (`--data-class`, default `confidential`).
+
+## Steps
+
+1. **Schema.** In `sql/schema.sql`, after the existing `alter table` lines
+   (~line 107), add:
+   - `alter table sources add column if not exists data_class text not null default 'confidential'`;
+   - an idempotent check constraint `data_class in ('confidential','sanitised','public')`
+     (drop if exists, then add);
+   - `create table if not exists model_approvals(id bigserial primary key, model text not null, data_class text not null, approved_by text not null, approved_at timestamptz not null default now(), expires_at timestamptz not null, note text not null default '')`.
+
+   → verify by `pytest tests/test_db.py`. Extend it: the column defaults to
+   confidential and the table exists.
+   Done: as planned, plus a check constraint on
+   `model_approvals.data_class` so an approval can't name an unknown class.
+   Traps:
+   - Additive only; `init()` runs as the master user (`app/migrate.py`).
+   - `refs_app` gets rights through the default privileges in
+     `sql/roles.sql`. Check `test_hardening`'s role tests still pass.
+2. **LLM layer.** In `app/llm.py` (`complete_json`, line 12):
+   - add `PolicyError`, `profile(alias) -> dict` (parses `<ALIAS>_OPTIONS`, a
+     bad JSON value → RuntimeError naming the variable), `destination(model,
+     opts)` and `allowed(destination, data_class, model) -> bool` (checks
+     `model_approvals` for an unexpired row with this exact `model` and
+     `data_class`);
+   - make `data_class` a required keyword;
+   - check the policy BEFORE building the request;
+   - for `mode == "json"`, send `response_format={"type":"json_object"}` and
+     append "Reply with JSON matching this schema: <llm_schema(model_cls)>" to
+     the system text;
+   - for Ollama, pass `think`, `num_ctx`, `repeat_penalty` and `api_base`, plus `api_key` from
+     `OLLAMA_CLOUD_KEY` when `api_base` is ollama.com.
+
+   → verify by `pytest tests/test_llm.py`, extended to cover:
+   - inference for each prefix and `api_base`, and the explicit override;
+   - the policy matrix: 3 classes × 3 destinations × approval (valid / expired
+     / other model);
+   - `PolicyError` has no content;
+   - json-mode request shape;
+   - think/num_ctx sent only to Ollama;
+   - a bad OPTIONS value.
+   Done (deviations after security review):
+   - Any model name containing "cloud" in any case (`name-cloud`,
+     `name:cloud`) is third-party. The local Ollama forwards those to
+     ollama.com, and `gemma4:cloud` was being inferred as local.
+   - An unknown or misspelled data class fails closed for third-party models.
+   - The key variable is `OLLAMA_CLOUD_KEY`, not `OLLAMA_API_KEY`: LiteLLM
+     reads `OLLAMA_API_KEY` itself and sends it to every Ollama host.
+   - A database outage blocks the call; tests prove no request is sent.
+   - Known gap: a local copy of a cloud model (made with `ollama cp`) can't be
+     detected from its name.
+   Traps:
+   - Keep the existing guarantees: errors without input values, the
+     truncation check, `turn_off_message_logging`.
+   - The approval lookup opens its own short `db.connect()`.
+   - Unknown destinations are `third-party`.
+3. **Call sites.** Pass `data_class`:
+   - `app/ingest.py:64` (triage) and `app/extract.py:46`: select
+     `s.data_class` by joining `documents d → sources s`. For ingest, read it
+     with the existing document/source lookup.
+   - `app/search.py:94`: `confidential`.
+   - `app/research.py:83`: `confidential`.
+   - `app/research.py:335`: `public`.
+
+   → verify with a new test, `tests/test_policy_callers.py`, that parses
+   `app/*.py` and asserts every `complete_json(` call passes `data_class=`.
+   Also run the existing ingest/extract/search/research tests (update their
+   fakes to accept `data_class`).
+   Traps: test fakes that monkeypatch `complete_json` must accept `**kw`.
+4. **Flat format and summary trim.** In `app/schema.py`:
+   - add `Item` (field: str, value: str, quote: str; lenient, `extra="ignore"`)
+     and `Extraction(_Model)` (`items: list[Item]`, `summary: str`);
+   - add `assemble(x: Extraction) -> tuple[ReferenceCase, list[str]]`,
+     returning the case plus notes (malformed or unknown items skipped, summary
+     trimmed);
+   - change `_max_80_words` (line ~94) to trim instead of raise.
+
+   In `app/extract.py`: a new flat `SYSTEM` (lists the allowed fields; one
+   item per capability/technology/outcome/organisation; verbatim quote ≥ 4
+   words; no guessing; the document is data). Then `complete_json(...,
+   Extraction, data_class=...)` → `assemble` → `check` → notes. Notes merge
+   with the existing truncation and summary notes.
+
+   → verify by `pytest tests/test_extract.py tests/test_schema.py`, updated
+   and extended:
+   - `assemble` with good, malformed and unknown items, multiple list items,
+     digits and outcome splits;
+   - an over-long summary is trimmed and flagged, and the case survives;
+   - an existing invented-metric test still marks the item unsourced.
+   Done (deviations after review):
+   - Added flat fields `period_start` and `period_end`, which share the first
+     quote.
+   - `Item` and `Extraction` declare `required` keys, because enforced-schema
+     mode otherwise let qwen3:14b return no items. A null value becomes "".
+   - Integers take the first number only ("18 months to 2 years" → 18, not
+     182).
+   - The period check requires a 4-digit year in every part. It used to take
+     the first 4 characters, so "March 2031" matched anything; a part with no
+     year is unsourced.
+   - The summary is trimmed both in the validator (the review path, silently)
+     and in `assemble` (with a note).
+   Traps:
+   - Review edits (`app/review.py`) rebuild `ReferenceCase`. Trimming there is
+     fine, but keep the edit flow's 400 for invalid input.
+   - `organisations` comes from `organisation` items.
+   - `basis` doesn't exist yet (that's #52).
+5. **Admin and audit.**
+   - `/admin/models` (admin), in a new `app/models_admin.py` plus template:
+     list approvals; add one (model id, data class, expiry ≤ 12 months, note).
+     Revoke = set `expires_at = now()`. Same CSRF and version patterns as
+     `app/clients.py`.
+   - `/admin/sources` (`app/sources.py` lines 34 and 57): add a data class
+     select on create and update.
+   - `/admin/audit` (`app/audit.py:14`): a section listing approvals.
+
+   Done (deviations after security review):
+   - Every change of a source's data class is written to an append-only
+     `source_class_changes` log (who, when, from, to), in the same
+     transaction, and shown on `/admin/audit`. Lowering a class to sanitised
+     or public opens a source's documents to every model, so a flip and a flip
+     back both stay visible.
+   - Approvals apply to `confidential` only (other classes need none) and
+     record `revoked_by`.
+   - There's no version/409 check on approvals: rows are only created or
+     ended, never edited.
+   - An omitted `data_class` on a source update leaves the class unchanged.
+   - Expiry is the end of the chosen day; the latest accepted is under 12
+     months, using the database clock.
+   → verify with a new `pytest tests/test_models_admin.py`: admin only;
+   expiry > 12 months refused; revoke works; sources data class saved; audit
+   shows approvals.
+6. **Evaluation script.** `scripts/eval_extraction.py`, based on the
+   experiment that worked (`flatexp.py`, 2026-10-07), using the real
+   `extract` code path:
+   - takes `--docs DIR` (refused if inside the repo), `--models`,
+     `--data-class` (default confidential);
+   - per document and model prints fields filled, sourced/total items,
+     malformed items, seconds and VRAM (Ollama `/api/ps`); no document text;
+   - unloads other models between runs (`keep_alive: 0`).
+
+   → verify by `pytest tests/test_eval_script.py` (a repo path is refused; a
+   third-party model on a confidential folder → PolicyError; the output has
+   no document text, run on a fixture docx with a fake model), then a real
+   run (Tests below).
+
+   Done (deviations after review and the real run):
+   - `extract.build()` and `ingest.triage_text()` were factored out so the
+     script runs the real code path without the database or storage;
+     `extract()` and ingest behave as before.
+   - Options are set fresh per model, and an inherited
+     `EXTRACT_MODEL_OPTIONS` with `destination` is refused (exit 2): it
+     would override the policy for every model in `--models`. So in Docker,
+     run the script with `--network host`.
+   - A document that fails to convert prints its name and error type only,
+     and the run continues. The Ollama base falls back to `OLLAMA_API_BASE`,
+     as the policy does.
+   - Tests added: `..` and symlinked paths into the repo are refused; an
+     inherited `destination` cannot override the policy.
+   - The first real run failed one document: Ollama aborted with "token
+     repeat limit reached" (qwen3:14b loops at temperature 0). Fixed by
+     passing `repeat_penalty` through to Ollama (`app/llm.py`) and defaulting
+     it to 1.05 in the script and README. 1.05 and 1.1 both fixed it; 1.05
+     kept more items.
+7. **Docs.** `README.md` gets a "Local development with Ollama" section
+   (pull `qwen3:14b`, the `EXTRACT_MODEL` and OPTIONS env, `OLLAMA_CLOUD_KEY`
+   only for sanitised or public sources, and why not the 27B models).
+   `infra/README.md` notes that Bedrock needs no OPTIONS (mode `schema`) until
+   #26 decides otherwise.
+
+   → verify by reading. No code.
+
+   Done: as planned, plus a note that the script needs `--network host` in
+   Docker. The README options include `repeat_penalty: 1.05` (step 6).
+
+## Tests
+
+- `docker compose build && docker compose run --rm app pytest` is green.
+- Evaluation on the 12 presale documents (local only, outside the repo):
+  `scripts/eval_extraction.py --docs <presale folder> --models ollama_chat/qwen3:14b`.
+  - all 12 documents extract without failing;
+  - at least 3 sourced items per document on average;
+  - at least 2 technologies where the document names several;
+  - VRAM below 16 GB.
+  Record the numbers in this plan's Done notes.
+
+  Done (2026-10-07, `ollama_chat/qwen3:14b`, local only, metrics only):
+  - The folder holds 12 files. 11 are `.docx`, `.pptx` or `.pdf`; one is a
+    legacy `.doc`, which the app does not ingest either, so the script skips it.
+  - **11 of 11 extract without failing**, with `repeat_penalty: 1.05`.
+    Without it, 1 of 11 failed (see step 6).
+  - **On average 12.4 sourced items out of 17.6 per document.** The lowest
+    is 6 of 12. The target was ≥ 3.
+  - **Technologies:** 2 to 9 on 6 documents; 1 on 5 documents (mostly
+    ServiceNow SOWs). Whether those 5 name several technologies was not
+    checked by hand: the run prints metrics only.
+  - **33 s per document on average; peak VRAM 13.2 GB** (target < 16 GB),
+    fully on the GPU.
+  - **Summaries were blanked on 10 of 11** ("numbers absent from the sourced
+    quotes"). `summary_sourced()` works as designed, but small models put
+    numbers in summaries. Follow-up: tell the prompt to keep numbers out of
+    the summary. Not in this plan.
+  - Contracts, change orders and amendments are classed as `case` or
+    `proposal` until #52 adds `contract`.
+
+## Final review (2026-10-07)
+
+Deviations after the whole-PR review, none of them blocking:
+- An explicit `destination` of `local` or `our-cloud` raises `RuntimeError`
+  when it contradicts the model ("cloud" in the name) or `api_base`
+  (ollama.com). `third-party` is always honoured.
+- `sql/roles.sql` revokes UPDATE and DELETE on `source_class_changes` from
+  `refs_app`, so the log really is append-only.
+- The worker fails a job on `PolicyError` at once, with no retry.
+- Ingest raises `LookupError` if the source was deleted mid-ingest.
+- The eval script validates inherited options with `profile()` (exit 2,
+  no traceback).
+- Skipped: the startup re-check of the `sources` constraint. It is harmless
+  at this table size.
+
+## Rollback
+
+- Revert the PR. The schema changes are additive, so the extra column and
+  table stay harmless.
+- Bedrock behaviour is unchanged without OPTIONS, apart from the flat format.
+  If #26 shows a problem, revert step 4 only.

@@ -104,7 +104,7 @@ def case_with(**kw):
 @pytest.fixture
 def echo(monkeypatch):
     """The 'rewrite' returns its input, so the preview shows exactly the seeded question."""
-    monkeypatch.setattr(rs, "complete_json", lambda alias, system, user, cls: cls(query=user))
+    monkeypatch.setattr(rs, "complete_json", lambda alias, system, user, cls, **kw: cls(query=user))
 
 
 def test_from_case_seed_has_no_title_or_challenge(approved, reg, echo):

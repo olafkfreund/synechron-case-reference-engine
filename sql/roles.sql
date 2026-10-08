@@ -15,3 +15,5 @@ grant usage, select on all sequences in schema public to refs_app;
 -- tables the master creates later (schema changes) are covered too
 alter default privileges in schema public grant select, insert, update, delete on tables to refs_app;
 alter default privileges in schema public grant usage, select on sequences to refs_app;
+-- audit logs are append-only for the app
+revoke update, delete on source_class_changes from refs_app;
