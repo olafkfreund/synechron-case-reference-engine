@@ -118,6 +118,11 @@ spec: spec/2026-10-08-42-dependency-lock.md
 
    → verify by those results, recorded here.
 
+   *Done:* two `--no-cache` builds gave an identical `pip freeze` (149
+   lines: the 147 locked packages, pip and the project). With `"tomli-w"`
+   added to `pyproject.toml`, the build failed at `pip check`: "reference-engine
+   0.1.0 requires tomli-w, which is not installed". Reverted.
+
 ## Tests
 
 - `docker compose build --no-cache app && docker compose run --rm app
