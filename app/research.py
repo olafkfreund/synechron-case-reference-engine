@@ -355,7 +355,7 @@ def run(research_id: int) -> None:
     with db.connect() as conn:
         query = conn.execute("update research set status='running' where id=%s returning query", (research_id,)).fetchone()[0]
         cached = conn.execute(
-            "select results from research where query=%s and status='done' and id<>%s "
+            "select results, retrieved_at from research where query=%s and status='done' and id<>%s "
             f"and retrieved_at > now() - interval '{CACHE_DAYS} days' order by id desc limit 1", (query, research_id)).fetchone()
     try:
         if cached:
@@ -383,8 +383,9 @@ def run(research_id: int) -> None:
             claims, note = extract_claims(query, pages)
             results = {"pages": pages, "skipped": skipped, "claims": claims, **({"note": note} if note else {})}
         with db.connect() as conn:
-            conn.execute("update research set status='done', results=%s, retrieved_at=now() where id=%s",
-                         (Jsonb(results), research_id))
+            # a cache hit keeps the original fetch time, so the 30-day window never restarts
+            conn.execute("update research set status='done', results=%s, retrieved_at=coalesce(%s, now()) where id=%s",
+                         (Jsonb(results), cached[1] if cached else None, research_id))
     except Exception as e:  # noqa: BLE001
         with db.connect() as conn:
             conn.execute("update research set status='failed', error=%s where id=%s",
