@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 60
 spec: spec/2026-10-08-60-research-stale-window.md
 ---
