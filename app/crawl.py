@@ -59,7 +59,7 @@ def crawl_s3(source_id: int) -> dict:
                     continue
                 try:
                     body = s3.get_object(Bucket=config["bucket"], Key=key)["Body"].read()
-                    counts[ingest(source_id, key, key.rsplit("/", 1)[-1], body, acl)] += 1
+                    counts[ingest(source_id, key, key.rsplit("/", 1)[-1], body)] += 1
                 except Exception as e:  # noqa: BLE001 - one bad file must not stop the crawl
                     counts["failed"] += 1
                     if len(failed) < MAX_FAILED_KEYS:
@@ -223,7 +223,7 @@ def crawl_sharepoint(source_id: int) -> dict:
                 if len(data) > cap:
                     counts["skipped_too_large"] += 1
                     return
-                counts[ingest(source_id, iid, name, data, acl)] += 1
+                counts[ingest(source_id, iid, name, data)] += 1
             except Exception as e:  # noqa: BLE001 - one bad file must not stop the crawl
                 withdraw(iid)  # fail closed: an unverified file must not stay searchable on its old ACL
                 counts["failed"] += 1
@@ -396,7 +396,7 @@ def crawl_confluence(source_id: int) -> dict:
                     withdraw(f"att:{pid}:", prefix=True)
                     return
                 html = f"<html><body>{page['body']['storage']['value']}</body></html>".encode()
-                counts[ingest(source_id, f"page:{pid}", f"{page['title']}.html", html, acl)] += 1
+                counts[ingest(source_id, f"page:{pid}", f"{page['title']}.html", html)] += 1
                 done.add(f"page:{pid}")
                 for results, base in c.paged(f"{c.api}/content/{pid}/child/attachment?" + urlencode({"expand": "version", "limit": 50})):
                     for att in results:
@@ -413,7 +413,7 @@ def crawl_confluence(source_id: int) -> dict:
                             if len(data) > cap:
                                 counts["skipped_too_large"] += 1
                                 continue
-                            counts[ingest(source_id, ext, title, data, acl)] += 1
+                            counts[ingest(source_id, ext, title, data)] += 1
                             done.add(ext)
                         except Exception as e:  # noqa: BLE001
                             fail(pid, ext, e, page_ok=True)

@@ -91,6 +91,9 @@ spec: spec/2026-10-08-58-source-acl-on-save.md
      and `tests/test_hardening.py` (1). Where a test asserted the groups
      from the argument, set `sources.acl_groups` instead and assert that.
    - Do not move Docling, S3 or the LLM inside either transaction.
+   *Done:* the four `ingest(...)` call sites in `app/crawl.py` lost their
+   `acl` argument here (planned for step 4) so the crawlers keep running
+   between steps.
 4. **Crawlers write the current groups.** `app/crawl.py`:
    - drop `acl_groups` from the start selects (lines 31, 179, 349) and the
      `acl` argument from the `ingest` calls (lines 62, 226, 399, 416);

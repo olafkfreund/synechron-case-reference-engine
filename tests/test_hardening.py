@@ -214,9 +214,9 @@ def test_document_text_never_reaches_logs_or_stdout(approved, monkeypatch, caplo
     with mock_aws():
         boto3.client("s3").create_bucket(Bucket="orig")
         with db.connect() as c:
-            sid = c.execute("insert into sources(kind,name) values ('s3',%s) returning id", (uuid.uuid4().hex,)).fetchone()[0]
+            sid = c.execute("insert into sources(kind,name,acl_groups) values ('s3',%s,%s) returning id", (uuid.uuid4().hex, [DOCS])).fetchone()[0]
         try:
-            assert ing.ingest(sid, "k/doc.docx", "doc.docx", SECRET_TEXT.encode(), [DOCS]) == "new"
+            assert ing.ingest(sid, "k/doc.docx", "doc.docx", SECRET_TEXT.encode()) == "new"
             with db.connect() as c:
                 did = c.execute("select id from documents where source_id=%s", (sid,)).fetchone()[0]
             with db.connect() as c:  # ingest queued an extract job; add one that fails, so a status line is printed
