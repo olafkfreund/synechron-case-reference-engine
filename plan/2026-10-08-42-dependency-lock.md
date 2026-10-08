@@ -77,6 +77,14 @@ spec: spec/2026-10-08-42-dependency-lock.md
    - don't let `constraints.txt` or a scratch file land in the repo
      (`git status` before committing);
    - keep the model download, RDS CA and apt lines unchanged.
+
+   *Done (coder):* the lock vs freeze diff is empty (147 packages). The
+   `--no-cache` build passes `pip check`. Full suite: 402 passed, the same
+   count as main. The image has `torch 2.14.1+cpu` and no `nvidia-*`.
+   *Deviation:* the `docker run` also needs `--user "$(id -u):$(id -g)" -e
+   HOME=/tmp -e UV_CACHE_DIR=/tmp/uv`, so the lock isn't root-owned and uv
+   can write its cache. The output is the same. The README command in step 2
+   includes these flags.
 2. **Docs.**
    - `README.md`: a new `## Dependency lock` section after `## Limits`
      (line 21). It says:
