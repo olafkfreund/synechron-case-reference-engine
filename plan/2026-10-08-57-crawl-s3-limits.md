@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 57
 spec: spec/2026-10-08-57-crawl-s3-limits.md
 ---
