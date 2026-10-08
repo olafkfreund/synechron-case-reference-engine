@@ -150,6 +150,11 @@ spec: spec/2026-10-08-58-source-acl-on-save.md
   exclusive locks last until commit. So the new end-to-end test
   (`test_migration_repair_waits_for_a_saving_admin`) passes with either
   form: it proves the migration is safe, not the `for share` itself.
+- Accepted, not fixed: a save that overlaps a migration within microseconds
+  can deadlock (save: source row → documents; migration: documents table →
+  sources table). Postgres aborts one side and it rolls back, so access never
+  widens. Re-run a failed migration, or repeat a save that returned 500. If it
+  ever matters, lock `sources` first at the top of `schema.sql`.
 
 ## Tests
 
