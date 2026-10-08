@@ -58,6 +58,19 @@ def test_data_class_defaults_to_confidential_and_is_checked():
             c.rollback()
 
 
+def test_case_basis_defaults_to_delivered_and_is_checked():
+    db.init()
+    with db.connect() as c:
+        try:
+            sid = c.execute("insert into sources(kind,name) values ('s3','bs') returning id").fetchone()[0]
+            did = c.execute("insert into documents(source_id,external_id) values (%s,'b') returning id", (sid,)).fetchone()[0]
+            assert c.execute("insert into cases(document_id) values (%s) returning basis", (did,)).fetchone()[0] == "delivered"
+            with pytest.raises(psycopg.errors.CheckViolation):
+                c.execute("update cases set basis='promised' where document_id=%s", (did,))
+        finally:
+            c.rollback()
+
+
 def test_url_from_parts_when_database_url_is_unset(monkeypatch):
     from psycopg.conninfo import conninfo_to_dict
     monkeypatch.delenv("DATABASE_URL", raising=False)

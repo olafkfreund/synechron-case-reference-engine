@@ -57,6 +57,8 @@ after #53 merges, then start at step 1.
 1. **Schema and record.**
    - In `sql/schema.sql`, after the `alter table` block: `alter table cases add column if not exists basis text not null default 'delivered'`,
      plus an idempotent check constraint (`delivered`|`engagement`).
+     *Done: placed after the `cases` indexes rather than the `alter table`
+     block; it still runs after `cases` is created.*
    - In `app/schema.py`: `ReferenceCase.basis` and `basis_reason` as above.
      Neither goes in `search_text` or `quotes()`.
 

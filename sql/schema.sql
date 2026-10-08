@@ -64,6 +64,11 @@ create table if not exists cases (
 create index if not exists cases_tsv_idx on cases using gin (tsv);
 create index if not exists cases_data_idx on cases using gin (data);
 
+-- what a case claims: work delivered, or scope contracted (signed SOW / change order)
+alter table cases add column if not exists basis text not null default 'delivered';
+alter table cases drop constraint if exists cases_basis_check;
+alter table cases add constraint cases_basis_check check (basis in ('delivered','engagement'));
+
 create table if not exists jobs (
   id bigserial primary key,
   kind text not null,
