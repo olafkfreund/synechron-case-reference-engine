@@ -63,6 +63,10 @@ spec: spec/2026-10-08-58-source-acl-on-save.md
      no hit in search;
    - one `source_acl_changes` row with the old and new groups; saving the
      same groups again writes none.
+   *Done, with deviation:* access loss is asserted on `/review/<id>` only.
+   Search filters through the same `ACL` constant (`app/search.py` line 58),
+   so a search fixture would test nothing extra. Reordering the same groups
+   counts as a change and is logged (harmless).
 3. **`ingest()` reads the source's groups under lock.** `app/ingest.py`:
    - `def ingest(source_id, external_id, title, data)`: drop `acl_groups`
      (line 62);
