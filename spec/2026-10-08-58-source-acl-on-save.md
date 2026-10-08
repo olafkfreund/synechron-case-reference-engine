@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 58
 intent: intent/2026-10-08-58-source-acl-on-save.md
 ---
