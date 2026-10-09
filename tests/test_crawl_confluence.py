@@ -216,7 +216,7 @@ def test_unchanged_attachment_is_not_downloaded_again(cf):
     crawl.crawl_confluence(cf.sid)
     offer_again(cf)
     c = crawl.crawl_confluence(cf.sid)
-    assert DL not in cf.calls and c["skipped"] >= 1
+    assert DL not in cf.calls and c["skipped"] >= 2  # the page and the attachment
     assert "att:p1:a1" in live(cf.sid) and version(cf.sid) == "1:2026-01-01T00:00:00.000Z"
 
 
@@ -241,9 +241,11 @@ def test_unchanged_attachment_withdrawn_then_allowed_comes_back_without_download
     crawl.crawl_confluence(cf.sid)
     assert "att:p1:a1" not in live(cf.sid)
     cf.restricted.clear()
+    with db.connect() as c:
+        groups = c.execute("select acl_groups from sources where id=%s", (cf.sid,)).fetchone()[0]
     offer_again(cf)
     crawl.crawl_confluence(cf.sid)
-    assert DL not in cf.calls and live(cf.sid)["att:p1:a1"] == ["g-conf"]
+    assert DL not in cf.calls and live(cf.sid)["att:p1:a1"] == groups
 
 
 def test_null_version_row_downloads_once_then_skips(cf):

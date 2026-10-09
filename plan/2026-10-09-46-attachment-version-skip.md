@@ -200,3 +200,16 @@ to the `coder` agent:
 - one `coder` started with this plan path and step 1;
 - later steps sent with `SendMessage`;
 - review by a fresh Opus agent given only this plan path and the diff.
+
+## Review
+
+*Review:* no blockers. Two test fixes were applied:
+- `test_unchanged_attachment_is_not_downloaded_again` asserts `skipped >= 2`
+  (the page and the attachment), so it proves the attachment skip on its own.
+- The withdrawn-then-allowed test reads the expected groups from
+  `sources.acl_groups` instead of hardcoding them.
+
+Note: after a one-off failure, the withdrawn attachment keeps its version and
+comes back without a download on the next run. That is safe because the stored
+bytes were verified and the page ACL is re-checked, which is the same as the
+checksum path.
