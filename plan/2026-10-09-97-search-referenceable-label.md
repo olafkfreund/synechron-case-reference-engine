@@ -157,3 +157,9 @@ It still fails closed, and it gives the outcome the spec verifies.
 ## Rollback
 
 Revert the commits. It touches no schema, data or config.
+
+## Deviations during implementation
+
+- Step 5: `reg` appends a random tag to every name, so the 5c setup is
+  `reg("Zorp", "a retailer")` plus `reg("Zorp", "a retailer UK", True, suffix=" UK")`,
+  giving `Zorp<tag>` and `Zorp<tag> UK`. 5b compares labels with the tagged name `reg` returns.

@@ -1,4 +1,3 @@
-import uuid
 import zipfile
 from io import BytesIO
 
@@ -9,32 +8,9 @@ from app import db, render
 from app.schema import Outcome, Sourced
 from tests.test_auth import client, env  # noqa: F401
 from tests.test_review import DOCS, make  # noqa: F401
-from tests.test_search import approved, data  # noqa: F401
+from tests.test_search import approved, data, link, reg  # noqa: F401
 
 R = ["g-user", DOCS]
-
-
-@pytest.fixture
-def reg(env):  # noqa: F811
-    db.init()
-    tag = uuid.uuid4().hex[:6]
-    made = []
-
-    def add(name, label, referenceable=False):
-        with db.connect() as c:
-            made.append(c.execute(
-                "insert into clients(name, anonymised_label, referenceable) values (%s,%s,%s) returning id",
-                (f"{name}{tag}", label, referenceable)).fetchone()[0])
-        return f"{name}{tag}", made[-1]
-    yield add
-    with db.connect() as c:
-        c.execute("update cases set client_id = null where client_id = any(%s)", (made,))
-        c.execute("delete from clients where id = any(%s)", (made,))
-
-
-def link(cid, client_id):
-    with db.connect() as c:
-        c.execute("update cases set client_id=%s where id=%s", (client_id, cid))
 
 
 def gen(ids, fmt="md", groups=R, **kw):

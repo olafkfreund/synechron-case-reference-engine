@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from app import db, search as sr
@@ -27,6 +29,29 @@ def approved(make):  # noqa: F811
                       (case.search_text(), case.summary, cid))
         return cid
     return approved
+
+
+@pytest.fixture
+def reg(env):  # noqa: F811
+    db.init()
+    tag = uuid.uuid4().hex[:6]
+    made = []
+
+    def add(name, label, referenceable=False, suffix=""):
+        with db.connect() as c:
+            made.append(c.execute(
+                "insert into clients(name, anonymised_label, referenceable) values (%s,%s,%s) returning id",
+                (f"{name}{tag}{suffix}", label, referenceable)).fetchone()[0])
+        return f"{name}{tag}{suffix}", made[-1]
+    yield add
+    with db.connect() as c:
+        c.execute("update cases set client_id = null where client_id = any(%s)", (made,))
+        c.execute("delete from clients where id = any(%s)", (made,))
+
+
+def link(cid, client_id):
+    with db.connect() as c:
+        c.execute("update cases set client_id=%s where id=%s", (client_id, cid))
 
 
 def ids(user=ME, text="onboarding", **filters):
@@ -190,3 +215,29 @@ def test_stop_words_with_filter_still_finds(approved):
 def test_search_form_is_post_so_bid_text_stays_out_of_urls(env):  # noqa: F811
     page = client([USER]).get("/search").text
     assert 'method="post"' in page
+
+
+def test_client_display_rules(approved, reg, monkeypatch):
+    ref_name, ref = reg("Globex", "a manufacturer", True)
+    anon_name, anon = reg("Initech", "a software firm")
+    a, b, c = approved(), approved(data(title="Second onboarding")), approved(data(title="Third onboarding"))
+    link(a, ref)
+    link(b, anon)
+    want = {a: ref_name, b: "a software firm", c: "a client"}
+    got = {x["id"]: x["label"] for x in sr.search(ME, "onboarding", {})}
+    assert {k: got[k] for k in want} == want
+    picks_reply(monkeypatch, sr.Pick(case_id=a, reason="fits", tailored="Cut onboarding from 12 to 3 days."))
+    top, others, _ = sr.results(ME, "onboarding", {})
+    shown = {x["id"]: x["label"] for x in top + others}
+    assert {k: shown[k] for k in want} == want
+    assert anon_name not in "".join(shown.values())
+
+
+def test_referenceable_name_containing_protected_name_is_a_client(approved, reg, monkeypatch):
+    reg("Zorp", "a retailer")
+    _, ref = reg("Zorp", "a retailer UK", True, suffix=" UK")
+    a = approved()
+    link(a, ref)
+    picks_reply(monkeypatch, sr.Pick(case_id=a, reason="fits", tailored="Cut onboarding from 12 to 3 days."))
+    top, others, _ = sr.results(ME, "onboarding", {})
+    assert {x["id"]: x["label"] for x in top + others}[a] == "a client"
