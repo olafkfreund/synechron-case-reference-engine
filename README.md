@@ -94,6 +94,8 @@ sources ("Demo: Bid library" for `sales`, "Demo: Delivery archive" for `delivery
 (9 approved, 5 waiting for review, including a Fabrikam statement of work and change order to merge).
 Running `up` again leaves existing rows alone. The S3 originals are in memory and are put again each time.
 
+**Online research** also needs a Brave Search key: `demo.sh` reads `/run/agenix/api-brave-search` if it exists, or uses an exported `BRAVE_API_KEY`.
+
 **Needs a model:** live upload extraction, drafting and online research. Without Ollama on
 `localhost:11434` (`qwen3:14b`, see below), `up` says so and starts without a model; the seeded cases, search
 and review still work. Rows are made with no LLM call.
