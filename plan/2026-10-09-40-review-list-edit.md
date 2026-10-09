@@ -109,14 +109,9 @@ spec: spec/2026-10-09-40-review-list-edit.md
      sourced one;
    - `test_add_needs_value_and_quote`: an empty quote, an empty value, and
      outcomes without a metric each give 400, and the data is unchanged;
-   - `test_remove_list_item`: a case with `tech_stack=[Sourced[str](value=
-     "Acme", source_quote=Q_TITLE)]` (`make(data=case_data(tech_stack=…))`),
-     then `action=remove`, `field=tech_stack.0` → 303, `tech_stack` is
-     empty and `search_text` has no "Acme" from it. Check `search_text`
-     before and after, since the title quote also has Acme: assert the
-     tech list is empty, and use a value only the tech item carries if
-     needed (e.g. `value="onboarding"`, `source_quote=Q_TITLE`, removed;
-     then assert on `data`);
+   - `test_remove_list_item`: `make(data=case_data(tech_stack=[Sourced[str](
+     value="Acme", source_quote=Q_TITLE)]))`, then `action=remove`,
+     `field=tech_stack.0` → 303, and `data["tech_stack"] == []`;
    - `test_remove_only_list_items`: `action=remove` with `field=industry`,
      `capabilities.new` or `capabilities.-1`, and `action=bogus` → each
      400;
