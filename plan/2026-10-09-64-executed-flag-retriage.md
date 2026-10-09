@@ -142,6 +142,15 @@ details: the delivered case uses `basis_reason=""`, because the field is a
   their queued jobs, since crawls use the same reason; this matches the help
   text.
 
+
+*Manual run (session model):* the local portal (`refsdev`) was rebuilt
+from this branch, and a made-up contract (`kind='contract'`, no case) was
+added to upload source 1. As admin, ticking "contracts executed" (303)
+queued one `extract` job with reason "source marked executed". The local
+`qwen3:14b` extracted it into case 3 (`engagement`), which showed in
+review. Unticking (303) set case 3 to `rejected`, and it left review.
+Cases 1 and 2 were unchanged.
+
 ## Tests
 
 - `docker compose build app && docker compose run --rm app pytest`: green.
