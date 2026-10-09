@@ -15,7 +15,7 @@
 {% if ran and not top %}<div class="empty-state">{{ icon("search") }}<p><b>No matching approved cases</b></p><p>Try a broader bid context or remove a filter.</p></div>{% endif %}
 {% for p in top %}
 <article class="section-card stack result">
-<div class="meta"><span class="avatar" aria-hidden="true">{% for w in (p.label.split() | reject("in", ["a", "an", "the", "A", "An", "The"]) | list)[:2] %}{{ w[0] | upper }}{% endfor %}</span>
+<div class="meta"><span class="avatar" aria-hidden="true">{{ icon("building") }}</span>
 <div class="who"><h3 style="display:inline">{{ p.title }}</h3><span>{{ p.label }}</span></div>{{ basis(p.basis) }}</div>
 {% if p.reason %}<p style="margin:0"><b>Why it fits:</b> {{ p.reason }}</p>{% endif %}
 {% if p.outcomes %}<ul class="outcome-list">{% for o in p.outcomes %}<li>{{ icon("check") }}<span>{{ o }}</span></li>{% endfor %}</ul>{% endif %}

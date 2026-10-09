@@ -212,3 +212,19 @@ h2.sub{font-size:15px;color:var(--muted);margin:20px 0 8px}
 .other-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:10px 0;border-top:1px solid var(--line)}
 .other-row:first-of-type{border-top:0}
 .other-row p{margin:0;flex:1 1 100%;color:var(--muted);font-size:14px}
+
+/* review */
+.field-row{display:grid;grid-template-columns:minmax(0,1fr);gap:8px 16px;padding:14px 0;border-top:1px solid var(--line)}
+.field-row:first-of-type{border-top:0}
+@media (min-width:900px){.field-row{grid-template-columns:200px minmax(0,1fr) minmax(0,1fr) auto}}
+.field-row .fname{font-weight:600;text-transform:capitalize}
+.field-row .fname small{display:block;font-weight:400;text-transform:none;color:var(--muted)}
+.field-row .vals{display:flex;flex-direction:column;gap:6px}
+.field-row .quote{background:var(--thead);border-left:3px solid var(--accent);border-radius:6px;padding:8px 10px}
+.field-row .quote label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
+.field-row .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.warn-line{display:flex;gap:10px;align-items:flex-start}
+.warn-line .icon{flex:none;color:#6B4600}
+fieldset.pick{border:1px solid var(--card-border);border-radius:8px;margin:0 0 12px;padding:10px 14px}
+fieldset.pick legend{font-weight:600;padding:0 6px;text-transform:capitalize}

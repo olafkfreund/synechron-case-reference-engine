@@ -1,15 +1,25 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block body %}
-<h1>Review queue</h1>
-{% if not cases %}<p class="muted">Nothing to review.</p>{% else %}
-<div class="table-box"><table><thead><tr><th>Case</th><th>Source document</th><th>Status</th><th>Needs attention</th><th>Unsourced</th></tr></thead><tbody>
-{% for c in cases %}<tr>
-<td><a href="/review/{{ c.id }}">{{ c.title or "(untitled)" }}</a></td><td>{% if c.members %}{{ c.members }} contracts{% else %}{{ c.document }}{% endif %}</td>
-<td><span class="badge {{ "warn" if c.status == "approved" else "neutral" }}">{{ "re-review due" if c.status == "approved" else "new" }}</span></td><td>{{ c.attention }}</td><td>{{ c.unsourced }}</td>
-</tr>{% endfor %}</tbody></table></div>{% endif %}
-<h2>Due for re-review within 30 days</h2>
-{% if not due_soon %}<p class="muted">None.</p>{% else %}
-<div class="table-box"><table><thead><tr><th>Case</th><th>Source document</th><th>Approval expires</th></tr></thead><tbody>
-{% for c in due_soon %}<tr><td><a href="/review/{{ c.id }}">{{ c.title or "(untitled)" }}</a></td><td>{% if c.members %}{{ c.members }} contracts{% else %}{{ c.document }}{% endif %}</td><td>{{ c.due }}</td></tr>{% endfor %}</tbody></table></div>
-<p class="muted" style="font-size:13px">An approval expires after 12 months; the case leaves search until it is approved again.</p>{% endif %}
+<div class="page-head"><div><h1>Review queue</h1><p>Check extracted cases against their sources, then approve them.</p></div></div>
+<div class="stat-grid">
+<div class="stat-tile"><b>{{ cases | length }}</b><span>Awaiting review</span>{{ icon("inbox") }}</div>
+<div class="stat-tile"><b>{{ cases | selectattr("attention") | list | length }}</b><span>Needs attention</span>{{ icon("alert") }}</div>
+<div class="stat-tile"><b>{{ due_soon | length }}</b><span>Due soon</span>{{ icon("clock") }}</div>
+</div>
+{% if not cases %}<div class="empty-state">{{ icon("check") }}<p><b>Nothing to review</b></p><p>New extractions and expired approvals appear here.</p></div>
+{% else %}
+<div class="section-card client-list"><div class="card-head"><h2>Awaiting review ({{ cases | length }})</h2></div>
+{% for c in cases %}<div class="source-row">
+<div class="who"><a href="/review/{{ c.id }}"><b>{{ c.title or "(untitled)" }}</b></a><br><span class="muted">{% if c.members %}{{ c.members }} contracts{% else %}{{ c.document }}{% endif %}</span></div>
+<div class="chips"><span class="badge {{ "warn" if c.status == "approved" else "neutral" }}">{{ "re-review due" if c.status == "approved" else "new" }}</span>
+{% if c.attention %}<span class="badge warn">{{ c.attention }} need attention</span>{% endif %}
+{% if c.unsourced %}<span class="badge bad">{{ c.unsourced }} unsourced</span>{% endif %}</div>
+<a class="btn btn-sm primary" href="/review/{{ c.id }}" aria-label="Review case {{ c.title or c.id }}">Review case</a>
+</div>{% endfor %}</div>{% endif %}
+<div class="section-card"><div class="card-head"><h2>Due for re-review within 30 days</h2></div>
+{% if not due_soon %}<p class="muted" style="margin:0">Nothing is due in the next 30 days.</p>{% else %}
+{% for c in due_soon %}<div class="source-row"><div class="who"><a href="/review/{{ c.id }}"><b>{{ c.title or "(untitled)" }}</b></a><br><span class="muted">{% if c.members %}{{ c.members }} contracts{% else %}{{ c.document }}{% endif %}</span></div>
+<span class="badge warn">expires {{ c.due }}</span></div>{% endfor %}
+<p class="muted" style="font-size:13px;margin:8px 0 0">An approval expires after 12 months; the case leaves search until it is approved again.</p>{% endif %}</div>
 {% endblock %}
