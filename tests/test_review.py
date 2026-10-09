@@ -287,7 +287,8 @@ def test_edit_outcome_without_value_refused(make):
     cid = make()
     before = row(cid)[1]
     c = client(R)
-    for f in (dict(metric="onboarding", value="  "), dict(metric="", value="")):
+    for f in (dict(metric="onboarding", value="  "), dict(metric="", value=""),
+              dict(metric="onboarding")):  # no value field: used to wipe the stored value
         assert post(c, cid, field="outcomes.0", quote=Q_TITLE, **f).status_code == 400
     assert row(cid)[1] == before
 
