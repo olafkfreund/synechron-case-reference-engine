@@ -62,10 +62,11 @@ def test_add_unlisted_client_from_review_page(make, reg):  # noqa: F811
     assert note not in client([ADMIN, DOCS]).get(f"/review/{cid}").text
 
 
-@pytest.mark.parametrize("nxt", ["https://evil.example", "//evil.example", "/review/1/../x", "/review/", ""])
-def test_create_redirects_only_to_a_review_page(reg, nxt):
+@pytest.mark.parametrize("i, nxt", enumerate(["https://evil.example", "//evil.example", "/review/1/../x", "/review/", "",
+                                              "/review/1x", "/review/1\n"]))
+def test_create_redirects_only_to_a_review_page(reg, i, nxt):
     r = client([ADMIN]).post("/admin/clients", follow_redirects=False,
-                             data={"name": f"Globex {reg} {len(nxt)}", "anonymised_label": "a firm", "next": nxt})
+                             data={"name": f"Globex {reg} {i}", "anonymised_label": "a firm", "next": nxt})
     assert r.status_code == 303 and r.headers["location"] == "/admin/clients"
 
 

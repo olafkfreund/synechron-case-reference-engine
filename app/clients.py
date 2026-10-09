@@ -55,7 +55,7 @@ def create(name: str = Form(), aliases: str = Form(""), anonymised_label: str = 
     except UniqueViolation:
         raise HTTPException(400, "a client with that name already exists") from None
     # only back to a review page: never an open redirect
-    return RedirectResponse(next if re.fullmatch(r"/review/\d+", next) else "/admin/clients", status_code=303)
+    return RedirectResponse(next if re.fullmatch(r"/review/[0-9]+", next) else "/admin/clients", status_code=303)
 
 
 @router.post("/admin/clients/{cid}")

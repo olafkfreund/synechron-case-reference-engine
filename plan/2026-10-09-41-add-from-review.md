@@ -57,6 +57,8 @@ send it steps 2-4 with SendMessage.
    Traps: compose has no bind mount, so build before each test run. Use
    `fullmatch`, not `match`: `/review/1/../x` and `/review/1x` must fail.
 
+   *Done (coder):* `tests/test_anonymise.py` gave 13 passed. No deviation.
+
 2. **`app/review.py` lines 125-131 (`review_detail()`).**
    - Replace the `notes += [...]` block with
      `unlisted = anonymise.unlisted([*case.organisations, case.client_mention.value or ""], registry) if r[5] else []`.
@@ -116,6 +118,14 @@ send it steps 2-4 with SendMessage.
    because the `reg` teardown deletes clients by that suffix. Clients created
    here are never linked to a case, so the teardown cannot hit the foreign
    key.
+
+   *Done (coder):* full suite 417 passed. *Deviation:* the redirect test
+   named clients with `len(nxt)` instead of the index `i`.
+
+   *Review:* the pattern is now `/review/[0-9]+`, so Unicode digits do not
+   match (`\d` matches them in Python `str` patterns). The redirect test is
+   parametrized with `enumerate` and names clients `Globex {reg} {i}`. It
+   also rejects `/review/1x` and `/review/1\n`. Full suite: 419 passed.
 
 ## Tests
 
