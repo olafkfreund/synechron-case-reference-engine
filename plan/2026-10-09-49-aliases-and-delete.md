@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 49
 spec: spec/2026-10-09-49-aliases-and-delete.md
 ---
