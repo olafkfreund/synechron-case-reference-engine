@@ -80,7 +80,8 @@ def strip_commercial(case: ReferenceCase) -> int:
 def check(case: ReferenceCase, text: str | dict[int, str]) -> None:
     """Set `unsourced` on every field from the document alone, never from the model's output.
 
-    An empty value has nothing to vouch for, so it is not flagged. Literal fields (client name,
+    An empty value has nothing to vouch for, so it is not flagged. An outcome
+    with no value is the exception: it is unsourced (#108). Literal fields (client name,
     tech names) must also appear in their quote; inferred ones (industry, region) need not.
     A dict of {document_id: text} (a merged case, #55) checks each item against its own document.
     """
@@ -103,6 +104,8 @@ def check(case: ReferenceCase, text: str | dict[int, str]) -> None:
         mark(s, s.value, literal=True)
     for o in case.outcomes:
         mark(o, f"{o.metric} {o.value}")
+        if not o.value.strip():  # no value, nothing to source (#108)
+            o.unsourced = True
     # years only ("2023-01" vs "January 2023"); a part without a 4-digit year can't be checked, so it
     # is unsourced (taking its first 4 characters once let "March 2031" match anything)
     years = [re.findall(r"\d{4}", p) for p in (case.period.start, case.period.end) if p]
