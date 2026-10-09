@@ -15,7 +15,7 @@ VERSION = "md5(row(name, aliases, anonymised_label, referenceable, logo_allowed)
 
 def clean(name, aliases, label, cid=None):
     name, label = name.strip(), label.strip()
-    aliases = list(dict.fromkeys(a.strip() for a in aliases.split(",") if a.strip()))
+    aliases = list(dict.fromkeys(a.strip() for a in aliases.splitlines() if a.strip()))
     if not name or not label:
         raise HTTPException(400, "name and label are required")
     if anonymise.has_name(label, [name, *aliases]):
