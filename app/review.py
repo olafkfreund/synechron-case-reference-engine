@@ -75,9 +75,13 @@ def rows(case):
         return dict(path=path, label=label, quote=obj.source_quote, unsourced=obj.unsourced,
                     inputs=[(n, "" if getattr(obj, n) is None else getattr(obj, n)) for n in names])
     out = [row(n, n.replace("_", " "), getattr(case, n), ["value"]) for n in SCALARS]
-    for n in ("capabilities", "tech_stack"):
-        out += [row(f"{n}.{i}", f"{n.replace('_', ' ')} #{i + 1}", o, ["value"]) for i, o in enumerate(getattr(case, n))]
-    out += [row(f"outcomes.{i}", f"outcome #{i + 1}", o, ["metric", "value"]) for i, o in enumerate(case.outcomes)]
+    def new(n, label, names):
+        return dict(path=f"{n}.new", label=label, quote="", unsourced=False, new=True, inputs=[(i, "") for i in names])
+    for n, label in (("capabilities", "capability"), ("tech_stack", "tech")):
+        out += [dict(row(f"{n}.{i}", f"{n.replace('_', ' ')} #{i + 1}", o, ["value"]), item=True) for i, o in enumerate(getattr(case, n))]
+        out.append(new(n, f"add {label}", ["value"]))
+    out += [dict(row(f"outcomes.{i}", f"outcome #{i + 1}", o, ["metric", "value"]), item=True) for i, o in enumerate(case.outcomes)]
+    out.append(new("outcomes", "add outcome", ["metric", "value"]))
     out.append(row("period", "period", case.period, ["start", "end"]))
     out.append(dict(path="summary", label="summary", quote="", unsourced=False, no_quote=True,
                     inputs=[("value", case.summary)]))
