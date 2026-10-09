@@ -1,0 +1,32 @@
+name: Bug
+description: Something built that does not work as intended
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What was run, where (local, staging, AWS), when, and with which model or data. What happened, and what should have happened.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Commands, log lines, error text. No secrets or customer documents.
+      render: text
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      value: |
+        - [ ] 
+        - [ ] A test that fails before the fix
+    validations:
+      required: true
+  - type: input
+    id: plan
+    attributes:
+      label: Plan reference
+      description: Link to the plan step this came from, or "New task".
+      placeholder: https://github.com/olafkfreund/synechron-case-reference-engine/blob/<branch>/plan/<slug>.md
