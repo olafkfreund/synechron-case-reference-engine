@@ -253,7 +253,7 @@ def test_auth_logs_login_line(env, monkeypatch, capsys):
     sub = fresh()
     c = oidc_app(monkeypatch, {"sub": sub, "name": "Test Person", "groups": [USER]})
     assert c.get("/auth", follow_redirects=False).status_code == 303
-    assert f"login sub={sub} name=Test Person" in capsys.readouterr().out
+    assert f"login sub='{sub}' name='Test Person'" in capsys.readouterr().out
     assert c.get("/me").status_code == 200
 
 

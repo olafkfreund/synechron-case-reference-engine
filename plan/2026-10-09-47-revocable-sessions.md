@@ -334,6 +334,28 @@ browser checks (1–5) are covered by the step 4 and 5 tests (a replayed
 cookie gives 401 after logout, revoke ends one user's sessions only, and
 login after a cutoff works).
 
+
+*Review (fresh Opus):* the auth rules all hold. Blockers:
+- **B1, git state:** it reviewed mid-rebase. The branch is now rebased on
+  main (with #55 and #86), resolving two conflicts: `make()`, and the
+  `main.py` imports.
+- **B2, deploy order:** one `terraform apply` rolls out web together with
+  the migrate task definition, and `/healthz` doesn't touch the database.
+  The README now gives the order: a targeted apply of the migrate task
+  definition, then run migrate, then the full apply.
+
+Also taken:
+- `logout` is a plain `def`, so it doesn't block the event loop;
+- the login line logs `sub` and `name` with `!r`, so a display name with a
+  newline can't forge a log line, and the hardening allowlist and test are
+  updated;
+- `revoke_sessions` refuses blank subs;
+- a dead `client()` line in `test_models_admin.py` is removed.
+
+Not taken: an `iat == valid_after` boundary test, and unsetting
+`DATABASE_URL` in the anonymous test. Measuring the TLS cost in staging
+(#27) stays a release gate.
+
 ## Tests
 
 - `docker compose build app && docker compose run --rm app pytest -q`.

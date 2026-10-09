@@ -6,7 +6,7 @@ from app.main import cut_sessions
 
 
 def main(argv: list[str]) -> int:
-    if not argv:
+    if not argv or any(not s.strip() for s in argv):
         print("usage: python -m app.revoke_sessions <sub> [<sub> ...]", file=sys.stderr)
         return 2
     with db.connect() as conn:

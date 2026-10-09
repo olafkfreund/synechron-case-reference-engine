@@ -192,11 +192,11 @@ def create_app() -> FastAPI:
         request.session["user"] = {
             "sub": claims["sub"], "name": claims.get("name", claims["sub"]),
             "groups": sorted(groups & known_groups()), "iat": time.time()}
-        print(f"login sub={claims['sub']} name={request.session['user']['name']}", flush=True)
+        print(f"login sub={claims['sub']!r} name={request.session['user']['name']!r}", flush=True)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/logout")  # POST: a cross-site link must not log people out
-    async def logout(request: Request):
+    def logout(request: Request):
         if sub := (request.session.get("user") or {}).get("sub"):
             with db.connect() as conn:
                 cut_sessions(conn, sub)

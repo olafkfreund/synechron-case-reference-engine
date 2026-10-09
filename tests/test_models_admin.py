@@ -84,7 +84,6 @@ def test_lowering_a_source_class_is_logged_and_audited(env):  # noqa: F811
 
 def test_removing_a_source_group_applies_to_documents_at_once_and_is_logged(make):  # noqa: F811
     cid = make(acl=("g-docs", "g-other"))
-    reader, admin = client([REV, "g-docs"]), client([ADMIN])  # before the stale state: client() runs db.init(), which repairs it
     with db.connect() as c:
         sid = c.execute("select d.source_id from cases c join documents d on d.id=c.document_id where c.id=%s",
                         (cid,)).fetchone()[0]

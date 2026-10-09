@@ -87,8 +87,12 @@ their help (a leaver, a stolen laptop), run the revoke command with their `sub`.
   ```
 
   It prints `revoked sessions of <sub>` per user. The user's next request goes to `/login`.
-- **Deploy order:** run the `migrate` task (`migrate_task` output) **before** rolling out the web image that
-  has this feature. Without the `session_cutoffs` table, every logged-in page fails.
+- **Deploy order:** one `terraform apply` rolls out web and the migrate task definition together, and
+  `/healthz` doesn't touch the database, so the rollout completes before the table exists. Every logged-in page
+  then fails until migrate runs. So, for this release:
+  1. `terraform apply -target='aws_ecs_task_definition.app["migrate"]'` with the new `image_tag`;
+  2. run the `migrate` task (`migrate_task` output) and wait for it to finish;
+  3. the full `terraform apply`.
 
 ## Local development with Ollama
 
