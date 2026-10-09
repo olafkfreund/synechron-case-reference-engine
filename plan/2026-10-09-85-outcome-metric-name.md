@@ -18,8 +18,8 @@ result. It flags only. It never repairs or drops an outcome.
 
    ```
    "For outcome write the value as 'metric: result', where metric is a short noun phrase "
-   "naming what was measured, in the document's words, for example 'claim handling time: "
-   "cut by 38 percent'; never write the word 'metric' itself. "
+   "naming what was measured, in the document's words, for example 'onboarding time: "
+   "cut from 9 days to 4 days'; never write the word 'metric' itself. "
    ```
 
    The number in the example is on purpose: a copied example is not in the
@@ -217,6 +217,25 @@ only.*
 | new prompt (this branch) | 12 | 1 | 178/178 |
 
 Bad metrics fall and sourcing holds, so the example wording stays as it is.
+
+
+*Review (fresh Opus): no blockers.* Taken:
+- *Deviation (decision 1):* the example "claim handling time: cut by 38
+  percent" was word for word demo case 0's outcome, so the demo eval
+  couldn't catch a copied example, and its 3 → 1 was flattered. The
+  example is now "onboarding time: cut from 9 days to 4 days", which is in
+  no demo document. The demo eval was re-run with it (below).
+- `tests/test_eval_script.py`: the fake reply has a vague outcome, so the
+  test asserts `bad_metrics=1`, not just `=0`.
+
+Not taken: "searchable records" word order in the demo data (the metric
+text isn't checked), and stripping a whitespace-only metric in reviewer
+edits (it predates this change).
+
+
+*Re-run with the new example (demo documents, local qwen3, counts only):*
+12 outcomes, **0 bad metrics**, 178/178 sourced, against 3 bad metrics
+for the old prompt sentence.
 
 ## Tests
 
