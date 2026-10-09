@@ -111,6 +111,13 @@ main after #64 merges, and before starting step 8.
      start. Every existing row must satisfy the constraint (its
      `document_id` is set and both new columns are null).
 
+
+   *Done (coder):* `tests/test_db.py` 8 passed. *Deviation:* each
+   failing insert in `test_merge_columns_are_checked` runs inside a
+   savepoint and rolls back to it, because Postgres aborts the transaction
+   after the first error and the next insert would fail for the wrong
+   reason.
+
 2. **VISIBLE replaces ACL.** In `app/review.py:22-23`, replace `ACL` with:
 
    ```python

@@ -78,6 +78,17 @@ alter table cases add column if not exists basis text not null default 'delivere
 alter table cases drop constraint if exists cases_basis_check;
 alter table cases add constraint cases_basis_check check (basis in ('delivered','engagement'));
 
+-- a merged engagement (#55) has no document of its own; its member cases point to it
+alter table cases alter column document_id drop not null;
+alter table cases add column if not exists merged_into bigint references cases(id) on delete set null;
+alter table cases add column if not exists member_count int;
+alter table cases drop constraint if exists cases_merge_check;
+alter table cases add constraint cases_merge_check check (
+  (document_id is null) = (member_count is not null)
+  and (member_count is null or member_count >= 2)
+  and (merged_into is null or document_id is not null));
+create index if not exists cases_merged_into_idx on cases (merged_into);
+
 create table if not exists jobs (
   id bigserial primary key,
   kind text not null,
