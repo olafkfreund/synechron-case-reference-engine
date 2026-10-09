@@ -152,7 +152,7 @@ def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: 
                 if value is not None:
                     obj.value = (int(value) if value.strip() else None) if name in INTS else (value or None)
             elif name in LISTS and idx == "new":
-                if not value or not quote or (name == "outcomes" and not metric):
+                if not (value or "").strip() or not (quote or "").strip() or (name == "outcomes" and not (metric or "").strip()):
                     raise ValueError
                 obj = Outcome(metric=metric, value=value) if name == "outcomes" else Sourced[str](value=value)
                 getattr(case, name).append(obj)

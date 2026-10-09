@@ -208,7 +208,7 @@ def test_add_outcome_with_foreign_quote_is_dropped_on_approval(make):
     q = "cost fell by thirty percent overall"
     assert post(c, cid, field="outcomes.new", metric="cost", value="30 percent", quote=q).status_code == 303
     assert row(cid)[1]["outcomes"][-1]["unsourced"] is True
-    c.post(f"/review/{cid}/approve", data={"v": ver(cid)})
+    assert c.post(f"/review/{cid}/approve", data={"v": ver(cid)}).status_code == 200  # after the redirect
     assert [o["metric"] for o in row(cid)[1]["outcomes"]] == ["onboarding"]
 
 
@@ -217,7 +217,8 @@ def test_add_needs_value_and_quote(make):
     before = row(cid)[1]
     c = client(R)
     for f in (dict(field="capabilities.new", value="X", quote=""), dict(field="capabilities.new", value="", quote=Q_TITLE),
-              dict(field="outcomes.new", value="x", quote=Q_TITLE)):
+              dict(field="outcomes.new", value="x", quote=Q_TITLE),
+              dict(field="capabilities.new", value="X", quote="   "), dict(field="outcomes.-1", value="x")):
         assert post(c, cid, **f).status_code == 400
     assert row(cid)[1] == before
 
@@ -249,3 +250,8 @@ def test_detail_has_add_rows_and_remove_buttons(make):
     page = client(R).get(f"/review/{make()}").text
     assert all(p in page for p in ("capabilities.new", "tech_stack.new", "outcomes.new"))
     assert page.count('value="remove"') == 1
+
+
+def test_no_add_or_remove_buttons_when_not_reviewable(make):
+    page = client(R).get(f"/review/{make('approved', '30 days')}").text
+    assert 'value="remove"' not in page and ">Add<" not in page

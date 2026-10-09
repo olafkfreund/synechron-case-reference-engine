@@ -146,6 +146,16 @@ The first approval got 400 "title is empty or unsourced": extraction had
 left the title empty. That's the existing rule, not this change; after
 setting the title, approval went through.
 
+*Review (fresh Opus): no blockers.* Taken:
+- *Deviation:* an add with a whitespace-only value, metric or quote gets
+  400, like an empty one (`.strip()`).
+- Tests: an edit (not just a remove) at `outcomes.-1` gets 400; a
+  whitespace-only quote gets 400; the approval status is asserted; a case
+  that isn't reviewable shows no Add or Remove buttons.
+
+Not taken: tests for remove on `period`/`summary`/a bare list name (the one
+pre-check covers them all), and merging the two `int(idx) < 0` guards.
+
 ## Tests
 
 - `docker compose build app && docker compose run --rm app pytest`: green.
