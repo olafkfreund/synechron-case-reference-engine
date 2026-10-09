@@ -1,6 +1,16 @@
 {% extends "base.html" %}
 {% block body %}
 <h1>Customer reference engine</h1>
-<p>Signed in as {{ user.name }} ({{ user.roles | sort | join(", ") }}).</p>
-<ul><li><a href="/search">Find reference cases</a></li><li><a href="/research">Online research</a></li>{% if 'reviewer' in user.roles %}<li><a href="/review">Review queue</a></li>{% endif %}{% if 'admin' in user.roles %}<li><a href="/admin/clients">Client registry</a></li><li><a href="/admin/sources">Sources</a></li><li><a href="/admin/models">Model approvals</a></li><li><a href="/admin/audit">Audit</a></li>{% endif %}</ul>
+<p class="muted">Signed in as {{ user.name }} ({{ user.roles | sort | join(", ") }}).</p>
+<div class="stack">
+<a class="card" href="/search"><b>Find reference cases</b><br><span class="muted">Paste a bid requirement and get the best approved cases.</span></a>
+<a class="card" href="/research"><b>Online research</b><br><span class="muted">See how vendors and the industry handle a capability, from public sources.</span></a>
+{% if 'reviewer' in user.roles %}<a class="card" href="/review"><b>Review queue</b><br><span class="muted">Check extracted cases against their sources and approve them.</span></a>{% endif %}
+{% if 'admin' in user.roles %}
+<a class="card" href="/admin/clients"><b>Client registry</b><br><span class="muted">Which client names are protected or may be shown.</span></a>
+<a class="card" href="/admin/sources"><b>Sources</b><br><span class="muted">Crawled document sources and their access groups.</span></a>
+<a class="card" href="/admin/models"><b>Model approvals</b><br><span class="muted">Which AI models are approved for use.</span></a>
+<a class="card" href="/admin/audit"><b>Audit</b><br><span class="muted">Who searched, downloaded and changed what.</span></a>
+{% endif %}
+</div>
 {% endblock %}

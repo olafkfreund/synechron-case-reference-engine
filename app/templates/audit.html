@@ -1,31 +1,31 @@
 {% extends "base.html" %}
 {% block body %}
 <h1>Audit: generated outputs</h1>
-<form method="get" action="/admin/audit"><input type="text" name="user" value="{{ who }}" placeholder="user (exact sub)" aria-label="user">
+<form method="get" action="/admin/audit" class="row" style="margin-bottom:16px"><input type="text" name="user" value="{{ who }}" placeholder="user (exact sub)" aria-label="user">
 <button>Filter</button></form>
-{% if not rows %}<p>No generations.</p>{% else %}
-<table><tr><th>When</th><th>User</th><th>Format</th><th>Cases</th><th>Anonymised</th><th>Industry-only ack</th><th>Research</th></tr>
+{% if not rows %}<p class="muted">No generations.</p>{% else %}
+<div class="table-box"><table><tr><th>When</th><th>User</th><th>Format</th><th>Cases</th><th>Anonymised</th><th>Industry-only ack</th><th>Research</th></tr>
 {% for id, at, who_, fmt, cases, anon, ack, research in rows %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ who_ }}</td><td>{{ fmt }}</td>
 <td>{% for c in cases %}<a href="/review/{{ c }}">{{ c }}</a> {% endfor %}</td>
-<td>{{ "yes" if anon else "no" }}</td><td>{{ "yes" if ack else "no" }}</td><td>{{ research or "" }}</td></tr>{% endfor %}</table>
-<p>{% if prev %}<a href="{{ prev }}">&laquo; newer</a>{% endif %} page {{ p }} {% if next %}<a href="{{ next }}">older &raquo;</a>{% endif %}</p>
+<td>{{ "yes" if anon else "no" }}</td><td>{{ "yes" if ack else "no" }}</td><td>{{ research or "" }}</td></tr>{% endfor %}</table></div>
+<p class="muted">{% if prev %}<a href="{{ prev }}">&laquo; newer</a>{% endif %} page {{ p }} {% if next %}<a href="{{ next }}">older &raquo;</a>{% endif %}</p>
 {% endif %}
 <h2>Model approvals</h2>
-{% if not approvals %}<p>None.</p>{% else %}
-<table><tr><th>Model</th><th>Data class</th><th>Approved by</th><th>Approved</th><th>Expires</th><th>Note</th></tr>
+{% if not approvals %}<p class="muted">None.</p>{% else %}
+<div class="table-box"><table><tr><th>Model</th><th>Data class</th><th>Approved by</th><th>Approved</th><th>Expires</th><th>Note</th></tr>
 {% for id, model, dc, by, at, exp, active, note, revoked_by in approvals %}<tr><td>{{ model }}</td><td>{{ dc }}</td><td>{{ by }}</td><td>{{ at.strftime("%Y-%m-%d") }}</td>
-<td>{{ exp.strftime("%Y-%m-%d %H:%M") }}{{ "" if active else " (expired)" }}{% if revoked_by %} revoked by {{ revoked_by }}{% endif %}</td><td>{{ note }}</td></tr>{% endfor %}</table>
+<td>{{ exp.strftime("%Y-%m-%d %H:%M") }}{{ "" if active else " (expired)" }}{% if revoked_by %} revoked by {{ revoked_by }}{% endif %}</td><td>{{ note }}</td></tr>{% endfor %}</table></div>
 {% endif %}
 <h2>Source data class changes</h2>
-<p>Lowering a source to sanitised or public lets its documents reach any model.</p>
-{% if not class_changes %}<p>None.</p>{% else %}
-<table><tr><th>When</th><th>Source</th><th>From</th><th>To</th><th>By</th></tr>
-{% for at, name, old, new, by in class_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ old or "(new source)" }}</td><td>{{ new }}</td><td>{{ by }}</td></tr>{% endfor %}</table>
+<p class="muted">Lowering a source to sanitised or public lets its documents reach any model.</p>
+{% if not class_changes %}<p class="muted">None.</p>{% else %}
+<div class="table-box"><table><tr><th>When</th><th>Source</th><th>From</th><th>To</th><th>By</th></tr>
+{% for at, name, old, new, by in class_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ old or "(new source)" }}</td><td>{{ new }}</td><td>{{ by }}</td></tr>{% endfor %}</table></div>
 {% endif %}
 <h2>Access group changes</h2>
-<p>Changes to a source's access groups apply to its documents at once.</p>
-{% if not acl_changes %}<p>None.</p>{% else %}
-<table><tr><th>When</th><th>Source</th><th>From</th><th>To</th><th>By</th></tr>
-{% for at, name, old, new, by in acl_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ (old or [])|join(", ") }}</td><td>{{ new|join(", ") }}</td><td>{{ by }}</td></tr>{% endfor %}</table>
+<p class="muted">Changes to a source's access groups apply to its documents at once.</p>
+{% if not acl_changes %}<p class="muted">None.</p>{% else %}
+<div class="table-box"><table><tr><th>When</th><th>Source</th><th>From</th><th>To</th><th>By</th></tr>
+{% for at, name, old, new, by in acl_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ (old or [])|join(", ") }}</td><td>{{ new|join(", ") }}</td><td>{{ by }}</td></tr>{% endfor %}</table></div>
 {% endif %}
 {% endblock %}

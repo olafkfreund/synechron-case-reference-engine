@@ -1,16 +1,21 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>{% block title %}Reference engine{% endblock %}</title>
-{% block head %}{% endblock %}<style>
-body{font:15px/1.4 system-ui,sans-serif;max-width:60rem;margin:1.5rem auto;padding:0 1rem}
-table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:.4rem;vertical-align:top;text-align:left}
-.bad{background:#fde8e8;color:#9b1c1c}.ok{background:#e6f4ea;color:#1e6b34}.empty{color:#777}
-.badge{padding:0 .4rem;border-radius:3px;font-size:.8rem}
-textarea,input[type=text]{width:100%;box-sizing:border-box}
-.note{background:#fff8e1;padding:.5rem;margin:.5rem 0}
-</style></head><body>
-<nav><a href="/">Home</a>{% if user and 'reviewer' in user.roles %} · <a href="/review">Review queue</a>{% endif %}
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{% block title %}Reference engine{% endblock %}</title>
+<link rel="stylesheet" href="/static/portal.css">
+{% block head %}{% endblock %}</head><body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header"><div class="site-header-in">
+<a class="brand" href="/" style="text-decoration:none;color:inherit"><span class="brand-name">Reference Engine</span><span class="brand-tag">bids &amp; presales</span></a>
 {% if user %}
-<form method="post" action="/logout" style="display:inline;float:right">{{ user.name }} <button>Log out</button></form>
-{% endif %}</nav>
+{% set path = request.url.path %}
+{% set tabs = [("/search", "Find references"), ("/research", "Research")] %}
+{% if 'reviewer' in user.roles %}{% set tabs = tabs + [("/review", "Review queue")] %}{% endif %}
+{% if 'admin' in user.roles %}{% set tabs = tabs + [("/admin/sources", "Sources"), ("/admin/clients", "Client registry"), ("/admin/models", "Model approvals"), ("/admin/audit", "Audit")] %}{% endif %}
+<nav class="site-nav" aria-label="Main">{% for href, label in tabs %}<a href="{{ href }}"{% if path == href or path.startswith(href ~ "/") %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
+<div class="site-user"><span class="avatar" aria-hidden="true">{% for w in user.name.split()[:2] %}{{ w[0] | upper }}{% endfor %}</span><span>{{ user.name }} · {{ user.roles | sort | join(", ") or "no role" }}</span>
+<form method="post" action="/logout"><button class="btn">Log out</button></form></div>
+{% endif %}
+</div></header>
+<main id="main">
 {% block body %}{% endblock %}
+</main>
 </body></html>
