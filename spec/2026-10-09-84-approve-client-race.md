@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 84
 intent: intent/2026-10-09-84-approve-client-race.md
 ---
