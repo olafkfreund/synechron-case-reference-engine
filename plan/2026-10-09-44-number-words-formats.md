@@ -252,6 +252,8 @@ Steps 1–5 edit 4 files (`app/schema.py`, `app/research.py`,
 
 ## Step 6 result (session model) and deviation from steps 1–4
 
+*Superseded in part:* the canonical form described in this section (for example "1,5" as 1.5 and "1.200" as 1.2) was dropped after review. See "Review (fresh Opus) and final deviation" below.
+
 Eval on local `ollama_chat/qwen3:14b`, 2 extracted documents: `main` and the
 branch gave identical metrics, 18 of 29 items sourced. Under decision 8 the
 branch gains nothing from the source side, so it is dropped:
@@ -281,4 +283,7 @@ longer licenses 15.
 to itself with its commas kept, and removing the commas gives main's value.
 So two tokens that match now also matched on main.
 
-*Done (session model):* full suite 424 passed.
+*Done (session model):* full suite 424 passed. *Re-review (fresh Opus):*
+confirmed never looser than main. An exhaustive check over 11,310 tokens
+found 0 looser pairs, and with main's `numbers()` swapped in, 5 of the new
+tests fail.
