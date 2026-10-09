@@ -71,9 +71,37 @@ variable "web_memory" {
   default = 2048
 }
 
-variable "web_desired_count" {
-  type    = number
-  default = 2
+variable "web_min_count" {
+  description = "Web scaling floor and the service's initial desired_count."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.web_min_count >= 1
+    error_message = "web_min_count must be at least 1, or the portal can scale to no tasks."
+  }
+}
+
+variable "web_max_count" {
+  description = "Web scaling ceiling; must be >= web_min_count (checked on the scaling target)."
+  type        = number
+  default     = 4
+
+  validation {
+    condition     = var.web_max_count >= 1
+    error_message = "web_max_count must be at least 1."
+  }
+}
+
+variable "web_cpu_target" {
+  description = "Target average web CPU percent for autoscaling."
+  type        = number
+  default     = 60
+
+  validation {
+    condition     = var.web_cpu_target >= 10 && var.web_cpu_target <= 90
+    error_message = "web_cpu_target must be between 10 and 90."
+  }
 }
 
 variable "worker_cpu" {
@@ -102,6 +130,12 @@ variable "cpu_architecture" {
 variable "log_retention_days" {
   type    = number
   default = 90
+}
+
+variable "log_kms_encryption" {
+  description = "Encrypt the app log groups with the <name>-logs KMS key. Before turning it off, read the README."
+  type        = bool
+  default     = true
 }
 
 variable "extract_model" {

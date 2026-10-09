@@ -156,7 +156,7 @@ resource "aws_ecs_service" "web" {
   name                              = "web"
   cluster                           = aws_ecs_cluster.main.id
   task_definition                   = aws_ecs_task_definition.app["web"].arn
-  desired_count                     = var.web_desired_count
+  desired_count                     = var.web_min_count
   launch_type                       = "FARGATE"
   health_check_grace_period_seconds = 120
 
@@ -178,6 +178,43 @@ resource "aws_ecs_service" "web" {
   }
 
   depends_on = [aws_lb_listener.https]
+
+  # Autoscaling owns desired_count after creation.
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+}
+
+resource "aws_appautoscaling_target" "web" {
+  service_namespace  = "ecs"
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.web.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  min_capacity       = var.web_min_count
+  max_capacity       = var.web_max_count
+
+  lifecycle {
+    precondition {
+      condition     = var.web_max_count >= var.web_min_count
+      error_message = "web_max_count must be >= web_min_count."
+    }
+  }
+}
+
+resource "aws_appautoscaling_policy" "web_cpu" {
+  name               = "${var.name}-web-cpu"
+  policy_type        = "TargetTrackingScaling"
+  service_namespace  = aws_appautoscaling_target.web.service_namespace
+  resource_id        = aws_appautoscaling_target.web.resource_id
+  scalable_dimension = aws_appautoscaling_target.web.scalable_dimension
+
+  target_tracking_scaling_policy_configuration {
+    target_value       = var.web_cpu_target
+    scale_out_cooldown = 60  # slow requests pile up fast
+    scale_in_cooldown  = 300 # do not flap
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+  }
 }
 
 resource "aws_ecs_service" "worker" {

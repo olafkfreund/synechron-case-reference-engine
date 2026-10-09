@@ -122,3 +122,171 @@ resource "aws_cloudwatch_metric_alarm" "rds_storage" {
   alarm_actions       = local.alarm_actions
   ok_actions          = local.alarm_actions
 }
+
+locals {
+  dash_alb     = aws_lb.main.arn_suffix
+  dash_tg      = aws_lb_target_group.web.arn_suffix
+  dash_cluster = aws_ecs_cluster.main.name
+  dash_db      = aws_db_instance.main.identifier
+}
+
+resource "aws_cloudwatch_dashboard" "main" {
+  dashboard_name = var.name
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type = "alarm", x = 0, y = 0, width = 24, height = 6
+        properties = {
+          title = "Alarms"
+          alarms = [
+            aws_cloudwatch_metric_alarm.alb_5xx.arn,
+            aws_cloudwatch_metric_alarm.web_unhealthy.arn,
+            aws_cloudwatch_metric_alarm.worker_down.arn,
+            aws_cloudwatch_metric_alarm.rds_cpu.arn,
+            aws_cloudwatch_metric_alarm.rds_storage.arn,
+          ]
+        }
+      },
+      {
+        type = "metric", x = 0, y = 6, width = 6, height = 6
+        properties = {
+          title  = "ALB requests"
+          region = var.region
+          period = 60
+          metrics = [
+            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", local.dash_alb, { stat = "Sum" }],
+          ]
+        }
+      },
+      {
+        type = "metric", x = 6, y = 6, width = 6, height = 6
+        properties = {
+          title  = "ALB latency"
+          region = var.region
+          period = 60
+          metrics = [
+            ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", local.dash_alb, { stat = "p50" }],
+            ["...", { stat = "p95" }],
+            ["...", { stat = "p99" }],
+          ]
+        }
+      },
+      {
+        type = "metric", x = 12, y = 6, width = 6, height = 6
+        properties = {
+          title  = "ALB errors"
+          region = var.region
+          period = 60
+          metrics = [
+            ["AWS/ApplicationELB", "HTTPCode_Target_4XX_Count", "LoadBalancer", local.dash_alb, { stat = "Sum" }],
+            [".", "HTTPCode_Target_5XX_Count", ".", ".", { stat = "Sum" }],
+            [".", "HTTPCode_ELB_5XX_Count", ".", ".", { stat = "Sum" }],
+          ]
+        }
+      },
+      {
+        type = "metric", x = 18, y = 6, width = 6, height = 6
+        properties = {
+          title  = "Web hosts"
+          region = var.region
+          period = 60
+          metrics = [
+            ["AWS/ApplicationELB", "HealthyHostCount", "LoadBalancer", local.dash_alb, "TargetGroup", local.dash_tg, { stat = "Maximum" }],
+            [".", "UnHealthyHostCount", ".", ".", ".", ".", { stat = "Maximum" }],
+          ]
+        }
+      },
+      {
+        type = "metric", x = 0, y = 12, width = 8, height = 6
+        properties = {
+          title  = "ECS CPU %"
+          region = var.region
+          period = 60
+          metrics = [
+            ["AWS/ECS", "CPUUtilization", "ClusterName", local.dash_cluster, "ServiceName", aws_ecs_service.web.name, { stat = "Average" }],
+            ["...", aws_ecs_service.worker.name, { stat = "Average" }],
+          ]
+          annotations = { horizontal = [{ label = "web CPU target", value = var.web_cpu_target }] }
+        }
+      },
+      {
+        type = "metric", x = 8, y = 12, width = 8, height = 6
+        properties = {
+          title  = "ECS memory %"
+          region = var.region
+          period = 60
+          metrics = [
+            ["AWS/ECS", "MemoryUtilization", "ClusterName", local.dash_cluster, "ServiceName", aws_ecs_service.web.name, { stat = "Average" }],
+            ["...", aws_ecs_service.worker.name, { stat = "Average" }],
+          ]
+        }
+      },
+      {
+        type = "metric", x = 16, y = 12, width = 8, height = 6
+        properties = {
+          title  = "ECS tasks"
+          region = var.region
+          period = 60
+          metrics = [
+            ["ECS/ContainerInsights", "RunningTaskCount", "ClusterName", local.dash_cluster, "ServiceName", aws_ecs_service.web.name, { stat = "Average" }],
+            [".", "DesiredTaskCount", ".", ".", ".", ".", { stat = "Average" }],
+            [".", "RunningTaskCount", ".", ".", ".", aws_ecs_service.worker.name, { stat = "Average" }],
+            [".", "DesiredTaskCount", ".", ".", ".", ".", { stat = "Average" }],
+          ]
+          annotations = {
+            horizontal = [
+              { label = "web min", value = var.web_min_count },
+              { label = "web max", value = var.web_max_count },
+            ]
+          }
+        }
+      },
+      {
+        type = "metric", x = 0, y = 18, width = 6, height = 6
+        properties = {
+          title  = "RDS CPU"
+          region = var.region
+          period = 60
+          metrics = [
+            ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", local.dash_db, { stat = "Average" }],
+          ]
+        }
+      },
+      {
+        type = "metric", x = 6, y = 18, width = 6, height = 6
+        properties = {
+          title  = "RDS connections"
+          region = var.region
+          period = 60
+          metrics = [
+            ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", local.dash_db, { stat = "Average" }],
+          ]
+        }
+      },
+      {
+        type = "metric", x = 12, y = 18, width = 6, height = 6
+        properties = {
+          title  = "RDS free storage"
+          region = var.region
+          period = 300
+          metrics = [
+            ["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", local.dash_db, { stat = "Minimum" }],
+          ]
+          annotations = { horizontal = [{ label = "alarm", value = aws_cloudwatch_metric_alarm.rds_storage.threshold }] }
+        }
+      },
+      {
+        type = "metric", x = 18, y = 18, width = 6, height = 6
+        properties = {
+          title  = "RDS latency"
+          region = var.region
+          period = 60
+          metrics = [
+            ["AWS/RDS", "ReadLatency", "DBInstanceIdentifier", local.dash_db, { stat = "Average" }],
+            [".", "WriteLatency", ".", ".", { stat = "Average" }],
+          ]
+        }
+      },
+    ]
+  })
+}

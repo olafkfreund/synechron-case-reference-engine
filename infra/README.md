@@ -62,6 +62,13 @@ daily crawl schedule, optional DataSync. Nothing is applied by CI; run it from a
   old password until it is refused, then fetches the new one).
 - **Alarms** go to the SNS topic `<name>-alarms`: ALB 5xx, unhealthy web hosts, no running worker, RDS CPU and low RDS
   storage. **ALB access logs** go to a separate S3 bucket (SSE-S3, 90 days).
+- **Dashboard** `<name>` in CloudWatch (golden signals: alarms, ALB, ECS, RDS); the URL is the `dashboard_url` output.
+- **Web scaling:** 2 to 4 tasks on average CPU 60% (`web_min_count`, `web_max_count`, `web_cpu_target`); the worker
+  stays at 1 (#45). **Rename:** a tfvars that sets `web_desired_count` must now set `web_min_count`.
+- **Log encryption:** the app log groups use the KMS key `alias/<name>-logs` (switch: `log_kms_encryption`). Operators
+  reading the logs need `kms:Decrypt` on it via IAM. The key always exists: switching encryption off only stops
+  the log groups using it, so events written while it was on stay readable. Never delete the key while those
+  events are within `log_retention_days`.
 - The daily crawl is an EventBridge Scheduler task running `python -m app.enqueue_crawls`; the worker crawls.
   Run it by hand from `/admin/sources` ("Crawl now").
 - DataSync removes files from S3 that were deleted on the share (`preserve_deleted_files = REMOVE`); the crawler then

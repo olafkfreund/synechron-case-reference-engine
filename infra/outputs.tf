@@ -48,3 +48,8 @@ output "share_source_configs" {
   description = "Config for one 's3' source per DataSync share on /admin/sources."
   value       = { for k, s in local.shares : k => jsonencode({ bucket = aws_s3_bucket.originals.bucket, prefix = "shares/${k}/" }) }
 }
+
+output "dashboard_url" {
+  description = "CloudWatch dashboard for the service."
+  value       = "https://${var.region}.console.aws.amazon.com/cloudwatch/home?region=${var.region}#dashboards/dashboard/${aws_cloudwatch_dashboard.main.dashboard_name}"
+}
