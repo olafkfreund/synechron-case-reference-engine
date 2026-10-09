@@ -127,6 +127,25 @@ spec: spec/2026-10-09-40-review-list-edit.md
    which `client()` already sets; `make()` must not be followed by
    `db.init()` (see the comment at line 36).
 
+*Done (coder, steps 1–3; committed by the session model):* the full suite
+gave 409 passed (402 + 7). The session model changed one case in
+`test_remove_only_list_items` from `capabilities.-1` to `outcomes.-1`: the
+fixture has no capabilities, so `-1` would be refused even without the
+negative-index guard. `outcomes.-1` tests the guard itself.
+
+*Manual run (session model):* the local portal (#71) was rebuilt from this
+branch. As reviewer, on made-up case 2 (Contoso Freight), the page shows
+the add rows and Remove buttons. Then:
+- adding a capability with a document quote → sourced;
+- adding an NPS outcome with a quote not in the document → unsourced;
+- removing `tech_stack.0` → gone;
+- approving → the NPS outcome is dropped, and the added capability and
+  the remaining tech stay.
+
+The first approval got 400 "title is empty or unsourced": extraction had
+left the title empty. That's the existing rule, not this change; after
+setting the title, approval went through.
+
 ## Tests
 
 - `docker compose build app && docker compose run --rm app pytest`: green.
