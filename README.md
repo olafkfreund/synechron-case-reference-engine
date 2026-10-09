@@ -9,6 +9,7 @@ context.
 
 - [Kickoff brief](https://claude.ai/code/artifact/c1d1bd28-762e-4d95-8070-501bef7e656d): meeting brief for engineering and sales
 - [Portal mockup](https://claude.ai/artifact/51aJ7CQx77Wynaukd9N2Fj): clickable mockup with illustrative sample data
+- [User guide](docs/user-guide/README.md): how to use the portal, per role
 
 Both are private until shared from their Share menu.
 
