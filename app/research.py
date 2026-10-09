@@ -26,6 +26,7 @@ router = APIRouter()
 TRANSPORT = None  # tests inject httpx.MockTransport
 UA = "ReferenceEngineResearch/1.0 (internal capability research)"
 BRAVE = "https://api.search.brave.com/res/v1/web/search"
+BRAVE_RETRIES, BRAVE_MAX_WAIT = 2, 10  # quota: each retry is a billed call
 MAX_QUESTION, MAX_QUERY = 1000, 200
 MAX_RESULTS, MAX_REDIRECTS = 8, 3
 MAX_BYTES, TIMEOUT, MAX_MARKDOWN = 5 * 1024 * 1024, 10, 20_000
@@ -290,11 +291,24 @@ def brave_search(query: str) -> list[dict]:
     key = os.environ.get("BRAVE_API_KEY")
     if not key:
         raise ResearchError("BRAVE_API_KEY is not set")
-    r = httpx.Client(transport=TRANSPORT, timeout=TIMEOUT, trust_env=False).get(
-        BRAVE, params={"q": query, "count": 10}, headers={"X-Subscription-Token": key, "Accept": "application/json"})
-    if r.status_code != 200:
+    client = httpx.Client(transport=TRANSPORT, timeout=TIMEOUT, trust_env=False)
+    for attempt in range(BRAVE_RETRIES + 1):
+        last = attempt == BRAVE_RETRIES
+        try:
+            r = client.get(BRAVE, params={"q": query, "count": 10},
+                           headers={"X-Subscription-Token": key, "Accept": "application/json"})
+        except httpx.TransportError:
+            if last:
+                raise
+            time.sleep(1)
+            continue
+        if r.status_code == 200:
+            return r.json().get("web", {}).get("results", [])
+        if (r.status_code == 429 or r.status_code >= 500) and not last:
+            ra = r.headers.get("Retry-After", "")
+            time.sleep(min(int(ra) if ra.isdigit() else 1, BRAVE_MAX_WAIT))
+            continue
         raise ResearchError(f"search failed ({r.status_code})")
-    return r.json().get("web", {}).get("results", [])
 
 
 MAX_PDF_PAGES = 40  # hostile PDFs from the open web must not tie up the worker

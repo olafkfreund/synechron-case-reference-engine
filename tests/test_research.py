@@ -103,6 +103,7 @@ class Web:
         self.pages = {}   # (host, path) -> (status, headers, body)
         self.seen = []    # (host, path)
         self.brave_calls = []
+        self.brave_replies = []  # popped per call: an exception to raise or an httpx.Response
         monkeypatch.setattr(rs.socket, "getaddrinfo", self.getaddrinfo)
         monkeypatch.setattr(rs, "TRANSPORT", httpx.MockTransport(self))
         self.sleeps = []
@@ -120,6 +121,11 @@ class Web:
         if request.url.host == "api.search.brave.com":
             assert request.headers["x-subscription-token"] == KEY
             self.brave_calls.append(dict(request.url.params))
+            if self.brave_replies:
+                reply = self.brave_replies.pop(0)
+                if isinstance(reply, Exception):
+                    raise reply
+                return reply
             return httpx.Response(200, json={"web": {"results": [{"url": u, "title": "T"} for u in self.results]}})
         host = request.headers["host"].split(":")[0]
         self.seen.append((host, request.url.path))
@@ -351,3 +357,36 @@ def test_conversion_error_and_large_output(web, monkeypatch):
         rs.convert(b"a", "a.html")
     monkeypatch.setattr(ingest, "to_markdown", lambda data, name, **kw: "x" * 2_000_000)
     assert len(rs.convert(b"a", "a.html")) == rs.MAX_MARKDOWN
+
+
+def run_search(web, replies):
+    web.html("docs.example", "/robots.txt", "")
+    web.html("docs.example", "/guide")
+    web.results = ["https://docs.example/guide"]
+    web.brave_replies = replies
+    rid = make_row(f"research test {uuid.uuid4().hex}")
+    rs.run(rid)
+    return row(rid)
+
+
+def test_brave_429_retries_after_the_header_wait(web, cleanup):
+    assert run_search(web, [httpx.Response(429, headers={"Retry-After": "3"})])[0] == "done"
+    assert len(web.brave_calls) == 2 and 3 in web.sleeps
+
+
+def test_brave_5xx_gives_up_after_three_calls(web, cleanup):
+    status, error, _ = run_search(web, [httpx.Response(503)] * 3)
+    assert (status, error) == ("failed", "search failed (503)") and len(web.brave_calls) == 3
+
+
+def test_brave_other_4xx_is_not_retried(web, cleanup):
+    assert run_search(web, [httpx.Response(401)])[0] == "failed" and len(web.brave_calls) == 1
+
+
+def test_brave_transport_error_is_retried(web, cleanup):
+    assert run_search(web, [httpx.ConnectError("x")])[0] == "done" and len(web.brave_calls) == 2
+
+
+def test_brave_retry_after_is_capped(web, cleanup):
+    run_search(web, [httpx.Response(429, headers={"Retry-After": "999"})])
+    assert 10 in web.sleeps and 999 not in web.sleeps
