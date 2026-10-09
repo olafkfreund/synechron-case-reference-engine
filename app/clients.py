@@ -2,7 +2,7 @@ import re
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from psycopg.errors import UniqueViolation
+from psycopg.errors import ForeignKeyViolation, UniqueViolation
 
 from app import anonymise, db
 from app.main import User, require
@@ -76,4 +76,26 @@ def update(cid: int, name: str = Form(), aliases: str = Form(""), anonymised_lab
                 raise HTTPException(409 if exists else 404, "client changed; reload the page" if exists else "no such client")
     except UniqueViolation:
         raise HTTPException(400, "a client with that name already exists") from None
+    return RedirectResponse("/admin/clients", status_code=303)
+
+
+@router.post("/admin/clients/{cid}/delete")
+def delete(cid: int, v: str = Form(), user: User = Depends(require("admin"))):
+    # only referenceable, unlinked clients: a protected name must stay hidden, a linked case keeps its label
+    try:
+        with db.connect() as conn:
+            n = conn.execute(f"delete from clients cl where id=%s and {VERSION}=%s and referenceable "
+                             "and not exists (select 1 from cases where client_id = cl.id)", (cid, v)).rowcount
+            if not n:
+                row = conn.execute("select referenceable, (select count(*) from cases where client_id=%s) "
+                                   "from clients where id=%s", (cid, cid)).fetchone()
+                if not row:
+                    raise HTTPException(404, "no such client")
+                if not row[0]:
+                    raise HTTPException(400, "a non-referenceable client cannot be deleted: its names must stay hidden")
+                if row[1]:
+                    raise HTTPException(400, f"{row[1]} case(s) use this client; it cannot be deleted")
+                raise HTTPException(409, "client changed; reload the page")
+    except ForeignKeyViolation:
+        raise HTTPException(400, "a case uses this client; it cannot be deleted") from None
     return RedirectResponse("/admin/clients", status_code=303)
