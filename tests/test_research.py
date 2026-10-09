@@ -1,6 +1,9 @@
 import ipaddress
 import json
+import multiprocessing
 import socket
+import threading
+import time
 import uuid
 from base64 import b64encode
 
@@ -131,6 +134,7 @@ class Web:
 def web(monkeypatch):
     monkeypatch.setenv("BRAVE_API_KEY", KEY)
     monkeypatch.setattr(ingest, "to_markdown", lambda data, name, **kw: data.decode())
+    monkeypatch.setattr(ingest, "warm", lambda: None)
     return Web(monkeypatch)
 
 
@@ -307,3 +311,43 @@ def test_robots_checked_on_redirect_to_another_host(web):
 def test_clients_ignore_proxy_environment(monkeypatch):
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:3128")
     assert rs.Fetcher().http._trust_env is False
+
+
+def test_slow_conversion_is_killed_and_the_page_skipped(web, cleanup, monkeypatch):
+    held = threading.Lock()  # held by a parent thread across the fork: the child can never take it
+
+    def stub(data, name, **kw):
+        if name.startswith("slow"):
+            held.acquire()
+        return data.decode()
+
+    monkeypatch.setattr(ingest, "to_markdown", stub)
+    monkeypatch.setattr(rs, "PAGE_CONVERT_TIMEOUT", 1)
+    web.results = ["https://slow.example/slow", "https://fast.example/fast"]
+    for h, p in (("slow.example", "/slow"), ("fast.example", "/fast")):
+        web.html(h, "/robots.txt", "")
+        web.html(h, p, "<p>ok</p>")
+    rid = make_row(f"research test {uuid.uuid4().hex}")
+    held.acquire()
+    t = time.monotonic()
+    try:
+        rs.run(rid)
+    finally:
+        held.release()
+    assert time.monotonic() - t < 10
+    status, _, results = row(rid)
+    assert status == "done"
+    assert results["skipped"] == [{"domain": "slow.example", "error": "ConvertTimeout"}]
+    assert [p["publisher"] for p in results["pages"]] == ["fast.example"]
+    assert multiprocessing.active_children() == []
+
+
+def test_conversion_error_and_large_output(web, monkeypatch):
+    def boom(data, name, **kw):
+        raise ValueError("x")
+
+    monkeypatch.setattr(ingest, "to_markdown", boom)
+    with pytest.raises(rs.ConvertFailed):
+        rs.convert(b"a", "a.html")
+    monkeypatch.setattr(ingest, "to_markdown", lambda data, name, **kw: "x" * 2_000_000)
+    assert len(rs.convert(b"a", "a.html")) == rs.MAX_MARKDOWN

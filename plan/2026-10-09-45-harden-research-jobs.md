@@ -37,6 +37,14 @@ Carried over from the spec; the intent and spec are not needed to implement this
    - Both go in `results.skipped` as `{domain, error: <type name>}`. The job
      carries on with the remaining pages.
    - `MAX_PDF_PAGES = 40` stays.
+
+   *Done (coder):* `tests/test_research.py` 38 passed. *Deviation:* the
+   hang test holds the lock in the test's own thread, taken before
+   `rs.run` and released after, not in a separate background thread. The
+   forked child still gets a copy of a held lock that nothing in it can
+   release, so it hangs the same way and is killed. The test passes with a
+   1 s limit, finishes in under 10 s, and leaves no child process.
+
 3. **Shared per-domain rate limit: deferred.** With one worker running one
    job per process, it changes nothing today. The only changes are a
    comment at `Fetcher.__init__` and a note on `worker_desired_count`.
