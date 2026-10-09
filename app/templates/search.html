@@ -21,17 +21,17 @@
 {% if p.outcomes %}<ul class="outcome-list">{% for o in p.outcomes %}<li>{{ icon("check") }}<span>{{ o }}</span></li>{% endfor %}</ul>{% endif %}
 <div class="inset"><div class="t">Suggested wording &middot; not in downloads</div>{{ p.tailored }}</div>
 <div class="action-row" style="border-top:1px solid var(--line);padding-top:12px">
-<form method="post" action="/research/from-case" style="margin:0"><input type="hidden" name="case_id" value="{{ p.id }}"><button class="btn">Research this (public sources)</button></form>
-{% with ids=[p.id], what="Download this case" %}<form method="post" action="/generate" class="generate primary">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}
+{% with ids=[p.id], what="Download this case" %}<form method="post" action="/generate" class="generate">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}
+<button class="btn primary word" name="format" value="docx">Download Word</button>
 <details class="mini"><summary class="btn-sm">Other formats</summary>
-<div class="row" style="padding-bottom:4px"><button class="btn dark" name="format" value="pptx">{{ what }} (PowerPoint)</button> <button class="btn dark" name="format" value="pdf_docx">{{ what }} (PDF)</button> <button class="btn dark" name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button class="btn dark" name="format" value="md">{{ what }} (Markdown)</button></div></details>
-<button class="btn primary" name="format" value="docx">Download Word</button></form>{% endwith %}</div>
+<div class="row" style="padding-bottom:4px"><button class="btn dark" name="format" value="pptx">{{ what }} (PowerPoint)</button> <button class="btn dark" name="format" value="pdf_docx">{{ what }} (PDF)</button> <button class="btn dark" name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button class="btn dark" name="format" value="md">{{ what }} (Markdown)</button></div></details></form>{% endwith %}
+<form method="post" action="/research/from-case" class="research-form" style="margin:0 0 0 auto"><input type="hidden" name="case_id" value="{{ p.id }}"><button class="btn">Research this (public sources)</button></form></div>
 </article>
 {% endfor %}
 {% if top | length > 1 %}{% with ids=top | map(attribute="id") | list, what="Download all" %}<form method="post" action="/generate" class="section-card generate">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}
+<button class="btn primary" name="format" value="docx">{{ what }} (Word)</button>
 <details class="mini"><summary class="btn-sm">Other formats</summary>
-<div class="row" style="padding-bottom:4px"><button class="btn dark" name="format" value="pptx">{{ what }} (PowerPoint)</button> <button class="btn dark" name="format" value="pdf_docx">{{ what }} (PDF)</button> <button class="btn dark" name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button class="btn dark" name="format" value="md">{{ what }} (Markdown)</button></div></details>
-<button class="btn primary" name="format" value="docx">{{ what }} (Word)</button></form>{% endwith %}{% endif %}
+<div class="row" style="padding-bottom:4px"><button class="btn dark" name="format" value="pptx">{{ what }} (PowerPoint)</button> <button class="btn dark" name="format" value="pdf_docx">{{ what }} (PDF)</button> <button class="btn dark" name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button class="btn dark" name="format" value="md">{{ what }} (Markdown)</button></div></details></form>{% endwith %}{% endif %}
 {% if top %}<p class="muted" style="font-size:13px">Downloads contain the approved case record only, not the suggested wording above.</p>{% endif %}
 {% if others %}<div class="section-card"><div class="card-head"><h2>Other matches</h2></div>
 {% for o in others %}<div class="other-row"><b>{{ o.title }}</b> {{ basis(o.basis) }} <span class="muted">({{ o.label }})</span><p>{{ o.summary }}</p></div>{% endfor %}</div>{% endif %}

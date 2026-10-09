@@ -29,7 +29,7 @@ Enter one alias per line. Only referenceable clients that no case uses can be de
 <div class="who"><b>{{ name }}</b><span>{{ label }}</span></div>
 <div class="chips"><span class="badge {{ 'ok' if ref else 'neutral' }}">{{ "Referenceable" if ref else "Not referenceable" }}</span>
 <span class="badge {{ 'ok' if logo else 'neutral' }}">{{ "Logo allowed" if logo else "No logo" }}</span></div>
-<details class="mini"><summary class="btn-sm" aria-label="Edit {{ name }}">Edit</summary>
+<details class="mini edit"><summary class="btn-sm" aria-label="Edit {{ name }}">Edit</summary>
 <form id="c{{ id }}" method="post" action="/admin/clients/{{ id }}"><input type="hidden" name="v" value="{{ v }}">
 <div class="field"><label for="c{{ id }}-name">Name</label><input type="text" id="c{{ id }}-name" name="name" value="{{ name }}"></div>
 <div class="field"><label for="c{{ id }}-aliases">Aliases (one per line)</label><textarea id="c{{ id }}-aliases" name="aliases" rows="3">{{ aliases | join('\n') }}</textarea></div>
@@ -39,7 +39,7 @@ Enter one alias per line. Only referenceable clients that no case uses can be de
 <div class="action-row"><button class="btn primary" aria-label="Save {{ name }}">Save</button></div>
 </form></details>
 {% if not ref %}<span class="slot" aria-hidden="true"></span>{% endif %}
-{% if ref %}<details class="mini"><summary class="btn-sm" aria-label="Delete {{ name }}">Delete…</summary>
+{% if ref %}<details class="mini del"><summary class="btn-sm" aria-label="Delete {{ name }}">Delete…</summary>
 <form id="d{{ id }}" method="post" action="/admin/clients/{{ id }}/delete"><input type="hidden" name="v" value="{{ v }}">
 <p class="muted">Removes the client from the registry. Only possible while no case uses it.</p>
 <div class="action-row"><button aria-label="Delete {{ name }}">Delete</button></div></form></details>{% endif %}

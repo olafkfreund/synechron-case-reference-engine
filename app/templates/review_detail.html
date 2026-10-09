@@ -7,18 +7,18 @@
 {% elif r.unsourced %}<span class="badge bad">unsourced</span>
 {% elif r.quote %}<span class="badge ok">sourced</span>
 {% else %}<span class="badge empty">empty</span>{% endif %}</div>
-<div class="vals">{% for name, val in r.inputs %}<label for="{{ f }}-{{ name }}" class="sr">{{ r.label }} {{ name }}</label><input type="text" id="{{ f }}-{{ name }}" form="{{ f }}" name="{{ name }}"{% if r.new %} required{% endif %} value="{{ val }}" placeholder="{{ name }}">{% endfor %}</div>
+<div class="vals">{% for name, val in r.inputs %}<div><label for="{{ f }}-{{ name }}" class="mini-label">{{ name }}</label><input type="text" id="{{ f }}-{{ name }}" form="{{ f }}" name="{{ name }}"{% if r.new %} required{% endif %} value="{{ val }}"></div>{% endfor %}</div>
 <div>{% if not r.no_quote %}<div class="quote"><label for="{{ f }}-quote">Source quote</label><textarea id="{{ f }}-quote" form="{{ f }}" name="quote" rows="2"{% if r.new %} required{% endif %}>{{ r.quote }}</textarea></div>{% endif %}</div>
 <div class="acts">{% if reviewable %}{% if r.new %}<button class="btn primary" form="{{ f }}" aria-label="{{ r.label }}">Add</button>{% else %}<button class="btn" form="{{ f }}" aria-label="Save {{ r.label }}">Save</button>{% if r.item %} <button class="btn" form="{{ f }}" name="action" value="remove" formnovalidate aria-label="Remove {{ r.label }}">Remove</button>{% endif %}{% endif %}{% endif %}</div>
 </div>{% endmacro %}
 {% block body %}
 {% set title = (rows | selectattr("path", "equalto", "title") | first).inputs[0][1] %}
 {% set attn = namespace(n=0) %}
-{% for r in rows %}{% if not r.new and not r.no_quote and (r.unsourced or not r.quote) %}{% set attn.n = attn.n + 1 %}{% endif %}{% endfor %}
+{% for r in rows %}{% if r.unsourced and not r.new %}{% set attn.n = attn.n + 1 %}{% endif %}{% endfor %}
 <div class="page-head"><div><h1>{{ title or "Case " ~ id }}</h1>
 <div class="row"><span class="badge neutral">{{ status }}</span>
 <span class="badge {{ "ok" if basis == "delivered" else "neutral" }}">{{ "Engagement (contracted scope)" if basis == "engagement" else "Delivered case" }}</span>
-{% if attn.n %}<span class="badge warn">{{ attn.n }} need attention</span>{% endif %}</div></div></div>
+{% if attn.n %}<span class="badge bad">{{ attn.n }} unsourced</span>{% endif %}{% if notes %}<span class="badge warn">{{ notes | length }} notes</span>{% endif %}</div></div></div>
 
 <div class="section-card">
 <div class="card-head"><h2>Case {{ id }}</h2></div>
@@ -37,9 +37,9 @@
 </form>{% endif %}</div>{% endfor %}
 
 {% if attn.n %}<div class="section-card"><div class="card-head"><h2>Needs attention ({{ attn.n }})</h2></div>
-{% for r in rows %}{% if not r.new and not r.no_quote and (r.unsourced or not r.quote) %}{{ field_row(r, loop.index) }}{% endif %}{% endfor %}</div>{% endif %}
+{% for r in rows %}{% if r.unsourced and not r.new %}{{ field_row(r, loop.index) }}{% endif %}{% endfor %}</div>{% endif %}
 <div class="section-card"><div class="card-head"><h2>Fields</h2></div>
-{% for r in rows %}{% if r.new or r.no_quote or not (r.unsourced or not r.quote) %}{{ field_row(r, loop.index) }}{% endif %}{% endfor %}</div>
+{% for r in rows %}{% if not (r.unsourced and not r.new) %}{{ field_row(r, loop.index) }}{% endif %}{% endfor %}</div>
 {% for r in rows %}<form id="f{{ loop.index }}" method="post" action="/review/{{ id }}/edit"><input type="hidden" name="field" value="{{ r.path }}"><input type="hidden" name="v" value="{{ v }}"></form>{% endfor %}
 
 {% if reviewable %}

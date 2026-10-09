@@ -2,9 +2,10 @@
 {% from "_icons.html" import icon %}
 {% block body %}
 <div class="page-head"><div><h1>Review queue</h1><p>Check extracted cases against their sources, then approve them.</p></div></div>
+{% set n = namespace(a=0) %}{% for c in cases %}{% if c.attention or c.unsourced %}{% set n.a = n.a + 1 %}{% endif %}{% endfor %}
 <div class="stat-grid">
 <div class="stat-tile"><b>{{ cases | length }}</b><span>Awaiting review</span>{{ icon("inbox") }}</div>
-<div class="stat-tile"><b>{{ cases | selectattr("attention") | list | length }}</b><span>Needs attention</span>{{ icon("alert") }}</div>
+<div class="stat-tile"><b>{{ n.a }}</b><span>Needs attention</span>{{ icon("alert") }}</div>
 <div class="stat-tile"><b>{{ due_soon | length }}</b><span>Due soon</span>{{ icon("clock") }}</div>
 </div>
 {% if not cases %}<div class="empty-state">{{ icon("check") }}<p><b>Nothing to review</b></p><p>New extractions and expired approvals appear here.</p></div>
@@ -13,7 +14,7 @@
 {% for c in cases %}<div class="source-row">
 <div class="who"><a href="/review/{{ c.id }}"><b>{{ c.title or "(untitled)" }}</b></a><br><span class="muted">{% if c.members %}{{ c.members }} contracts{% else %}{{ c.document }}{% endif %}</span></div>
 <div class="chips"><span class="badge {{ "warn" if c.status == "approved" else "neutral" }}">{{ "re-review due" if c.status == "approved" else "new" }}</span>
-{% if c.attention %}<span class="badge warn">{{ c.attention }} need attention</span>{% endif %}
+{% if c.attention %}<span class="badge warn">{{ c.attention }} notes</span>{% endif %}
 {% if c.unsourced %}<span class="badge bad">{{ c.unsourced }} unsourced</span>{% endif %}</div>
 <a class="btn btn-sm primary" href="/review/{{ c.id }}" aria-label="Review case {{ c.title or c.id }}">Review case</a>
 </div>{% endfor %}</div>{% endif %}

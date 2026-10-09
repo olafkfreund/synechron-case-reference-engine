@@ -239,3 +239,34 @@ fieldset.pick legend{font-weight:600;padding:0 6px;text-transform:capitalize}
 .claim q{display:block;font-size:16px;margin-bottom:6px}
 .claim .meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:13px;color:var(--muted)}
 .claim p{margin:6px 0 0}
+
+/* phones (#90 second check) */
+@media (max-width:699px){
+.site-header-in{padding:6px 16px;gap:2px 12px}
+.brand-tag{display:none}
+.brand-name{font-size:16px}
+.site-user{gap:8px}
+.site-user>span:not(.avatar){max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.site-nav{flex-wrap:nowrap;overflow-x:auto;white-space:nowrap;scrollbar-width:none;-webkit-mask-image:linear-gradient(to right,#000 88%,transparent);mask-image:linear-gradient(to right,#000 88%,transparent)}
+.site-nav::-webkit-scrollbar{display:none}
+.site-nav a{flex:none}
+}
+@media (max-width:599px){
+.client-row{display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:4px 10px}
+.client-row .avatar{grid-column:1;grid-row:1}
+.client-row .who{grid-column:2 / -1;grid-row:1;flex:none}
+.client-row .who span{display:block;margin-left:0}
+.client-row .chips{grid-column:1 / 3;grid-row:2}
+.client-row details.edit{grid-column:3;grid-row:2}
+.client-row details.del,.client-row .slot{grid-column:4;grid-row:2}
+.client-row details.edit[open]{grid-column:1 / -1;grid-row:3}
+.client-row details.del[open]{grid-column:1 / -1;grid-row:4}
+.client-row .slot{display:block}
+.result .action-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.result .action-row .generate{display:contents}
+.result .action-row .word{grid-column:1 / -1;width:100%;justify-content:center}
+.result .action-row details.mini[open]{grid-column:1 / -1}
+.result .action-row .research-form{margin:0 !important}
+.result .action-row details.mini>summary,.result .action-row .research-form .btn{width:100%;justify-content:center}
+}
+.mini-label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:2px;text-transform:capitalize}
