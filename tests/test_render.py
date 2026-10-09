@@ -89,6 +89,12 @@ def test_delivered_has_no_note(approved):
     assert "Outcomes" in gen([cid], "md").text
 
 
+def test_empty_metric_renders_value_only(approved):
+    cid = approved(full().model_copy(update={"outcomes": [Outcome(metric="", value="cut by half", source_quote="q")]}))
+    t = gen([cid]).text
+    assert "- cut by half" in t and ": cut by half" not in t
+
+
 def test_markdown_fields_and_escaping(approved):
     cid = approved(full(title="A *bold* [title]\n# x"))
     t = gen([cid]).text

@@ -89,7 +89,7 @@ def section(case: ReferenceCase, client: str) -> dict:
     blocks = [("Challenge", v(case.challenge)), ("Solution", v(case.solution))]
     lists = [("Capabilities", [v(c) for c in case.capabilities]),
              ("Technology", [v(t) for t in case.tech_stack]),
-             ("Outcomes", [f"{o.metric}: {o.value}" for o in case.outcomes if not o.unsourced])]
+             ("Outcomes", [(f"{o.metric}: {o.value}" if o.metric else o.value) for o in case.outcomes if not o.unsourced])]
     engagement = case.basis == "engagement"
     if engagement:  # contracted scope claims no results, whatever the record holds
         lists = [x for x in lists if x[0] != "Outcomes"]

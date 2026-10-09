@@ -68,5 +68,6 @@ def test_output_has_metrics_and_no_document_text(tmp_path, monkeypatch, capsys):
     assert ev.main(["--docs", str(docs_dir(tmp_path)), "--models", "bedrock/m"]) == 0
     out = capsys.readouterr()
     assert "kind=case" in out.out and "sourced=2/2" in out.out and "1 malformed" in out.out and "== bedrock/m" in out.out
+    assert "bad_metrics=0" in out.out and "mean bad_metrics" in out.out
     for text in (out.out, out.err):
         assert "Zorbulon" not in text and "settlement" not in text.lower()
