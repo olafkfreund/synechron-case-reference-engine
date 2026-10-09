@@ -75,9 +75,13 @@ def rows(case):
         return dict(path=path, label=label, quote=obj.source_quote, unsourced=obj.unsourced,
                     inputs=[(n, "" if getattr(obj, n) is None else getattr(obj, n)) for n in names])
     out = [row(n, n.replace("_", " "), getattr(case, n), ["value"]) for n in SCALARS]
-    for n in ("capabilities", "tech_stack"):
-        out += [row(f"{n}.{i}", f"{n.replace('_', ' ')} #{i + 1}", o, ["value"]) for i, o in enumerate(getattr(case, n))]
-    out += [row(f"outcomes.{i}", f"outcome #{i + 1}", o, ["metric", "value"]) for i, o in enumerate(case.outcomes)]
+    def new(n, label, names):
+        return dict(path=f"{n}.new", label=label, quote="", unsourced=False, new=True, inputs=[(i, "") for i in names])
+    for n, label in (("capabilities", "capability"), ("tech_stack", "tech")):
+        out += [dict(row(f"{n}.{i}", f"{n.replace('_', ' ')} #{i + 1}", o, ["value"]), item=True) for i, o in enumerate(getattr(case, n))]
+        out.append(new(n, f"add {label}", ["value"]))
+    out += [dict(row(f"outcomes.{i}", f"outcome #{i + 1}", o, ["metric", "value"]), item=True) for i, o in enumerate(case.outcomes)]
+    out.append(new("outcomes", "add outcome", ["metric", "value"]))
     out.append(row("period", "period", case.period, ["start", "end"]))
     out.append(dict(path="summary", label="summary", quote="", unsourced=False, no_quote=True,
                     inputs=[("value", case.summary)]))
@@ -130,12 +134,16 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
 @router.post("/review/{cid}/edit")
 def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: str | None = Form(None),
          start: str | None = Form(None), end: str | None = Form(None), quote: str | None = Form(None),
-         v: str = Form(), user: User = Depends(require("reviewer"))):
+         action: str = Form("save"), v: str = Form(), user: User = Depends(require("reviewer"))):
     # `unsourced` is never read from the form: check() recomputes it against the document
     with db.connect() as conn:
         case, text = load(conn, cid, user, v)
         name, _, idx = field.partition(".")
         try:
+            if action not in ("save", "remove"):
+                raise HTTPException(400, "unknown action")
+            if action == "remove" and not (name in LISTS and idx and idx != "new"):
+                raise HTTPException(400, "unknown field")
             if field == "summary":
                 case.summary = value or ""
                 obj = None
@@ -143,7 +151,19 @@ def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: 
                 obj = getattr(case, name)
                 if value is not None:
                     obj.value = (int(value) if value.strip() else None) if name in INTS else (value or None)
+            elif name in LISTS and idx == "new":
+                if not (value or "").strip() or not (quote or "").strip() or (name == "outcomes" and not (metric or "").strip()):
+                    raise ValueError
+                obj = Outcome(metric=metric, value=value) if name == "outcomes" else Sourced[str](value=value)
+                getattr(case, name).append(obj)
+            elif name in LISTS and idx and action == "remove":
+                if int(idx) < 0:
+                    raise IndexError
+                del getattr(case, name)[int(idx)]
+                obj = None
             elif name in LISTS and idx:
+                if int(idx) < 0:
+                    raise IndexError
                 obj = getattr(case, name)[int(idx)]
                 if isinstance(obj, Outcome):
                     obj.metric, obj.value = metric or "", value or ""
