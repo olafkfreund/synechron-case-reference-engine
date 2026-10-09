@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 41
 spec: spec/2026-10-09-41-add-from-review.md
 ---
