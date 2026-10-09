@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 47
 intent: intent/2026-10-09-47-revocable-sessions.md
 ---
