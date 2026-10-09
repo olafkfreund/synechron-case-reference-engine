@@ -283,6 +283,23 @@ def test_padded_add_is_trimmed(make):
     assert (o["metric"], o["value"]) == ("Revenue", "30%")
 
 
+def test_edit_outcome_without_value_refused(make):
+    cid = make()
+    before = row(cid)[1]
+    c = client(R)
+    for f in (dict(metric="onboarding", value="  "), dict(metric="", value="")):
+        assert post(c, cid, field="outcomes.0", quote=Q_TITLE, **f).status_code == 400
+    assert row(cid)[1] == before
+
+
+def test_stored_empty_outcome_dropped_on_approval(make):
+    cid = make(data=case_data(outcomes=[Outcome(metric="Revenue", value="", source_quote=Q_TITLE),
+                                        Outcome(metric="onboarding", value="12 to 3 days", source_quote=Q_TITLE)]))
+    client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)})
+    assert row(cid)[0] == "approved"
+    assert [(o["metric"], o["value"]) for o in row(cid)[1]["outcomes"]] == [("onboarding", "12 to 3 days")]
+
+
 def test_remove_list_item(make):
     cid = make(data=case_data(tech_stack=[Sourced[str](value="Acme", source_quote=Q_TITLE)]))
     assert post(client(R), cid, action="remove", field="tech_stack.0").status_code == 303
