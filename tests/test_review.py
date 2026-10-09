@@ -32,7 +32,8 @@ def make(env):  # noqa: F811
     db.init()
     sids = []
 
-    def make(status="extracted", due=None, data=None, acl=(DOCS,), deleted=False):
+    def make(status="extracted", due=None, data=None, acl=(DOCS,), deleted=False, basis="delivered", mention=None,
+             text=DOC):
         # the source gets no groups and the document gets `acl`: a later db.init() (schema repair, #58)
         # copies the source's '{}' onto the document, so don't call it after make()
         with db.connect() as c:
@@ -41,14 +42,17 @@ def make(env):  # noqa: F811
             sids.append(sid)
             did = c.execute("insert into documents(source_id,external_id,title,checksum,text,acl_groups,deleted_at) "
                             "values (%s,'k','Source doc','x',%s,%s,case when %s then now() end) returning id",
-                            (sid, DOC, list(acl), deleted)).fetchone()[0]
+                            (sid, text, list(acl), deleted)).fetchone()[0]
+            extra = dict(basis=basis, **({"client_mention": Sourced[str](value=mention, source_quote=Q_TITLE)} if mention else {}))
             return c.execute(
-                "insert into cases(document_id,status,data,review_due) values (%s,%s,%s::jsonb,"
-                "now() + %s::interval) returning id",  # null interval -> null review_due
-                (did, status, data or case_data(), due)).fetchone()[0]
+                "insert into cases(document_id,status,data,review_due,basis) values (%s,%s,%s::jsonb,"
+                "now() + %s::interval,%s) returning id",  # null interval -> null review_due
+                (did, status, data or case_data(**extra), due, basis)).fetchone()[0]
     yield make
     with db.connect() as c:
-        for sid in sids:
+        for sid in sids:  # merged rows first: deleting a member alone would orphan its merged row
+            c.execute("delete from cases where document_id is null and id in (select merged_into from cases "
+                      "where document_id in (select id from documents where source_id=%s))", (sid,))
             c.execute("delete from sources where id=%s", (sid,))
 
 
@@ -255,3 +259,91 @@ def test_detail_has_add_rows_and_remove_buttons(make):
 def test_no_add_or_remove_buttons_when_not_reviewable(make):
     page = client(R).get(f"/review/{make('approved', '30 days')}").text
     assert 'value="remove"' not in page and ">Add<" not in page
+
+
+# ---- merging engagements (#55) ----
+
+@pytest.fixture
+def acme(make):
+    name = f"Acme {uuid.uuid4().hex[:8]}"
+    with db.connect() as c:
+        cid = c.execute("insert into clients(name, aliases, anonymised_label) values (%s, '{Acme}', 'a bank') returning id",
+                        (name,)).fetchone()[0]
+    yield cid
+    with db.connect() as c:
+        c.execute("delete from clients where id=%s", (cid,))
+
+
+TEXT_A = "Acme cut customer onboarding from 12 days to 3 days. Built with Python on AWS for a UK bank."
+TEXT_B = "Acme moved payments to the cloud. Built with Rust and Python on Azure for a UK bank."
+
+
+def eng(make, text, caps, tech, mention="Acme", **kw):
+    q = text.split(".")[0]
+    d = case_data(title=Sourced[str](value=f"T {q[:12]}", source_quote=q),
+                  client_mention=Sourced[str](value=mention, source_quote=q), outcomes=[],
+                  capabilities=[Sourced[str](value=v, source_quote=q) for v in caps],
+                  tech_stack=[Sourced[str](value=v, source_quote=v) for v in tech],
+                  basis="engagement", basis_reason="executed contract", organisations=["Acme"])
+    return make(basis="engagement", data=d, text=text, **kw)
+
+
+def merge(c, ids, **pick):
+    return c.post("/review/merge", follow_redirects=False,
+                  data={"members": [f"{i}:{ver(i)}" for i in ids], **{f"pick_{k}": v for k, v in pick.items()}})
+
+
+def merged_of(cid):
+    with db.connect() as c:
+        return c.execute("select merged_into from cases where id=%s", (cid,)).fetchone()[0]
+
+
+def test_merge_combines_checked_fields(make, acme):
+    a = eng(make, TEXT_A, ["Onboarding", "Payments"], ["Python", "AWS"])
+    b = eng(make, TEXT_B, ["payments", "Cloud"], ["Rust", "python"])
+    r = merge(client(R), [a, b], title=b)
+    assert r.status_code == 303
+    new = int(r.headers["location"].rsplit("/", 1)[1])
+    assert merged_of(a) == merged_of(b) == new
+    with db.connect() as c:
+        status, mc, did, data, summary = c.execute(
+            "select status, member_count, document_id, data, summary from cases where id=%s", (new,)).fetchone()
+        docs = dict(c.execute("select id, document_id from cases where id = any(%s)", ([a, b],)).fetchall())
+    assert (status, mc, did, summary) == ("extracted", 2, None, "")
+    assert data["title"]["value"].startswith("T Acme moved") and data["title"]["document_id"] == docs[b]
+    assert [(x["value"], x["document_id"]) for x in data["capabilities"]] == [
+        ("Onboarding", docs[a]), ("Payments", docs[a]), ("Cloud", docs[b])]  # "payments" is a duplicate
+    assert [x["value"] for x in data["tech_stack"]] == ["Python", "AWS", "Rust"]
+    assert data["outcomes"] == [] and data["basis"] == "engagement" and not data["title"]["unsourced"]
+    assert "merged from 2 contracts: write a summary" in data["needs_attention"]
+    assert data["basis_reason"] == "merged: executed contract"
+    assert all(not x["unsourced"] for x in data["capabilities"])
+    # members leave the review list and the detail page; the merged case replaces them
+    page = client(R).get("/review").text
+    assert f"/review/{new}\"" in page and f"/review/{a}\"" not in page and f"/review/{b}\"" not in page
+    assert client(R).get(f"/review/{a}").status_code == 404 and client(R).get(f"/review/{new}").status_code == 200
+
+
+def test_merge_refusals(make, acme):
+    c = client(R)
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    other = eng(make, TEXT_B, ["y"], [], mention="Globex")
+    nobody = eng(make, TEXT_B, ["y"], [], mention="Nobody Ltd")
+    delivered = make(mention="Acme")
+    rejected = eng(make, TEXT_B, ["y"], [], status="rejected")
+    hidden = eng(make, TEXT_B, ["y"], [], acl=("g-board",))
+    assert merge(c, [a]).status_code == 400  # fewer than 2
+    assert merge(c, [a, a]).status_code == 400
+    assert c.post("/review/merge", data={"members": ["x:y", f"{a}:1"]}).status_code == 400  # malformed
+    for bad in (other, nobody, delivered, rejected):
+        assert merge(c, [a, bad]).status_code == 400, bad
+    assert merge(c, [a, hidden]).status_code == 404
+    assert c.post("/review/merge", data={"members": [f"{a}:{ver(a)}", f"{10**9}:x"]}).status_code == 404
+    assert c.post("/review/merge", data={"members": [f"{a}:stale", f"{b}:{ver(b)}"]}).status_code == 409
+    assert merge(c, [a, b], title=other).status_code == 400  # a pick that is not a member
+    assert merge(c, [a, b], title="x").status_code == 400
+    assert merge(client([USER]), [a, b]).status_code == 403
+    assert merged_of(a) is None
+    assert merge(c, [a, b]).status_code == 303
+    third = eng(make, TEXT_B, ["y"], [])
+    assert merge(c, [a, third]).status_code == 409  # a is already merged

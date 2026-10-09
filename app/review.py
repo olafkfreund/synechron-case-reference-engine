@@ -1,5 +1,8 @@
+import copy
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from psycopg.types.json import Jsonb
@@ -8,7 +11,7 @@ from pydantic import ValidationError
 from app import anonymise, db
 from app.extract import MAX_CHARS, check
 from app.main import User, require
-from app.schema import Outcome, ReferenceCase, Sourced
+from app.schema import Outcome, Period, ReferenceCase, Sourced
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")  # autoescape on
@@ -35,7 +38,7 @@ def page(request, name, user, **ctx):
 
 
 def load(conn, cid, user, version):
-    """Lock the case row and return (case, document text).
+    """Lock the case row and return (case, document text; {document_id: text} for a merged case).
 
     404 if the reviewer cannot see it (never confirm it exists), 409 if it changed since the
     page was loaded or someone else already decided it.
@@ -52,6 +55,11 @@ def load(conn, cid, user, version):
         if not seen:
             raise HTTPException(404, "no such case")
         raise HTTPException(409, "case is not open for review" if seen[0] else "case changed; reload the page")
+    if row[1] is None:  # a merged case: each member document vouches for its own items
+        texts = {d: t[:MAX_CHARS] for d, t in conn.execute(
+            "select m.document_id, md.text from cases m join documents md on md.id = m.document_id "
+            "where m.merged_into = %s order by m.id", (cid,))}
+        return ReferenceCase.model_validate(row[0]), texts
     return ReferenceCase.model_validate(row[0]), row[1][:MAX_CHARS]
 
 
@@ -223,3 +231,126 @@ def reject(cid: int, v: str = Form(), user: User = Depends(require("reviewer")))
         conn.execute("update cases set status='rejected', approved_by=null, approved_at=null, "
                      "review_due=null where id=%s", (cid,))
     return RedirectResponse("/review", status_code=303)
+
+
+# ---- merging related engagements into one reference (#55) ----
+
+MERGE_FIELDS = (*SCALARS, "period")  # a reviewer picks which member each of these comes from
+
+
+def combine(members, pick):
+    """One case from checked members [(case_id, document_id, ReferenceCase)]; pick maps field -> case_id.
+
+    No model is called. Scalars, duration, team size and period are each taken whole from one member
+    (the first unless picked); capabilities and tech are the de-duplicated union; outcomes are dropped.
+    """
+    def stamped(item, doc_id):
+        item = copy.deepcopy(item)
+        item.document_id = doc_id
+        return item
+
+    by_id = {cid: (doc, case) for cid, doc, case in members}
+    out = {}
+    for f in MERGE_FIELDS:
+        doc, case = by_id[pick.get(f, members[0][0])]
+        out[f] = stamped(getattr(case, f), doc)
+    for f in ("capabilities", "tech_stack"):
+        seen, items = set(), []
+        for _, doc, case in members:
+            for i in getattr(case, f):
+                if (k := (i.value or "").casefold()) not in seen:
+                    seen.add(k)
+                    items.append(stamped(i, doc))
+        out[f] = items
+    uniq = lambda xs: list(dict.fromkeys(x for x in xs if x))
+    notes = [f"merged from {len(members)} contracts: write a summary",
+             *uniq(n for _, _, c in members for n in c.needs_attention)]
+    return ReferenceCase(
+        **out, outcomes=[], summary="", needs_attention=notes, basis="engagement",
+        organisations=uniq(o for _, _, c in members for o in c.organisations),
+        basis_reason="merged: " + "; ".join(uniq(c.basis_reason for _, _, c in members)))
+
+
+def candidates(conn, cid, user):
+    """Other visible, open engagements for the same registered client as case `cid`: (id, title, document, period)."""
+    registry = anonymise.load_clients(conn)
+    rows = conn.execute(
+        f"select c.id, c.data, d.title from cases c join documents d on d.id = c.document_id "
+        f"where {VISIBLE} and c.basis = 'engagement' and c.status <> 'rejected'",
+        (list(user.groups),)).fetchall()
+    mine = next((d["client_mention"]["value"] for i, d, _ in rows if i == cid), None)
+    want = anonymise.resolve(mine, registry)
+    return [(i, d["title"]["value"], t, d["period"]) for i, d, t in rows
+            if want is not None and i != cid and anonymise.resolve(d["client_mention"]["value"], registry) == want]
+
+
+def lock_members(conn, user, members):
+    """Parse "<case id>:<version>" values, lock and check the cases; return [(id, document id, case, title, text)]."""
+    try:
+        want = dict((int(i), v) for i, _, v in (m.partition(":") for m in members))
+    except ValueError:
+        raise HTTPException(400, "malformed member")
+    if len(want) < 2:
+        raise HTTPException(400, "choose at least 2 contracts to merge")
+    sql = ("select c.id, c.data, c.status, c.basis, c.document_id, {v}, d.title, d.text from cases c "
+           "left join documents d on d.id = c.document_id where c.id = any(%s) and {vis}")
+    got = {r[0]: r for r in conn.execute(
+        sql.format(v=VERSION, vis=VISIBLE) + " for update of c", (list(want), list(user.groups)))}
+    if len(got) != len(want):
+        # a member already merged is hidden by VISIBLE; tell it apart from one the user cannot see
+        probe = conn.execute(sql.format(v=VERSION, vis=VISIBLE.replace("c.merged_into is null and ", "")),
+                             (list(want), list(user.groups))).fetchall()
+        raise HTTPException(409 if len(probe) == len(want) else 404,
+                            "a contract is already merged" if len(probe) == len(want) else "no such case")
+    if any(got[i][5] != v for i, v in want.items()):
+        raise HTTPException(409, "case changed; reload the page")
+    if any(r[3] != "engagement" or r[4] is None or r[2] == "rejected" for r in got.values()):
+        raise HTTPException(400, "only engagements that are not rejected can be merged")
+    registry = anonymise.load_clients(conn)
+    cases = {i: ReferenceCase.model_validate(got[i][1]) for i in want}
+    clients = {anonymise.resolve(c.client_mention.value, registry) for c in cases.values()}
+    if len(clients) != 1 or None in clients:
+        raise HTTPException(400, "the contracts must be for the same registered client")
+    return [(i, got[i][4], cases[i], got[i][6], got[i][7][:MAX_CHARS]) for i in want]
+
+
+@router.post("/review/merge/preview")
+def merge_preview(request: Request, members: list[str] = Form([]), user: User = Depends(require("reviewer"))):
+    with db.connect() as conn:
+        found = lock_members(conn, user, members)
+    def show(case, f):
+        o = getattr(case, f)
+        return (f"{o.start or ''} - {o.end or ''}" if f == "period" else o.value), o.source_quote
+    fields = []
+    for f in MERGE_FIELDS:
+        opts = [(i, *show(c, f)) for i, _, c, _, _ in found]
+        if len({o[1] for o in opts}) > 1:  # only the fields where the members differ
+            fields.append(dict(field=f, label=f.replace("_", " "), options=opts))
+    return page(request, "review_merge.html", user, members=members, titles=[t for *_, t, _ in found], fields=fields)
+
+
+@router.post("/review/merge")
+async def merge(request: Request, members: list[str] = Form([]), user: User = Depends(require("reviewer"))):
+    form = await request.form()
+    pick = {k[5:]: v for k, v in form.items() if k.startswith("pick_")}
+    return await run_in_threadpool(do_merge, members, pick, user)
+
+
+def do_merge(members, pick, user):
+    with db.connect() as conn:
+        found = lock_members(conn, user, members)
+        ids = [i for i, *_ in found]
+        try:
+            pick = {f: int(c) for f, c in pick.items() if f in MERGE_FIELDS}
+        except ValueError:
+            raise HTTPException(400, "invalid choice")
+        if any(c not in ids for c in pick.values()):
+            raise HTTPException(400, "a choice is not one of the contracts")
+        case = combine([(i, d, c) for i, d, c, _, _ in found], pick)
+        check(case, {d: t for _, d, _, _, t in found})
+        new = conn.execute(
+            "insert into cases(document_id, member_count, basis, status, data, summary, search_text) "
+            "values (null, %s, 'engagement', 'extracted', %s, %s, %s) returning id",
+            (len(ids), Jsonb(case.model_dump()), case.summary, case.search_text())).fetchone()[0]
+        conn.execute("update cases set merged_into = %s where id = any(%s)", (new, ids))
+    return RedirectResponse(f"/review/{new}", status_code=303)

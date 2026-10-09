@@ -264,6 +264,16 @@ main after #64 merges, and before starting step 8.
    - `members` is a list; de-duplicate by id, as `generate()` does
      (`app/render.py:353`).
 
+
+   *Done (coder):* `tests/test_review.py` 24 passed. *Deviations:*
+   - A member that is already merged is hidden by `VISIBLE`, so a plain
+     lock would give 404. After a count mismatch, `lock_members()` probes
+     with `VISIBLE` minus the `merged_into is null` test: if all members
+     are found, it's 409; otherwise 404.
+   - `POST /review/merge` is `async def`, so it can read the dynamic
+     `pick_<field>` form fields. The database work runs in the threadpool.
+   - The preview route is untested until step 5 adds `review_merge.html`.
+
 5. **Merge UI** (templates, no JavaScript):
    - **`app/templates/review_detail.html`, single engagement case with a
      resolvable client:** a form posting to `/review/merge/preview`, with a hidden
