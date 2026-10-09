@@ -1,10 +1,13 @@
 {% extends "base.html" %}
 {% block body %}
-<h1>Send this search?</h1>
+<div class="narrow">
+<div class="page-head"><div><h1>Send this search?</h1></div></div>
+<ol class="steps" aria-label="Steps"><li>Ask</li><li class="on">Preview query</li><li>Send</li></ol>
 {% if note %}<div class="note">{{ note }}</div>{% endif %}
-<div class="card stack"><p style="margin:0"><b>2. Exactly this will be sent to a public web search engine:</b></p>
-<code>{{ query }}</code>
-<div class="row"><form method="post" action="/research/send" style="margin:0"><input type="hidden" name="query" value="{{ query }}">{% if case_id %}<input type="hidden" name="case_id" value="{{ case_id }}">{% endif %}
-<button class="btn primary">Send</button></form>
-<a class="btn" href="/research">Cancel</a></div></div>
+<div class="section-card">
+<p style="margin:0 0 8px"><b>Exactly this will be sent to a public web search engine:</b></p>
+<div class="query-box" id="exact-query"><code>{{ query }}</code></div>
+<form method="post" action="/research/send" style="margin:16px 0 0"><input type="hidden" name="query" value="{{ query }}">{% if case_id %}<input type="hidden" name="case_id" value="{{ case_id }}">{% endif %}
+<div class="action-row"><a class="btn" href="/research">Cancel</a><button class="btn primary">Send</button></div></form>
+</div></div>
 {% endblock %}
