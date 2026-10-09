@@ -24,12 +24,12 @@ up() {
     sleep 2
   done
   curl -sf localhost:8000/healthz >/dev/null || { echo "web did not become healthy" >&2; exit 1; }
-  dc exec -T web python scripts/seed_demo.py
+  dc exec -T worker python scripts/seed_demo.py  # worker has S3_BUCKET; web deliberately does not (#71)
   cat <<MSG
 
 Demo ready: http://localhost:8000   (login at idp.localhost:8080; see README "Local login")
-  admin     {"name": "Test Admin", "groups": ["refs-admins"]}
-  reviewer  {"groups": ["refs-reviewers"]}
+  admin     {"name": "Test Admin", "groups": ["refs-admins", "sales", "delivery"]}
+  reviewer  {"groups": ["refs-reviewers", "sales", "delivery"]}
   sales     {"groups": ["refs-users", "sales"]}
   nobody    {}
 MSG

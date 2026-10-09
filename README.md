@@ -79,7 +79,17 @@ scripts/demo.sh reset    # wipe the demo database and start again
 ```
 
 It uses its own compose project, `refsdemo`, on ports 8000 and 8080, so stop any other stack on those
-ports first. Log in as in "Local login" above: `admin`, `reviewer`, `sales` or `nobody`. The seed adds two
+ports first. Log in as in "Local login" above, but with the demo's document groups in the claims, so each user
+sees the demo sources:
+
+| Username | Claims |
+| --- | --- |
+| `admin` | `{"name": "Test Admin", "groups": ["refs-admins", "sales", "delivery"]}` |
+| `reviewer` | `{"groups": ["refs-reviewers", "sales", "delivery"]}` |
+| `sales` | `{"groups": ["refs-users", "sales"]}` (no `delivery`: the Delivery archive stays hidden) |
+| `nobody` | `{}` |
+
+The seed adds two
 sources ("Demo: Bid library" for `sales`, "Demo: Delivery archive" for `delivery`), ten clients and 14 cases
 (9 approved, 5 waiting for review, including a Fabrikam statement of work and change order to merge).
 Running `up` again leaves existing rows alone. The S3 originals are in memory and are put again each time.
