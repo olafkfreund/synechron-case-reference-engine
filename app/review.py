@@ -19,8 +19,13 @@ INTS = ("duration_months", "team_size")
 LISTS = ("capabilities", "tech_stack", "outcomes")
 # a case can be edited/approved/rejected only while it is new or its approval has expired
 OPEN = "(c.status = 'extracted' or (c.status = 'approved' and c.review_due < now()))"
-# need-to-know: a reviewer only sees cases from live documents they can open at the source
-ACL = "d.deleted_at is null and d.acl_groups && %s::text[]"
+# need-to-know: every document behind a case must be live and open to the user;
+# a member is never shown on its own while merged (its content is inside the merged case)
+VISIBLE = ("c.merged_into is null and coalesce(c.member_count, 1) = (select count(*) from cases m "
+           "join documents md on md.id = m.document_id where (m.id = c.id or m.merged_into = c.id) "
+           "and md.deleted_at is null and md.acl_groups && %s::text[])")
+# review pages only: a withdrawn member must not trap its merged case (single documents stay hidden) (it can still be un-merged)
+REVIEWABLE = VISIBLE.replace("md.deleted_at is null", "(md.deleted_at is null or c.member_count is not null)")
 # the version a reviewer saw; a re-extraction in between must not be approved unseen
 VERSION = "md5(c.data::text)"
 
@@ -37,13 +42,13 @@ def load(conn, cid, user, version):
     """
     groups = list(user.groups)
     row = conn.execute(
-        f"select c.data, d.text from cases c join documents d on d.id = c.document_id "
-        f"where c.id = %s and {ACL} and {OPEN} and {VERSION} = %s for update of c",
+        f"select c.data, d.text from cases c left join documents d on d.id = c.document_id "
+        f"where c.id = %s and {VISIBLE} and {OPEN} and {VERSION} = %s for update of c",
         (cid, groups, version)).fetchone()
     if not row:
         seen = conn.execute(
-            f"select {VERSION} = %s from cases c join documents d on d.id = c.document_id "
-            f"where c.id = %s and {ACL}", (version, cid, groups)).fetchone()
+            f"select {VERSION} = %s from cases c left join documents d on d.id = c.document_id "
+            f"where c.id = %s and {VISIBLE}", (version, cid, groups)).fetchone()
         if not seen:
             raise HTTPException(404, "no such case")
         raise HTTPException(409, "case is not open for review" if seen[0] else "case changed; reload the page")
@@ -97,17 +102,17 @@ def landing(request: Request, user: User = Depends(require("user"))):
 def review_list(request: Request, user: User = Depends(require("reviewer"))):
     with db.connect() as conn:
         found = conn.execute(
-            f"select c.id, c.status, c.data, d.title from cases c join documents d on d.id = c.document_id "
-            f"where {ACL} and {OPEN} order by c.id", (list(user.groups),)).fetchall()
+            f"select c.id, c.status, c.data, d.title, c.member_count from cases c left join documents d on d.id = c.document_id "
+            f"where {REVIEWABLE} and {OPEN} order by c.id", (list(user.groups),)).fetchall()
         # reminders: approvals that expire within 30 days (the list above only has the expired ones)
         soon = conn.execute(
-            "select c.id, c.data, d.title, c.review_due from cases c join documents d on d.id = c.document_id "
-            f"where {ACL} and c.status = 'approved' and c.review_due > now() "
+            "select c.id, c.data, d.title, c.review_due, c.member_count from cases c left join documents d on d.id = c.document_id "
+            f"where {REVIEWABLE} and c.status = 'approved' and c.review_due > now() "
             "and c.review_due <= now() + interval '30 days' order by c.review_due", (list(user.groups),)).fetchall()
     cases = [dict(id=i, status=s, title=d["title"]["value"], document=t,
-                  attention=len(d.get("needs_attention", [])), unsourced=count_unsourced(d))
-             for i, s, d, t in found]
-    due_soon = [dict(id=i, title=d["title"]["value"], document=t, due=due.strftime("%Y-%m-%d")) for i, d, t, due in soon]
+                  attention=len(d.get("needs_attention", [])), unsourced=count_unsourced(d), members=n)
+             for i, s, d, t, n in found]
+    due_soon = [dict(id=i, title=d["title"]["value"], document=t, due=due.strftime("%Y-%m-%d"), members=n) for i, d, t, due, n in soon]
     return page(request, "review_list.html", user, cases=cases, due_soon=due_soon)
 
 
@@ -115,9 +120,9 @@ def review_list(request: Request, user: User = Depends(require("reviewer"))):
 def review_detail(cid: int, request: Request, user: User = Depends(require("reviewer"))):
     with db.connect() as conn:
         r = conn.execute(
-            f"select c.data, c.status, d.title, d.external_id, s.name, {OPEN}, {VERSION} "
-            f"from cases c join documents d on d.id = c.document_id join sources s on s.id = d.source_id "
-            f"where c.id = %s and {ACL}", (cid, list(user.groups))).fetchone()
+            f"select c.data, c.status, d.title, d.external_id, s.name, {OPEN}, {VERSION}, c.member_count "
+            f"from cases c left join documents d on d.id = c.document_id left join sources s on s.id = d.source_id "
+            f"where c.id = %s and {REVIEWABLE}", (cid, list(user.groups))).fetchone()
         registry = anonymise.load_clients(conn)
     if not r:
         raise HTTPException(404, "no such case")

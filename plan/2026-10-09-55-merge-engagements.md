@@ -127,8 +127,13 @@ main after #64 merges, and before starting step 8.
               "join documents md on md.id = m.document_id where (m.id = c.id or m.merged_into = c.id) "
               "and md.deleted_at is null and md.acl_groups && %s::text[])")
    # review pages only: a withdrawn member must not trap its merged case (it can still be un-merged)
-   REVIEWABLE = VISIBLE.replace("md.deleted_at is null and ", "")
+   REVIEWABLE = VISIBLE.replace("md.deleted_at is null", "(md.deleted_at is null or c.member_count is not null)")
    ```
+
+   *Deviation:* the first draft dropped the `deleted_at` test for every case,
+   which made a withdrawn single-document case reappear on the review pages and
+   broke `test_reviewer_without_document_access_sees_nothing`. Only merged cases
+   (`member_count` not null) now keep a withdrawn member visible there.
 
    Then change every caller (each takes the same single groups parameter):
    - `app/review.py:38-47` `load()`: the main select becomes `from cases c

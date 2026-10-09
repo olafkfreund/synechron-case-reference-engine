@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict
 from app import anonymise, db
 from app.llm import complete_json
 from app.main import User, require
-from app.review import ACL, page
+from app.review import VISIBLE, page
 from app.schema import ReferenceCase, numbers
 
 router = APIRouter()
@@ -55,7 +55,7 @@ def search(user: User, bid_text: str, filters: dict) -> list[dict]:
         join = "cross join (select replace(plainto_tsquery('english', %s)::text, ' & ', ' | ')::tsquery as q) x"
         rank = "ts_rank_cd(c.tsv, x.q, 1)"  # 1: don't favour long cases
         params.append(bid)
-    where, params = [f"c.status = 'approved' and c.review_due > now() and {ACL}"], [*params, list(user.groups)]
+    where, params = [f"c.status = 'approved' and c.review_due > now() and {VISIBLE}"], [*params, list(user.groups)]
     if bid:
         where.append("(numnode(x.q) = 0 or c.tsv @@ x.q)")  # stop words only: let the filters decide
     for key in ("industry", "region"):
@@ -69,7 +69,7 @@ def search(user: User, bid_text: str, filters: dict) -> list[dict]:
     with db.connect() as conn:
         rows = conn.execute(
             f"select c.id, c.data, cl.anonymised_label, c.basis, {rank} as rank from cases c "
-            f"join documents d on d.id = c.document_id left join clients cl on cl.id = c.client_id {join} "
+            f"left join clients cl on cl.id = c.client_id {join} "
             f"where {' and '.join(where)} order by rank desc, (c.basis = 'delivered') desc, c.id limit {TOP}", params).fetchall()
     return [dict(id=i, case=ReferenceCase.model_validate(d), label=label or "a client", basis=b, rank=r)
             for i, d, label, b, r in rows]

@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict
 from app import anonymise, db, ingest
 from app.llm import complete_json
 from app.main import User, require
-from app.review import ACL, page
+from app.review import VISIBLE, page
 from app.schema import ReferenceCase, numbers, quote_in
 from app.search import clean
 
@@ -114,8 +114,8 @@ def research_preview(request: Request, question: str = Form(), user: User = Depe
 
 def visible_case(conn, cid: int, user: User) -> ReferenceCase | None:
     """The case, only with the same restrictions as /generate: approved, in date, and the user can open it."""
-    row = conn.execute("select c.data from cases c join documents d on d.id = c.document_id "
-                       f"where c.id = %s and c.status = 'approved' and c.review_due > now() and {ACL}",
+    row = conn.execute("select c.data from cases c "
+                       f"where c.id = %s and c.status = 'approved' and c.review_due > now() and {VISIBLE}",
                        (cid, list(user.groups))).fetchone()
     return ReferenceCase.model_validate(row[0]) if row else None
 
