@@ -83,9 +83,10 @@ def count_unsourced(o):
     return sum(map(count_unsourced, o)) if isinstance(o, list) else 0
 
 
-def rows(case):
-    def row(path, label, obj, names):
+def rows(case, docs=None):
+    def row(path, label, obj, names):  # docs: {document_id: title}, for a merged case
         return dict(path=path, label=label, quote=obj.source_quote, unsourced=obj.unsourced,
+                    doc=(docs or {}).get(obj.document_id, ""),
                     inputs=[(n, "" if getattr(obj, n) is None else getattr(obj, n)) for n in names])
     out = [row(n, n.replace("_", " "), getattr(case, n), ["value"]) for n in SCALARS]
     def new(n, label, names):
@@ -128,17 +129,24 @@ def review_list(request: Request, user: User = Depends(require("reviewer"))):
 def review_detail(cid: int, request: Request, user: User = Depends(require("reviewer"))):
     with db.connect() as conn:
         r = conn.execute(
-            f"select c.data, c.status, d.title, d.external_id, s.name, {OPEN}, {VERSION}, c.member_count "
+            f"select c.data, c.status, d.title, d.external_id, s.name, {OPEN}, {VERSION}, c.member_count, c.basis "
             f"from cases c left join documents d on d.id = c.document_id left join sources s on s.id = d.source_id "
             f"where c.id = %s and {REVIEWABLE}", (cid, list(user.groups))).fetchone()
         registry = anonymise.load_clients(conn)
+        merged = r and r[7] is not None
+        members = conn.execute(
+            "select m.id, d.title, s.name, d.external_id, m.data->>'basis_reason', m.status, d.deleted_at is not null, d.id "
+            "from cases m join documents d on d.id = m.document_id join sources s on s.id = d.source_id "
+            "where m.merged_into = %s order by m.id", (cid,)).fetchall() if merged else []
+        cands = candidates(conn, cid, user) if r and r[5] and r[7] is None and r[8] == "engagement" else []
     if not r:
         raise HTTPException(404, "no such case")
     case = ReferenceCase.model_validate(r[0])  # the document text is deliberately not shown
     notes = list(case.needs_attention)
     # organisations come from extraction; no LLM call on page view
     unlisted = anonymise.unlisted([*case.organisations, case.client_mention.value or ""], registry) if r[5] else []
-    return page(request, "review_detail.html", user, id=cid, rows=rows(case), notes=notes, unlisted=unlisted,
+    return page(request, "review_detail.html", user, id=cid, rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
+                unlisted=unlisted, members=members, cands=cands,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
                 external_id=r[3], source=r[4], reviewable=r[5], v=r[6])
 
@@ -272,15 +280,15 @@ def combine(members, pick):
 
 
 def candidates(conn, cid, user):
-    """Other visible, open engagements for the same registered client as case `cid`: (id, title, document, period)."""
+    """Other visible, open engagements for the same registered client as case `cid`: (id, title, document, period, version)."""
     registry = anonymise.load_clients(conn)
     rows = conn.execute(
-        f"select c.id, c.data, d.title from cases c join documents d on d.id = c.document_id "
+        f"select c.id, c.data, d.title, {VERSION} from cases c join documents d on d.id = c.document_id "
         f"where {VISIBLE} and c.basis = 'engagement' and c.status <> 'rejected'",
         (list(user.groups),)).fetchall()
-    mine = next((d["client_mention"]["value"] for i, d, _ in rows if i == cid), None)
+    mine = next((d["client_mention"]["value"] for i, d, *_ in rows if i == cid), None)
     want = anonymise.resolve(mine, registry)
-    return [(i, d["title"]["value"], t, d["period"]) for i, d, t in rows
+    return [(i, d["title"]["value"], t, d["period"], v) for i, d, t, v in rows
             if want is not None and i != cid and anonymise.resolve(d["client_mention"]["value"], registry) == want]
 
 

@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block body %}
 <h1>Case {{ id }}</h1>
-<p>Document: <b>{{ document }}</b> · source: {{ source }} · <code>{{ external_id }}</code> · status: {{ status }}</p>
+{% if members %}<p>Merged from {{ members|length }} contracts · status: {{ status }}</p>
+<table><tr><th>Document</th><th>Source</th><th>External id</th><th>Basis</th><th>Status</th></tr>
+{% for m in members %}<tr><td>{{ m[1] }}{% if m[6] %} <span class="badge bad">withdrawn</span>{% endif %}</td><td>{{ m[2] }}</td><td><code>{{ m[3] }}</code></td><td>{{ m[4] }}</td><td>{{ m[5] }}</td></tr>{% endfor %}</table>
+{% else %}<p>Document: <b>{{ document }}</b> · source: {{ source }} · <code>{{ external_id }}</code> · status: {{ status }}</p>{% endif %}
 <p><span class="badge {{ "ok" if basis == "delivered" else "empty" }}">{{ "Engagement (contracted scope)" if basis == "engagement" else "Delivered case" }}</span>{% if basis_reason %} {{ basis_reason }}{% endif %}</p>
 {% for n in notes %}<div class="note">{{ n }}</div>{% endfor %}
 {% for o in unlisted %}<div class="note">organisation not in client registry: {{ o }}
@@ -12,7 +15,7 @@
 </form>{% endif %}</div>{% endfor %}
 <table><tr><th>Field</th><th>Value</th><th>Source quote</th><th></th></tr>
 {% for r in rows %}{% set f = "f" ~ loop.index %}<tr>
-<td>{{ r.label }}<br>
+<td>{{ r.label }}{% if r.doc %} <small>({{ r.doc }})</small>{% endif %}<br>
 {% if r.new %}{% elif r.no_quote %}<span class="badge empty">no quote (generated)</span>
 {% elif r.unsourced %}<span class="badge bad">unsourced</span>
 {% elif r.quote %}<span class="badge ok">sourced</span>
@@ -26,4 +29,8 @@
 <button>Approve (unsourced fields are emptied)</button></form>
 <form method="post" action="/review/{{ id }}/reject" style="display:inline"><input type="hidden" name="v" value="{{ v }}"><button>Reject</button></form>
 {% else %}<p>This case is not open for review.</p>{% endif %}
+{% if reviewable and cands %}<h2>Merge with other contracts for the same client</h2>
+<form method="post" action="/review/merge/preview"><input type="hidden" name="members" value="{{ id }}:{{ v }}">
+{% for c in cands %}<label><input type="checkbox" name="members" value="{{ c[0] }}:{{ c[4] }}"> {{ c[1] }} ({{ c[2] }}{% if c[3].start or c[3].end %}, {{ c[3].start or "?" }} to {{ c[3].end or "?" }}{% endif %})</label><br>{% endfor %}
+<button>Preview merge</button></form>{% endif %}
 {% endblock %}
