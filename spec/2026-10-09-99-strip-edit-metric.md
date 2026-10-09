@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 99
 intent: intent/2026-10-09-99-strip-edit-metric.md
 ---
