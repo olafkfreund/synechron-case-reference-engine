@@ -255,6 +255,34 @@ def test_add_needs_value_and_quote(make):
     assert row(cid)[1] == before
 
 
+def test_whitespace_metric_stored_empty(make):
+    from app.render import section
+    cid = make()
+    assert post(client(R), cid, field="outcomes.0", metric="   ", value=" 12 to 3 days ", quote=Q_TITLE).status_code == 303
+    _, data, text = row(cid)[:3]
+    assert (data["outcomes"][0]["metric"], data["outcomes"][0]["value"]) == ("", "12 to 3 days")
+    lists = section(ReferenceCase.model_validate(data), "Client")["lists"]
+    assert [x["bullets"] for x in lists if x["heading"] == "Outcomes"] == [["12 to 3 days"]]
+    assert "12 to 3 days" in text
+
+
+def test_whitespace_value_not_sourced_and_dropped_on_approval(make):
+    cid = make()
+    c = client(R)
+    assert post(c, cid, field="industry", value="   ", quote=Q_REGION).status_code == 303
+    ind = row(cid)[1]["industry"]
+    assert ind["value"] is None and ind["unsourced"] is False
+    assert c.post(f"/review/{cid}/approve", data={"v": ver(cid)}).status_code == 200  # after the redirect
+    assert row(cid)[1]["industry"]["value"] is None
+
+
+def test_padded_add_is_trimmed(make):
+    cid = make()
+    assert post(client(R), cid, field="outcomes.new", metric=" Revenue ", value=" 30% ", quote=Q_TITLE).status_code == 303
+    o = row(cid)[1]["outcomes"][-1]
+    assert (o["metric"], o["value"]) == ("Revenue", "30%")
+
+
 def test_remove_list_item(make):
     cid = make(data=case_data(tech_stack=[Sourced[str](value="Acme", source_quote=Q_TITLE)]))
     assert post(client(R), cid, action="remove", field="tech_stack.0").status_code == 303

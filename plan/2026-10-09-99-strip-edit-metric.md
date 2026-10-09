@@ -38,10 +38,12 @@ Two files change, so the session model implements it (below the coder hand-off t
 
 2. `tests/test_review.py`, after `test_add_needs_value_and_quote` (`:247-255`), add three tests using
    the existing `make`, `client(R)`, `post`, `row`, `ver` helpers:
-   - `test_whitespace_metric_stored_empty`: `post(c, cid, field="outcomes.0", metric="   ", value=" 30% ",
-     quote=Q_TITLE)` → 303. Stored `outcomes[0]` has `metric == ""`, `value == "30%"`.
+   - `test_whitespace_metric_stored_empty`: `post(c, cid, field="outcomes.0", metric="   ", value=" 12 to 3 days ",
+     quote=Q_TITLE)` → 303. Stored `outcomes[0]` has `metric == ""`, `value == "12 to 3 days"`.
+     (Deviation: the plan said `" 30% "`, but `check()` marks a value the quote does not contain as
+     unsourced, and `section()` drops unsourced outcomes. The value must appear in `Q_TITLE`.)
      `section(ReferenceCase.model_validate(data), "Client")` (import `section` from `app.render`):
-     the Outcomes list bullets are `["30%"]` (no `": 30%"`). `"30%"` is in `search_text`.
+     the Outcomes list bullets are `["12 to 3 days"]` (no leading `": "`). The value is in `search_text`.
    - `test_whitespace_value_not_sourced_and_dropped_on_approval`: `post(c, cid, field="industry",
      value="   ", quote=Q_REGION)` → 303. Stored `industry.value is None` and `unsourced is False`.
      Approve (`c.post(f"/review/{cid}/approve", data={"v": ver(cid)})`), then `industry.value is None`.
