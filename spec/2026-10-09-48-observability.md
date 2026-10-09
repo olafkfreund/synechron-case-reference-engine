@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 48
 intent: intent/2026-10-09-48-observability.md
 ---
