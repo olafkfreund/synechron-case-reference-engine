@@ -233,11 +233,14 @@ def test_client_display_rules(approved, reg, monkeypatch):
     assert anon_name not in "".join(shown.values())
 
 
-def test_referenceable_name_containing_protected_name_is_a_client(approved, reg, monkeypatch):
-    reg("Zorp", "a retailer")
-    _, ref = reg("Zorp", "a retailer UK", True, suffix=" UK")
-    a = approved()
+def test_referenceable_name_containing_protected_name_shows_its_label(approved, reg, monkeypatch):
+    p, _ = reg("Zorp", "a retailer")
+    n, ref = reg("Zorp", "a logistics firm", True, suffix=" Logistics")
+    a = approved(data(title=f"Faster onboarding for {n}"))
     link(a, ref)
     picks_reply(monkeypatch, sr.Pick(case_id=a, reason="fits", tailored="Cut onboarding from 12 to 3 days."))
     top, others, _ = sr.results(ME, "onboarding", {})
-    assert {x["id"]: x["label"] for x in top + others}[a] == "a client"
+    x = next(x for x in top + others if x["id"] == a)
+    assert x["label"] == "a logistics firm"
+    assert x["title"] == "Faster onboarding for a logistics firm"
+    assert p not in x["title"] + x["label"]
