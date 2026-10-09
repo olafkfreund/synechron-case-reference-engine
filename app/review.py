@@ -5,6 +5,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
+from psycopg.errors import ForeignKeyViolation
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
@@ -231,8 +232,11 @@ def approve(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))
         save(conn, cid, case)
         # link the case to its registry client, so outputs use its curated label and referenceability
         client_id = anonymise.resolve(case.client_mention.value, anonymise.load_clients(conn))
-        conn.execute("update cases set status='approved', approved_by=%s, approved_at=now(), client_id=%s, "
-                     "review_due=now() + interval '12 months' where id=%s", (user.sub, client_id, cid))
+        try:
+            conn.execute("update cases set status='approved', approved_by=%s, approved_at=now(), client_id=%s, "
+                         "review_due=now() + interval '12 months' where id=%s", (user.sub, client_id, cid))
+        except ForeignKeyViolation:  # the client was deleted after we read the registry (#84): roll back, ask to reload
+            raise HTTPException(409, "client changed; reload the page") from None
     return RedirectResponse("/review", status_code=303)
 
 
