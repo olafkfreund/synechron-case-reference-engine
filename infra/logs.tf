@@ -49,10 +49,10 @@ data "aws_iam_policy_document" "logs_key" {
 
 # the key always exists: switching encryption off must not delete it, or logs written under it become unreadable
 resource "aws_kms_key" "logs" {
-  description         = "${var.name} CloudWatch Logs: app log groups"
+  description             = "${var.name} CloudWatch Logs: app log groups"
   enable_key_rotation     = true
   deletion_window_in_days = 30
-  policy              = data.aws_iam_policy_document.logs_key.json
+  policy                  = data.aws_iam_policy_document.logs_key.json
 }
 
 resource "aws_kms_alias" "logs" {
