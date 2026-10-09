@@ -68,11 +68,11 @@ def search(user: User, bid_text: str, filters: dict) -> list[dict]:
         params.append(v)
     with db.connect() as conn:
         rows = conn.execute(
-            f"select c.id, c.data, cl.anonymised_label, c.basis, {rank} as rank from cases c "
+            f"select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null, c.basis, {rank} as rank from cases c "
             f"left join clients cl on cl.id = c.client_id {join} "
             f"where {' and '.join(where)} order by rank desc, (c.basis = 'delivered') desc, c.id limit {TOP}", params).fetchall()
-    return [dict(id=i, case=ReferenceCase.model_validate(d), label=label or "a client", basis=b, rank=r)
-            for i, d, label, b, r in rows]
+    return [dict(id=i, case=ReferenceCase.model_validate(d), label=anonymise.shown(name, label, ref, linked), basis=b, rank=r)
+            for i, d, name, label, ref, linked, b, r in rows]
 
 
 def clean(text, clients, fallback=""):
@@ -128,7 +128,7 @@ def results(user: User, bid_text: str, filters: dict):
 
     def view(c, **extra):
         case = c["case"]
-        return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label=c["label"], basis=c["basis"], **extra)
+        return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label="a client" if anonymise.blocked(c["label"], clients) else c["label"], basis=c["basis"], **extra)
     top = [view(by_id[p["id"]], reason=p["reason"], tailored=p["tailored"],
                 outcomes=[clean((f"{o.metric}: {o.value}" if o.metric else o.value), clients, "[withheld]")
                           for o in by_id[p["id"]]["case"].outcomes if not o.unsourced]) for p in picks]
