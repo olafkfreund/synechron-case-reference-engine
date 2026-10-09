@@ -78,6 +78,8 @@ def _clean(sid):
     with db.connect() as c:
         c.execute("delete from jobs where kind='extract' and (payload->>'document_id')::bigint in "
                   "(select id from documents where source_id=%s)", (sid,))
+        c.execute("delete from cases where document_id is null and id in (select merged_into from cases "
+                  "where document_id in (select id from documents where source_id=%s))", (sid,))  # merged rows first
         c.execute("delete from sources where id=%s", (sid,))
 
 
@@ -112,8 +114,18 @@ def test_unticking_executed_retires_flagged_engagements(env):  # noqa: F811
         _job(c, e4)
         _job(c, e5, status="running")
         _job(c, e6, reason="executed contract")
+        c7 = _case(c, _doc(c, sid, "contract"), "approved", "engagement", "executed contract")
+        merged = c.execute(  # an approved merged engagement (#55) of c1 (flagged) and c7 (a real contract)
+            "insert into cases(document_id, member_count, basis, status, data) values (null, 2, 'engagement', 'approved', %s) "
+            "returning id", (ReferenceCase(title=Sourced[str](value="M", source_quote="m m m m")).model_dump_json(),)).fetchone()[0]
+        c.execute("update cases set merged_into=%s where id in (%s,%s)", (merged, c1, c7))
     try:
         assert client([ADMIN]).post(f"/admin/sources/{sid}", data={"acl_groups": "g1"}, follow_redirects=False).status_code == 303
+        with db.connect() as c:
+            assert c.execute("select status from cases where id=%s", (merged,)).fetchone()[0] == "extracted"
+            assert c.execute("select status from cases where id=%s", (c7,)).fetchone()[0] == "approved"
+            v = c.execute("select md5(data::text) from cases where id=%s", (merged,)).fetchone()[0]
+        assert client([REV, "g1"]).post(f"/review/{merged}/approve", data={"v": v}).status_code == 409  # c1 is rejected
         with db.connect() as c:
             st = dict(c.execute("select id, status from cases where id in (%s,%s,%s,%s)", (c1, c2, c3, c4)).fetchall())
             assert st == {c1: "rejected", c2: "approved", c3: "approved", c4: "approved"}
