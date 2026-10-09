@@ -266,3 +266,19 @@ branch gains nothing from the source side, so it is dropped:
   `14`/"fourteen", `1200`/"1.200" and factor-1000 pairs are not accepted.
 - Tests: canonical rows and the `1,5` cases stay; word and multi-reading
   tests are removed.
+
+## Review (fresh Opus) and final deviation
+
+The review found the shrunk canonical form still looser than main in places:
+"2.000" licensed 2, "3.10" licensed 3.1, and Decimal rounded long tokens.
+As step 6 showed no gain from any extra reading, the final change keeps
+main's `numbers()` exactly, except that a comma is dropped only as a
+thousands separator (`_THOUSANDS`: the last comma group has 3 digits). So
+"1,500" and "1,20,000" read as before, but "1,5" stays as written and no
+longer licenses 15.
+
+**Never looser than main:** each token now maps either to main's value or
+to itself with its commas kept, and removing the commas gives main's value.
+So two tokens that match now also matched on main.
+
+*Done (session model):* full suite 424 passed.

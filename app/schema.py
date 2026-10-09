@@ -1,5 +1,4 @@
 import re
-from decimal import Decimal
 from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -29,30 +28,14 @@ def quote_in(text: str, quote: str) -> bool:
     return q in _norm(text) or q in _norm(re.sub(r"-[ \t]*\n\s*", "", text))
 
 
-def _plain(s: str) -> str:
-    return format(Decimal(s).normalize(), "f")
-
-
-def _readings(tok: str) -> set[str]:
-    seps, groups = re.findall(r"[.,]", tok), re.split(r"[.,]", tok)
-    if not seps:
-        return {_plain(tok)}
-    if len(seps) == 1:
-        a, b = groups
-        dec, whole = _plain(f"{a}.{b}"), _plain(a + b)
-        if len(b) != 3:
-            return {dec}
-        return {whole if seps[0] == "," else dec}  # "1,200" English thousands, "1.200" European
-    if len(set(seps)) == 1:
-        return {_plain("".join(groups))} if all(len(g) == 3 for g in groups[1:]) else {tok}
-    if seps[-1] not in seps[:-1] and all(len(g) == 3 for g in groups[1:-1]):
-        return {_plain("".join(groups[:-1]) + "." + groups[-1])}
-    return {tok}  # unreadable: matches only the same raw token
+# a comma is dropped only as a thousands separator (last group of 3 digits): "1,500" is 1500, but
+# "1,5" stays as written, so it can't license 15 (#44); every other token is read exactly as main did
+_THOUSANDS = re.compile(r"\d+(?:,\d+)*,\d{3}(?:\.\d+)?")
 
 
 def numbers(s: object) -> set[str]:
-    """Canonical numbers in s: "1,200" and "1.200" read differently, "1,5" is 1.5."""
-    return set().union(*(_readings(t) for t in re.findall(r"\d+(?:[.,]\d+)*", "" if s is None else str(s))))
+    return {n.replace(",", "") if _THOUSANDS.fullmatch(n) else n
+            for n in re.findall(r"\d+(?:[.,]\d+)*", "" if s is None else str(s))}
 
 
 def sourced(value: object, quote: str, text: str) -> bool:
@@ -130,7 +113,7 @@ class ReferenceCase(_Model):
 
     def summary_sourced(self) -> bool:
         """Every number in the summary appears in some source quote (else it launders invented numbers)."""
-        return numbers(self.summary) <= set().union(*(numbers(q) for q in self.quotes()))
+        return numbers(self.summary) <= set().union(*map(numbers, self.quotes()))
 
     def search_text(self) -> str:
         """Field values only (no quotes, keys, or client name) for cases.search_text."""

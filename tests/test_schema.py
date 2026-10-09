@@ -79,37 +79,31 @@ def test_summary_numbers_must_come_from_quotes():
     assert not c.summary_sourced()
 
 
-# (token, reading): the canonical forms of plan #44
+# (token, reading): plan #44, never looser than main: only thousands commas are dropped
 @pytest.mark.parametrize("tok,want", [
     ("14", {"14"}),
-    ("007", {"7"}),
     ("1,200", {"1200"}),
-    ("1,5", {"1.5"}),
-    ("1.200", {"1.2"}),
-    ("3.5", {"3.5"}),
-    ("3.50", {"3.5"}),
-    ("1.200.000", {"1200000"}),
     ("1,200,000", {"1200000"}),
-    ("1.234,5", {"1234.5"}),
+    ("1,20,000", {"120000"}),
     ("1,234.5", {"1234.5"}),
-    ("1,2,3", {"1,2,3"}),
-    ("1.23.4", {"1.23.4"}),
-    ("1,2.345", {"1,2.345"}),
+    ("1,5", {"1,5"}),
+    ("12,34", {"12,34"}),
+    ("1.234,5", {"1.234,5"}),
+    ("1.200", {"1.200"}),
+    ("3.50", {"3.50"}),
     (0, {"0"}),
     (None, set()),
-    ("fourteen", set()),
 ])
 def test_numbers_readings(tok, want):
     assert numbers(tok) == want
 
 
 def test_sourced_number_formats():
-    doc = "1.200 users were onboarded. 1,5 Mio. EUR saved per year. 1,200 users were onboarded."
-    assert not sourced(15, "1,5 Mio. EUR saved per year", doc)
-    assert sourced("1.5", "1,5 Mio. EUR saved per year", doc)
+    doc = "1,5 Mio. EUR saved per year. 1,200 users were onboarded."
+    assert not sourced(15, "1,5 Mio. EUR saved per year", doc)  # the #44 bug: "1,5" read as 15
+    assert sourced("1,5 Mio", "1,5 Mio. EUR saved per year", doc)
     assert sourced("1200", "1,200 users were onboarded", doc)
-    assert not sourced("1200 users", "1.200 users were onboarded", doc)  # 1.200 reads as 1.2
-    assert not sourced("1.2", "1,200 users were onboarded", doc)  # no factor-1000 widening
+    assert not sourced("1.2", "1,200 users were onboarded", doc)
 
 
 def test_llm_schema_is_strict_and_hides_unsourced():
