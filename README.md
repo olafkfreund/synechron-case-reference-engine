@@ -43,6 +43,31 @@ docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e UV_CACHE_DIR=/tmp/uv 
 - A dependency that isn't in the lock fails the build at `pip check`.
 - The lock is x86_64 only: for ARM64, re-lock with `--python-platform aarch64-manylinux_2_28`.
 
+## Local login (test users)
+
+```sh
+docker compose up web worker    # starts db, idp and s3 too
+```
+
+Open http://localhost:8000. Login goes to a mock provider at `idp.localhost:8080`: type a username and
+paste the claims JSON from the table.
+
+| Username | Claims | Gets |
+| --- | --- | --- |
+| `admin` | `{"name": "Test Admin", "groups": ["refs-admins"]}` | admin, reviewer, user |
+| `reviewer` | `{"groups": ["refs-reviewers"]}` | reviewer, user |
+| `sales` | `{"groups": ["refs-users", "sales"]}` | user |
+| `nobody` | `{}` | no role |
+
+- `sales` sees a source only if it has the access group `sales`: as `admin`, give a source that group first.
+- If `idp.localhost` doesn't resolve in your browser, add `127.0.0.1 idp.localhost` to `/etc/hosts`.
+- Port 8080 appears in three places: the `idp` port, its `SERVER_PORT`, and `OIDC_METADATA_URL` in
+  `docker-compose.yml`. Change all three together.
+- Check all four logins with `scripts/check_local_login.sh` (`BASE` overrides `http://localhost:8000`).
+- Uploads go to an in-memory S3 (`s3`), lost when it restarts; `docker compose up -d s3-init` recreates the bucket.
+  As admin, add an upload source with config `{"bucket": "refs-local"}` first.
+- **Local only:** this provider logs anyone in as anything. Never expose it.
+
 ## Local development with Ollama
 
 Extraction works with a local model, so real documents never leave the workstation.
@@ -57,6 +82,7 @@ Inside Docker the app reaches the host's Ollama through `host.docker.internal`, 
 the destination must be stated or it is inferred `third-party` and refused:
 `{"think": false, "num_ctx": 24576, "repeat_penalty": 1.05, "api_base": "http://host.docker.internal:11434", "destination": "local"}`.
 `DRAFT_MODEL_OPTIONS` works the same way. Bedrock needs no options.
+Compose passes `EXTRACT_MODEL`, `EXTRACT_MODEL_OPTIONS`, `DRAFT_MODEL`, `DRAFT_MODEL_OPTIONS` and `BRAVE_API_KEY` from your shell to `web` and `worker`.
 
 Do not use the 27B or 26B models: they spill from the GPU to the CPU and freeze the workstation, and Gemma 4
 runs mostly on the CPU on this AMD card.

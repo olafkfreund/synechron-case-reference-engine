@@ -8,6 +8,48 @@ services:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 2s
       retries: 15
+  # Dev only: this mock provider mints any login with any claims.
+  idp:
+    image: ghcr.io/navikt/mock-oauth2-server:6.0.4
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      SERVER_PORT: "8080"
+      JSON_CONFIG: '{"interactiveLogin": true}'
+    networks:
+      default:
+        aliases:
+          - idp.localhost
+  # Dev only: S3 in memory, so a restart loses the files.
+  s3:
+    image: motoserver/moto:5.2.3
+    environment:
+      MOTO_PORT: "5000"
+  s3-init:
+    image: motoserver/moto:5.2.3
+    depends_on:
+      - s3
+    environment:
+      AWS_ENDPOINT_URL: http://s3:5000
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    entrypoint:
+      - python
+      - -c
+      - |
+        import boto3, time
+        c = boto3.client("s3", region_name="eu-west-1")
+        for _ in range(30):
+            try:
+                c.create_bucket(Bucket="refs-local", CreateBucketConfiguration={"LocationConstraint": "eu-west-1"})
+                break
+            except c.exceptions.BucketAlreadyOwnedByYou:
+                break
+            except Exception as e:
+                print("s3 not ready:", e, flush=True)
+                time.sleep(1)
+        else:
+            raise SystemExit("s3 never answered")
   app:
     build: .
     environment:
@@ -21,20 +63,55 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:dev@db/refs
       DB_INIT_ON_START: "1"  # local only; in AWS app.migrate does this
+      EXTRACT_MODEL: ${EXTRACT_MODEL:-}
+      EXTRACT_MODEL_OPTIONS: ${EXTRACT_MODEL_OPTIONS:-}
+      DRAFT_MODEL: ${DRAFT_MODEL:-}
+      DRAFT_MODEL_OPTIONS: ${DRAFT_MODEL_OPTIONS:-}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      AWS_ENDPOINT_URL: http://s3:5000
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: eu-west-1
+      S3_BUCKET: refs-local
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
   web:
     build: .
     command: uvicorn --factory app.main:create_app --host 0.0.0.0 --port 8000 --proxy-headers
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       DATABASE_URL: postgresql://postgres:dev@db/refs
       DB_INIT_ON_START: "1"  # local only; in AWS app.migrate does this
+      EXTRACT_MODEL: ${EXTRACT_MODEL:-}
+      EXTRACT_MODEL_OPTIONS: ${EXTRACT_MODEL_OPTIONS:-}
+      DRAFT_MODEL: ${DRAFT_MODEL:-}
+      DRAFT_MODEL_OPTIONS: ${DRAFT_MODEL_OPTIONS:-}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      AWS_ENDPOINT_URL: http://s3:5000
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: eu-west-1
       SESSION_SECRET: dev-only-not-a-secret
       SESSION_HTTPS_ONLY: "false"  # dev over http only
       APP_ORIGIN: http://localhost:8000
+      OIDC_METADATA_URL: http://idp.localhost:8080/refs/.well-known/openid-configuration
+      OIDC_CLIENT_ID: refs-local
+      OIDC_CLIENT_SECRET: dev-only-not-a-secret
+      ROLE_USER_GROUPS: refs-users
+      ROLE_REVIEWER_GROUPS: refs-reviewers
+      ROLE_ADMIN_GROUPS: refs-admins
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
+      idp:
+        condition: service_started
