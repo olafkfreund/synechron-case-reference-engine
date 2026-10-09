@@ -116,19 +116,27 @@ def test_processes_do_not_run_ddl_unless_asked(monkeypatch):
 
 def test_audit_view_is_admin_only_paged_and_filtered(approved):
     cid = approved()
+    u = uuid.uuid4().hex[:8]
+    a, b = f"u{u}-0", f"u{u}-1"  # own users: other tests leave generations rows behind
     with db.connect() as c:
-        c.execute("delete from generations")
-        for i in range(55):
-            c.execute("insert into generations(user_id, format, case_ids) values (%s,'md',%s)", (f"u{i % 2}", [cid]))
-    assert client(R).get("/admin/audit").status_code == 403
-    t = client([ADMIN]).get("/admin/audit").text
-    assert t.count("<tr>") == 51 and f'href="/review/{cid}"' in t and "older &raquo;" in t and "&laquo; newer" not in t
-    p2 = client([ADMIN]).get("/admin/audit?p=2").text
-    assert p2.count("<tr>") == 6 and "&laquo; newer" in p2 and "older &raquo;" not in p2
-    only = client([ADMIN]).get("/admin/audit?user=u1").text
-    assert "u0" not in only.replace("user (exact", "") and only.count("<tr>") == 28
-    with db.connect() as c:
-        c.execute("delete from generations")
+        for who, n in ((a, 55), (b, 3)):
+            for _ in range(n):
+                c.execute("insert into generations(user_id, format, case_ids) values (%s,'md',%s)", (who, [cid]))
+    gen = lambda t: t.split("<h2>Generated outputs</h2>")[1].split("<h2>Model approvals</h2>")[0]  # noqa: E731
+    try:
+        assert client(R).get("/admin/audit").status_code == 403
+        r = client([ADMIN]).get("/admin/audit")
+        assert r.status_code == 200 and f'href="/review/{cid}"' in r.text
+        t = client([ADMIN]).get(f"/admin/audit?user={a}").text
+        assert gen(t).count("<tr>") == 51 and "older &raquo;" in t and "&laquo; newer" not in t
+        assert f"p=2&amp;user={a}" in t
+        p2 = client([ADMIN]).get(f"/admin/audit?p=2&user={a}").text
+        assert gen(p2).count("<tr>") == 6 and "&laquo; newer" in p2 and "older &raquo;" not in p2
+        only = client([ADMIN]).get(f"/admin/audit?user={b}").text
+        assert gen(only).count("<tr>") == 4 and b in only and a not in only
+    finally:
+        with db.connect() as c:
+            c.execute("delete from generations where user_id = any(%s)", ([a, b],))
 
 
 def test_review_page_lists_approvals_expiring_within_30_days(approved):
