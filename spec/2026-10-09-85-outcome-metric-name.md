@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 85
 intent: intent/2026-10-09-85-outcome-metric-name.md
 ---
