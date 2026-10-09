@@ -41,6 +41,17 @@ def test_referenceable_name_containing_protected_name():
         assert an.blocked(an.apply(s, reg), reg) == []
 
 
+def test_label_backslash_is_text_and_many_clients_stay_fast():
+    import time
+    reg = [C("Zorp", label=r"a \d retailer"), C("Zorp Logistics", label=r"a \g<0> firm", ref=True)]
+    assert an.apply("Zorp and Zorp Logistics", reg) == r"a \d retailer and a \g<0> firm"
+    many = [C(f"Client{i}", [f"Alias{i}"], label="a firm") for i in range(200)]
+    many += [C(f"Partner{i}", [f"Other{i}"], label="a partner", ref=True) for i in range(200)]
+    t0 = time.perf_counter()
+    an.apply("some text here", many)
+    assert time.perf_counter() - t0 < 0.5  # was ~1.2 s with one search per name pair
+
+
 def test_shown():
     assert an.shown("Globex", "a manufacturer", True, True) == "Globex"
     assert an.shown("Globex", "a manufacturer", False, True) == "a manufacturer"

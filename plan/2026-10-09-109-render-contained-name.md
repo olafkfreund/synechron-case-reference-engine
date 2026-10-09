@@ -157,3 +157,14 @@ Expected:
 ## Rollback
 
 Revert the merge commit. There's no schema, data or config change. `refsdemo` gets the old behaviour back on its next `demo.sh up`.
+
+## Deviations during implementation (review of the finished diff)
+
+- Step 1: the containment check ran one regex search per (referenceable, protected) name pair on
+  every `apply()` call: about 1.2 s per call at 200 + 200 clients, and search and generate call
+  `apply()` dozens of times. It now builds one alternation of all protected names per call
+  (folded text is lowercase, so `re.I` matches `blocked()` exactly), about 30 ms.
+- Step 1: `.sub()` takes a function returning the label, so a `\` in a label is literal text.
+  A template would crash every search and render on a label like `a \d firm`, and with
+  referenceable labels now going through `.sub()`, that crash would hit more admin entries.
+- Tests: `test_label_backslash_is_text_and_many_clients_stay_fast` in `tests/test_anonymise.py`.
