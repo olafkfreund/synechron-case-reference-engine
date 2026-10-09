@@ -51,7 +51,7 @@ with a command, signed in as an admin.
 **Steps**
 
 1. Add a source with **Kind** `upload` and **Config (JSON)** such as `{"bucket": "example-bid-library", "prefix": "cases/"}`.
-2. Send the file with your signed-in session cookie saved in `cookies.txt`:
+2. Send the file. The curl option `-b cookies.txt` reads your signed-in session cookie (copy it from your browser into that file). The file goes to the first enabled upload source. Replace `localhost:8000` with your portal address:
 
 ```
 curl -b cookies.txt -H 'Origin: http://localhost:8000' \

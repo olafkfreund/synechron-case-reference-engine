@@ -17,4 +17,4 @@ and reviewers can also do everything the bid team can. So read your own page and
 Open the portal and sign in with your company account. When you are done, use **Log out** at the
 top right.
 
-If you sign in and see no tabs, you have no role yet. Ask an admin to add you to the right group.
+If, after you sign in, you see a "user role required" error page, you have no role yet. Ask an admin to add you to the right group.

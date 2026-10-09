@@ -2,6 +2,9 @@
 # Makes the user-guide screenshots from a RUNNING local demo (demo data only).
 # Does not start or stop anything. Needs curl and chromium.
 set -euo pipefail
+cd "$(dirname "$0")/.."
+CHROME=$(command -v chromium || command -v chromium-browser || true)
+[ -n "$CHROME" ] || { echo "chromium (or chromium-browser) not found on PATH" >&2; exit 2; }
 BASE=${BASE:-http://localhost:8000}
 [[ $BASE =~ ^http://localhost(:[0-9]+)?$ ]] || { echo "refusing: BASE must be a localhost URL, got $BASE" >&2; exit 2; }
 OUT=docs/user-guide/img
@@ -21,8 +24,8 @@ login() { # name claims -> $tmp/name.jar
 shot() { # jar png curl-args...
   local jar=$tmp/$1.jar png=$2; shift 2
   curl -sf -b "$jar" "$@" | sed 's#<head[^>]*>#&<base href="'"$BASE"'/">#' > "$tmp/page.html"
-  chromium --headless --disable-gpu --hide-scrollbars --window-size=1280,900 \
-    --screenshot="$OUT/$png" "file://$tmp/page.html" >/dev/null 2>&1
+  "$CHROME" --headless --disable-gpu --hide-scrollbars --window-size=1280,900 \
+    --screenshot="$OUT/$png" "file://$tmp/page.html" >/dev/null
   echo "wrote $OUT/$png"
 }
 
