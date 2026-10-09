@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 55
 spec: spec/2026-10-09-55-merge-engagements.md
 ---
