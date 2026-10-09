@@ -5,6 +5,8 @@ Admins can also do everything [reviewers](reviewers.md) and the [bid team](bid-t
 
 ## Manage sources
 
+![The Sources page](img/sources.png)
+
 **What it's for**
 
 Choosing where reference documents are crawled from, and who may read them.
@@ -63,6 +65,8 @@ files are accepted.
 
 ## Client registry
 
+![The client registry](img/clients.png)
+
 **What it's for**
 
 Deciding which client names are hidden in outputs and which may be shown.
@@ -81,6 +85,8 @@ the client is referenceable.
 
 ## Model approvals
 
+![Model approvals](img/models.png)
+
 **What it's for**
 
 Allowing a specific AI model to read confidential documents.
@@ -97,6 +103,8 @@ Allowing a specific AI model to read confidential documents.
 A table of approvals, "Active" or "Expired", with who approved each and when it expires.
 
 ## Audit
+
+![Audit activity](img/audit.png)
 
 **What it's for**
 

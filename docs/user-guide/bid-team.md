@@ -22,6 +22,8 @@ The home page with two cards. The tabs shown depend on your role, see the [overv
 
 ## Search for reference cases
 
+![Search results for a bid, on the made-up demo data](img/search.png)
+
 **What it's for**
 
 Finding approved cases that fit a bid.
@@ -76,6 +78,8 @@ A file in the format you chose. Word suits editing into a bid, PowerPoint and PD
 PDF suits sending as is, and Markdown suits pasting into other tools.
 
 ## Research with public sources
+
+![The research question step](img/research.png)
 
 **What it's for**
 

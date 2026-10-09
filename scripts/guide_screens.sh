@@ -30,7 +30,7 @@ login admin '{"name": "Test Admin", "groups": ["refs-admins", "sales", "delivery
 login reviewer '{"groups": ["refs-reviewers", "sales", "delivery"]}'
 login sales '{"groups": ["refs-users", "sales"]}'
 
-shot sales search.png -X POST -H "Origin: $BASE" --data-urlencode bid_text=payments "$BASE/search"
+shot sales search.png -X POST -H "Origin: $BASE" --data-urlencode "bid_text=Modernise insurance claims handling on cloud with event-driven microservices" "$BASE/search"
 shot sales research.png "$BASE/research"
 shot reviewer review-queue.png "$BASE/review"
 

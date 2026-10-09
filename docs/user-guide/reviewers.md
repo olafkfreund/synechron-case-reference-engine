@@ -5,6 +5,8 @@ Reviewers can also do everything the [bid team](bid-team.md) can.
 
 ## Work through the queue
 
+![The review queue](img/review-queue.png)
+
 **What it's for**
 
 Seeing which cases need a decision.
@@ -22,6 +24,8 @@ A list of cases with a title and the document or number of contracts behind each
 nothing to do, the page says "Nothing to review".
 
 ## Sourced and unsourced fields
+
+![A case under review, with an unsourced field first](img/review-case.png)
 
 **What it's for**
 
