@@ -122,12 +122,29 @@ does step 7 with the user.
    → verify by `docker compose build app && docker compose run --rm app
    pytest -q`. Expected: the full suite is green with the old app code.
 
+   *Deviation:* `client()` calls `db.init()`, whose #58 schema repair copies a
+   source's groups onto its documents. Fixtures must therefore give a source
+   the same groups as its documents. `make()` in `tests/test_review.py` now
+   inserts the source with `acl_groups=list(acl)` (it used none, so the
+   repair emptied the document's ACL and cases became "no such case").
+
    Traps: every auth test goes through this fixture. That includes test
    files that import `client` from `tests.test_auth`: test_anonymise,
    test_hardening, test_models_admin, test_render and test_research
    (through `as_user`, which test_industry also uses). Run the full suite,
    not only `test_auth.py`. `test_tampered_cookie_rejected` (line 63) sets
    its own bad cookie; leave it as it is.
+
+
+   *Done (coder):* full suite 410 passed. *Deviation:* `client()` now
+   runs `db.init()`, so two more tests in other files change:
+   `tests/test_auth.py::test_upload_without_source_is_400` builds its client
+   before it opens its own connection (otherwise `db.init()` waits on that
+   connection's lock and the suite hangs), and
+   `tests/test_models_admin.py::test_stale_document_groups_repaired_by_resave_and_by_migration`
+   builds its clients before it sets up the stale groups. New tests in
+   steps 4 and 5 must also create `client()` before any open connection or
+   deliberate stale state.
 
 3. `app/main.py`: the app change.
    - **Imports (lines 1-14):** add `import time` and

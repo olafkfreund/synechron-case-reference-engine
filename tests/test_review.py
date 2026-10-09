@@ -34,11 +34,11 @@ def make(env):  # noqa: F811
 
     def make(status="extracted", due=None, data=None, acl=(DOCS,), deleted=False, basis="delivered", mention=None,
              text=DOC):
-        # the source gets no groups and the document gets `acl`: a later db.init() (schema repair, #58)
-        # copies the source's '{}' onto the document, so don't call it after make()
+        # the source gets the same groups as the document: client() calls db.init(), and its schema repair (#58)
+        # copies the source's groups onto the document
         with db.connect() as c:
-            sid = c.execute("insert into sources(kind,name) values ('s3',%s) returning id",
-                            (uuid.uuid4().hex,)).fetchone()[0]
+            sid = c.execute("insert into sources(kind,name,acl_groups) values ('s3',%s,%s) returning id",
+                            (uuid.uuid4().hex, list(acl))).fetchone()[0]
             sids.append(sid)
             did = c.execute("insert into documents(source_id,external_id,title,checksum,text,acl_groups,deleted_at) "
                             "values (%s,'k','Source doc','x',%s,%s,case when %s then now() end) returning id",

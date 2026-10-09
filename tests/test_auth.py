@@ -1,4 +1,5 @@
 import json
+import time
 import uuid
 from base64 import b64encode
 
@@ -24,10 +25,14 @@ def env(monkeypatch):
         monkeypatch.setenv(k, v)
 
 
-def client(groups=None, origin=ORIGIN):
+def client(groups=None, origin=ORIGIN, sub="u1", name="U", iat=None):
     c = TestClient(main.create_app(), headers={"Origin": origin} if origin else {})
     if groups is not None:  # sign the session cookie the way SessionMiddleware does
-        data = b64encode(json.dumps({"user": {"sub": "u1", "name": "U", "groups": groups}}).encode())
+        db.init()
+        u = {"sub": sub, "name": name, "groups": groups, "iat": time.time() if iat is None else iat}
+        if iat is False:
+            del u["iat"]
+        data = b64encode(json.dumps({"user": u}).encode())
         c.cookies.set("session", TimestampSigner(SECRET).sign(data).decode())
     return c
 
@@ -130,10 +135,10 @@ def test_upload_rejects_bad_extension_and_oversize(upload_src, monkeypatch):
 
 
 def test_upload_without_source_is_400(env):
-    db.init()
+    cl = client([ADMIN])  # before the open connection: client() runs db.init()
     with mock_aws(), db.connect() as c:
         c.execute("delete from sources where kind='upload'")
-        assert client([ADMIN]).post("/admin/upload", files={"file": ("a.pdf", PDF)}).status_code == 400
+        assert cl.post("/admin/upload", files={"file": ("a.pdf", PDF)}).status_code == 400
 
 
 def test_oversize_anonymous_body_refused_before_parsing(env, monkeypatch):
