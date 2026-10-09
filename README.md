@@ -68,6 +68,28 @@ paste the claims JSON from the table.
   As admin, add an upload source with config `{"bucket": "refs-local"}` first.
 - **Local only:** this provider logs anyone in as anything. Never expose it.
 
+## Revoke a user's sessions
+
+A session cookie lasts 8 hours and is signed, so ending it needs a server-side cutoff (#47). Logging out
+sets that cutoff, so it ends **that user's sessions on every device**. To end someone's sessions without
+their help (a leaver, a stolen laptop), run the revoke command with their `sub`.
+
+- Find the `sub`: search the web logs for `login sub=... name=<name>`, or look at `generations.user_id`,
+  `research.created_by` and the `changed_by` columns.
+- Local: `docker compose run --rm app python -m app.revoke_sessions <sub>`
+- AWS: `aws ecs run-task` on the `crawl` task definition, with the network configuration from the
+  `migrate_task` output (`infra/outputs.tf`) and the command overridden:
+
+  ```sh
+  aws ecs run-task --cluster <cluster> --task-definition <crawl family> --launch-type FARGATE \
+    --network-configuration 'awsvpcConfiguration={subnets=[<subnets>],securityGroups=[<security_group>]}' \
+    --overrides '{"containerOverrides":[{"name":"crawl","command":["python","-m","app.revoke_sessions","00000000-aaaa-bbbb-cccc-000000000000"]}]}'
+  ```
+
+  It prints `revoked sessions of <sub>` per user. The user's next request goes to `/login`.
+- **Deploy order:** run the `migrate` task (`migrate_task` output) **before** rolling out the web image that
+  has this feature. Without the `session_cutoffs` table, every logged-in page fails.
+
 ## Local development with Ollama
 
 Extraction works with a local model, so real documents never leave the workstation.
