@@ -171,6 +171,12 @@ create table if not exists source_acl_changes (
   changed_at timestamptz not null default now()
 );
 
+-- a session cookie issued at or before valid_after is refused (#47): logout and app.revoke_sessions move it
+create table if not exists session_cutoffs (
+  sub text primary key,
+  valid_after timestamptz not null
+);
+
 -- documents carry a copy of their source's groups; repair any copy a crawl wrote back before #58
 -- (idempotent; re-run the migration once old worker tasks have stopped after a deploy)
 -- for share, as every other write: an unlocked read could write back groups a concurrent save replaced
