@@ -5,12 +5,12 @@ on:
   pull_request:
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       # fixes the compose image name for `app` to refs-ci-app (compose names it <project>-<service>)
       COMPOSE_PROJECT_NAME: refs-ci
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # containerd image store: buildx writes the image straight into docker, no tarball load (#43)
       - uses: docker/setup-docker-action@v5
         with:
