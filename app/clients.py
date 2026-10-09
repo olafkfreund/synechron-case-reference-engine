@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from psycopg.errors import UniqueViolation
@@ -44,7 +46,7 @@ def clients_page(request: Request, user: User = Depends(require("admin"))):
 @router.post("/admin/clients")
 def create(name: str = Form(), aliases: str = Form(""), anonymised_label: str = Form(),
            referenceable: bool = Form(False), logo_allowed: bool = Form(False),
-           user: User = Depends(require("admin"))):
+           next: str = Form(""), user: User = Depends(require("admin"))):
     name, alias_list, label = clean(name, aliases, anonymised_label)
     try:
         with db.connect() as conn:
@@ -52,7 +54,8 @@ def create(name: str = Form(), aliases: str = Form(""), anonymised_label: str = 
                          "values (%s,%s,%s,%s,%s)", (name, alias_list, label, referenceable, logo_allowed))
     except UniqueViolation:
         raise HTTPException(400, "a client with that name already exists") from None
-    return RedirectResponse("/admin/clients", status_code=303)
+    # only back to a review page: never an open redirect
+    return RedirectResponse(next if re.fullmatch(r"/review/[0-9]+", next) else "/admin/clients", status_code=303)
 
 
 @router.post("/admin/clients/{cid}")
