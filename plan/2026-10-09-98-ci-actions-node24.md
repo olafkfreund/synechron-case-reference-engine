@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 98
 spec: spec/2026-10-09-98-ci-actions-node24.md
 ---
