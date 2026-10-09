@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath
 
 import boto3
 from authlib.integrations.starlette_client import OAuth, OAuthError
-from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -83,6 +83,10 @@ def upload_cap() -> int:
     return int(os.environ.get("UPLOAD_MAX_BYTES", 50 * 1024 * 1024))
 
 
+def wants_html(request: Request) -> bool:
+    return "text/html" in request.headers.get("accept", "")
+
+
 def known_groups() -> set[str]:
     """Groups that matter here: role mappings plus every ACL group (keeps the session cookie small)."""
     groups = set().union(*(_env_groups(f"ROLE_{r.upper()}_GROUPS") for r in ROLES))
@@ -133,7 +137,7 @@ def create_app() -> FastAPI:
     async def unauthorized(request: Request, exc):
         # browsers go to the login page; API clients keep the JSON 401. Not for /auth itself,
         # or a failing IdP would bounce the browser between /auth and /login forever.
-        if "text/html" in request.headers.get("accept", "") and request.url.path != "/auth":
+        if wants_html(request) and request.url.path != "/auth":
             return RedirectResponse("/login", status_code=303)
         return JSONResponse({"detail": exc.detail}, status_code=401)
 
@@ -208,22 +212,31 @@ def create_app() -> FastAPI:
         return {"sub": user.sub, "name": user.name, "roles": sorted(user.roles)}
 
     @app.post("/admin/upload", status_code=202)
-    def upload(request: Request, file: UploadFile, user: User = Depends(require("admin"))):
+    def upload(request: Request, file: UploadFile, source_id: int | None = Form(None),
+               user: User = Depends(require("admin"))):
+        def refuse(code, status, detail):
+            if wants_html(request):
+                return RedirectResponse(f"/admin/sources?notice={code}", status_code=303)
+            raise HTTPException(status, detail)
+
         cap = upload_cap()  # the guard middleware already refused oversize bodies before parsing
         name = safe_name(file.filename)
         magic = UPLOAD_MAGIC.get(PurePosixPath(name).suffix.lower())
         if magic is None:
-            raise HTTPException(400, f"allowed types: {', '.join(sorted(UPLOAD_MAGIC))}")
+            return refuse("type", 400, f"allowed types: {', '.join(sorted(UPLOAD_MAGIC))}")
         data = file.file.read(cap + 1)
         if len(data) > cap:
-            raise HTTPException(413, f"file larger than {cap} bytes")
+            return refuse("size", 413, f"file larger than {cap} bytes")
         if not data.startswith(magic):
-            raise HTTPException(400, "file content does not match its extension")
+            return refuse("content", 400, "file content does not match its extension")
         with db.connect() as conn:
-            src = conn.execute("select id, config from sources where kind='upload' and enabled "
-                               "order by id limit 1").fetchone()
+            src = conn.execute("select id, config, name from sources where kind='upload' and enabled "
+                               "and (%s::bigint is null or id = %s) order by id limit 1",
+                               (source_id, source_id)).fetchone()
             if not src:
-                raise HTTPException(400, "no enabled upload source is configured")
+                if source_id is not None:
+                    return refuse("source", 404, "no such enabled upload source")
+                return refuse("nosource", 400, "no enabled upload source is configured")
             prefix = src[1].get("prefix", "")
             if prefix and not prefix.endswith("/"):
                 prefix += "/"
@@ -232,6 +245,9 @@ def create_app() -> FastAPI:
             job_id = conn.execute(
                 "insert into jobs(kind, payload) values ('crawl_s3', jsonb_build_object('source_id', %s::bigint)) "
                 "returning id", (src[0],)).fetchone()[0]
+        if wants_html(request):
+            return RedirectResponse(
+                f"/admin/sources?notice=uploaded&source={src[0]}&job={job_id}", status_code=303)
         return JSONResponse({"job_id": job_id}, status_code=202)
 
     return app

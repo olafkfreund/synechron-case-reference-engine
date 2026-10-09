@@ -29,6 +29,7 @@ Confluence: <code>{"base_url": "https://x.atlassian.net", "spaces": ["KEY"]}</co
 <label class="check"><input type="checkbox" name="executed_contracts"> All contracts here are executed</label>
 <div class="action-row"><button class="btn primary">Add source</button></div>
 </form></details></div></div>
+{% if notice %}<p class="badge {{ notice[0] }}" role="status">{{ notice[1] }}{% if job %}: job {{ job }}{% if source_name %} to {{ source_name }}{% endif %}{% endif %}</p>{% endif %}
 
 <div class="section-card client-list">
 <div class="card-head"><h2>Sources ({{ sources | length }})</h2></div>
@@ -42,6 +43,14 @@ Confluence: <code>{"base_url": "https://x.atlassian.net", "spaces": ["KEY"]}</co
 <span class="run">Last run: {% if last_run %}{{ last_run }}{% else %}<span class="muted">never</span>{% endif %}</span>
 {% if counts %}<span class="counts"><span>New {{ counts.get("new", 0) }}</span><span>Skipped {{ counts.get("skipped", 0) }}</span><span>Failed {{ counts.get("failed", 0) }}</span></span>{% endif %}
 <form class="inline" method="post" action="/admin/sources/{{ id }}/crawl"><button class="btn-sm" aria-label="Crawl {{ name }} now">Crawl now</button></form>
+{% if kind == 'upload' and enabled %}<details class="mini"><summary class="btn-sm" aria-label="Upload to {{ name }}">Upload</summary>
+<form method="post" action="/admin/upload" enctype="multipart/form-data">
+<input type="hidden" name="source_id" value="{{ id }}">
+<div class="field"><label for="u{{ id }}-file">File</label>
+<input type="file" id="u{{ id }}-file" name="file" required accept="{{ upload_types | join(',') }}">
+<span class="field-help">{{ upload_types | join(', ') }}, up to {{ upload_cap | filesizeformat }}.</span></div>
+<div class="action-row"><button class="btn primary" aria-label="Upload file to {{ name }}">Upload</button></div>
+</form></details>{% endif %}
 <details class="mini"><summary class="btn-sm" aria-label="Edit {{ name }}">Edit</summary>
 <form id="s{{ id }}" method="post" action="/admin/sources/{{ id }}">
 <div class="cols">

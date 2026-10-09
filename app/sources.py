@@ -7,7 +7,7 @@ from psycopg.errors import CheckViolation, UniqueViolation
 from psycopg.types.json import Jsonb
 
 from app import db
-from app.main import User, require
+from app.main import UPLOAD_MAGIC, User, require, upload_cap
 from app.ingest import reopen_merged
 from app.review import page
 
@@ -15,6 +15,14 @@ router = APIRouter()
 # which crawler runs a source; upload sources are S3 prefixes too
 JOB = {"s3": "crawl_s3", "upload": "crawl_s3", "sharepoint": "crawl_sharepoint",
        "confluence": "crawl_confluence"}
+NOTICES = {  # allow-list: the query string picks a message, never supplies one
+    "uploaded": ("ok", "File queued for crawl"),
+    "type": ("bad", f"Upload refused: allowed types are {', '.join(sorted(UPLOAD_MAGIC))}"),
+    "size": ("bad", "Upload refused: the file is larger than the limit"),
+    "content": ("bad", "Upload refused: the file content does not match its extension"),
+    "nosource": ("bad", "Upload refused: no enabled upload source is configured"),
+    "source": ("bad", "Upload refused: that source is not an enabled upload source"),
+}
 DATA_CLASSES = ("confidential", "sanitised", "public")
 REQUIRED = {"s3": ("bucket",), "upload": ("bucket",), "sharepoint": ("tenant_id", "drive_id"),
             "confluence": ("base_url", "spaces")}
@@ -50,11 +58,16 @@ def groups(raw: str) -> list[str]:
 
 
 @router.get("/admin/sources")
-def sources_page(request: Request, user: User = Depends(require("admin"))):
+def sources_page(request: Request, notice: str = "", source: int | None = None,
+                 job: int | None = None, user: User = Depends(require("admin"))):
     with db.connect() as conn:
         rows = conn.execute("select id, kind, name, config, acl_groups, enabled, last_run_at, last_counts, data_class "
                             "from sources order by name").fetchall()
-    return page(request, "sources.html", user, sources=rows, kinds=sorted(JOB), classes=DATA_CLASSES)
+    done = notice == "uploaded"
+    return page(request, "sources.html", user, sources=rows, kinds=sorted(JOB), classes=DATA_CLASSES,
+                notice=NOTICES.get(notice), job=job if done else None,
+                source_name=next((r[2] for r in rows if r[0] == source and r[1] == "upload"), None) if done else None,
+                upload_cap=upload_cap(), upload_types=sorted(UPLOAD_MAGIC))
 
 
 @router.post("/admin/sources")

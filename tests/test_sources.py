@@ -154,3 +154,30 @@ def test_saving_without_flag_change_does_nothing(env):  # noqa: F811
     finally:
         _clean(off)
         _clean(on)
+
+
+def test_sources_page_upload_control_and_notices(env):  # noqa: F811
+    from jinja2.filters import do_filesizeformat
+
+    from app.main import upload_cap
+    db.init()
+    ids = {}
+    with db.connect() as c:
+        for key, kind, enabled in (("up", "upload", True), ("off", "upload", False), ("s3", "s3", True)):
+            ids[key] = c.execute("insert into sources(kind,name,config,enabled) values (%s,%s,%s,%s) returning id",
+                                 (kind, uuid.uuid4().hex, Jsonb({"bucket": "b"}), enabled)).fetchone()[0]
+        name = c.execute("select name from sources where id=%s", (ids["up"],)).fetchone()[0]
+    try:
+        a = client([ADMIN])
+        t = a.get("/admin/sources").text
+        assert 'action="/admin/upload"' in t and 'enctype="multipart/form-data"' in t
+        assert f'name="source_id" value="{ids["up"]}"' in t and do_filesizeformat(upload_cap()) in t
+        assert f'name="source_id" value="{ids["off"]}"' not in t and f'name="source_id" value="{ids["s3"]}"' not in t
+        t = a.get(f"/admin/sources?notice=uploaded&source={ids['up']}&job=7").text
+        assert f"job 7 to {name}" in t
+        t = a.get("/admin/sources?notice=<script>x</script>").text
+        assert "<script>x" not in t and 'role="status"' not in t
+        assert "allowed types are" in a.get("/admin/sources?notice=type").text
+    finally:
+        with db.connect() as c:
+            c.execute("delete from sources where id = any(%s)", (list(ids.values()),))
