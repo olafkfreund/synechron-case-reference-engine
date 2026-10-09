@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 100
 spec: spec/2026-10-09-100-audit-test-order.md
 ---
