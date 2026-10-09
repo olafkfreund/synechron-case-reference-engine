@@ -96,7 +96,7 @@ def test_commercial_filter_table(s, hit):
 
 def test_engagement_drops_outcomes_and_commercial_items(doc):
     did, reply = doc
-    reply["v"] = case(("capability", "Onboarding", Q), ("capability", "Rate", "billed at £1,200/day for 18 months"),
+    reply["v"] = case(("outcome", "metric: 12 days to 3 days", Q), ("capability", "Onboarding", Q), ("capability", "Rate", "billed at £1,200/day for 18 months"),
                       ("technology", "AWS", "on AWS and Kubernetes"), ("duration_months", "18 months", "ran for 18 months"),
                       ("team_size", "8", "a team of 8 engineers"))
     ex.extract(did, "engagement", "executed contract")
@@ -107,6 +107,15 @@ def test_engagement_drops_outcomes_and_commercial_items(doc):
     assert [x["value"] for x in data["capabilities"]] == ["Onboarding"]
     assert data["duration_months"]["value"] == 18 and data["team_size"]["value"] == 8
     assert data["needs_attention"] == ["1 item(s) with prices, rates or payment terms removed"]
+
+
+def test_vague_outcome_metric_is_noted(doc):
+    data, *_ = run(doc, case(outcome=("outcome", "metric: 12 days to 3 days", Q)))
+    assert data["needs_attention"] == ["1 outcome(s) with no clear metric"]
+    data, *_ = run(doc, case(("outcome", "faster onboarding", Q), outcome=("outcome", "metric: 12 days to 3 days", Q)))
+    assert data["needs_attention"] == ["2 outcome(s) with no clear metric"]
+    data, *_ = run(doc, case())
+    assert data["needs_attention"] == []
 
 
 def test_delivered_keeps_outcomes_and_default_basis(doc):
