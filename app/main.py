@@ -1,8 +1,10 @@
 import os
 import re
+import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 import boto3
@@ -45,7 +47,21 @@ def current_user(request: Request) -> User:
     s = request.session.get("user")
     if not s:
         raise HTTPException(401, "login required")
+    with db.connect() as conn:
+        row = conn.execute("select valid_after from session_cutoffs where sub = %s", (s["sub"],)).fetchone()
+    if row and s.get("iat", 0) <= row[0].timestamp():
+        request.session.clear()  # the browser drops the dead cookie
+        raise HTTPException(401, "session ended; log in again")
     return User(s["sub"], s["name"], frozenset(s["groups"]), roles_for(s["groups"]))
+
+
+def cut_sessions(conn, *subs: str) -> None:
+    """Refuse every session of these users issued until now (#47); app clock, same as iat."""
+    now = datetime.now(timezone.utc)
+    for sub in subs:
+        conn.execute("insert into session_cutoffs (sub, valid_after) values (%s, %s) on conflict (sub) "
+                     "do update set valid_after = greatest(session_cutoffs.valid_after, excluded.valid_after)",
+                     (sub, now))
 
 
 def require(role: str):
@@ -175,11 +191,15 @@ def create_app() -> FastAPI:
         request.session.clear()  # fresh session on login
         request.session["user"] = {
             "sub": claims["sub"], "name": claims.get("name", claims["sub"]),
-            "groups": sorted(groups & known_groups())}
+            "groups": sorted(groups & known_groups()), "iat": time.time()}
+        print(f"login sub={claims['sub']} name={request.session['user']['name']}", flush=True)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/logout")  # POST: a cross-site link must not log people out
     async def logout(request: Request):
+        if sub := (request.session.get("user") or {}).get("sub"):
+            with db.connect() as conn:
+                cut_sessions(conn, sub)
         request.session.clear()
         return RedirectResponse("/", status_code=303)
 

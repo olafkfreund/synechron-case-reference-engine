@@ -197,6 +197,14 @@ does step 7 with the user.
    - Compare against `iat` from the cookie only. Never trust an `iat` or
      group from headers or the query string.
 
+
+   *Done (coder):* full suite 410 passed. *Deviation:*
+   `tests/test_hardening.py::test_print_calls_are_the_known_content_free_ones`
+   allowlists every `print(` in `app/`. The login line (sub and display
+   name, no document content) is added to its `app/main.py` entry. Step 5's
+   two prints in `app/revoke_sessions.py` need entries too, matched
+   exactly (one has `file=sys.stderr`).
+
 4. `tests/test_auth.py`: add new tests at the end. Each one uses a fresh
    `sub = f"t-{uuid.uuid4()}"`.
    - `test_logout_revokes_replayed_cookie`: take `a = client([USER],
