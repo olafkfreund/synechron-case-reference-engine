@@ -123,10 +123,9 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
         raise HTTPException(404, "no such case")
     case = ReferenceCase.model_validate(r[0])  # the document text is deliberately not shown
     notes = list(case.needs_attention)
-    if r[5]:  # organisations come from extraction; no LLM call on page view
-        notes += [f"organisation not in client registry: {o}"
-                  for o in anonymise.unlisted([*case.organisations, case.client_mention.value or ""], registry)]
-    return page(request, "review_detail.html", user, id=cid, rows=rows(case), notes=notes,
+    # organisations come from extraction; no LLM call on page view
+    unlisted = anonymise.unlisted([*case.organisations, case.client_mention.value or ""], registry) if r[5] else []
+    return page(request, "review_detail.html", user, id=cid, rows=rows(case), notes=notes, unlisted=unlisted,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
                 external_id=r[3], source=r[4], reviewable=r[5], v=r[6])
 

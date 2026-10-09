@@ -84,6 +84,13 @@ send it steps 2-4 with SendMessage.
    Traps: no JavaScript (no `onclick` or `confirm()`). Rely on Jinja
    autoescaping and do not add `|safe`.
 
+
+   *Done (coder, steps 2 and 3 in one commit):* `tests/test_anonymise.py`
+   and `tests/test_review.py` give 35 passed. *Deviation:* step 2 alone
+   fails `test_review_page_shows_unlisted_organisations_without_llm`,
+   because the note text moves out of `notes` and only the step 3 template
+   renders it again. So steps 2 and 3 are committed together.
+
 4. **`tests/test_anonymise.py`, after line 48.**
    - Import `DOCS` from `tests.test_review` (line 7).
    - Add a test using the `make` and `reg` fixtures:

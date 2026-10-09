@@ -4,6 +4,12 @@
 <p>Document: <b>{{ document }}</b> · source: {{ source }} · <code>{{ external_id }}</code> · status: {{ status }}</p>
 <p><span class="badge {{ "ok" if basis == "delivered" else "empty" }}">{{ "Engagement (contracted scope)" if basis == "engagement" else "Delivered case" }}</span>{% if basis_reason %} {{ basis_reason }}{% endif %}</p>
 {% for n in notes %}<div class="note">{{ n }}</div>{% endfor %}
+{% for o in unlisted %}<div class="note">organisation not in client registry: {{ o }}
+{% if "admin" in user.roles %}<form method="post" action="/admin/clients">
+<input type="hidden" name="name" value="{{ o }}"><input type="hidden" name="next" value="/review/{{ id }}">
+<input type="text" name="anonymised_label" aria-label="label for {{ o }}" placeholder="label, e.g. a retail bank" required>
+<button>Add as client</button> <small>Only for clients. A partner or vendor added here is anonymised in every output.</small>
+</form>{% endif %}</div>{% endfor %}
 <table><tr><th>Field</th><th>Value</th><th>Source quote</th><th></th></tr>
 {% for r in rows %}{% set f = "f" ~ loop.index %}<tr>
 <td>{{ r.label }}<br>
