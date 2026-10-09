@@ -5,6 +5,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 # the demo's own model settings win over anything exported in the caller's shell (no stray cloud model)
 set -a; . ./.env.demo; set +a
+# web research needs a Brave key: taken from agenix when present, never printed (an exported one wins)
+[ -z "${BRAVE_API_KEY:-}" ] && [ -r /run/agenix/api-brave-search ] && export BRAVE_API_KEY="$(cat /run/agenix/api-brave-search)"
 
 dc() { docker compose -p refsdemo --env-file .env.demo -f docker-compose.yml -f docker-compose.demo.yml "$@"; }
 
