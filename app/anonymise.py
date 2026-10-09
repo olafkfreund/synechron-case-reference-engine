@@ -47,14 +47,18 @@ def has_name(text: str, names: list[str]) -> bool:
 
 
 def apply(text: str, clients) -> str:
-    """Replace names/aliases of non-referenceable clients with their anonymised label.
+    """Replace names/aliases of non-referenceable clients, and referenceable names/aliases that contain one, with the client's anonymised label.
 
     Best effort on the text as written; blocked() is the fail-closed check that must run after it.
     """
     text = unicodedata.normalize("NFKC", text)
     pairs = [(n, c["anonymised_label"]) for c in clients if not c["referenceable"] for n in _names(c)]
-    for name, label in _by_length(pairs):
-        text = _pattern(unicodedata.normalize("NFKC", name)).sub(label, text)
+    # one pattern for all protected names: folded text is lowercase, so re.I matches blocked() exactly
+    prot = "|".join(_pattern(fold(n)).pattern for n, _ in pairs)
+    contains = re.compile(prot, re.I).search if prot else lambda _: None
+    pairs += [(n, c["anonymised_label"]) for c in clients if c["referenceable"] for n in _names(c) if contains(fold(n))]
+    for name, label in _by_length(pairs):  # a function, so a "\" in a label is text, not a template
+        text = _pattern(unicodedata.normalize("NFKC", name)).sub(lambda _m, label=label: label, text)
     return text
 
 

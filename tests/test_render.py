@@ -107,6 +107,18 @@ def test_protected_name_replaced_or_withheld(approved, reg):
         assert conn.execute("select count(*) from generations where %s = any(case_ids)", (bad,)).fetchone()[0] == 0
 
 
+def test_referenceable_name_containing_protected_name_uses_its_label(approved, reg):
+    p, _ = reg("Zorp", "a retailer")
+    n, ref = reg("Zorp", "a logistics firm", True, suffix=" Logistics")
+    cid = approved(full().model_copy(update={"challenge": Sourced[str](value=f"Built for {n} in 2024", source_quote="q")}))
+    link(cid, ref)
+    t = gen([cid]).text
+    assert "*a logistics firm*" in t and "Built for a logistics firm in 2024" in t
+    assert p not in t and "a retailer Logistics" not in t
+    with db.connect() as conn:
+        assert conn.execute("select anonymised from generations order by id desc limit 1").fetchone()[0] is True
+
+
 def test_visibility_and_validation(approved):
     ok = approved()
     assert gen([approved(acl=("g-other",))]).status_code == 404
