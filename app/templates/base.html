@@ -10,9 +10,9 @@
 {% set tabs = [("/search", "Find references"), ("/research", "Research")] %}
 {% if 'reviewer' in user.roles %}{% set tabs = tabs + [("/review", "Review queue")] %}{% endif %}
 {% if 'admin' in user.roles %}{% set tabs = tabs + [("/admin/sources", "Sources"), ("/admin/clients", "Client registry"), ("/admin/models", "Model approvals"), ("/admin/audit", "Audit")] %}{% endif %}
-<nav class="site-nav" aria-label="Main">{% for href, label in tabs %}<a href="{{ href }}"{% if path == href or path.startswith(href ~ "/") %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
 <div class="site-user"><span class="avatar" aria-hidden="true">{% for w in user.name.split()[:2] %}{{ w[0] | upper }}{% endfor %}</span><span title="{{ user.roles | sort | join(', ') or 'no role' }}">{{ user.name }} · {{ "admin" if 'admin' in user.roles else "reviewer" if 'reviewer' in user.roles else "user" if 'user' in user.roles else "no role" }}</span>
 <form method="post" action="/logout"><button class="btn">Log out</button></form></div>
+<nav class="site-nav" aria-label="Main">{% for href, label in tabs %}<a href="{{ href }}"{% if path == href or path.startswith(href ~ "/") %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
 {% endif %}
 </div></header>
 <main id="main">

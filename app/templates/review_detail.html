@@ -12,7 +12,7 @@
 <div class="acts">{% if reviewable %}{% if r.new %}<button class="btn primary" form="{{ f }}" aria-label="{{ r.label }}">Add</button>{% else %}<button class="btn" form="{{ f }}" aria-label="Save {{ r.label }}">Save</button>{% if r.item %} <button class="btn" form="{{ f }}" name="action" value="remove" formnovalidate aria-label="Remove {{ r.label }}">Remove</button>{% endif %}{% endif %}{% endif %}</div>
 </div>{% endmacro %}
 {% block body %}
-{% set title = (rows | selectattr("path", "equalto", "title") | first).inputs[0][1] %}
+{% set title = ((rows | selectattr("path", "equalto", "title") | first | default({"inputs": [("value", "")]})).inputs[0][1]) %}
 {% set attn = namespace(n=0) %}
 {% for r in rows %}{% if r.unsourced and not r.new %}{% set attn.n = attn.n + 1 %}{% endif %}{% endfor %}
 <div class="page-head"><div><h1>{{ title or "Case " ~ id }}</h1>

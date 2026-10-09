@@ -3,7 +3,7 @@ from html.parser import HTMLParser
 
 import pytest
 
-from app import search as sr
+from app import db, search as sr
 from tests.test_auth import ADMIN, REV, USER, client, env  # noqa: F401
 from tests.test_review import DOCS, case_data, make  # noqa: F401
 from tests.test_search import approved, data, picks_reply  # noqa: F401
@@ -56,6 +56,8 @@ class Scan(HTMLParser):
 
     def handle_starttag(self, tag, a):
         a = dict(a)
+        # inline handlers and javascript: links count as scripts
+        self.scripts += sum(k.startswith("on") for k in a) + str(a.get("href", "")).strip().lower().startswith("javascript:")
         if tag == "script":
             self.scripts += 1
         elif tag == "label":
@@ -90,7 +92,9 @@ def unlabelled(s):
 
 def pages(make, approved, monkeypatch):  # noqa: F811
     cid = approved()
-    picks_reply(monkeypatch, sr.Pick(case_id=cid, reason="fits", tailored="Cut it."))
+    cid2 = approved(data(title="Second onboarding"))
+    picks_reply(monkeypatch, sr.Pick(case_id=cid, reason="fits", tailored="Cut it."),
+                sr.Pick(case_id=cid2, reason="also", tailored="Cut it too."))
     rid = make()
     admin, rev, user = client([ADMIN, DOCS]), client([REV, DOCS]), client([USER, DOCS])
     return {
@@ -115,6 +119,21 @@ def test_every_page_has_no_script_and_labelled_fields(make, approved, monkeypatc
         assert unlabelled(s) == [], name
 
 
-def test_search_result_has_one_visible_word_download(make, approved, monkeypatch):  # noqa: F811
+def test_two_results_have_one_visible_word_download_each_plus_download_all(make, approved, monkeypatch):  # noqa: F811
     r = pages(make, approved, monkeypatch)["search results"]
-    assert "value=\"docx\"" in r.text and scan(r.text).docx_outside == 1
+    assert r.text.count("Download all (Word)") == 1 and scan(r.text).docx_outside == 3  # 2 cases + all
+    assert r.text.count("Download this case (Word)") == 0  # the Word button is the only one outside the panel
+
+
+def test_client_rows_are_scanned_for_labels(env):  # noqa: F811
+    db.init()
+    with db.connect() as c:
+        c.execute("insert into clients(name, anonymised_label, referenceable) values ('UI Test Client', 'a test bank', true)")
+    try:
+        r = client([ADMIN]).get("/admin/clients")
+        s = scan(r.text)
+        assert "UI Test Client" in r.text and "-aliases" in r.text
+        assert s.scripts == 0 and unlabelled(s) == [] and sum(1 for i, *_ in s.fields if i and i.startswith("c") and i.endswith(("-name", "-aliases", "-label"))) == 3
+    finally:
+        with db.connect() as c:
+            c.execute("delete from clients where name = 'UI Test Client'")

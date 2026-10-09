@@ -81,12 +81,9 @@ a.card:hover b{text-decoration:underline}
 /* the accent ring is 2.45:1 on navy; white is visible in the header (#86 review) */
 .site-header :focus-visible{outline-color:#fff}
 
-/* header: below 1500px two rows, brand and user, then tabs */
-@media (max-width:1499px){
-.brand{order:1}
-.site-user{order:2}
-.site-nav{order:3;flex:1 1 100%}
-}
+/* header: two rows, brand and user, then tabs; DOM order = visual order */
+.site-user{margin-left:auto}
+.site-nav{flex:1 1 100%}
 
 /* page head */
 .page-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin:0 0 20px}
@@ -103,7 +100,7 @@ a.card:hover b{text-decoration:underline}
 /* section card */
 .section-card{background:#fff;border:1px solid var(--card-border);border-radius:10px;padding:20px;margin:0 0 16px}
 .card-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 12px}
-.card-head h2,.card-head h3{margin:0;flex:1 1 auto}
+.card-head h2{margin:0;flex:1 1 auto}
 
 /* empty state */
 .empty-state{background:#fff;border:1px dashed var(--input-border);border-radius:10px;padding:28px 20px;margin:0 0 16px;text-align:center;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:8px}
@@ -122,7 +119,6 @@ a.card:hover b{text-decoration:underline}
 /* details panel */
 .detail-panel{border:1px solid var(--card-border);border-radius:8px;margin:0 0 12px;background:#fff}
 .detail-panel>summary{min-height:44px;display:flex;align-items:center;gap:8px;padding:0 14px;cursor:pointer;font-weight:600;font-size:14px;list-style:none}
-.detail-panel>summary::-webkit-details-marker{display:none}
 .detail-panel>summary::before{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);transition:transform .15s}
 .detail-panel[open]>summary::before{transform:rotate(45deg)}
 .detail-panel>:not(summary){margin-left:14px;margin-right:14px}
@@ -131,7 +127,7 @@ a.card:hover b{text-decoration:underline}
 /* key/value list */
 .status-list{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:0}
 .status-list dt{color:var(--muted);font-size:13px}
-.status-list dd{margin:0}
+.status-list dd{margin:0;min-width:0;overflow-wrap:anywhere}
 
 /* checkbox with a 44px hit area */
 label.check{display:inline-flex;align-items:center;gap:10px;min-height:44px;min-width:44px;font-weight:400;cursor:pointer}
@@ -140,7 +136,7 @@ label.check{display:inline-flex;align-items:center;gap:10px;min-height:44px;min-
 .btn-sm{min-height:44px;padding:0 12px;font-size:13px;width:auto}
 .client-list{padding:4px 20px}
 .client-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:6px 0;border-top:1px solid var(--line);min-height:56px}
-.client-row:first-child{border-top:0}
+.card-head + .client-row{border-top:0}
 .client-row .avatar{flex:none}
 .client-row .who{flex:1 1 260px;min-width:0}
 .client-row .who span{color:var(--muted);font-size:13px;margin-left:8px}
@@ -148,7 +144,6 @@ label.check{display:inline-flex;align-items:center;gap:10px;min-height:44px;min-
 /* a closed mini panel is just a small button; open, it takes its own full-width line */
 details.mini{margin:0}
 details.mini>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;border:1px solid var(--input-border);border-radius:8px;font-weight:500}
-details.mini>summary::-webkit-details-marker{display:none}
 details.mini>summary:hover{border-color:var(--ink)}
 details.mini[open]{flex:1 1 100%;background:var(--thead);border-radius:8px;padding:0 14px 14px}
 details.mini[open]>summary{display:flex;width:fit-content;margin:8px 0 12px auto;background:#fff}
@@ -157,7 +152,6 @@ details.mini .field{margin-top:0}
 .head-panel[open]{flex:1 1 100%}
 .head-panel>form{padding:0 14px}
 details.help-link>summary{list-style:none;cursor:pointer;color:var(--accent);text-decoration:underline;min-height:44px;display:inline-flex;align-items:center;font-size:14px}
-details.help-link>summary::-webkit-details-marker{display:none}
 details.help-link[open]{max-width:70ch}
 
 /* fixed-width action slots so Edit lines up in one column */
@@ -166,7 +160,7 @@ details.mini:not([open])>summary,.client-row .slot{min-width:84px;justify-conten
 
 /* sources */
 .source-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:8px 0;border-top:1px solid var(--line);min-height:56px}
-.source-row:first-child{border-top:0}
+.card-head + .source-row{border-top:0}
 .source-row .icon{flex:none;color:var(--accent)}
 .source-row .who{flex:1 1 220px;min-width:0}
 .source-row .who b{margin-right:8px}
@@ -201,7 +195,6 @@ h2.sub{font-size:15px;color:var(--muted);margin:20px 0 8px}
 .filters>.field{flex:1 1 180px;margin:0}
 .result .meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
 .result .meta .who{flex:1 1 auto}
-.result .meta .who b{font-size:18px}
 .result .meta .who span{color:var(--muted);margin-left:8px}
 .outcome-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
 .outcome-list li{display:flex;gap:8px;align-items:flex-start}
@@ -210,12 +203,12 @@ h2.sub{font-size:15px;color:var(--muted);margin:20px 0 8px}
 .inset .t{color:var(--muted);font-size:12px;font-weight:600;margin-bottom:4px}
 .generate{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0}
 .other-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:10px 0;border-top:1px solid var(--line)}
-.other-row:first-of-type{border-top:0}
+.card-head + .other-row{border-top:0}
 .other-row p{margin:0;flex:1 1 100%;color:var(--muted);font-size:14px}
 
 /* review */
 .field-row{display:grid;grid-template-columns:minmax(0,1fr);gap:8px 16px;padding:14px 0;border-top:1px solid var(--line)}
-.field-row:first-of-type{border-top:0}
+.card-head + .field-row{border-top:0}
 @media (min-width:900px){.field-row{grid-template-columns:200px minmax(0,1fr) minmax(0,1fr) auto}}
 .field-row .fname{font-weight:600;text-transform:capitalize}
 .field-row .fname small{display:block;font-weight:400;text-transform:none;color:var(--muted)}
@@ -270,3 +263,5 @@ fieldset.pick legend{font-weight:600;padding:0 6px;text-transform:capitalize}
 .result .action-row details.mini>summary,.result .action-row .research-form .btn{width:100%;justify-content:center}
 }
 .mini-label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:2px;text-transform:capitalize}
+
+.detail-panel>summary::-webkit-details-marker,details.mini>summary::-webkit-details-marker,details.help-link>summary::-webkit-details-marker{display:none}
