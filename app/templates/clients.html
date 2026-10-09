@@ -38,6 +38,7 @@ Enter one alias per line. Only referenceable clients that no case uses can be de
 <label class="check"><input type="checkbox" name="logo_allowed" {{ "checked" if logo }}> Logo allowed</label></div>
 <div class="action-row"><button class="btn primary" aria-label="Save {{ name }}">Save</button></div>
 </form></details>
+{% if not ref %}<span class="slot" aria-hidden="true"></span>{% endif %}
 {% if ref %}<details class="mini"><summary class="btn-sm" aria-label="Delete {{ name }}">Delete…</summary>
 <form id="d{{ id }}" method="post" action="/admin/clients/{{ id }}/delete"><input type="hidden" name="v" value="{{ v }}">
 <p class="muted">Removes the client from the registry. Only possible while no case uses it.</p>
