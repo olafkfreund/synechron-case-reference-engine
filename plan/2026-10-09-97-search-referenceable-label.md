@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 97
 spec: spec/2026-10-09-97-search-referenceable-label.md
 ---
