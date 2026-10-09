@@ -407,7 +407,7 @@ def extract_claims(query: str, pages: list[dict]) -> tuple[list[dict], str | Non
         p = pages[c.page]
         if len(c.quote.split()) < MIN_QUOTE_WORDS or not quote_in(p["markdown"][:PAGE_CHARS], c.quote):
             continue
-        if not numbers(c.statement) <= numbers(c.quote) or (c.page, c.statement) in seen:
+        if not numbers(c.statement) <= numbers(c.quote, quote=True) or (c.page, c.statement) in seen:
             continue
         seen.add((c.page, c.statement))
         out.append({"statement": c.statement.strip(), "quote": c.quote.strip(), "type": c.type, "url": p["url"],
