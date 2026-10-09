@@ -35,3 +35,8 @@ def test_search_tab_is_current(env):
     r = client(GROUPS["sales"]).get("/search")
     assert re.search(r'href="/search" aria-current="page">Find references', r.text)
     assert r.text.count("aria-current") == 1
+
+
+@pytest.mark.parametrize("path", ["/static/../main.py", "/static/%2e%2e/main.py", "/static/..%2fmain.py"])
+def test_static_never_leaves_its_directory(env, path):  # noqa: F811
+    assert client(None).get(path).status_code == 404

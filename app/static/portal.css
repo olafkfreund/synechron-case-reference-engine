@@ -3,7 +3,7 @@
 @font-face{font-family:"IBM Plex Sans";font-weight:600;font-display:swap;src:url(fonts/ibm-plex-sans-600.woff2) format("woff2")}
 @font-face{font-family:"IBM Plex Mono";font-weight:400;font-display:swap;src:url(fonts/ibm-plex-mono-400.woff2) format("woff2")}
 
-:root{--ink:#1B2430;--ground:#F6F5F1;--accent:#0B6A6A;--accent-hover:#084F4F;--card-border:#DAD7CF;--muted:#55606E;--line:#ECE9E2;--thead:#F1EFEA;--input-border:#C9C5BB}
+:root{--ink:#1B2430;--ground:#F6F5F1;--accent:#0B6A6A;--accent-hover:#084F4F;--card-border:#DAD7CF;--muted:#55606E;--line:#ECE9E2;--thead:#F1EFEA;--input-border:#8A857A}
 
 *{box-sizing:border-box}
 body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.5 "IBM Plex Sans",system-ui,sans-serif}
@@ -77,3 +77,6 @@ a.card{display:block;color:inherit;text-decoration:none}
 a.card b{color:var(--accent)}
 a.card:hover{border-color:var(--accent)}
 a.card:hover b{text-decoration:underline}
+
+/* the accent ring is 2.45:1 on navy; white is visible in the header (#86 review) */
+.site-header :focus-visible{outline-color:#fff}
