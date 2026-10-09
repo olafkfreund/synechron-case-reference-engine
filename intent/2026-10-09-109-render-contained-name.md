@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 109
 author: olafkfreund
 ---
@@ -52,3 +52,8 @@ Text that names a referenceable client whose name contains a protected name neve
 
    **Recommendation: (a).** Then decide whether search's client line (`app/search.py:131`) should switch from "a client" to the label, so that both outputs agree.
 2. **Aliases.** Should the same rule cover a referenceable *alias* that contains a protected name or alias, not just the main name? Recommendation: yes, because `_names()` already treats names and aliases the same way.
+
+## Approved answers
+
+1. (a) Replace the whole referenceable name with that client's own label, in anonymise, for every caller. Search's client line shows that label too, not "a client".
+2. Yes: referenceable aliases that contain a protected name get the same rule.
