@@ -69,6 +69,10 @@ alter table documents drop constraint if exists documents_kind_check;
 alter table documents add constraint documents_kind_check
   check (kind in ('case','contract','proposal','deck','other'));
 
+-- the source's own version of a crawled item (Confluence: "<number>:<when>"), so an unchanged one
+-- is not downloaded again; null means unknown, and the item is downloaded as before
+alter table documents add column if not exists source_version text;
+
 -- what a case claims: work delivered, or scope contracted (signed SOW / change order)
 alter table cases add column if not exists basis text not null default 'delivered';
 alter table cases drop constraint if exists cases_basis_check;

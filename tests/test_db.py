@@ -16,6 +16,9 @@ def test_init_idempotent_and_tables():
             "select table_name from information_schema.tables where table_schema='public'"
         ).fetchall()
     assert TABLES <= {r[0] for r in rows}
+    with db.connect() as c:
+        assert c.execute("select 1 from information_schema.columns "
+                         "where table_name='documents' and column_name='source_version'").fetchone()
 
 
 def test_concurrent_init():
