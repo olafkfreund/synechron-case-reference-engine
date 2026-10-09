@@ -45,23 +45,27 @@ because of their permissions or restrictions.
 
 **What it's for**
 
-Adding a single file to an upload source. There is no button for this in the portal. You send the file
-with a command, signed in as an admin.
+Adding a single file to an upload source.
 
 **Steps**
 
 1. Add a source with **Kind** `upload` and **Config (JSON)** such as `{"bucket": "example-bid-library", "prefix": "cases/"}`.
-2. Send the file. The curl option `-b cookies.txt` reads your signed-in session cookie (copy it from your browser into that file). The file goes to the first enabled upload source. Replace `localhost:8000` with your portal address:
+2. On that source's row, press **Upload**, choose the file, and press **Upload** again.
+
+Scripts can send the file instead. The curl option `-b cookies.txt` reads your signed-in session cookie
+(copy it from your browser into that file); `source_id` is optional, and without it the file goes to the
+first enabled upload source. Replace `localhost:8000` with your portal address:
 
 ```
 curl -b cookies.txt -H 'Origin: http://localhost:8000' \
-  -F file=@sample-case.docx http://localhost:8000/admin/upload
+  -F file=@sample-case.docx -F source_id=1 http://localhost:8000/admin/upload
 ```
 
 **What you see**
 
-A reply with a job number, and the document is crawled shortly after. Only `.docx`, `.pptx` and `.pdf`
-files are accepted.
+Back on the Sources page, a line saying the file was queued for crawl, with the job number and source.
+The document is crawled shortly after. Only `.docx`, `.pptx` and `.pdf` files are accepted; a refused
+file shows the reason instead. A script gets a reply with the job number.
 
 ## Client registry
 
