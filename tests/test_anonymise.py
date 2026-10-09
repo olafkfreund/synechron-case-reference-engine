@@ -4,7 +4,7 @@ import pytest
 
 from app import anonymise as an, db
 from tests.test_auth import ADMIN, REV, client, env  # noqa: F401
-from tests.test_review import R, case_data, make  # noqa: F401
+from tests.test_review import DOCS, R, case_data, make  # noqa: F401
 
 
 def C(name, aliases=(), label="a UK bank", ref=False):
@@ -46,6 +46,36 @@ def test_review_page_shows_unlisted_organisations_without_llm(make):  # noqa: F8
     cid = make(data=case_data(organisations=["Initech", "Acme Bank"]))
     r = client(R).get(f"/review/{cid}").text  # no complete_json is reachable from here
     assert "organisation not in client registry: Initech" in r
+
+
+def test_add_unlisted_client_from_review_page(make, reg):  # noqa: F811
+    name = f"Initech {reg}"
+    cid = make(data=case_data(organisations=[name]))
+    note = f"organisation not in client registry: {name}"
+    admin_page = client([ADMIN, DOCS]).get(f"/review/{cid}").text
+    assert note in admin_page and f'name="next" value="/review/{cid}"' in admin_page
+    reviewer_page = client(R).get(f"/review/{cid}").text
+    assert note in reviewer_page and 'action="/admin/clients"' not in reviewer_page
+    r = client([ADMIN, DOCS]).post("/admin/clients", follow_redirects=False,
+                                   data={"name": name, "anonymised_label": "a software firm", "next": f"/review/{cid}"})
+    assert r.status_code == 303 and r.headers["location"] == f"/review/{cid}"
+    assert note not in client([ADMIN, DOCS]).get(f"/review/{cid}").text
+
+
+@pytest.mark.parametrize("nxt", ["https://evil.example", "//evil.example", "/review/1/../x", "/review/", ""])
+def test_create_redirects_only_to_a_review_page(reg, nxt):
+    r = client([ADMIN]).post("/admin/clients", follow_redirects=False,
+                             data={"name": f"Globex {reg} {len(nxt)}", "anonymised_label": "a firm", "next": nxt})
+    assert r.status_code == 303 and r.headers["location"] == "/admin/clients"
+
+
+def test_add_from_review_needs_admin_and_a_clean_label(reg):
+    name = f"Initech {reg}"
+    data = {"name": name, "anonymised_label": "a software firm", "next": "/review/1"}
+    assert client([REV]).post("/admin/clients", data=data).status_code == 403
+    data["anonymised_label"] = f"the Initech {reg} people"
+    assert client([ADMIN]).post("/admin/clients", data=data).status_code == 400
+    assert find(reg) == []
 
 
 def test_exact_names_with_special_case_folding():
