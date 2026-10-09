@@ -128,7 +128,7 @@ def test_admin_only(reg):
 def test_create_update_and_validation(reg):
     c = client([ADMIN])
     name = f"Acme {reg}"
-    assert c.post("/admin/clients", data={"name": name, "aliases": " Acm, ,Acm,AcmeCo ", "anonymised_label": "a bank",
+    assert c.post("/admin/clients", data={"name": name, "aliases": " Acm\n\nAcm\nAcmeCo ", "anonymised_label": "a bank",
                                           "referenceable": "on"}, follow_redirects=False).status_code == 303
     (cid, n, aliases, label, ref, logo, v), = find(reg)
     assert (aliases, ref, logo) == (["Acm", "AcmeCo"], True, False)
@@ -144,6 +144,56 @@ def test_create_update_and_validation(reg):
     # stale version -> 409, unknown id -> 404
     assert c.post(f"/admin/clients/{cid}", data={"name": name, "anonymised_label": "z", "v": v}).status_code == 409
     assert c.post("/admin/clients/999999999", data={"name": name, "anonymised_label": "z", "v": v}).status_code == 404
+
+
+def test_alias_with_comma_is_one_alias(reg):
+    c = client([ADMIN])
+    assert c.post("/admin/clients", data={"name": f"SJ {reg}", "aliases": f"Smith, Jones Partners {reg}\r\nSJC",
+                                          "anonymised_label": "a law firm"}, follow_redirects=False).status_code == 303
+    (cid, name, aliases, label, ref, logo, v), = find(reg)
+    assert aliases == [f"Smith, Jones Partners {reg}", "SJC"]
+    assert c.post(f"/admin/clients/{cid}", data={"name": name, "aliases": "\n".join(aliases), "anonymised_label": label,
+                                                 "v": v}, follow_redirects=False).status_code == 303
+    assert find(reg)[0][2] == aliases
+    row = C(name, aliases, label)
+    assert an.apply(f"met Smith, Jones Partners {reg} today", [row]) == "met a law firm today"
+    assert an.apply(f"Jones Partners {reg}", [row]) == f"Jones Partners {reg}"
+
+
+def test_delete_only_referenceable_unlinked(reg):
+    c = client([ADMIN])
+    for n, ref in ((f"Pub {reg}", {"referenceable": "on"}), (f"Priv {reg}", {})):
+        assert c.post("/admin/clients", data={"name": n, "anonymised_label": "a firm", **ref}).status_code == 200
+    rows = {r[1]: r for r in find(reg)}
+    pub, priv = rows[f"Pub {reg}"], rows[f"Priv {reg}"]
+    d = lambda r, v=None, cl=c: cl.post(f"/admin/clients/{r}/delete", data={"v": v}, follow_redirects=False)  # noqa: E731
+    assert d(pub[0], pub[6], client([REV])).status_code == 403
+    r = d(priv[0], priv[6])
+    assert r.status_code == 400 and "non-referenceable" in r.text and len(find(reg)) == 2
+    assert d(pub[0], "stale").status_code == 409
+    assert d(999999999, "x").status_code == 404
+    page = c.get("/admin/clients").text
+    assert f'action="/admin/clients/{pub[0]}/delete"' in page and f'action="/admin/clients/{priv[0]}/delete"' not in page
+    assert d(pub[0], pub[6]).status_code == 303
+    assert [r[1] for r in find(reg)] == [f"Priv {reg}"]
+
+
+def test_delete_refused_for_linked_client(make, reg):  # noqa: F811
+    with db.connect() as conn:
+        client_id = conn.execute("insert into clients(name, aliases, anonymised_label, referenceable) "
+                                 "values (%s, '{}', 'a firm', true) returning id", (f"Hooli {reg}",)).fetchone()[0]
+    cid = make()
+    try:
+        with db.connect() as conn:
+            conn.execute("update cases set client_id=%s where id=%s", (client_id, cid))
+        r = client([ADMIN]).post(f"/admin/clients/{client_id}/delete", data={"v": find(reg)[0][6]}, follow_redirects=False)
+        assert r.status_code == 400 and "case(s) use this client" in r.text
+        assert len(find(reg)) == 1
+        with db.connect() as conn:
+            assert conn.execute("select client_id from cases where id=%s", (cid,)).fetchone()[0] == client_id
+    finally:
+        with db.connect() as conn:
+            conn.execute("update cases set client_id=null where client_id=%s", (client_id,))
 
 
 def test_label_may_not_contain_another_clients_protected_name(reg):

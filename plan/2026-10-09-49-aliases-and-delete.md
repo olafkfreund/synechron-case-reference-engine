@@ -157,6 +157,13 @@ with this plan and step 1, and send it steps 2-4 with SendMessage.
    the teardown. The hidden `v` in the rendered page is the md5 version, so
    take it from `find(reg)`.
 
+
+*Done (coder, steps 1–4):* full suite 413 passed. *Deviation (step 3):*
+the hidden `d{{ id }}` delete form is emitted only for referenceable rows
+(`{% if ref %}`), not for every row. The step 4 test asserts that a
+non-referenceable client's delete action never appears on the page. The
+server enforces the rule either way.
+
 ## Tests
 
 `docker compose build app && docker compose run --rm app pytest`. The full

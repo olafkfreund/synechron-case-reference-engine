@@ -20,6 +20,6 @@ Enter one alias per line; commas are part of the alias. Only referenceable clien
 <td><input type="checkbox" form="new" name="referenceable" aria-label="new referenceable"></td>
 <td><input type="checkbox" form="new" name="logo_allowed" aria-label="new logo allowed"></td>
 <td><button form="new">Add</button></td></tr></table>
-{% for id, name, aliases, label, ref, logo, v in clients %}<form id="c{{ id }}" method="post" action="/admin/clients/{{ id }}"><input type="hidden" name="v" value="{{ v }}"></form><form id="d{{ id }}" method="post" action="/admin/clients/{{ id }}/delete"><input type="hidden" name="v" value="{{ v }}"></form>{% endfor %}
+{% for id, name, aliases, label, ref, logo, v in clients %}<form id="c{{ id }}" method="post" action="/admin/clients/{{ id }}"><input type="hidden" name="v" value="{{ v }}"></form>{% if ref %}<form id="d{{ id }}" method="post" action="/admin/clients/{{ id }}/delete"><input type="hidden" name="v" value="{{ v }}"></form>{% endif %}{% endfor %}
 <form id="new" method="post" action="/admin/clients"></form>
 {% endblock %}
