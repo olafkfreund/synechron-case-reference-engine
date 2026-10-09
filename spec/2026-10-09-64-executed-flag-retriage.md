@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 64
 intent: intent/2026-10-09-64-executed-flag-retriage.md
 ---
