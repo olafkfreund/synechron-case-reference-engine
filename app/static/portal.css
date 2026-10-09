@@ -115,10 +115,9 @@ a.card:hover b{text-decoration:underline}
 .field-help{font-size:13px;color:var(--muted);font-weight:400}
 
 /* actions: primary right, secondary left */
-.action-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px 12px}
-.action-row>.primary{order:2}
-.action-row>:not(.primary){order:1}
-.action-row>.secondary{margin-right:auto}
+/* DOM order = visual order (WCAG 2.4.3): secondary first, primary last and pushed right */
+.action-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.action-row>.primary{margin-left:auto}
 
 /* details panel */
 .detail-panel{border:1px solid var(--card-border);border-radius:8px;margin:0 0 12px;background:#fff}
@@ -136,3 +135,13 @@ a.card:hover b{text-decoration:underline}
 
 /* checkbox with a 44px hit area */
 label.check{display:inline-flex;align-items:center;gap:10px;min-height:44px;min-width:44px;font-weight:400;cursor:pointer}
+
+/* client registry */
+.client-row{padding:12px 16px}
+.client-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.client-line .avatar{flex:none}
+.client-line .who{flex:1 1 220px;min-width:0}
+.client-line .who b{display:block}
+.client-line .who span{color:var(--muted);font-size:13px}
+.client-row .detail-panel{margin:12px 0 0}
+.client-row .detail-panel .field{margin-top:12px}
