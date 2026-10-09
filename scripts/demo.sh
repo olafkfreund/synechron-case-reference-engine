@@ -3,18 +3,19 @@
 # Uses only the compose project "refsdemo"; never touches refsdev or any other project.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# the demo's own model settings win over anything exported in the caller's shell (no stray cloud model)
+set -a; . ./.env.demo; set +a
 
 dc() { docker compose -p refsdemo --env-file .env.demo -f docker-compose.yml -f docker-compose.demo.yml "$@"; }
 
 up() {
-  if [ -z "$(dc ps -q web 2>/dev/null)" ] && ss -ltn 2>/dev/null | grep -q '127.0.0.1:8000\|:::8000\|0.0.0.0:8000\|\*:8000'; then
+  if [ -z "$(dc ps -q web 2>/dev/null)" ] && ss -ltn 2>/dev/null | grep -qE '(127\.0\.0\.1|0\.0\.0\.0|\*|\[::\]|::):8000 '; then
     echo "Port 8000 is taken by something else. Stop it first (this script only manages project refsdemo)." >&2
     exit 1
   fi
   if ! curl -s -m 3 localhost:11434/api/tags >/dev/null; then
     echo "No model server at localhost:11434: starting without a model."
     echo "Live upload extraction and drafting will not work; the seeded cases and search will."
-    export DEMO_NO_MODEL=1
     export EXTRACT_MODEL='' DRAFT_MODEL='' EXTRACT_MODEL_OPTIONS='' DRAFT_MODEL_OPTIONS=''  # shell beats --env-file
   fi
   dc build web worker

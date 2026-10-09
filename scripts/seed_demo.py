@@ -1,6 +1,6 @@
 """Seed the local demo with made-up sources, clients and cases from demo/cases.json (no LLM calls).
 
-    docker compose -p refsdemo ... exec web python scripts/seed_demo.py
+    docker compose -p refsdemo ... exec worker python scripts/seed_demo.py
 
 Safe to run again: S3 originals are re-put (moto is in memory); rows that already exist are left alone.
 Every source it creates is named "Demo: ...", and it touches nothing else.

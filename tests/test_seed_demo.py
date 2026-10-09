@@ -76,6 +76,9 @@ def test_seed_twice(env):
 
     fab = [r for r in rows if "fabrikam" in r[4]]
     assert len(fab) == 2 and {r[1] for r in fab} == {"engagement"}
+    with db.connect() as c:  # the #58 repair copies a source's groups onto its documents: they must already match
+        assert c.execute("select count(*) from documents d join sources s on s.id = d.source_id "
+                         "where s.name like 'Demo: %%' and d.acl_groups is distinct from s.acl_groups").fetchone()[0] == 0
 
     s3 = boto3.client("s3")
     with db.connect() as c:
