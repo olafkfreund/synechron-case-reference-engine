@@ -52,6 +52,11 @@ spec: spec/2026-10-09-84-approve-client-race.md
    Traps: made-up names; clean up the client in `finally` if it still
    exists.
 
+
+*Done (session model, steps 1–2):* full suite 515 passed. With the fix
+removed (stashed) and the test kept, the new test fails, so it
+reproduces the race. With the fix, it passes.
+
 ## Tests
 
 - The full suite is green, including the new test.

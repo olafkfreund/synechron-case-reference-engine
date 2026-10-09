@@ -195,6 +195,34 @@ def test_approve_links_case_to_registry_client(make):
             c.execute("delete from clients where id=%s", (client_id,))
 
 
+
+def test_approve_409_if_client_deleted_mid_approval(make, monkeypatch):  # #84
+    from app import anonymise
+    tag = uuid.uuid4().hex[:8]
+    with db.connect() as c:
+        client_id = c.execute("insert into clients(name, aliases, anonymised_label) "
+                              "values (%s, '{Acme}', 'a bank') returning id", (f"Acme {tag}",)).fetchone()[0]
+    real = anonymise.load_clients
+
+    def load_then_delete(conn):  # an admin deletes the client after approve has read the registry
+        clients = real(conn)
+        with db.connect() as other:
+            other.execute("delete from clients where id=%s", (client_id,))
+        return clients
+    monkeypatch.setattr(anonymise, "load_clients", load_then_delete)
+    try:
+        cid = make(data=case_data(client_mention=Sourced[str](value="Acme", source_quote=Q_TITLE)))
+        before = ver(cid)
+        r = client(R).post(f"/review/{cid}/approve", data={"v": before})
+        assert r.status_code == 409 and "client changed" in r.text
+        status, data, *_ = row(cid)
+        with db.connect() as c:
+            linked = c.execute("select client_id from cases where id=%s", (cid,)).fetchone()[0]
+        assert (status, linked, ver(cid)) == ("extracted", None, before)  # nothing written
+    finally:
+        with db.connect() as c:
+            c.execute("delete from clients where id=%s", (client_id,))
+
 def post(c, cid, **f):
     return c.post(f"/review/{cid}/edit", follow_redirects=False, data={"v": ver(cid), **f})
 
