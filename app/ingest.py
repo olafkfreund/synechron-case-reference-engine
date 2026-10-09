@@ -59,7 +59,7 @@ def basis_for(t: Triage, source_config: dict) -> str | None:
     return None
 
 
-def ingest(source_id: int, external_id: str, title: str, data: bytes) -> str:
+def ingest(source_id: int, external_id: str, title: str, data: bytes, source_version: str | None = None) -> str:
     """Returns 'skipped' (same bytes), 'updated' (new version) or 'new'."""
     checksum = hashlib.sha256(data).hexdigest()
     with db.connect() as conn:
@@ -69,7 +69,7 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes) -> str:
         if row and row[1] == checksum:
             # same bytes; ACLs may still have changed, and a reappeared file is not deleted
             conn.execute("update documents set acl_groups=(select acl_groups from sources where id=%s for share), "
-                         "deleted_at=null where id=%s", (source_id, row[0]))
+                         "deleted_at=null, source_version=%s where id=%s", (source_id, source_version, row[0]))
             return "skipped"
         src = conn.execute("select data_class, config from sources where id=%s", (source_id,)).fetchone()
         if not src:
@@ -87,12 +87,13 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes) -> str:
         # upsert: an upload and a crawl of the same item may race past the select above
         # the groups are read from the source here, under for share, so a concurrent save is never overwritten
         got = conn.execute(
-            "insert into documents(source_id, external_id, title, checksum, s3_key, text, kind, acl_groups) "
-            "select %s,%s,%s,%s,%s,%s,%s, s.acl_groups from (select acl_groups from sources where id=%s for share) s "
+            "insert into documents(source_id, external_id, title, checksum, s3_key, text, kind, source_version, acl_groups) "
+            "select %s,%s,%s,%s,%s,%s,%s,%s, s.acl_groups from (select acl_groups from sources where id=%s for share) s "
             "on conflict (source_id, external_id) do update set "
             "title=excluded.title, checksum=excluded.checksum, s3_key=excluded.s3_key, text=excluded.text, "
-            "kind=excluded.kind, acl_groups=excluded.acl_groups, deleted_at=null returning id",
-            (source_id, external_id, title, checksum, key, text, triage.kind, source_id)).fetchone()
+            "kind=excluded.kind, source_version=excluded.source_version, acl_groups=excluded.acl_groups, "
+            "deleted_at=null returning id",
+            (source_id, external_id, title, checksum, key, text, triage.kind, source_version, source_id)).fetchone()
         if not got:
             raise LookupError(f"source {source_id} no longer exists")
         doc_id = got[0]
@@ -105,3 +106,12 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes) -> str:
                          "'document_id', %s::bigint, 'basis', %s::text, 'basis_reason', %s::text))",
                          (doc_id, basis, reason))
     return "updated" if row else "new"
+
+
+def skip_unchanged(source_id: int, external_id: str, source_version: str) -> bool:
+    """The checksum skip without the download: same source version, so un-withdraw and refresh the groups."""
+    with db.connect() as conn:
+        return conn.execute(
+            "update documents set acl_groups=(select acl_groups from sources where id=%s for share), deleted_at=null "
+            "where source_id=%s and external_id=%s and source_version=%s returning id",
+            (source_id, source_id, external_id, source_version)).fetchone() is not None
