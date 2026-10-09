@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath
 
 import boto3
 from authlib.integrations.starlette_client import OAuth, OAuthError
-from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -83,6 +83,10 @@ def upload_cap() -> int:
     return int(os.environ.get("UPLOAD_MAX_BYTES", 50 * 1024 * 1024))
 
 
+def wants_html(request: Request) -> bool:
+    return "text/html" in request.headers.get("accept", "")
+
+
 def known_groups() -> set[str]:
     """Groups that matter here: role mappings plus every ACL group (keeps the session cookie small)."""
     groups = set().union(*(_env_groups(f"ROLE_{r.upper()}_GROUPS") for r in ROLES))
@@ -133,7 +137,7 @@ def create_app() -> FastAPI:
     async def unauthorized(request: Request, exc):
         # browsers go to the login page; API clients keep the JSON 401. Not for /auth itself,
         # or a failing IdP would bounce the browser between /auth and /login forever.
-        if "text/html" in request.headers.get("accept", "") and request.url.path != "/auth":
+        if wants_html(request) and request.url.path != "/auth":
             return RedirectResponse("/login", status_code=303)
         return JSONResponse({"detail": exc.detail}, status_code=401)
 
