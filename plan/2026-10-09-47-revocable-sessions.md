@@ -315,6 +315,25 @@ does step 7 with the user.
    30 s cache. That is an approved fallback, but it changes the plan, so
    update this file in the same commit.
 
+
+*Step 7 (session model), deviation:* the user's live demo held the local
+stack, so the timing ran inside the app container instead: 200 `/me`
+requests through `TestClient` against the compose test database, two runs
+each.
+
+| Build | p50 | p95 |
+|---|---|---|
+| `main` | 2.67 / 2.44 ms | 3.30 / 3.21 ms |
+| this branch | 10.11 / 10.05 ms | 11.71 / 11.45 ms |
+
+That's about +7.5 ms p50, under the 20 ms limit, so there's no cache.
+Nearly all of it is a new database connection per request (no pool). In
+AWS the RDS connection uses TLS and may cost more, so measure it in
+staging (#27) before deciding on a pool or the 30 s cache. The manual
+browser checks (1–5) are covered by the step 4 and 5 tests (a replayed
+cookie gives 401 after logout, revoke ends one user's sessions only, and
+login after a cutoff works).
+
 ## Tests
 
 - `docker compose build app && docker compose run --rm app pytest -q`.
