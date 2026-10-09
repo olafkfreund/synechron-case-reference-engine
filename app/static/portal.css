@@ -136,12 +136,26 @@ a.card:hover b{text-decoration:underline}
 /* checkbox with a 44px hit area */
 label.check{display:inline-flex;align-items:center;gap:10px;min-height:44px;min-width:44px;font-weight:400;cursor:pointer}
 
-/* client registry */
-.client-row{padding:12px 16px}
-.client-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
-.client-line .avatar{flex:none}
-.client-line .who{flex:1 1 220px;min-width:0}
-.client-line .who b{display:block}
-.client-line .who span{color:var(--muted);font-size:13px}
-.client-row .detail-panel{margin:12px 0 0}
-.client-row .detail-panel .field{margin-top:12px}
+/* client registry: one list card, one row per client */
+.btn-sm{min-height:44px;padding:0 12px;font-size:13px;width:auto}
+.client-list{padding:4px 20px}
+.client-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:6px 0;border-top:1px solid var(--line);min-height:56px}
+.client-row:first-child{border-top:0}
+.client-row .avatar{flex:none}
+.client-row .who{flex:1 1 260px;min-width:0}
+.client-row .who span{color:var(--muted);font-size:13px;margin-left:8px}
+.client-row .chips{display:flex;gap:6px;flex-wrap:wrap}
+/* a closed mini panel is just a small button; open, it takes its own full-width line */
+details.mini{margin:0}
+details.mini>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;border:1px solid var(--input-border);border-radius:8px;font-weight:500}
+details.mini>summary::-webkit-details-marker{display:none}
+details.mini>summary:hover{border-color:var(--ink)}
+details.mini[open]{flex:1 1 100%;background:var(--thead);border-radius:8px;padding:0 14px 14px}
+details.mini[open]>summary{margin:8px 0 12px;background:#fff}
+details.mini .field{margin-top:0}
+.head-panel{width:min(100%,460px)}
+.head-panel[open]{flex:1 1 100%}
+.head-panel>form{padding:0 14px}
+details.help-link>summary{list-style:none;cursor:pointer;color:var(--accent);text-decoration:underline;min-height:44px;display:inline-flex;align-items:center;font-size:14px}
+details.help-link>summary::-webkit-details-marker{display:none}
+details.help-link[open]{max-width:70ch}

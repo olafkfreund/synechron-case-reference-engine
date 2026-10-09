@@ -1,3 +1,4 @@
+import hashlib
 import copy
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -16,6 +17,9 @@ from app.schema import Outcome, Period, ReferenceCase, Sourced
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")  # autoescape on
+# the stylesheet URL changes with its content, so a browser never pairs new pages with an old cached CSS (#90)
+templates.env.globals["css_version"] = hashlib.sha256(
+    (Path(__file__).parent / "static" / "portal.css").read_bytes()).hexdigest()[:12]
 
 SCALARS = ("title", "client_mention", "industry", "region", "engagement_type", "challenge",
            "solution", "duration_months", "team_size")
