@@ -1,4 +1,5 @@
 import ipaddress
+import multiprocessing
 import os
 import re
 import socket
@@ -25,6 +26,7 @@ router = APIRouter()
 TRANSPORT = None  # tests inject httpx.MockTransport
 UA = "ReferenceEngineResearch/1.0 (internal capability research)"
 BRAVE = "https://api.search.brave.com/res/v1/web/search"
+BRAVE_RETRIES, BRAVE_MAX_WAIT = 2, 10  # quota: each retry is a billed call
 MAX_QUESTION, MAX_QUERY = 1000, 200
 MAX_RESULTS, MAX_REDIRECTS = 8, 3
 MAX_BYTES, TIMEOUT, MAX_MARKDOWN = 5 * 1024 * 1024, 10, 20_000
@@ -49,6 +51,14 @@ class TooLarge(ResearchError):
 
 
 class BadContentType(ResearchError):
+    pass
+
+
+class ConvertTimeout(ResearchError):
+    pass
+
+
+class ConvertFailed(ResearchError):
     pass
 
 
@@ -214,6 +224,7 @@ class Fetcher:
     def __init__(self):
         # trust_env=False: a proxy from the environment would bypass the pinned address and SNI
         self.http = httpx.Client(transport=TRANSPORT, timeout=TIMEOUT, follow_redirects=False, trust_env=False)
+        # shortcut: per job only; needs a shared (Postgres) limit before worker_desired_count > 1 (#45)
         self.robots, self.last = {}, {}
 
     def _get(self, url: str, limit: int, check_robots: bool = False) -> tuple[bytes, str, str]:
@@ -280,14 +291,68 @@ def brave_search(query: str) -> list[dict]:
     key = os.environ.get("BRAVE_API_KEY")
     if not key:
         raise ResearchError("BRAVE_API_KEY is not set")
-    r = httpx.Client(transport=TRANSPORT, timeout=TIMEOUT, trust_env=False).get(
-        BRAVE, params={"q": query, "count": 10}, headers={"X-Subscription-Token": key, "Accept": "application/json"})
-    if r.status_code != 200:
+    with httpx.Client(transport=TRANSPORT, timeout=TIMEOUT, trust_env=False) as client:
+        return _brave_attempts(client, query, key)
+
+
+def _brave_attempts(client, query, key):
+    for attempt in range(BRAVE_RETRIES + 1):
+        last = attempt == BRAVE_RETRIES
+        try:
+            r = client.get(BRAVE, params={"q": query, "count": 10},
+                           headers={"X-Subscription-Token": key, "Accept": "application/json"})
+        except httpx.TransportError:
+            if last:
+                raise
+            time.sleep(1)
+            continue
+        if r.status_code == 200:
+            return r.json().get("web", {}).get("results", [])
+        if (r.status_code == 429 or r.status_code >= 500) and not last:
+            ra = r.headers.get("Retry-After", "")
+            time.sleep(min(int(ra) if ra.isascii() and ra.isdigit() else 1, BRAVE_MAX_WAIT))
+            continue
         raise ResearchError(f"search failed ({r.status_code})")
-    return r.json().get("web", {}).get("results", [])
 
 
 MAX_PDF_PAGES = 40  # hostile PDFs from the open web must not tie up the worker
+PAGE_CONVERT_TIMEOUT = 120  # seconds per fetched page; 40 text pages took 77 s on 2 vCPU (#45)
+
+
+def _convert_child(conn, body, name):
+    # never touch the DB here: the fork shares the parent's open connections
+    try:
+        conn.send(("ok", ingest.to_markdown(body, name, max_pages=MAX_PDF_PAGES)[:MAX_MARKDOWN]))
+    except Exception as e:  # noqa: BLE001
+        conn.send(("err", type(e).__name__))
+
+
+def convert(body, name):
+    """Docling in a forked child that is killed on timeout; its own document_timeout does not hold for HTML."""
+    ingest.warm()
+    ctx = multiprocessing.get_context("fork")
+    parent, child = ctx.Pipe(duplex=False)
+    p = ctx.Process(target=_convert_child, args=(child, body, name))
+    p.start()
+    child.close()
+    try:
+        if not parent.poll(PAGE_CONVERT_TIMEOUT):
+            p.kill()
+            p.join()
+            raise ConvertTimeout("conversion took too long")
+        try:
+            kind, val = parent.recv()  # receive before join: a full pipe would deadlock the child
+        except EOFError:
+            kind, val = "err", "EOFError"
+        p.join(5)  # a child stuck in its own teardown must not block the parent
+        if p.is_alive():
+            p.kill()
+            p.join()
+        if kind != "ok":
+            raise ConvertFailed("conversion failed")
+        return val
+    finally:
+        parent.close()
 
 
 class Claim(BaseModel):
@@ -375,7 +440,7 @@ def run(research_id: int) -> None:
                 try:
                     body, ctype, final = fetcher.fetch(url)
                     name = (PurePosixPath(httpx.URL(final).path).stem or "page") + TYPES[ctype]
-                    md = ingest.to_markdown(body, name, max_pages=MAX_PDF_PAGES)[:MAX_MARKDOWN]
+                    md = convert(body, name)
                     pages.append({"url": final, "publisher": httpx.URL(final).host, "title": (hit.get("title") or "")[:200],
                                   "retrieved_at": datetime.now(timezone.utc).isoformat(), "markdown": md})
                 except Exception as e:  # noqa: BLE001 - one bad page must not stop the rest

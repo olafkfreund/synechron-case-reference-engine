@@ -88,8 +88,9 @@ variable "worker_memory" {
 }
 
 variable "worker_desired_count" {
-  type    = number
-  default = 1
+  type        = number
+  default     = 1
+  description = "Research jobs rate-limit each domain per job only; add a shared limit before raising this above 1 (#45)."
 }
 
 variable "cpu_architecture" {
