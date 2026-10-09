@@ -1,0 +1,1211 @@
+{
+ "sources": [
+  {
+   "name": "Demo: Bid library",
+   "groups": [
+    "sales"
+   ],
+   "prefix": "uploads/"
+  },
+  {
+   "name": "Demo: Delivery archive",
+   "groups": [
+    "delivery"
+   ],
+   "prefix": "delivery/"
+  }
+ ],
+ "clients": [
+  {
+   "name": "Contoso",
+   "aliases": [
+    "Contoso Ltd"
+   ],
+   "label": "a UK insurer",
+   "referenceable": true,
+   "logo": true
+  },
+  {
+   "name": "Northwind",
+   "aliases": [
+    "Northwind Traders"
+   ],
+   "label": "a German retailer",
+   "referenceable": true,
+   "logo": false
+  },
+  {
+   "name": "Fabrikam",
+   "aliases": [
+    "Fabrikam Inc"
+   ],
+   "label": "a manufacturer",
+   "referenceable": false,
+   "logo": false
+  },
+  {
+   "name": "Woodgrove",
+   "aliases": [
+    "Woodgrove Bank"
+   ],
+   "label": "a Dutch bank",
+   "referenceable": true,
+   "logo": true
+  },
+  {
+   "name": "Tailspin",
+   "aliases": [
+    "Tailspin Toys"
+   ],
+   "label": "a Polish logistics firm",
+   "referenceable": true,
+   "logo": false
+  },
+  {
+   "name": "Litware",
+   "aliases": [
+    "Litware Inc"
+   ],
+   "label": "a Swedish public body",
+   "referenceable": false,
+   "logo": false
+  },
+  {
+   "name": "Adventure Works",
+   "aliases": [
+    "Adventure Works Cycles"
+   ],
+   "label": "a French travel firm",
+   "referenceable": true,
+   "logo": true
+  },
+  {
+   "name": "Wide World Importers",
+   "aliases": [
+    "WWI"
+   ],
+   "label": "a Spanish wholesaler",
+   "referenceable": true,
+   "logo": false
+  },
+  {
+   "name": "Proseware",
+   "aliases": [
+    "Proseware Inc"
+   ],
+   "label": "an Irish software firm",
+   "referenceable": true,
+   "logo": false
+  },
+  {
+   "name": "Alpine Ski House",
+   "aliases": [],
+   "label": "an Austrian resort operator",
+   "referenceable": true,
+   "logo": true
+  }
+ ],
+ "cases": [
+  {
+   "source": "Demo: Bid library",
+   "file": "contoso-claims-intake.docx",
+   "paragraphs": [
+    "Contoso claims intake project.",
+    "Contoso engaged us for its claims intake project.",
+    "Contoso operates in the insurance sector.",
+    "The programme was run for the UK market.",
+    "The old claims intake process was slow and relied on manual work.",
+    "We rebuilt the claims intake service as a modern, tested platform.",
+    "The work was delivered over 14 months.",
+    "The team had 9 engineers.",
+    "The stack used Kafka and PostgreSQL in production.",
+    "Our work covered event streaming for Contoso.",
+    "Our work covered api design for Contoso.",
+    "The new platform cut claim handling time by 38 percent."
+   ],
+   "case": {
+    "title": {
+     "value": "Contoso claims intake project",
+     "source_quote": "Contoso claims intake project."
+    },
+    "client_mention": {
+     "value": "Contoso",
+     "source_quote": "Contoso engaged us for its claims intake project."
+    },
+    "industry": {
+     "value": "Insurance",
+     "source_quote": "Contoso operates in the insurance sector."
+    },
+    "region": {
+     "value": "UK",
+     "source_quote": "The programme was run for the UK market."
+    },
+    "engagement_type": {},
+    "challenge": {
+     "value": "Manual, slow claims intake process",
+     "source_quote": "The old claims intake process was slow and relied on manual work."
+    },
+    "solution": {
+     "value": "Rebuilt claims intake as a tested platform",
+     "source_quote": "We rebuilt the claims intake service as a modern, tested platform."
+    },
+    "capabilities": [
+     {
+      "value": "Event streaming",
+      "source_quote": "Our work covered event streaming for Contoso."
+     },
+     {
+      "value": "API design",
+      "source_quote": "Our work covered api design for Contoso."
+     }
+    ],
+    "tech_stack": [
+     {
+      "value": "Kafka",
+      "source_quote": "The stack used Kafka and PostgreSQL in production."
+     },
+     {
+      "value": "PostgreSQL",
+      "source_quote": "The stack used Kafka and PostgreSQL in production."
+     }
+    ],
+    "outcomes": [
+     {
+      "metric": "Result",
+      "value": "cut claim handling time by 38 percent",
+      "source_quote": "The new platform cut claim handling time by 38 percent."
+     }
+    ],
+    "duration_months": {
+     "value": 14,
+     "source_quote": "The work was delivered over 14 months."
+    },
+    "team_size": {
+     "value": 9,
+     "source_quote": "The team had 9 engineers."
+    },
+    "summary": "Contoso claims intake project, delivered over 14 months by 9 engineers. The new platform cut claim handling time by 38 percent.",
+    "organisations": [
+     "Contoso"
+    ]
+   },
+   "status": "approved"
+  },
+  {
+   "source": "Demo: Bid library",
+   "file": "northwind-stock-forecasting.docx",
+   "paragraphs": [
+    "Northwind stock forecasting project.",
+    "Northwind engaged us for its stock forecasting project.",
+    "Northwind operates in the retail sector.",
+    "The programme was run for the Germany market.",
+    "The old stock forecasting process was slow and relied on manual work.",
+    "We rebuilt the stock forecasting service as a modern, tested platform.",
+    "The work was delivered over 10 months.",
+    "The team had 6 engineers.",
+    "The stack used Python and Airflow in production.",
+    "Our work covered data engineering for Northwind.",
+    "Our work covered forecasting for Northwind.",
+    "The new platform reduced stock-outs by 22 percent."
+   ],
+   "case": {
+    "title": {
+     "value": "Northwind stock forecasting project",
+     "source_quote": "Northwind stock forecasting project."
+    },
+    "client_mention": {
+     "value": "Northwind",
+     "source_quote": "Northwind engaged us for its stock forecasting project."
+    },
+    "industry": {
+     "value": "Retail",
+     "source_quote": "Northwind operates in the retail sector."
+    },
+    "region": {
+     "value": "Germany",
+     "source_quote": "The programme was run for the Germany market."
+    },
+    "engagement_type": {},
+    "challenge": {
+     "value": "Manual, slow stock forecasting process",
+     "source_quote": "The old stock forecasting process was slow and relied on manual work."
+    },
+    "solution": {
+     "value": "Rebuilt stock forecasting as a tested platform",
+     "source_quote": "We rebuilt the stock forecasting service as a modern, tested platform."
+    },
+    "capabilities": [
+     {
+      "value": "Data engineering",
+      "source_quote": "Our work covered data engineering for Northwind."
+     },
+     {
+      "value": "Forecasting",
+      "source_quote": "Our work covered forecasting for Northwind."
+     }
+    ],
+    "tech_stack": [
+     {
+      "value": "Python",
+      "source_quote": "The stack used Python and Airflow in production."
+     },
+     {
+      "value": "Airflow",
+      "source_quote": "The stack used Python and Airflow in production."
+     }
+    ],
+    "outcomes": [
+     {
+      "metric": "Result",
+      "value": "reduced stock-outs by 22 percent",
+      "source_quote": "The new platform reduced stock-outs by 22 percent."
+     }
+    ],
+    "duration_months": {
+     "value": 10,
+     "source_quote": "The work was delivered over 10 months."
+    },
+    "team_size": {
+     "value": 6,
+     "source_quote": "The team had 6 engineers."
+    },
+    "summary": "Northwind stock forecasting project, delivered over 10 months by 6 engineers. The new platform reduced stock-outs by 22 percent.",
+    "organisations": [
+     "Northwind"
+    ]
+   },
+   "status": "approved"
+  },
+  {
+   "source": "Demo: Delivery archive",
+   "file": "woodgrove-payments-gateway.docx",
+   "paragraphs": [
+    "Woodgrove payments gateway project.",
+    "Woodgrove engaged us for its payments gateway project.",
+    "Woodgrove operates in the banking sector.",
+    "The programme was run for the Netherlands market.",
+    "The old payments gateway process was slow and relied on manual work.",
+    "We rebuilt the payments gateway service as a modern, tested platform.",
+    "The work was delivered over 18 months.",
+    "The team had 12 engineers.",
+    "The stack used Java and Kubernetes in production.",
+    "Our work covered cloud migration for Woodgrove.",
+    "Our work covered payments for Woodgrove.",
+    "The new platform raised payment success rate to 99.4 percent."
+   ],
+   "case": {
+    "title": {
+     "value": "Woodgrove payments gateway project",
+     "source_quote": "Woodgrove payments gateway project."
+    },
+    "client_mention": {
+     "value": "Woodgrove",
+     "source_quote": "Woodgrove engaged us for its payments gateway project."
+    },
+    "industry": {
+     "value": "Banking",
+     "source_quote": "Woodgrove operates in the banking sector."
+    },
+    "region": {
+     "value": "Netherlands",
+     "source_quote": "The programme was run for the Netherlands market."
+    },
+    "engagement_type": {},
+    "challenge": {
+     "value": "Manual, slow payments gateway process",
+     "source_quote": "The old payments gateway process was slow and relied on manual work."
+    },
+    "solution": {
+     "value": "Rebuilt payments gateway as a tested platform",
+     "source_quote": "We rebuilt the payments gateway service as a modern, tested platform."
+    },
+    "capabilities": [
+     {
+      "value": "Cloud migration",
+      "source_quote": "Our work covered cloud migration for Woodgrove."
+     },
+     {
+      "value": "Payments",
+      "source_quote": "Our work covered payments for Woodgrove."
+     }
+    ],
+    "tech_stack": [
+     {
+      "value": "Java",
+      "source_quote": "The stack used Java and Kubernetes in production."
+     },
+     {
+      "value": "Kubernetes",
+      "source_quote": "The stack used Java and Kubernetes in production."
+     }
+    ],
+    "outcomes": [
+     {
+      "metric": "Result",
+      "value": "raised payment success rate to 99.4 percent",
+      "source_quote": "The new platform raised payment success rate to 99.4 percent."
+     }
+    ],
+    "duration_months": {
+     "value": 18,
+     "source_quote": "The work was delivered over 18 months."
+    },
+    "team_size": {
+     "value": 12,
+     "source_quote": "The team had 12 engineers."
+    },
+    "summary": "Woodgrove payments gateway project, delivered over 18 months by 12 engineers. The new platform raised payment success rate to 99.4 percent.",
+    "organisations": [
+     "Woodgrove"
+    ]
+   },
+   "status": "approved"
+  },
+  {
+   "source": "Demo: Delivery archive",
+   "file": "tailspin-route-planning.docx",
+   "paragraphs": [
+    "Tailspin route planning project.",
+    "Tailspin engaged us for its route planning project.",
+    "Tailspin operates in the logistics sector.",
+    "The programme was run for the Poland market.",
+    "The old route planning process was slow and relied on manual work.",
+    "We rebuilt the route planning service as a modern, tested platform.",
+    "The work was delivered over 8 months.",
+    "The team had 5 engineers.",
+    "The stack used Go and Redis in production.",
+    "Our work covered optimisation for Tailspin.",
+    "Our work covered api design for Tailspin.",
+    "The new platform saved 1,200 driving hours per month."
+   ],
+   "case": {
+    "title": {
+     "value": "Tailspin route planning project",
+     "source_quote": "Tailspin route planning project."
+    },
+    "client_mention": {
+     "value": "Tailspin",
+     "source_quote": "Tailspin engaged us for its route planning project."
+    },
+    "industry": {
+     "value": "Logistics",
+     "source_quote": "Tailspin operates in the logistics sector."
+    },
+    "region": {
+     "value": "Poland",
+     "source_quote": "The programme was run for the Poland market."
+    },
+    "engagement_type": {},
+    "challenge": {
+     "value": "Manual, slow route planning process",
+     "source_quote": "The old route planning process was slow and relied on manual work."
+    },
+    "solution": {
+     "value": "Rebuilt route planning as a tested platform",
+     "source_quote": "We rebuilt the route planning service as a modern, tested platform."
+    },
+    "capabilities": [
+     {
+      "value": "Optimisation",
+      "source_quote": "Our work covered optimisation for Tailspin."
+     },
+     {
+      "value": "API design",
+      "source_quote": "Our work covered api design for Tailspin."
+     }
+    ],
+    "tech_stack": [
+     {
+      "value": "Go",
+      "source_quote": "The stack used Go and Redis in production."
+     },
+     {
+      "value": "Redis",
+      "source_quote": "The stack used Go and Redis in production."
+     }
+    ],
+    "outcomes": [
+     {
+      "metric": "Result",
+      "value": "saved 1,200 driving hours per month",
+      "source_quote": "The new platform saved 1,200 driving hours per month."
+     }
+    ],
+    "duration_months": {
+     "value": 8,
+     "source_quote": "The work was delivered over 8 months."
+    },
+    "team_size": {
+     "value": 5,
+     "source_quote": "The team had 5 engineers."
+    },
+    "summary": "Tailspin route planning project, delivered over 8 months by 5 engineers. The new platform saved 1,200 driving hours per month.",
+    "organisations": [
+     "Tailspin"
+    ]
+   },
+   "status": "approved"
+  },
+  {
+   "source": "Demo: Bid library",
+   "file": "litware-citizen-portal.docx",
+   "paragraphs": [
+    "Litware citizen portal project.",
+    "Litware engaged us for its citizen portal project.",
+    "Litware operates in the public sector sector.",
+    "The programme was run for the Sweden market.",
+    "The old citizen portal process was slow and relied on manual work.",
+    "We rebuilt the citizen portal service as a modern, tested platform.",
+    "The work was delivered over 12 months.",
+    "The team had 8 engineers.",
+    "The stack used React and Node.js in production.",
+    "Our work covered web development for Litware.",
+    "Our work covered accessibility for Litware.",
+    "The new platform lifted online self-service to 71 percent."
+   ],
+   "case": {
+    "title": {
+     "value": "Litware citizen portal project",
+     "source_quote": "Litware citizen portal project."
+    },
+    "client_mention": {
+     "value": "Litware",
+     "source_quote": "Litware engaged us for its citizen portal project."
+    },
+    "industry": {
+     "value": "Public sector",
+     "source_quote": "Litware operates in the public sector sector."
+    },
+    "region": {
+     "value": "Sweden",
+     "source_quote": "The programme was run for the Sweden market."
+    },
+    "engagement_type": {},
+    "challenge": {
+     "value": "Manual, slow citizen portal process",
+     "source_quote": "The old citizen portal process was slow and relied on manual work."
+    },
+    "solution": {
+     "value": "Rebuilt citizen portal as a tested platform",
+     "source_quote": "We rebuilt the citizen portal service as a modern, tested platform."
+    },
+    "capabilities": [
+     {
+      "value": "Web development",
+      "source_quote": "Our work covered web development for Litware."
+     },
+     {
+      "value": "Accessibility",
+      "source_quote": "Our work covered accessibility for Litware."
+     }
+    ],
+    "tech_stack": [
+     {
+      "value": "React",
+      "source_quote": "The stack used React and Node.js in production."
+     },
+     {
+      "value": "Node.js",
+      "source_quote": "The stack used React and Node.js in production."
+     }
+    ],
+    "outcomes": [
+     {
+      "metric": "Result",
+      "value": "lifted online self-service to 71 percent",
+      "source_quote": "The new platform lifted online self-service to 71 percent."
+     }
+    ],
+    "duration_months": {
+     "value": 12,
+     "source_quote": "The work was delivered over 12 months."
+    },
+    "team_size": {
+     "value": 8,
+     "source_quote": "The team had 8 engineers."
+    },
+    "summary": "Litware citizen portal project, delivered over 12 months by 8 engineers. The new platform lifted online self-service to 71 percent.",
+    "organisations": [
+     "Litware"
+    ]
+   },
+   "status": "approved"
+  },
+  {
+   "source": "Demo: Delivery archive",
+   "file": "adventure-works-booking-platform.docx",
+   "paragraphs": [
+    "Adventure Works booking platform project.",
+    "Adventure Works engaged us for its booking platform project.",
+    "Adventure Works operates in the travel sector.",
+    "The programme was run for the France market.",
+    "The old booking platform process was slow and relied on manual work.",
+    "We rebuilt the booking platform service as a modern, tested platform.",
+    "The work was delivered over 16 months.",
+    "The team had 10 engineers.",
+    "The stack used Azure and Cosmos DB in production.",
+    "Our work covered cloud migration for Adventure Works.",
+    "Our work covered performance tuning for Adventure Works.",
+    "The new platform cut page load time from 6 seconds to 2 seconds."
+   ],
+   "case": {
+    "title": {
+     "value": "Adventure Works booking platform project",
+     "source_quote": "Adventure Works booking platform project."
+    },
+    "client_mention": {
+     "value": "Adventure Works",
+     "source_quote": "Adventure Works engaged us for its booking platform project."
+    },
+    "industry": {
+     "value": "Travel",
+     "source_quote": "Adventure Works operates in the travel sector."
+    },
+    "region": {
+     "value": "France",
+     "source_quote": "The programme was run for the France market."
+    },
+    "engagement_type": {},
+    "challenge": {
+     "value": "Manual, slow booking platform process",
+     "source_quote": "The old booking platform process was slow and relied on manual work."
+    },
+    "solution": {
+     "value": "Rebuilt booking platform as a tested platform",
+     "source_quote": "We rebuilt the booking platform service as a modern, tested platform."
+    },
+    "capabilities": [
+     {
+      "value": "Cloud migration",
+      "source_quote": "Our work covered cloud migration for Adventure Works."
+     },
+     {
+      "value": "Performance tuning",
+      "source_quote": "Our work covered performance tuning for Adventure Works."
+     }
+    ],
+    "tech_stack": [
+     {
+      "value": "Azure",
+      "source_quote": "The stack used Azure and Cosmos DB in production."
+     },
+     {
+      "value": "Cosmos DB",
+      "source_quote": "The stack used Azure and Cosmos DB in production."
+     }
+    ],
+    "outcomes": [
+     {
+      "metric": "Result",
+      "value": "cut page load time from 6 seconds to 2 seconds",
+      "source_quote": "The new platform cut page load time from 6 seconds to 2 seconds."
+     }
+    ],
+    "duration_months": {
+     "value": 16,
+     "source_quote": "The work was delivered over 16 months."
+    },
+    "team_size": {
+     "value": 10,
+     "source_quote": "The team had 10 engineers."
+    },
+    "summary": "Adventure Works booking platform project, delivered over 16 months by 10 engineers. The new platform cut page load time from 6 seconds to 2 seconds.",
+    "organisations": [
+     "Adventure Works"
+    ]
+   },
+   "status": "approved"
+  },
+  {
+   "source": "Demo: Bid library",
+   "file": "wide-world-importers-order-automation.docx",
+   "paragraphs": [
+    "Wide World Importers order automation project.",
+    "Wide World Importers engaged us for its order automation project.",
+    "Wide World Importers operates in the wholesale sector.",
+    "The programme was run for the Spain market.",
+    "The old order automation process was slow and relied on manual work.",
+    "We rebuilt the order automation service as a modern, tested platform.",
+    "The work was delivered over 9 months.",
+    "The team had 4 engineers.",
+    "The stack used Python and RabbitMQ in production.",
+    "Our work covered process automation for Wide World Importers.",
+    "Our work covered integration for Wide World Importers.",
+    "The new platform automated 64 percent of manual orders."
+   ],
+   "case": {
+    "title": {
+     "value": "Wide World Importers order automation project",
+     "source_quote": "Wide World Importers order automation project."
+    },
+    "client_mention": {
+     "value": "Wide World Importers",
+     "source_quote": "Wide World Importers engaged us for its order automation project."
+    },
+    "industry": {
+     "value": "Wholesale",
+     "source_quote": "Wide World Importers operates in the wholesale sector."
+    },
+    "region": {
+     "value": "Spain",
+     "source_quote": "The programme was run for the Spain market."
+    },
+    "engagement_type": {},
+    "challenge": {
+     "value": "Manual, slow order automation process",
+     "source_quote": "The old order automation process was slow and relied on manual work."
+    },
+    "solution": {
+     "value": "Rebuilt order automation as a tested platform",
+     "source_quote": "We rebuilt the order automation service as a modern, tested platform."
+    },
+    "capabilities": [
+     {
+      "value": "Process automation",
+      "source_quote": "Our work covered process automation for Wide World Importers."
+     },
+     {
+      "value": "Integration",
+      "source_quote": "Our work covered integration for Wide World Importers."
+     }
+    ],
+    "tech_stack": [
+     {
+      "value": "Python",
+      "source_quote": "The stack used Python and RabbitMQ in production."
+     },
+     {
+      "value": "RabbitMQ",
+      "source_quote": "The stack used Python and RabbitMQ in production."
+     }
+    ],
+    "outcomes": [
+     {
+      "metric": "Result",
+      "value": "automated 64 percent of manual orders",
+      "source_quote": "The new platform automated 64 percent of manual orders."
+     }
+    ],
+    "duration_months": {
+     "value": 9,
+     "source_quote": "The work was delivered over 9 months."
+    },
+    "team_size": {
+     "value": 4,
+     "source_quote": "The team had 4 engineers."
+    },
+    "summary": "Wide World Importers order automation project, delivered over 9 months by 4 engineers. The new platform automated 64 percent of manual orders.",
+    "organisations": [
+     "Wide World Importers"
+    ]
+   },
+   "status": "approved"
+  },
+  {
+   "source": "Demo: Delivery archive",
+   "file": "proseware-billing-modernisation.docx",
+   "paragraphs": [
+    "Proseware billing modernisation project.",
+    "Proseware engaged us for its billing modernisation project.",
+    "Proseware operates in the software sector.",
+    "The programme was run for the Ireland market.",
+    "The old billing modernisation process was slow and relied on manual work.",
+    "We rebuilt the billing modernisation service as a modern, tested platform.",
+    "The work was delivered over 15 months.",
+    "The team had 9 engineers.",
+    "The stack used Scala and Spark in production.",
+    "Our work covered data engineering for Proseware.",
+    "Our work covered billing for Proseware.",
+    "The new platform shortened invoice runs from 5 days to 1 day."
+   ],
+   "case": {
+    "title": {
+     "value": "Proseware billing modernisation project",
+     "source_quote": "Proseware billing modernisation project."
+    },
+    "client_mention": {
+     "value": "Proseware",
+     "source_quote": "Proseware engaged us for its billing modernisation project."
+    },
+    "industry": {
+     "value": "Software",
+     "source_quote": "Proseware operates in the software sector."
+    },
+    "region": {
+     "value": "Ireland",
+     "source_quote": "The programme was run for the Ireland market."
+    },
+    "engagement_type": {},
+    "challenge": {
+     "value": "Manual, slow billing modernisation process",
+     "source_quote": "The old billing modernisation process was slow and relied on manual work."
+    },
+    "solution": {
+     "value": "Rebuilt billing modernisation as a tested platform",
+     "source_quote": "We rebuilt the billing modernisation service as a modern, tested platform."
+    },
+    "capabilities": [
+     {
+      "value": "Data engineering",
+      "source_quote": "Our work covered data engineering for Proseware."
+     },
+     {
+      "value": "Billing",
+      "source_quote": "Our work covered billing for Proseware."
+     }
+    ],
+    "tech_stack": [
+     {
+      "value": "Scala",
+      "source_quote": "The stack used Scala and Spark in production."
+     },
+     {
+      "value": "Spark",
+      "source_quote": "The stack used Scala and Spark in production."
+     }
+    ],
+    "outcomes": [
+     {
+      "metric": "Result",
+      "value": "shortened invoice runs from 5 days to 1 day",
+      "source_quote": "The new platform shortened invoice runs from 5 days to 1 day."
+     }
+    ],
+    "duration_months": {
+     "value": 15,
+     "source_quote": "The work was delivered over 15 months."
+    },
+    "team_size": {
+     "value": 9,
+     "source_quote": "The team had 9 engineers."
+    },
+    "summary": "Proseware billing modernisation project, delivered over 15 months by 9 engineers. The new platform shortened invoice runs from 5 days to 1 day.",
+    "organisations": [
+     "Proseware"
+    ]
+   },
+   "status": "approved"
+  },
+  {
+   "source": "Demo: Bid library",
+   "file": "alpine-ski-house-guest-app.docx",
+   "paragraphs": [
+    "Alpine Ski House guest app project.",
+    "Alpine Ski House engaged us for its guest app project.",
+    "Alpine Ski House operates in the leisure sector.",
+    "The programme was run for the Austria market.",
+    "The old guest app process was slow and relied on manual work.",
+    "We rebuilt the guest app service as a modern, tested platform.",
+    "The work was delivered over 7 months.",
+    "The team had 5 engineers.",
+    "The stack used Flutter and Firebase in production.",
+    "Our work covered mobile development for Alpine Ski House.",
+    "Our work covered ux design for Alpine Ski House.",
+    "The new platform reached 40,000 app downloads in the first season."
+   ],
+   "case": {
+    "title": {
+     "value": "Alpine Ski House guest app project",
+     "source_quote": "Alpine Ski House guest app project."
+    },
+    "client_mention": {
+     "value": "Alpine Ski House",
+     "source_quote": "Alpine Ski House engaged us for its guest app project."
+    },
+    "industry": {
+     "value": "Leisure",
+     "source_quote": "Alpine Ski House operates in the leisure sector."
+    },
+    "region": {
+     "value": "Austria",
+     "source_quote": "The programme was run for the Austria market."
+    },
+    "engagement_type": {},
+    "challenge": {
+     "value": "Manual, slow guest app process",
+     "source_quote": "The old guest app process was slow and relied on manual work."
+    },
+    "solution": {
+     "value": "Rebuilt guest app as a tested platform",
+     "source_quote": "We rebuilt the guest app service as a modern, tested platform."
+    },
+    "capabilities": [
+     {
+      "value": "Mobile development",
+      "source_quote": "Our work covered mobile development for Alpine Ski House."
+     },
+     {
+      "value": "UX design",
+      "source_quote": "Our work covered ux design for Alpine Ski House."
+     }
+    ],
+    "tech_stack": [
+     {
+      "value": "Flutter",
+      "source_quote": "The stack used Flutter and Firebase in production."
+     },
+     {
+      "value": "Firebase",
+      "source_quote": "The stack used Flutter and Firebase in production."
+     }
+    ],
+    "outcomes": [
+     {
+      "metric": "Result",
+      "value": "reached 40,000 app downloads in the first season",
+      "source_quote": "The new platform reached 40,000 app downloads in the first season."
+     }
+    ],
+    "duration_months": {
+     "value": 7,
+     "source_quote": "The work was delivered over 7 months."
+    },
+    "team_size": {
+     "value": 5,
+     "source_quote": "The team had 5 engineers."
+    },
+    "summary": "Alpine Ski House guest app project, delivered over 7 months by 5 engineers. The new platform reached 40,000 app downloads in the first season.",
+    "organisations": [
+     "Alpine Ski House"
+    ]
+   },
+   "status": "approved"
+  },
+  {
+   "source": "Demo: Bid library",
+   "file": "contoso-fraud-scoring.docx",
+   "paragraphs": [
+    "Contoso fraud scoring project.",
+    "Contoso engaged us for its fraud scoring project.",
+    "Contoso operates in the insurance sector.",
+    "The programme was run for the UK market.",
+    "The old fraud scoring process was slow and relied on manual work.",
+    "We rebuilt the fraud scoring service as a modern, tested platform.",
+    "The work was delivered over 11 months.",
+    "The team had 7 engineers.",
+    "The stack used Python and MLflow in production.",
+    "Our work covered machine learning for Contoso.",
+    "Our work covered mlops for Contoso.",
+    "The new platform flagged 17 percent more fraud cases."
+   ],
+   "case": {
+    "title": {
+     "value": "Contoso fraud scoring project",
+     "source_quote": "Contoso fraud scoring project."
+    },
+    "client_mention": {
+     "value": "Contoso",
+     "source_quote": "Contoso engaged us for its fraud scoring project."
+    },
+    "industry": {
+     "value": "Insurance",
+     "source_quote": "Contoso operates in the insurance sector."
+    },
+    "region": {
+     "value": "UK",
+     "source_quote": "The programme was run for the UK market."
+    },
+    "engagement_type": {},
+    "challenge": {
+     "value": "Manual, slow fraud scoring process",
+     "source_quote": "The old fraud scoring process was slow and relied on manual work."
+    },
+    "solution": {
+     "value": "Rebuilt fraud scoring as a tested platform",
+     "source_quote": "We rebuilt the fraud scoring service as a modern, tested platform."
+    },
+    "capabilities": [
+     {
+      "value": "Machine learning",
+      "source_quote": "Our work covered machine learning for Contoso."
+     },
+     {
+      "value": "MLOps",
+      "source_quote": "Our work covered mlops for Contoso."
+     }
+    ],
+    "tech_stack": [
+     {
+      "value": "Python",
+      "source_quote": "The stack used Python and MLflow in production."
+     },
+     {
+      "value": "MLflow",
+      "source_quote": "The stack used Python and MLflow in production."
+     }
+    ],
+    "outcomes": [
+     {
+      "metric": "metric",
+      "value": "flagged 17 percent more fraud cases",
+      "source_quote": "The new platform flagged 17 percent more fraud cases."
+     }
+    ],
+    "duration_months": {
+     "value": 11,
+     "source_quote": "The work was delivered over 11 months."
+    },
+    "team_size": {
+     "value": 7,
+     "source_quote": "The team had 7 engineers."
+    },
+    "summary": "Contoso fraud scoring project, delivered over 11 months by 7 engineers. The new platform flagged 17 percent more fraud cases.",
+    "organisations": [
+     "Contoso"
+    ]
+   },
+   "status": "extracted"
+  },
+  {
+   "source": "Demo: Delivery archive",
+   "file": "northwind-loyalty-platform.docx",
+   "paragraphs": [
+    "Northwind loyalty platform project.",
+    "Northwind engaged us for its loyalty platform project.",
+    "Northwind operates in the retail sector.",
+    "The programme was run for the Germany market.",
+    "The old loyalty platform process was slow and relied on manual work.",
+    "We rebuilt the loyalty platform service as a modern, tested platform.",
+    "The work was delivered over 13 months.",
+    "The team had 8 engineers.",
+    "The stack used Java and Kafka in production.",
+    "Our work covered api design for Northwind.",
+    "Our work covered integration for Northwind.",
+    "The new platform grew active members by 25 percent."
+   ],
+   "case": {
+    "title": {
+     "value": "Northwind loyalty platform project",
+     "source_quote": "Northwind loyalty platform project."
+    },
+    "client_mention": {
+     "value": "Northwind",
+     "source_quote": "Northwind engaged us for its loyalty platform project."
+    },
+    "industry": {
+     "value": "Retail",
+     "source_quote": "Northwind operates in the retail sector."
+    },
+    "region": {
+     "value": "Switzerland",
+     "source_quote": "The rollout also covered customers in Switzerland.",
+     "unsourced": true
+    },
+    "engagement_type": {},
+    "challenge": {
+     "value": "Manual, slow loyalty platform process",
+     "source_quote": "The old loyalty platform process was slow and relied on manual work."
+    },
+    "solution": {
+     "value": "Rebuilt loyalty platform as a tested platform",
+     "source_quote": "We rebuilt the loyalty platform service as a modern, tested platform."
+    },
+    "capabilities": [
+     {
+      "value": "API design",
+      "source_quote": "Our work covered api design for Northwind."
+     },
+     {
+      "value": "Integration",
+      "source_quote": "Our work covered integration for Northwind."
+     }
+    ],
+    "tech_stack": [
+     {
+      "value": "Java",
+      "source_quote": "The stack used Java and Kafka in production."
+     },
+     {
+      "value": "Kafka",
+      "source_quote": "The stack used Java and Kafka in production."
+     }
+    ],
+    "outcomes": [
+     {
+      "metric": "Result",
+      "value": "grew active members by 25 percent",
+      "source_quote": "The new platform grew active members by 25 percent."
+     }
+    ],
+    "duration_months": {
+     "value": 13,
+     "source_quote": "The work was delivered over 13 months."
+    },
+    "team_size": {
+     "value": 8,
+     "source_quote": "The team had 8 engineers."
+    },
+    "summary": "Northwind loyalty platform project, delivered over 13 months by 8 engineers. The new platform grew active members by 25 percent.",
+    "organisations": [
+     "Northwind"
+    ]
+   },
+   "status": "extracted"
+  },
+  {
+   "source": "Demo: Delivery archive",
+   "file": "litware-records-archive.docx",
+   "paragraphs": [
+    "Litware records archive project.",
+    "Litware engaged us for its records archive project.",
+    "Litware operates in the public sector sector.",
+    "The programme was run for the Sweden market.",
+    "The old records archive process was slow and relied on manual work.",
+    "We rebuilt the records archive service as a modern, tested platform.",
+    "The work was delivered over 6 months.",
+    "The team had 4 engineers.",
+    "The stack used Python and Elasticsearch in production.",
+    "Our work covered search for Litware.",
+    "Our work covered data migration for Litware.",
+    "The new platform made 2 million records searchable."
+   ],
+   "case": {
+    "title": {
+     "value": "Litware records archive project",
+     "source_quote": "Litware records archive project."
+    },
+    "client_mention": {
+     "value": "Litware",
+     "source_quote": "Litware engaged us for its records archive project."
+    },
+    "industry": {
+     "value": "Public sector",
+     "source_quote": "Litware operates in the public sector sector."
+    },
+    "region": {
+     "value": "Sweden",
+     "source_quote": "The programme was run for the Sweden market."
+    },
+    "engagement_type": {},
+    "challenge": {
+     "value": "Manual, slow records archive process",
+     "source_quote": "The old records archive process was slow and relied on manual work."
+    },
+    "solution": {
+     "value": "Rebuilt records archive as a tested platform",
+     "source_quote": "We rebuilt the records archive service as a modern, tested platform."
+    },
+    "capabilities": [
+     {
+      "value": "Search",
+      "source_quote": "Our work covered search for Litware."
+     },
+     {
+      "value": "Data migration",
+      "source_quote": "Our work covered data migration for Litware."
+     }
+    ],
+    "tech_stack": [
+     {
+      "value": "Python",
+      "source_quote": "The stack used Python and Elasticsearch in production."
+     },
+     {
+      "value": "Elasticsearch",
+      "source_quote": "The stack used Python and Elasticsearch in production."
+     }
+    ],
+    "outcomes": [
+     {
+      "metric": "Result",
+      "value": "made 2 million records searchable",
+      "source_quote": "The new platform made 2 million records searchable."
+     }
+    ],
+    "duration_months": {
+     "value": 6,
+     "source_quote": "The work was delivered over 6 months."
+    },
+    "team_size": {
+     "value": 4,
+     "source_quote": "The team had 4 engineers."
+    },
+    "summary": "Litware records archive project, delivered over 6 months by 4 engineers. The new platform made 2 million records searchable.",
+    "organisations": [
+     "Litware"
+    ]
+   },
+   "status": "extracted"
+  },
+  {
+   "source": "Demo: Delivery archive",
+   "file": "fabrikam-sow.docx",
+   "paragraphs": [
+    "Fabrikam Statement of Work for plant analytics.",
+    "This statement of work is signed by Fabrikam and the supplier.",
+    "Fabrikam is a manufacturing company.",
+    "This is a statement of work for the plant analytics build.",
+    "The term of the agreement is 12 months."
+   ],
+   "status": "extracted",
+   "case": {
+    "title": {
+     "value": "Fabrikam plant analytics SOW",
+     "source_quote": "Fabrikam Statement of Work for plant analytics."
+    },
+    "client_mention": {
+     "value": "Fabrikam",
+     "source_quote": "This statement of work is signed by Fabrikam and the supplier."
+    },
+    "industry": {
+     "value": "Manufacturing",
+     "source_quote": "Fabrikam is a manufacturing company."
+    },
+    "engagement_type": {
+     "value": "statement of work",
+     "source_quote": "This is a statement of work for the plant analytics build."
+    },
+    "duration_months": {
+     "value": 12,
+     "source_quote": "The term of the agreement is 12 months."
+    },
+    "summary": "Fabrikam statement of work, a 12 months engagement.",
+    "organisations": [
+     "Fabrikam"
+    ],
+    "basis": "engagement",
+    "basis_reason": "executed contract"
+   }
+  },
+  {
+   "source": "Demo: Delivery archive",
+   "file": "fabrikam-change-order.docx",
+   "paragraphs": [
+    "Fabrikam Change Order 1 for plant analytics.",
+    "This change order is signed by Fabrikam and the supplier.",
+    "Fabrikam is a manufacturing company.",
+    "This is a change order to the plant analytics statement of work.",
+    "The term of the agreement is extended by 6 months."
+   ],
+   "status": "extracted",
+   "case": {
+    "title": {
+     "value": "Fabrikam plant analytics change order",
+     "source_quote": "Fabrikam Change Order 1 for plant analytics."
+    },
+    "client_mention": {
+     "value": "Fabrikam",
+     "source_quote": "This change order is signed by Fabrikam and the supplier."
+    },
+    "industry": {
+     "value": "Manufacturing",
+     "source_quote": "Fabrikam is a manufacturing company."
+    },
+    "engagement_type": {
+     "value": "change order",
+     "source_quote": "This is a change order to the plant analytics statement of work."
+    },
+    "duration_months": {
+     "value": 6,
+     "source_quote": "The term of the agreement is extended by 6 months."
+    },
+    "summary": "Fabrikam change order, adding 6 months.",
+    "organisations": [
+     "Fabrikam"
+    ],
+    "basis": "engagement",
+    "basis_reason": "executed contract"
+   }
+  }
+ ]
+}

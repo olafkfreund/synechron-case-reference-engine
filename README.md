@@ -68,6 +68,44 @@ paste the claims JSON from the table.
   As admin, add an upload source with config `{"bucket": "refs-local"}` first.
 - **Local only:** this provider logs anyone in as anything. Never expose it.
 
+## Local demo
+
+A demo with made-up data (fictional companies, invented numbers) that survives restarts:
+
+```sh
+scripts/demo.sh up       # build, start, seed, print the URL and users
+scripts/demo.sh down     # stop, keep the data
+scripts/demo.sh reset    # wipe the demo database and start again
+```
+
+It uses its own compose project, `refsdemo`, on ports 8000 and 8080, so stop any other stack on those
+ports first. Log in as in "Local login" above, but with the demo's document groups in the claims, so each user
+sees the demo sources:
+
+| Username | Claims |
+| --- | --- |
+| `admin` | `{"name": "Test Admin", "groups": ["refs-admins", "sales", "delivery"]}` |
+| `reviewer` | `{"groups": ["refs-reviewers", "sales", "delivery"]}` |
+| `sales` | `{"groups": ["refs-users", "sales"]}` (no `delivery`: the Delivery archive stays hidden) |
+| `nobody` | `{}` |
+
+The seed adds two
+sources ("Demo: Bid library" for `sales`, "Demo: Delivery archive" for `delivery`), ten clients and 14 cases
+(9 approved, 5 waiting for review, including a Fabrikam statement of work and change order to merge).
+Running `up` again leaves existing rows alone. The S3 originals are in memory and are put again each time.
+
+**Needs a model:** live upload extraction, drafting and online research. Without Ollama on
+`localhost:11434` (`qwen3:14b`, see below), `up` says so and starts without a model; the seeded cases, search
+and review still work. Rows are made with no LLM call.
+
+Walkthrough:
+
+1. **Sales:** log in as `sales`, search for a bid text (try "claims" or "payments"), open a case, pick cases and draft an output.
+2. **Reviewer:** as `reviewer`, open the review list. Fix the case with an outcome named "metric", look at the unsourced field, and approve one.
+3. **Admin:** as `admin`, look at sources and clients, and merge the two Fabrikam cases.
+4. **Live upload:** as `admin`, upload a document to "Demo: Bid library" and watch it extract (needs a model).
+5. **Nobody:** log in as `nobody` and see that there is no access.
+
 ## Revoke a user's sessions
 
 A session cookie lasts 8 hours and is signed, so ending it needs a server-side cutoff (#47). Logging out

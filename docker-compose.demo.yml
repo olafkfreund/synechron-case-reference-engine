@@ -1,0 +1,9 @@
+# Local demo override (scripts/demo.sh): keeps the database between runs.
+# Model settings come from .env.demo via `docker compose --env-file .env.demo` (env_file would lose
+# to the base file's `environment:` entries).
+services:
+  db:
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:
