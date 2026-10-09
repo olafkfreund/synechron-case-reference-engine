@@ -466,3 +466,14 @@ templates and six test files. That is well over the threshold of 3 steps or
   rebased.
 - The session model reviews with a fresh Opus agent, given only this plan
   and `git diff`, and does the manual run.
+
+*Steps 6, 7 and 9 done (coder, one commit):* the full suite passed twice
+(456 passed). Test-support changes beyond the plan:
+- the `acme` fixture clears `cases.client_id` before deleting its client,
+  because approving a merged case links the client;
+- the matrix has its own `ver_or_none()`, because a hard-deleted member has
+  no row to hash.
+
+Step 6's un-merged row isn't tested in search or generate directly: its
+`rejected` status excludes it, and step 9's matrix covers those routes.
+Step 8 waits for #64 (PR #82).

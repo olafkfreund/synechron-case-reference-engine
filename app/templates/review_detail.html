@@ -27,8 +27,10 @@
 {% if reviewable %}
 <form method="post" action="/review/{{ id }}/approve" style="display:inline"><input type="hidden" name="v" value="{{ v }}">
 <button>Approve (unsourced fields are emptied)</button></form>
-<form method="post" action="/review/{{ id }}/reject" style="display:inline"><input type="hidden" name="v" value="{{ v }}"><button>Reject</button></form>
+{% if not merged %}<form method="post" action="/review/{{ id }}/reject" style="display:inline"><input type="hidden" name="v" value="{{ v }}"><button>Reject</button></form>{% endif %}
 {% else %}<p>This case is not open for review.</p>{% endif %}
+{% if merged %}<form method="post" action="/review/{{ id }}/unmerge"><input type="hidden" name="v" value="{{ v }}">
+<button>Un-merge (the contracts go back to the queue)</button></form>{% endif %}
 {% if reviewable and cands %}<h2>Merge with other contracts for the same client</h2>
 <form method="post" action="/review/merge/preview"><input type="hidden" name="members" value="{{ id }}:{{ v }}">
 {% for c in cands %}<label><input type="checkbox" name="members" value="{{ c[0] }}:{{ c[4] }}"> {{ c[1] }} ({{ c[2] }}{% if c[3].start or c[3].end %}, {{ c[3].start or "?" }} to {{ c[3].end or "?" }}{% endif %})</label><br>{% endfor %}

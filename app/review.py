@@ -148,7 +148,8 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
     return page(request, "review_detail.html", user, id=cid, rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
                 unlisted=unlisted, members=members, cands=cands,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
-                external_id=r[3], source=r[4], reviewable=r[5], v=r[6])
+                external_id=r[3], source=r[4], merged=bool(members),
+                reviewable=r[5] and not any(m[6] for m in members), v=r[6])
 
 
 @router.post("/review/{cid}/edit")
@@ -209,6 +210,9 @@ def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: 
 def approve(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))):
     with db.connect() as conn:
         case, text = load(conn, cid, user, v)
+        if isinstance(text, dict) and conn.execute(
+                "select count(*) from cases where merged_into = %s and status = 'rejected'", (cid,)).fetchone()[0]:
+            raise HTTPException(409, "a member contract is no longer an engagement: un-merge")
         check(case, text)
         for n in SCALARS:  # approve without the unsourced fields
             s = getattr(case, n)
@@ -235,7 +239,8 @@ def approve(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))
 @router.post("/review/{cid}/reject")
 def reject(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))):
     with db.connect() as conn:
-        load(conn, cid, user, v)
+        if isinstance(load(conn, cid, user, v)[1], dict):
+            raise HTTPException(400, "un-merge instead")
         conn.execute("update cases set status='rejected', approved_by=null, approved_at=null, "
                      "review_due=null where id=%s", (cid,))
     return RedirectResponse("/review", status_code=303)
@@ -362,3 +367,21 @@ def do_merge(members, pick, user):
             (len(ids), Jsonb(case.model_dump()), case.summary, case.search_text())).fetchone()[0]
         conn.execute("update cases set merged_into = %s where id = any(%s)", (new, ids))
     return RedirectResponse(f"/review/{new}", status_code=303)
+
+
+@router.post("/review/{cid}/unmerge")
+def unmerge(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))):
+    """Any status, even with a withdrawn member. The merged row is kept: generations and research point at it."""
+    with db.connect() as conn:
+        row = conn.execute(
+            f"select {VERSION} from cases c where c.id = %s and {REVIEWABLE} and c.document_id is null for update of c",
+            (cid, list(user.groups))).fetchone()
+        if not row:
+            raise HTTPException(404, "no such case")
+        if row[0] != v:
+            raise HTTPException(409, "case changed; reload the page")
+        conn.execute("update cases set merged_into = null, status = 'extracted', approved_by = null, approved_at = null, "
+                     "review_due = null where merged_into = %s", (cid,))
+        conn.execute("update cases set status = 'rejected', approved_by = null, approved_at = null, review_due = null "
+                     "where id = %s", (cid,))
+    return RedirectResponse("/review", status_code=303)

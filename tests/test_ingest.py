@@ -35,6 +35,8 @@ def env(monkeypatch):
         with db.connect() as c:
             c.execute("delete from jobs where (payload->>'document_id')::bigint in "
                       "(select id from documents where source_id=%s)", (sid,))
+            c.execute("delete from cases where document_id is null and id in (select merged_into from cases "
+                      "where document_id in (select id from documents where source_id=%s))", (sid,))  # merged rows first
             c.execute("delete from sources where id=%s", (sid,))
 
 
@@ -269,6 +271,50 @@ def test_changed_document_no_longer_a_case_retires_it(env):
     with db.connect() as c:
         assert c.execute("select status from cases where document_id=%s", (did,)).fetchone()[0] == "rejected"
     assert jobs() == before
+
+
+def merged_pair(sid):
+    """Two ingested documents "a" and "b", each with an engagement case, merged into one approved case."""
+    ing.ingest(sid, "a", "a", b"one")
+    ing.ingest(sid, "b", "b", b"one")
+    with db.connect() as c:
+        dids = [r[0] for r in c.execute("select id from documents where source_id=%s order by external_id", (sid,))]
+        new = c.execute("insert into cases(document_id, member_count, status) values (null, 2, 'approved') "
+                        "returning id").fetchone()[0]
+        for d in dids:
+            c.execute("insert into cases(document_id, status, merged_into) values (%s, 'approved', %s)", (d, new))
+    return new, dids
+
+
+def status(cid):
+    with db.connect() as c:
+        return c.execute("select status from cases where id=%s", (cid,)).fetchone()[0]
+
+
+def test_changed_member_reopens_its_approved_merged_case(env):
+    _, sid = env
+    new, _ = merged_pair(sid)
+    assert ing.ingest(sid, "a", "a", b"one") == "skipped" and status(new) == "approved"  # nothing changed
+    ing.ingest(sid, "a", "a", b"two")
+    assert status(new) == "extracted"
+
+
+def test_member_that_is_no_longer_an_engagement_is_rejected_and_blocks_approval(env):
+    _, sid = env
+    new, dids = merged_pair(sid)
+    TRIAGE["v"] = ing.Triage(kind="other", describes_delivered_work=False)
+    ing.ingest(sid, "a", "a", b"two")
+    with db.connect() as c:
+        assert c.execute("select status, merged_into from cases where document_id=%s", (dids[0],)).fetchone() == ("rejected", new)
+    assert status(new) == "extracted"  # approval is then refused by test_review's rejected-member test
+
+
+def test_unrelated_document_leaves_merged_cases_alone(env):
+    _, sid = env
+    new, _ = merged_pair(sid)
+    ing.ingest(sid, "c", "c", b"one")
+    ing.ingest(sid, "c", "c", b"two")
+    assert status(new) == "approved"
 
 
 def test_executed_flag_must_be_true_not_truthy():

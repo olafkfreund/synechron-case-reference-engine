@@ -271,6 +271,7 @@ def acme(make):
                         (name,)).fetchone()[0]
     yield cid
     with db.connect() as c:
+        c.execute("update cases set client_id=null where client_id=%s", (cid,))  # set by approving a merged case
         c.execute("delete from clients where id=%s", (cid,))
 
 
@@ -379,3 +380,115 @@ def test_merged_detail_and_list_show_members(make, acme):
     assert "<small>(Source doc)</small>" in page and "<script" not in page
     assert "/review/merge/preview" not in page
     assert "2 contracts" in client(R).get("/review").text
+
+
+def status_of(cid):
+    with db.connect() as c:
+        return c.execute("select status from cases where id=%s", (cid,)).fetchone()[0]
+
+
+@pytest.mark.parametrize("approved", [False, True])
+def test_unmerge_returns_members_to_the_queue(make, acme, approved):
+    c = client(R)
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    new = int(merge(c, [a, b]).headers["location"].rsplit("/", 1)[1])
+    if approved:
+        with db.connect() as d:
+            d.execute("update cases set status='approved', approved_by='u', approved_at=now(), "
+                      "review_due=now() + interval '60 days' where id=%s", (new,))
+    assert f"/review/{new}/unmerge" in c.get(f"/review/{new}").text
+    assert c.post(f"/review/{new}/unmerge", data={"v": "stale"}).status_code == 409
+    assert c.post(f"/review/{new}/unmerge", data={"v": ver(new)}, follow_redirects=False).status_code == 303
+    assert (status_of(a), status_of(b), status_of(new)) == ("extracted", "extracted", "rejected")
+    assert merged_of(a) is None and merged_of(b) is None
+    page = c.get("/review").text
+    assert f"/review/{a}\"" in page and f"/review/{b}\"" in page and f"/review/{new}\"" not in page
+    assert c.get(f"/review/{new}").status_code == 404
+    assert c.post(f"/review/{new}/unmerge", data={"v": ver(new)}).status_code == 404
+
+
+def test_merged_case_cannot_be_approved_with_a_rejected_member_or_rejected(make, acme):
+    c = client(R)
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    new = int(merge(c, [a, b]).headers["location"].rsplit("/", 1)[1])
+    assert c.post(f"/review/{new}/reject", data={"v": ver(new)}).status_code == 400
+    with db.connect() as d:
+        d.execute("update cases set status='rejected' where id=%s", (b,))
+    assert c.post(f"/review/{new}/approve", data={"v": ver(new)}).status_code == 409
+    assert status_of(new) == "extracted"
+
+
+# ---- need-to-know across every surface (#55) ----
+
+GA, GB = "g-a", "g-b"
+
+
+def ver_or_none(cid):  # a hard-deleted member has no row left to hash
+    with db.connect() as c:
+        r = c.execute("select md5(data::text) from cases where id=%s", (cid,)).fetchone()
+    return r[0] if r else "gone"
+
+
+FIND = {  # surface -> does this user reach the case through it? (a 404 or an absence is False)
+    "list": lambda c, i: f'/review/{i}"' in c.get("/review").text,
+    "detail": lambda c, i: c.get(f"/review/{i}").status_code == 200,
+    "edit": lambda c, i: c.post(f"/review/{i}/edit", data={"field": "industry", "value": "Banking", "v": ver_or_none(i)}).status_code != 404,
+    "approve": lambda c, i: c.post(f"/review/{i}/approve", data={"v": ver_or_none(i)}).status_code != 404,
+    "search": lambda c, i: f'name="case_id" value="{i}"' in c.post("/search", data={"industry": "Aerospace"}).text,
+    "generate": lambda c, i: c.post("/generate", data={"case_ids": [i], "format": "md"}).status_code != 404,
+    "research_from_case": lambda c, i: c.post("/research/from-case", data={"case_id": i}).status_code != 404,
+    "research_send": lambda c, i: c.post("/research/send", data={"query": "cloud kyc", "case_id": i}, follow_redirects=False).status_code != 404,
+}
+STATES = {  # state -> (groups, withdraw or delete member b, expect the merged case reachable on review pages / elsewhere)
+    "one_group": ([REV, GA], None, False, False),
+    "both_groups": ([REV, GA, GB], None, True, True),
+    "member_withdrawn": ([REV, GA, GB], "withdraw", True, False),
+    "member_deleted": ([REV, GA, GB], "delete", False, False),
+}
+
+
+@pytest.mark.parametrize("state", STATES)
+@pytest.mark.parametrize("surface", FIND)
+def test_need_to_know_matrix(make, acme, monkeypatch, surface, state):
+    from app import research as rs
+    monkeypatch.setattr(rs, "complete_json", lambda *a, **k: rs.Query(query="cloud kyc"))
+    groups, change, on_review, elsewhere = STATES[state]
+    a = eng(make, TEXT_A, ["x"], [], acl=(GA,))
+    b = eng(make, TEXT_B, ["y"], [], acl=(GB,))
+    new = int(merge(client([REV, GA, GB]), [a, b]).headers["location"].rsplit("/", 1)[1])
+    open_surface = surface in ("list", "detail", "edit", "approve")
+    with db.connect() as c:
+        if not open_surface:  # search, generate and research need an approved, in-date case
+            c.execute("update cases set status='approved', review_due=now() + interval '60 days' "
+                      "where id = any(%s)", ([a, b, new],))
+        if change == "withdraw":
+            c.execute("update documents set deleted_at=now() where id=(select document_id from cases where id=%s)", (b,))
+        elif change == "delete":
+            c.execute("delete from documents where id=(select document_id from cases where id=%s)", (b,))
+    try:
+        c = client(groups)
+        want = on_review if surface in ("list", "detail") else elsewhere
+        if surface in ("edit", "approve"):
+            want = elsewhere or (on_review and change is None)
+        assert FIND[surface](c, new) is want
+        for member in (a, b):  # a member is never reachable on its own while merged
+            assert FIND[surface](c, member) is False
+    finally:
+        with db.connect() as d:
+            d.execute("delete from jobs where kind='research' and (payload->>'research_id')::bigint in "
+                      "(select id from research where case_id=%s)", (new,))
+            d.execute("delete from research where case_id=%s", (new,))
+
+
+def test_withdrawn_member_can_still_be_unmerged_but_not_edited(make, acme):
+    a = eng(make, TEXT_A, ["x"], [], acl=(GA,))
+    b = eng(make, TEXT_B, ["y"], [], acl=(GB,))
+    c = client([REV, GA, GB])
+    new = int(merge(c, [a, b]).headers["location"].rsplit("/", 1)[1])
+    with db.connect() as d:
+        d.execute("update documents set deleted_at=now() where id=(select document_id from cases where id=%s)", (b,))
+    page = c.get(f"/review/{new}").text
+    assert "withdrawn" in page and f"/review/{new}/unmerge" in page
+    assert f"/review/{new}/approve" not in page and ">Save<" not in page
+    assert c.post(f"/review/{new}/unmerge", data={"v": ver(new)}, follow_redirects=False).status_code == 303
+    assert status_of(new) == "rejected" and merged_of(a) is None
