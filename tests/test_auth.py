@@ -265,3 +265,71 @@ def test_revoke_sessions_command(env):
     assert c.get("/me").status_code == 200
     assert revoke_sessions.main([sub]) == 0
     assert c.get("/me").status_code == 401
+
+
+HTML = {"Accept": "text/html"}
+
+
+def add_source(kind, enabled=True):
+    with db.connect() as c:
+        return c.execute("insert into sources(kind,name,config,enabled) values (%s,%s,%s,%s) returning id",
+                         (kind, uuid.uuid4().hex, '{"bucket":"upload-bkt","prefix":"other/"}', enabled)).fetchone()[0]
+
+
+def test_upload_browser_success_redirects(upload_src):
+    r = client([ADMIN]).post("/admin/upload", files={"file": ("a.docx", DOCX)}, headers=HTML,
+                             follow_redirects=False)
+    with db.connect() as c:
+        jobs = c.execute("select id, kind, payload from jobs").fetchall()
+    assert len(jobs) == 1 and jobs[0][1:] == ("crawl_s3", {"source_id": upload_src})
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/admin/sources?notice=uploaded&source={upload_src}&job={jobs[0][0]}"
+    assert len(boto3.client("s3").list_objects_v2(Bucket="upload-bkt")["Contents"]) == 1
+
+
+def test_upload_source_id_picks_that_source(upload_src):
+    second = add_source("upload")
+    try:
+        r = client([ADMIN]).post("/admin/upload", files={"file": ("a.docx", DOCX)}, data={"source_id": second})
+        assert r.status_code == 202
+        with db.connect() as c:
+            assert c.execute("select payload from jobs").fetchall() == [({"source_id": second},)]
+        assert boto3.client("s3").list_objects_v2(Bucket="upload-bkt")["Contents"][0]["Key"].startswith("other/")
+    finally:
+        with db.connect() as c:
+            c.execute("delete from sources where id=%s", (second,))
+
+
+def test_upload_source_id_must_be_enabled_upload_source(upload_src):
+    s3src, off = add_source("s3"), add_source("upload", enabled=False)
+    try:
+        for sid in (s3src, off, -1):
+            f = {"file": ("a.docx", DOCX)}
+            r = client([ADMIN]).post("/admin/upload", files=f, data={"source_id": sid})
+            assert r.status_code == 404 and r.json()["detail"] == "no such enabled upload source"
+            r = client([ADMIN]).post("/admin/upload", files=f, data={"source_id": sid}, headers=HTML,
+                                     follow_redirects=False)
+            assert r.status_code == 303 and r.headers["location"] == "/admin/sources?notice=source"
+        assert "Contents" not in boto3.client("s3").list_objects_v2(Bucket="upload-bkt")
+        with db.connect() as c:
+            assert c.execute("select count(*) from jobs").fetchone()[0] == 0
+    finally:
+        with db.connect() as c:
+            c.execute("delete from sources where id in (%s,%s)", (s3src, off))
+
+
+@pytest.mark.parametrize("name, body, code", [("a.exe", b"x", "type"), ("a.pdf", DOCX, "content"),
+                                              ("a.pdf", PDF + b"x" * 100, "size")])
+def test_upload_browser_refusals(upload_src, monkeypatch, name, body, code):
+    monkeypatch.setenv("UPLOAD_MAX_BYTES", "10")  # the body stays under the guard's cap + 64 KiB
+    r = client([ADMIN]).post("/admin/upload", files={"file": (name, body)}, headers=HTML, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == f"/admin/sources?notice={code}"
+    assert "Contents" not in boto3.client("s3").list_objects_v2(Bucket="upload-bkt")
+
+
+def test_upload_browser_without_source(env):
+    cl = client([ADMIN])
+    with mock_aws(), db.connect() as c:
+        c.execute("delete from sources where kind='upload'")
+        r = cl.post("/admin/upload", files={"file": ("a.pdf", PDF)}, headers=HTML, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/admin/sources?notice=nosource"
