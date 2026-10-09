@@ -47,7 +47,10 @@ def facts(case: ReferenceCase) -> list[str]:
 
 
 def search(user: User, bid_text: str, filters: dict) -> list[dict]:
-    """Top 20 approved, in-date, ACL-visible cases. Candidates: id, case, label, basis, rank (best first)."""
+    """Top 20 approved, in-date, ACL-visible cases. Candidates: id, case, label, basis, rank (best first).
+
+    label is unchecked: show it only through results(), whose view() blocks protected names.
+    """
     bid = bid_text.strip()[:MAX_BID_CHARS]
     join, rank, params = "", "0", []
     if bid:
