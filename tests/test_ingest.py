@@ -1,4 +1,5 @@
 import io
+import re
 import uuid
 
 import boto3
@@ -7,6 +8,7 @@ from docx import Document
 from moto import mock_aws
 
 from app import crawl, db, ingest as ing
+from tests.test_auth import ADMIN, ORIGIN, SECRET, client
 
 CASE = ing.Triage(kind="case", describes_delivered_work=True)
 TRIAGE = {}
@@ -138,6 +140,32 @@ def test_crawl_cursor_and_deletion(env):
     with db.connect() as c:
         assert c.execute("select deleted_at is not null from documents where external_id='in/b.docx'").fetchone()[0]
         assert c.execute("select acl_groups from documents where external_id='in/a.docx'").fetchone()[0] == ["g1"]
+
+
+def test_upload_title_is_the_file_name(env, monkeypatch):
+    for k, v in dict(SESSION_SECRET=SECRET, SESSION_HTTPS_ONLY="false", APP_ORIGIN=ORIGIN,
+                     ROLE_ADMIN_GROUPS=ADMIN).items():
+        monkeypatch.setenv(k, v)
+    db.init()
+    with db.connect() as c:
+        usid = c.execute("insert into sources(kind,name,config) values ('upload',%s,%s) returning id",
+                         (uuid.uuid4().hex, '{"bucket":"src","prefix":"up/"}')).fetchone()[0]
+    try:
+        for body in (b"PK\x03\x04one", b"PK\x03\x04two"):
+            r = client([ADMIN]).post("/admin/upload", data={"source_id": usid}, files={"file": ("My Case.docx", body)})
+            assert r.status_code == 202
+        assert crawl.crawl_s3(usid)["new"] == 2
+        with db.connect() as c:
+            rows = c.execute("select title, external_id from documents where source_id=%s", (usid,)).fetchall()
+        assert len(rows) == 2 and {t for t, _ in rows} == {"My_Case.docx"}
+        assert len({e for _, e in rows}) == 2
+        assert all(re.fullmatch(r"up/[0-9a-f]{32}/My_Case\.docx", e) for _, e in rows)
+    finally:
+        with db.connect() as c:
+            c.execute("delete from jobs where payload->>'source_id' = %s", (str(usid),))
+            c.execute("delete from jobs where (payload->>'document_id')::bigint in "
+                      "(select id from documents where source_id=%s)", (usid,))
+            c.execute("delete from sources where id=%s", (usid,))
 
 
 def test_crawl_skips_type_and_size_without_downloading(env, monkeypatch):

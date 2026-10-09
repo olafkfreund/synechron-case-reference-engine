@@ -1,4 +1,5 @@
 import json
+import re
 import time
 import uuid
 from base64 import b64encode
@@ -116,7 +117,7 @@ def test_upload_good_file_lands_in_s3_and_queues_crawl(upload_src):
     keys = [o["Key"] for o in boto3.client("s3").list_objects_v2(Bucket="upload-bkt")["Contents"]]
     assert len(keys) == 1
     k = keys[0]
-    assert k.startswith("uploads/") and k.endswith("-My_Case_.DOCX") and ".." not in k and "etc" not in k
+    assert re.fullmatch(r"uploads/[0-9a-f]{32}/My_Case_\.DOCX", k) and ".." not in k and "etc" not in k
     with db.connect() as c:
         assert c.execute("select id, kind, payload from jobs").fetchall() == [
             (r.json()["job_id"], "crawl_s3", {"source_id": upload_src})]
@@ -194,6 +195,12 @@ def test_groups_overage_refused_and_unknown_groups_dropped(env, monkeypatch):
 
 def test_cancelled_login_is_401_not_500(env, monkeypatch):
     assert oidc_app(monkeypatch, error=True).get("/auth").status_code == 401
+
+
+def test_safe_name_is_never_a_path():  # the upload key is {uuid}/{name} (#110)
+    for raw in ("..", ".", "../..", "a/..", "/", "a/b\\c.pdf", "..\\..\\x.docx", ""):
+        n = main.safe_name(raw)
+        assert "/" not in n and "\\" not in n and n not in ("", ".", "..")
 
 
 def test_long_filename_truncated():
