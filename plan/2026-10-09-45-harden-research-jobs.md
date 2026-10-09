@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 45
 spec: spec/2026-10-09-45-harden-research-jobs.md
 ---
