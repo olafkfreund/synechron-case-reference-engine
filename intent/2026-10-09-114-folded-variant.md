@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 114
 author: olafkfreund
 ---
@@ -72,3 +72,8 @@ search titles, outcomes and labels, and the pick prompt. Every one of these goes
    withholds that output, which is the correct fail-closed result. With (a), these could be
    rewritten instead, so more outputs would go out. **Recommended: no, not in this issue.** It
    changes what is withheld, so it deserves its own decision.
+
+## Approved answers
+
+1. (c) Won't fix. Odd wording, not a leak, and rare; position-mapping code in the anonymiser is a risk not worth taking now. If it shows up in real use, option (a) is the fix.
+2. No: protected names keep today's matching; changing what is withheld needs its own decision.
