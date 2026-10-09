@@ -273,7 +273,7 @@ def test_whitespace_value_not_sourced_and_dropped_on_approval(make):
     ind = row(cid)[1]["industry"]
     assert ind["value"] is None and ind["unsourced"] is False
     assert c.post(f"/review/{cid}/approve", data={"v": ver(cid)}).status_code == 200  # after the redirect
-    assert row(cid)[1]["industry"]["value"] is None
+    assert row(cid)[0] == "approved" and row(cid)[1]["industry"]["value"] is None
 
 
 def test_padded_add_is_trimmed(make):
