@@ -196,6 +196,16 @@ def test_price_in_numeric_item_quote_clears_the_item():
     assert case.team_size.value == 8 and case.title.value == "Core migration"
 
 
+def test_outcome_without_value_unsourced():
+    from app.schema import Outcome, ReferenceCase, Sourced
+    case = ReferenceCase(title=Sourced[str](value="Core migration", source_quote="the core migration programme"),
+                         outcomes=[Outcome(metric="Revenue", value="", source_quote=Q),
+                                   Outcome(metric="", value="  ", source_quote=Q),
+                                   Outcome(metric="onboarding", value="12 days to 3 days", source_quote=Q)])
+    ex.check(case, DOC)
+    assert [o.unsourced for o in case.outcomes] == [True, True, False]
+
+
 def test_merged_case_checks_each_item_against_its_own_document():
     from app.schema import Sourced
     qa, qb = "built the onboarding portal for staff", "migrated the payroll platform to cloud"
