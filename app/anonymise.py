@@ -86,6 +86,11 @@ def resolve(mention: str | None, clients) -> int | None:
     return next((c["id"] for c in clients if k and k in {_key(n) for n in _names(c)}), None)
 
 
+def shown(name: str | None, label: str | None, referenceable: bool | None, linked: bool) -> str:
+    """How a case's client is shown: its name only if linked and referenceable, its label if linked, else "a client"."""
+    return name if linked and referenceable else (label if linked else "a client")
+
+
 def unlisted(organisations: list[str], clients) -> list[str]:
     """Organisations named in a case that are not exactly a registered name or alias.
 

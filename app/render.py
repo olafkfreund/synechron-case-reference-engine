@@ -382,7 +382,7 @@ def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: 
         sections, anonymised = [], False
         for i in ids:
             _, data, name, label, referenceable, linked = by_id[i]
-            shown = name if linked and referenceable else (label if linked else "a client")
+            shown = anonymise.shown(name, label, referenceable, linked)
             anonymised |= not (linked and referenceable)
             sections.append(section(ReferenceCase.model_validate(data), shown))
         try:

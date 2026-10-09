@@ -29,6 +29,13 @@ def test_referenceable_untouched_and_blocked_scrub():
     assert an.scrub("Globex rolled out Acme's Acmeville tool", REG) == "rolled out 's acmeville tool"
 
 
+def test_shown():
+    assert an.shown("Globex", "a manufacturer", True, True) == "Globex"
+    assert an.shown("Globex", "a manufacturer", False, True) == "a manufacturer"
+    assert an.shown(None, None, None, False) == "a client"
+    assert an.shown("Globex", "a manufacturer", True, False) == "a client"
+
+
 def test_regex_metacharacters_and_empty_registry():
     assert an.apply("a.b (x)", [C("a.b (x)", label="L")]) == "L"
     assert an.apply("axb", [C("a.b", label="L")]) == "axb"
