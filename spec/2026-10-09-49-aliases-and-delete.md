@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 49
 intent: intent/2026-10-09-49-aliases-and-delete.md
 ---
