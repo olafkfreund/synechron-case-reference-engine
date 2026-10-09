@@ -4,21 +4,22 @@
 <p>Names and aliases are replaced by the label in outputs unless the client is referenceable.</p>
 <p>Add every spelling people use as an alias: abbreviations, former names and the email/web domain stem
 (e.g. <code>acmebank</code> for acmebank.co.uk). Short all-caps aliases match case-sensitively. Avoid
-aliases that are ordinary words ("Apex"): they would be replaced wherever the word appears.</p>
-<table><tr><th>Name</th><th>Aliases (comma-separated)</th><th>Label</th><th>Referenceable</th><th>Logo allowed</th><th></th></tr>
+aliases that are ordinary words ("Apex"): they would be replaced wherever the word appears.
+Enter one alias per line; commas are part of the alias. Only referenceable clients that no case uses can be deleted.</p>
+<table><tr><th>Name</th><th>Aliases (one per line)</th><th>Label</th><th>Referenceable</th><th>Logo allowed</th><th></th></tr>
 {% for id, name, aliases, label, ref, logo, v in clients %}{% set f = "c" ~ id %}<tr>
 <td><input type="text" form="{{ f }}" name="name" value="{{ name }}" aria-label="name"></td>
-<td><input type="text" form="{{ f }}" name="aliases" value="{{ aliases | join(', ') }}" aria-label="aliases"></td>
+<td><textarea form="{{ f }}" name="aliases" rows="2" aria-label="aliases">{{ aliases | join('\n') }}</textarea></td>
 <td><input type="text" form="{{ f }}" name="anonymised_label" value="{{ label }}" aria-label="label"></td>
 <td><input type="checkbox" form="{{ f }}" name="referenceable" {{ "checked" if ref }} aria-label="referenceable"></td>
 <td><input type="checkbox" form="{{ f }}" name="logo_allowed" {{ "checked" if logo }} aria-label="logo allowed"></td>
-<td><button form="{{ f }}">Save</button></td></tr>{% endfor %}
+<td><button form="{{ f }}">Save</button>{% if ref %} <button form="d{{ id }}">Delete</button>{% endif %}</td></tr>{% endfor %}
 <tr><td><input type="text" form="new" name="name" aria-label="new name" required></td>
-<td><input type="text" form="new" name="aliases" aria-label="new aliases"></td>
+<td><textarea form="new" name="aliases" rows="2" aria-label="new aliases"></textarea></td>
 <td><input type="text" form="new" name="anonymised_label" aria-label="new label" required></td>
 <td><input type="checkbox" form="new" name="referenceable" aria-label="new referenceable"></td>
 <td><input type="checkbox" form="new" name="logo_allowed" aria-label="new logo allowed"></td>
 <td><button form="new">Add</button></td></tr></table>
-{% for id, name, aliases, label, ref, logo, v in clients %}<form id="c{{ id }}" method="post" action="/admin/clients/{{ id }}"><input type="hidden" name="v" value="{{ v }}"></form>{% endfor %}
+{% for id, name, aliases, label, ref, logo, v in clients %}<form id="c{{ id }}" method="post" action="/admin/clients/{{ id }}"><input type="hidden" name="v" value="{{ v }}"></form><form id="d{{ id }}" method="post" action="/admin/clients/{{ id }}/delete"><input type="hidden" name="v" value="{{ v }}"></form>{% endfor %}
 <form id="new" method="post" action="/admin/clients"></form>
 {% endblock %}
