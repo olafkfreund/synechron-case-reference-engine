@@ -1,16 +1,26 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block body %}
-<h1>Customer reference engine</h1>
-<p class="muted">Signed in as {{ user.name }} ({{ user.roles | sort | join(", ") }}).</p>
-<div class="stack">
-<a class="card" href="/search"><b>Find reference cases</b><br><span class="muted">Paste a bid requirement and get the best approved cases.</span></a>
-<a class="card" href="/research"><b>Online research</b><br><span class="muted">See how vendors and the industry handle a capability, from public sources.</span></a>
-{% if 'reviewer' in user.roles %}<a class="card" href="/review"><b>Review queue</b><br><span class="muted">Check extracted cases against their sources and approve them.</span></a>{% endif %}
-{% if 'admin' in user.roles %}
-<a class="card" href="/admin/clients"><b>Client registry</b><br><span class="muted">Which client names are protected or may be shown.</span></a>
-<a class="card" href="/admin/sources"><b>Sources</b><br><span class="muted">Crawled document sources and their access groups.</span></a>
-<a class="card" href="/admin/models"><b>Model approvals</b><br><span class="muted">Which AI models are approved for use.</span></a>
-<a class="card" href="/admin/audit"><b>Audit</b><br><span class="muted">Who searched, downloaded and changed what.</span></a>
-{% endif %}
+<div class="page-head"><div><h1>Customer reference engine</h1>
+<p>Find approved customer cases for a bid, and check what the market says.</p></div></div>
+<div class="lead-grid">
+<a class="card lead-card" href="/search">{{ icon("search") }}<h2>Find reference cases</h2>
+<span class="muted">Paste a bid requirement and get the best approved cases.</span><span class="btn primary">Find references</span></a>
+<a class="card side" href="/research">{{ icon("globe") }}<b>Online research</b>
+<span class="muted">See how vendors and the industry handle a capability, from public sources.</span></a>
 </div>
+{% if 'reviewer' in user.roles %}
+<h2 class="sub">Needs review</h2>
+<div class="lead-grid"><a class="card side" href="/review">{{ icon("inbox") }}<b>Review queue</b>
+<span class="muted">Check extracted cases against their sources and approve them.</span></a></div>
+{% endif %}
+{% if 'admin' in user.roles %}
+<h2 class="sub">Administration</h2>
+<div class="admin-grid">
+<a class="card" href="/admin/clients">{{ icon("users") }}<b>Client registry</b><span class="muted">Which client names are protected or may be shown.</span></a>
+<a class="card" href="/admin/sources">{{ icon("database") }}<b>Sources</b><span class="muted">Crawled document sources and their access groups.</span></a>
+<a class="card" href="/admin/models">{{ icon("shield") }}<b>Model approvals</b><span class="muted">Which AI models are approved for use.</span></a>
+<a class="card" href="/admin/audit">{{ icon("clock") }}<b>Audit</b><span class="muted">Who searched, downloaded and changed what.</span></a>
+</div>
+{% endif %}
 {% endblock %}
