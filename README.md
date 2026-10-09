@@ -66,7 +66,7 @@ paste the claims JSON from the table.
   `docker-compose.yml`. Change all three together.
 - Check all four logins with `scripts/check_local_login.sh` (`BASE` overrides `http://localhost:8000`).
 - Uploads go to an in-memory S3 (`s3`), lost when it restarts; `docker compose up -d s3-init` recreates the bucket.
-  As admin, add an upload source with config `{"bucket": "refs-local"}` first.
+  As admin, add an upload source with config `{"bucket": "refs-local"}` first, then use Upload on its row of the Sources page.
 - **Local only:** this provider logs anyone in as anything. Never expose it.
 
 ## Local demo
@@ -106,7 +106,7 @@ Walkthrough:
 1. **Sales:** log in as `sales`, search for a bid text (try "claims" or "payments"), open a case, pick cases and draft an output.
 2. **Reviewer:** as `reviewer`, open the review list. Fix the case with an outcome named "metric", look at the unsourced field, and approve one.
 3. **Admin:** as `admin`, look at sources and clients, and merge the two Fabrikam cases.
-4. **Live upload:** as `admin`, upload a document to "Demo: Bid library" and watch it extract (needs a model).
+4. **Live upload:** as `admin`, upload a document with Upload on the "Demo: Bid library" row of the Sources page and watch it extract (needs a model).
 5. **Nobody:** log in as `nobody` and see that there is no access.
 
 ## Revoke a user's sessions
