@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 84
 spec: spec/2026-10-09-84-approve-client-race.md
 ---
