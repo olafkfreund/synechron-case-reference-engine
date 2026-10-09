@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 115
 spec: spec/2026-10-09-115-label-recheck.md
 ---
