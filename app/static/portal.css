@@ -67,6 +67,7 @@ th,td{padding:10px 14px;text-align:left;vertical-align:top;border-top:1px solid 
 thead th{border-top:0}
 
 label{font-weight:600;font-size:14px}
-textarea,input[type=text],input[type=search],input[type=email],input[type=number],input[type=password],select{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--input-border);border-radius:8px;color:var(--ink);background:#fff;min-height:44px}
+textarea,input[type=text],input[type=search],input[type=email],input[type=number],input[type=date],input[type=password],select{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--input-border);border-radius:8px;color:var(--ink);background:#fff;min-height:44px}
 textarea{resize:vertical}
 input[type=checkbox],input[type=radio]{width:18px;height:18px;accent-color:var(--accent)}
+.row>input[type=text],.row>input[type=date],.row>select,.row>textarea{width:auto;flex:1 1 180px}

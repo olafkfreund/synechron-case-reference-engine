@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {% block body %}
 <h1>Online research</h1>
-<p>Ask how the industry or a vendor does something. Only a short, generic search query leaves the company: client
+<p class="muted">Ask how the industry or a vendor does something. Only a short, generic search query leaves the company: client
 names are removed and you see the exact query before it is sent.</p>
-<form method="post" action="/research">
-<p><textarea name="question" rows="4" maxlength="1000" aria-label="question" required placeholder="e.g. How do banks run KYC onboarding on AWS?"></textarea></p>
-<button>Preview the search query</button></form>
+<form method="post" action="/research" class="card stack">
+<label for="question">1. Question</label>
+<textarea id="question" name="question" rows="4" maxlength="1000" aria-label="question" required placeholder="e.g. How do banks run KYC onboarding on AWS?"></textarea>
+<div><button class="btn primary">Preview the search query</button></div></form>
 {% endblock %}

@@ -1,19 +1,21 @@
 {% extends "base.html" %}
 {% block body %}
 <h1>Case {{ id }}</h1>
-{% if members %}<p>Merged from {{ members|length }} contracts · status: {{ status }}</p>
-<table><tr><th>Document</th><th>Source</th><th>External id</th><th>Basis</th><th>Status</th></tr>
-{% for m in members %}<tr><td>{{ m[1] }}{% if m[6] %} <span class="badge bad">withdrawn</span>{% endif %}</td><td>{{ m[2] }}</td><td><code>{{ m[3] }}</code></td><td>{{ m[4] }}</td><td>{{ m[5] }}</td></tr>{% endfor %}</table>
-{% else %}<p>Document: <b>{{ document }}</b> · source: {{ source }} · <code>{{ external_id }}</code> · status: {{ status }}</p>{% endif %}
-<p><span class="badge {{ "ok" if basis == "delivered" else "empty" }}">{{ "Engagement (contracted scope)" if basis == "engagement" else "Delivered case" }}</span>{% if basis_reason %} {{ basis_reason }}{% endif %}</p>
+<div class="card">
+{% if members %}<p>Merged from {{ members|length }} contracts · status: <span class="badge neutral">{{ status }}</span></p>
+<div class="table-box"><table><thead><tr><th>Document</th><th>Source</th><th>External id</th><th>Basis</th><th>Status</th></tr></thead><tbody>
+{% for m in members %}<tr><td>{{ m[1] }}{% if m[6] %} <span class="badge bad">withdrawn</span>{% endif %}</td><td>{{ m[2] }}</td><td><code>{{ m[3] }}</code></td><td>{{ m[4] }}</td><td>{{ m[5] }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p>Document: <b>{{ document }}</b> · source: {{ source }} · <code>{{ external_id }}</code> · status: <span class="badge neutral">{{ status }}</span></p>{% endif %}
+<p><span class="badge {{ "ok" if basis == "delivered" else "neutral" }}">{{ "Engagement (contracted scope)" if basis == "engagement" else "Delivered case" }}</span>{% if basis_reason %} {{ basis_reason }}{% endif %}</p>
+</div>
 {% for n in notes %}<div class="note">{{ n }}</div>{% endfor %}
 {% for o in unlisted %}<div class="note">organisation not in client registry: {{ o }}
 {% if "admin" in user.roles %}<form method="post" action="/admin/clients">
 <input type="hidden" name="name" value="{{ o }}"><input type="hidden" name="next" value="/review/{{ id }}">
 <input type="text" name="anonymised_label" aria-label="label for {{ o }}" placeholder="label, e.g. a retail bank" required>
-<button>Add as client</button> <small>Only for clients. A partner or vendor added here is anonymised in every output.</small>
+<button class="btn">Add as client</button> <small>Only for clients. A partner or vendor added here is anonymised in every output.</small>
 </form>{% endif %}</div>{% endfor %}
-<table><tr><th>Field</th><th>Value</th><th>Source quote</th><th></th></tr>
+<div class="table-box"><table><thead><tr><th>Field</th><th>Value</th><th>Source quote</th><th></th></tr></thead><tbody>
 {% for r in rows %}{% set f = "f" ~ loop.index %}<tr>
 <td>{{ r.label }}{% if r.doc %} <small>({{ r.doc }})</small>{% endif %}<br>
 {% if r.new %}{% elif r.no_quote %}<span class="badge empty">no quote (generated)</span>
@@ -22,17 +24,19 @@
 {% else %}<span class="badge empty">empty</span>{% endif %}</td>
 <td>{% for name, val in r.inputs %}<input type="text" form="{{ f }}" name="{{ name }}"{% if r.new %} required{% endif %} value="{{ val }}" aria-label="{{ r.label }} {{ name }}">{% endfor %}</td>
 <td>{% if not r.no_quote %}<textarea form="{{ f }}" name="quote" rows="2"{% if r.new %} required{% endif %} aria-label="{{ r.label }} quote">{{ r.quote }}</textarea>{% endif %}</td>
-<td>{% if reviewable %}{% if r.new %}<button form="{{ f }}">Add</button>{% else %}<button form="{{ f }}">Save</button>{% if r.item %} <button form="{{ f }}" name="action" value="remove" formnovalidate>Remove</button>{% endif %}{% endif %}{% endif %}</td></tr>{% endfor %}</table>
+<td>{% if reviewable %}{% if r.new %}<button class="btn" form="{{ f }}">Add</button>{% else %}<button class="btn" form="{{ f }}">Save</button>{% if r.item %} <button class="btn" form="{{ f }}" name="action" value="remove" formnovalidate>Remove</button>{% endif %}{% endif %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
 {% for r in rows %}<form id="f{{ loop.index }}" method="post" action="/review/{{ id }}/edit"><input type="hidden" name="field" value="{{ r.path }}"><input type="hidden" name="v" value="{{ v }}"></form>{% endfor %}
 {% if reviewable %}
-<form method="post" action="/review/{{ id }}/approve" style="display:inline"><input type="hidden" name="v" value="{{ v }}">
-<button>Approve (unsourced fields are emptied)</button></form>
-{% if not merged %}<form method="post" action="/review/{{ id }}/reject" style="display:inline"><input type="hidden" name="v" value="{{ v }}"><button>Reject</button></form>{% endif %}
-{% else %}<p>This case is not open for review.</p>{% endif %}
+<div class="row">
+<form method="post" action="/review/{{ id }}/approve" style="margin:0"><input type="hidden" name="v" value="{{ v }}">
+<button class="btn primary">Approve (unsourced fields are emptied)</button></form>
+{% if not merged %}<form method="post" action="/review/{{ id }}/reject" style="margin:0"><input type="hidden" name="v" value="{{ v }}"><button class="btn">Reject</button></form>{% endif %}
+</div>
+{% else %}<p class="muted">This case is not open for review.</p>{% endif %}
 {% if merged %}<form method="post" action="/review/{{ id }}/unmerge"><input type="hidden" name="v" value="{{ v }}">
-<button>Un-merge (the contracts go back to the queue)</button></form>{% endif %}
-{% if reviewable and cands %}<h2>Merge with other contracts for the same client</h2>
-<form method="post" action="/review/merge/preview"><input type="hidden" name="members" value="{{ id }}:{{ v }}">
+<button class="btn">Un-merge (the contracts go back to the queue)</button></form>{% endif %}
+{% if reviewable and cands %}<h2 style="margin-top:24px">Merge with other contracts for the same client</h2>
+<form method="post" action="/review/merge/preview" class="card"><input type="hidden" name="members" value="{{ id }}:{{ v }}">
 {% for c in cands %}<label><input type="checkbox" name="members" value="{{ c[0] }}:{{ c[4] }}"> {{ c[1] }} ({{ c[2] }}{% if c[3].start or c[3].end %}, {{ c[3].start or "?" }} to {{ c[3].end or "?" }}{% endif %})</label><br>{% endfor %}
-<button>Preview merge</button></form>{% endif %}
+<button class="btn">Preview merge</button></form>{% endif %}
 {% endblock %}
