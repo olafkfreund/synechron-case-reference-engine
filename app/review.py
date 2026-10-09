@@ -162,6 +162,7 @@ def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: 
          start: str | None = Form(None), end: str | None = Form(None), quote: str | None = Form(None),
          action: str = Form("save"), v: str = Form(), user: User = Depends(require("reviewer"))):
     # `unsourced` is never read from the form: check() recomputes it against the document
+    value, metric, start, end, quote = (s.strip() if s is not None else None for s in (value, metric, start, end, quote))
     with db.connect() as conn:
         case, text = load(conn, cid, user, v)
         name, _, idx = field.partition(".")
