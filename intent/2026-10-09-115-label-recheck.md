@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 115
 author: olafkfreund
 ---
@@ -106,3 +106,8 @@ labels, which have been used in outputs since #109.
    client is protected after the save. **Recommendation: all labels.** A
    referenceable label is used in outputs since #109, and checking all of
    them is simpler and fails closed.
+
+## Approved answers
+
+1. A: refuse the save with 400, naming the clients whose labels would contain the new protected name. Showing conflicts on the registry page (C) is a possible follow-up, not part of this.
+2. Every other client's label, referenceable or not.
