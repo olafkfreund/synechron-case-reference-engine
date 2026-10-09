@@ -18,6 +18,20 @@ DATA_CLASSES = ("confidential", "sanitised", "public")
 REQUIRED = {"s3": ("bucket",), "upload": ("bucket",), "sharepoint": ("tenant_id", "drive_id"),
             "confluence": ("base_url", "spaces")}
 
+# #64: flipping "contracts executed" re-triages what is already crawled
+QUEUE_CONTRACTS = """insert into jobs(kind, payload)
+    select 'extract', jsonb_build_object('document_id', d.id, 'basis', 'engagement', 'basis_reason', 'source marked executed')
+    from documents d where d.source_id=%s and d.kind='contract' and d.deleted_at is null
+    and not exists (select 1 from cases c where c.document_id=d.id)
+    and not exists (select 1 from jobs j where j.kind='extract' and j.status in ('queued','running')
+                    and (j.payload->>'document_id')::bigint=d.id)"""
+RETIRE_FLAGGED = """update cases c set status='rejected' from documents d
+    where d.id=c.document_id and d.source_id=%s and c.basis='engagement'
+    and c.data->>'basis_reason'='source marked executed' and c.status<>'rejected'"""
+DROP_FLAGGED_JOBS = """delete from jobs j using documents d
+    where j.kind='extract' and j.status='queued' and (j.payload->>'document_id')::bigint=d.id
+    and d.source_id=%s and j.payload->>'basis_reason'='source marked executed'"""
+
 
 def log_class_change(conn, sid, old, new, who):
     conn.execute("insert into source_class_changes(source_id, old_class, new_class, changed_by) values (%s,%s,%s,%s)",
@@ -79,12 +93,18 @@ def update(sid: int, acl_groups: str = Form(), enabled: bool = Form(False), data
     if not groups(acl_groups):
         raise HTTPException(400, "at least one access group is required")
     with db.connect() as conn:  # one transaction: the change and its log row commit together
-        old = conn.execute("select data_class, acl_groups from sources where id=%s for update", (sid,)).fetchone()
+        old = conn.execute("select data_class, acl_groups, "
+                           "coalesce(config->'executed_contracts' = 'true', false) from sources where id=%s for update", (sid,)).fetchone()
         if not old:
             raise HTTPException(404, "no such source")
         conn.execute("update sources set acl_groups=%s, enabled=%s, data_class=coalesce(nullif(%s,''), data_class), "
                      "config=jsonb_set(config, '{executed_contracts}', to_jsonb(%s::bool)) "
                      "where id=%s", (groups(acl_groups), enabled, data_class, executed_contracts, sid))
+        if executed_contracts and not old[2]:  # contracts already crawled become engagements too (#64)
+            conn.execute(QUEUE_CONTRACTS, (sid,))
+        elif old[2] and not executed_contracts:  # and stop being engagements, approved ones included
+            conn.execute(RETIRE_FLAGGED, (sid,))
+            conn.execute(DROP_FLAGGED_JOBS, (sid,))
         # documents carry a copy of the groups: apply it in the same transaction, on every save, so a
         # re-save also repairs copies a crawl wrote back before #58
         conn.execute("update documents set acl_groups=%s where source_id=%s and acl_groups is distinct from %s",
