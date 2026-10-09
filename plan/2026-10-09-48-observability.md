@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 48
 spec: spec/2026-10-09-48-observability.md
 ---
@@ -19,13 +19,16 @@ From the approved intent (Q1 b, Q2 a, Q3 b) and spec:
   | Variable | Type | Default | Validation / notes |
   | --- | --- | --- | --- |
   | `web_min_count` | number | `2` | Replaces `web_desired_count`. Scaling floor and the web service's initial `desired_count`. |
-  | `web_max_count` | number | `4` | `var.web_max_count >= var.web_min_count` |
+  | `web_max_count` | number | `4` | `>= 1` (the max ≥ min check is a precondition, below) |
   | `web_cpu_target` | number | `60` | `var.web_cpu_target >= 10 && var.web_cpu_target <= 90` |
   | `log_kms_encryption` | bool | `true` | Encrypts the four app log groups with the new key. |
 
-  `web_desired_count` is **removed**, not kept. Cross-variable validation
-  needs Terraform >= 1.9; `versions.tf` says `>= 1.6`, so raise
-  `required_version` to `">= 1.9"` (see step 1 trap).
+  `web_desired_count` is **removed**, not kept. The max ≥ min check is a
+  `lifecycle { precondition { condition = var.web_max_count >=
+  var.web_min_count … } }` on `aws_appautoscaling_target.web`, which works
+  on the existing `required_version = ">= 1.6"`. So there's no version bump:
+  a cross-variable `validation` block would need 1.9 (session model's
+  amendment, keeping the plan within the spec).
 - **Log key** (`infra/logs.tf`): `local.log_groups = ["web", "worker",
   "crawl", "migrate"]` drives the existing `for_each` (same keys, so
   `iam.tf:38` and `ecs.tf` references keep working);
@@ -94,7 +97,7 @@ Expected: `fmt` exits 0; validate prints "Success! The configuration is valid."
 
 ## Steps
 
-1. **`infra/variables.tf:74-77`, `infra/ecs.tf:159`, `infra/versions.tf:2`: rename and new variables.**
+1. **`infra/variables.tf:74-77`, `infra/ecs.tf:159`: rename and new variables.**
    - Replace the `web_desired_count` block (lines 74-77) with `web_min_count`,
      `web_max_count`, `web_cpu_target` (types, defaults, validations from the
      table, each with a one-line `description`; error messages say the rule).
@@ -102,8 +105,8 @@ Expected: `fmt` exits 0; validate prints "Success! The configuration is valid."
      (lines 102-105), description "Encrypt the app log groups with the
      `<name>-logs` KMS key. Before turning it off, read the README."
    - `ecs.tf:159`: `desired_count = var.web_min_count` (keep alignment; fmt).
-   - `versions.tf:2`: `required_version = ">= 1.9"` (cross-variable
-     validation in `web_max_count`). Check `terraform version` locally is >= 1.9.
+   - `versions.tf` is unchanged (`>= 1.6`): no cross-variable `validation`
+     blocks; the max ≥ min check is the precondition on the scaling target.
 
    → verify by the common checks, plus `grep -rn web_desired_count infra` → no hits.
    Traps: the rename and `ecs.tf:159` must land in the same commit or validate
@@ -215,7 +218,7 @@ Expected: `fmt` exits 0; validate prints "Success! The configuration is valid."
      switching it off, keep the key or wait out `log_retention_days` (a
      disabled or deleted key makes those events unreadable);
    - **rename:** a tfvars that sets `web_desired_count` must rename it to
-     `web_min_count`; Terraform >= 1.9 is now required.
+     `web_min_count`.
 
    → verify by the common checks (unchanged .tf) and a read of the rendered bullet.
    Traps: no account ids or real hostnames in examples. Do not edit
