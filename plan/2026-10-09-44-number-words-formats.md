@@ -249,3 +249,20 @@ Steps 1–5 edit 4 files (`app/schema.py`, `app/research.py`,
   back to the digits-only version, and the callers drop `quote=True`.
 - No data migration either way. Stored `unsourced` flags only change when a
   case is re-extracted or saved in review.
+
+## Step 6 result (session model) and deviation from steps 1–4
+
+Eval on local `ollama_chat/qwen3:14b`, 2 extracted documents: `main` and the
+branch gave identical metrics, 18 of 29 items sourced. Under decision 8 the
+branch gains nothing from the source side, so it is dropped:
+
+- No `quote` parameter on `numbers()`, no source-side readings, no number
+  words (`_UNITS`, `_TENS`, `_WORDS`, `_WORD_RE` removed).
+- `numbers(s)` keeps the single claim-side reading and the canonical form
+  (`1,5` → `1.5`, `3.50` → `3.5`, `1.200` → `1.2`, `1,200` → `1200`).
+- `sourced()`, `summary_sourced()` and `app/research.py` call `numbers(quote)`
+  again. `app/search.py` is unchanged.
+- Decision 5 shrinks to `1.5` against "1,5" and `3.5` against "3.50". The
+  `14`/"fourteen", `1200`/"1.200" and factor-1000 pairs are not accepted.
+- Tests: canonical rows and the `1,5` cases stay; word and multi-reading
+  tests are removed.

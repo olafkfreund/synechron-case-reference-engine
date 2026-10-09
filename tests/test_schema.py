@@ -79,54 +79,37 @@ def test_summary_numbers_must_come_from_quotes():
     assert not c.summary_sourced()
 
 
-# (token, claim side, source side): every row of the plan #44 reading table
-@pytest.mark.parametrize("tok,claim,src", [
-    ("14", {"14"}, {"14"}),
-    ("007", {"7"}, {"7"}),
-    ("1,200", {"1200"}, {"1200", "1.2"}),
-    ("1,5", {"1.5"}, {"1.5"}),
-    ("1.200", {"1.2"}, {"1.2", "1200"}),
-    ("3.5", {"3.5"}, {"3.5"}),
-    ("3.50", {"3.5"}, {"3.5"}),
-    ("1.200.000", {"1200000"}, {"1200000"}),
-    ("1,200,000", {"1200000"}, {"1200000"}),
-    ("1.234,5", {"1234.5"}, {"1234.5"}),
-    ("1,234.5", {"1234.5"}, {"1234.5"}),
-    ("1,2,3", {"1,2,3"}, {"1,2,3"}),
-    ("1.23.4", {"1.23.4"}, {"1.23.4"}),
-    ("1,2.345", {"1,2.345"}, {"1,2.345"}),
-    (0, {"0"}, {"0"}),
-    (None, set(), set()),
-    ("Twenty\u2011five", set(), {"25"}),
+# (token, reading): the canonical forms of plan #44
+@pytest.mark.parametrize("tok,want", [
+    ("14", {"14"}),
+    ("007", {"7"}),
+    ("1,200", {"1200"}),
+    ("1,5", {"1.5"}),
+    ("1.200", {"1.2"}),
+    ("3.5", {"3.5"}),
+    ("3.50", {"3.5"}),
+    ("1.200.000", {"1200000"}),
+    ("1,200,000", {"1200000"}),
+    ("1.234,5", {"1234.5"}),
+    ("1,234.5", {"1234.5"}),
+    ("1,2,3", {"1,2,3"}),
+    ("1.23.4", {"1.23.4"}),
+    ("1,2.345", {"1,2.345"}),
+    (0, {"0"}),
+    (None, set()),
+    ("fourteen", set()),
 ])
-def test_numbers_readings(tok, claim, src):
-    assert numbers(tok) == claim
-    assert numbers(tok, quote=True) == src
-
-
-def test_number_words_source_side_only():
-    assert numbers("a team of fourteen engineers", quote=True) == {"14"}
-    assert numbers("fourteen") == set()
-    assert numbers("someone", quote=True) == set()  # whole words only
+def test_numbers_readings(tok, want):
+    assert numbers(tok) == want
 
 
 def test_sourced_number_formats():
-    doc = ("a team of fourteen engineers. 1.200 users were onboarded. "
-           "1,5 Mio. EUR saved per year. 1,200 users were onboarded.")
-    assert sourced(14, "a team of fourteen engineers", doc)
-    assert sourced("1200 users", "1.200 users were onboarded", doc)
+    doc = "1.200 users were onboarded. 1,5 Mio. EUR saved per year. 1,200 users were onboarded."
     assert not sourced(15, "1,5 Mio. EUR saved per year", doc)
     assert sourced("1.5", "1,5 Mio. EUR saved per year", doc)
-    assert sourced("1.2", "1,200 users were onboarded", doc)  # accepted widening, see plan #44
-
-
-def test_summary_numbers_from_word_quote():
-    c = make()
-    c.outcomes[0].source_quote = "a team of fourteen engineers"
-    c.summary = "14 engineers delivered it."
-    assert c.summary_sourced()
-    c.summary = "15 engineers delivered it."
-    assert not c.summary_sourced()
+    assert sourced("1200", "1,200 users were onboarded", doc)
+    assert not sourced("1200 users", "1.200 users were onboarded", doc)  # 1.200 reads as 1.2
+    assert not sourced("1.2", "1,200 users were onboarded", doc)  # no factor-1000 widening
 
 
 def test_llm_schema_is_strict_and_hides_unsourced():

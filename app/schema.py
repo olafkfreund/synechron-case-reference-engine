@@ -29,20 +29,11 @@ def quote_in(text: str, quote: str) -> bool:
     return q in _norm(text) or q in _norm(re.sub(r"-[ \t]*\n\s*", "", text))
 
 
-_UNITS = ("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
-          "fifteen sixteen seventeen eighteen nineteen").split()
-_TENS = "twenty thirty forty fifty sixty seventy eighty ninety".split()
-_WORDS = {w: i for i, w in enumerate(_UNITS)} | {
-    f"{t}{sep}{u}" if u else t: 20 + 10 * i + j
-    for i, t in enumerate(_TENS) for j, u in enumerate([""] + _UNITS[1:10]) for sep in ("-", " ")}
-_WORD_RE = re.compile(r"\b(" + "|".join(sorted(map(re.escape, _WORDS), key=len, reverse=True)) + r")\b")
-
-
 def _plain(s: str) -> str:
     return format(Decimal(s).normalize(), "f")
 
 
-def _readings(tok: str, quote: bool) -> set[str]:
+def _readings(tok: str) -> set[str]:
     seps, groups = re.findall(r"[.,]", tok), re.split(r"[.,]", tok)
     if not seps:
         return {_plain(tok)}
@@ -51,8 +42,7 @@ def _readings(tok: str, quote: bool) -> set[str]:
         dec, whole = _plain(f"{a}.{b}"), _plain(a + b)
         if len(b) != 3:
             return {dec}
-        # "1.200" / "1,200": a quote may mean either; a claim is read the English way
-        return {dec, whole} if quote else {whole if seps[0] == "," else dec}
+        return {whole if seps[0] == "," else dec}  # "1,200" English thousands, "1.200" European
     if len(set(seps)) == 1:
         return {_plain("".join(groups))} if all(len(g) == 3 for g in groups[1:]) else {tok}
     if seps[-1] not in seps[:-1] and all(len(g) == 3 for g in groups[1:-1]):
@@ -60,20 +50,16 @@ def _readings(tok: str, quote: bool) -> set[str]:
     return {tok}  # unreadable: matches only the same raw token
 
 
-def numbers(s: object, quote: bool = False) -> set[str]:
-    """Canonical numbers in s. quote=True (the source side) adds every reading and number words."""
-    text = "" if s is None else str(s)
-    out = set().union(*(_readings(t, quote) for t in re.findall(r"\d+(?:[.,]\d+)*", text)))
-    if quote:
-        out |= {str(_WORDS[w]) for w in _WORD_RE.findall(_norm(text))}
-    return out
+def numbers(s: object) -> set[str]:
+    """Canonical numbers in s: "1,200" and "1.200" read differently, "1,5" is 1.5."""
+    return set().union(*(_readings(t) for t in re.findall(r"\d+(?:[.,]\d+)*", "" if s is None else str(s))))
 
 
 def sourced(value: object, quote: str, text: str) -> bool:
     """True when the quote is in the document and backs the value it is attached to."""
     if not quote_in(text, quote):
         return False
-    if not numbers(value) <= numbers(quote, quote=True):  # "12 to 1 days" against "12 days to 3 days"
+    if not numbers(value) <= numbers(quote):  # "12 to 1 days" against "12 days to 3 days"
         return False
     return len(_norm(quote).split()) >= MIN_QUOTE_WORDS or _norm(str(value)) in _norm(quote)
 
@@ -144,7 +130,7 @@ class ReferenceCase(_Model):
 
     def summary_sourced(self) -> bool:
         """Every number in the summary appears in some source quote (else it launders invented numbers)."""
-        return numbers(self.summary) <= set().union(*(numbers(q, quote=True) for q in self.quotes()))
+        return numbers(self.summary) <= set().union(*(numbers(q) for q in self.quotes()))
 
     def search_text(self) -> str:
         """Field values only (no quotes, keys, or client name) for cases.search_text."""
