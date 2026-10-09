@@ -277,8 +277,8 @@ def add_source(kind, enabled=True):
 
 
 def test_upload_browser_success_redirects(upload_src):
-    r = client([ADMIN]).post("/admin/upload", files={"file": ("a.docx", DOCX)}, headers=HTML,
-                             follow_redirects=False)
+    r = client([ADMIN]).post("/admin/upload", files={"file": ("a.docx", DOCX)}, data={"source_id": upload_src},
+                             headers=HTML, follow_redirects=False)  # the form always sends source_id
     with db.connect() as c:
         jobs = c.execute("select id, kind, payload from jobs").fetchall()
     assert len(jobs) == 1 and jobs[0][1:] == ("crawl_s3", {"source_id": upload_src})
@@ -325,6 +325,8 @@ def test_upload_browser_refusals(upload_src, monkeypatch, name, body, code):
     r = client([ADMIN]).post("/admin/upload", files={"file": (name, body)}, headers=HTML, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == f"/admin/sources?notice={code}"
     assert "Contents" not in boto3.client("s3").list_objects_v2(Bucket="upload-bkt")
+    with db.connect() as c:
+        assert c.execute("select count(*) from jobs").fetchone()[0] == 0
 
 
 def test_upload_browser_without_source(env):

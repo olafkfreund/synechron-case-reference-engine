@@ -66,7 +66,7 @@ def sources_page(request: Request, notice: str = "", source: int | None = None,
     done = notice == "uploaded"
     return page(request, "sources.html", user, sources=rows, kinds=sorted(JOB), classes=DATA_CLASSES,
                 notice=NOTICES.get(notice), job=job if done else None,
-                source_name=next((r[2] for r in rows if r[0] == source), None) if done else None,
+                source_name=next((r[2] for r in rows if r[0] == source and r[1] == "upload"), None) if done else None,
                 upload_cap=upload_cap(), upload_types=sorted(UPLOAD_MAGIC))
 
 
