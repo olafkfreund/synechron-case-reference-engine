@@ -1,18 +1,31 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block body %}
-<h1>Model approvals</h1>
-<p class="muted">Confidential documents are only sent to local or own-cloud models. An approval lets one exact model id
-read one data class until it expires (12 months at most). Revoking ends it now.</p>
-<div class="table-box"><table><tr><th>Model</th><th>Data class</th><th>Approved by</th><th>Approved</th><th>Expires</th><th>Note</th><th></th></tr>
-{% for id, model, dc, by, at, exp, active, note, revoked_by in approvals %}<tr><td>{{ model }}</td><td>{{ dc }}</td><td>{{ by }}</td>
-<td>{{ at.strftime("%Y-%m-%d") }}</td><td>{{ exp.strftime("%Y-%m-%d %H:%M") }}{{ "" if active else " (expired)" }}</td><td>{{ note }}</td>
-<td>{% if active %}<form method="post" action="/admin/models/{{ id }}/revoke"><button>Revoke</button></form>{% endif %}</td></tr>{% endfor %}
-</table></div>
-<h2>Approve a model</h2>
-<form method="post" action="/admin/models" class="card stack">
-<div class="row"><input type="text" name="model" aria-label="model id" placeholder="exact LiteLLM model id" required>
+<div class="page-head"><div><h1>Model approvals</h1>
+<p>Confidential documents are only sent to local or own-cloud models. An approval lets one exact model id
+read one data class until it expires (12 months at most). Revoking ends it now.</p></div></div>
+
+{% if not approvals %}
+<div class="empty-state">{{ icon("shield") }}<p><b>No model approvals yet</b></p>
+<p>Only local or own-cloud models may read confidential documents until you approve one below.</p></div>
+{% else %}
+<div class="table-box"><table><thead><tr><th>Model</th><th>Status</th><th>Data class</th><th>Approved by</th><th>Approved</th><th>Expires</th><th>Note</th><th>Revocation</th></tr></thead><tbody>
+{% for id, model, dc, by, at, exp, active, note, revoked_by in approvals %}<tr><td><code>{{ model }}</code></td>
+<td><span class="badge {{ 'ok' if active else 'bad' }}">{{ "Active" if active else "Expired" }}</span></td><td>{{ dc }}</td><td>{{ by }}</td>
+<td>{{ at.strftime("%Y-%m-%d") }}</td><td>{{ exp.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ note }}</td>
+<td>{% if active %}<form method="post" action="/admin/models/{{ id }}/revoke" style="margin:0"><button class="btn-sm" aria-label="Revoke {{ model }}">Revoke</button></form>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+
+<form method="post" action="/admin/models" class="section-card">
+<div class="card-head"><h2>Approve a model</h2></div>
+<p class="muted">Data class: <span class="badge warn">Confidential</span></p>
 <input type="hidden" name="data_class" value="confidential">
-<input type="date" name="expires" aria-label="expires" required>
-<input type="text" name="note" aria-label="note" placeholder="note">
-<button class="btn primary">Approve</button></div></form>
+<div class="field"><label for="m-model">Model id</label><input type="text" id="m-model" name="model" required>
+<span class="field-help">The exact LiteLLM model id.</span></div>
+<div class="field"><label for="m-exp">Expiry date</label><input type="date" id="m-exp" name="expires" required>
+<span class="field-help">At most 12 months from today.</span></div>
+<div class="field"><label for="m-note">Note</label><input type="text" id="m-note" name="note"></div>
+<div class="action-row"><button class="btn primary">Approve</button></div>
+</form>
 {% endblock %}

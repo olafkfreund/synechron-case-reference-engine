@@ -44,8 +44,10 @@ Confluence: <code>{"base_url": "https://x.atlassian.net", "spaces": ["KEY"]}</co
 <form class="inline" method="post" action="/admin/sources/{{ id }}/crawl"><button class="btn-sm" aria-label="Crawl {{ name }} now">Crawl now</button></form>
 <details class="mini"><summary class="btn-sm" aria-label="Edit {{ name }}">Edit</summary>
 <form id="s{{ id }}" method="post" action="/admin/sources/{{ id }}">
+<div class="cols">
 <div class="field"><label for="s{{ id }}-acl">Access groups</label><input type="text" id="s{{ id }}-acl" name="acl_groups" value="{{ acl | join(', ') }}"></div>
 <div class="field"><label for="s{{ id }}-dc">Data class</label><select id="s{{ id }}-dc" name="data_class">{% for k in classes %}<option{{ " selected" if k == dc }}>{{ k }}</option>{% endfor %}</select></div>
+</div>
 <div class="row"><label class="check"><input type="checkbox" name="enabled" {{ "checked" if enabled }}> Enabled</label>
 <label class="check"><input type="checkbox" name="executed_contracts" {{ "checked" if config.get("executed_contracts") }}> All contracts here are executed</label></div>
 <h3>Config</h3>
