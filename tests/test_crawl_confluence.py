@@ -30,10 +30,10 @@ class Conf:
                            "version": {"when": when}, "body": {"storage": {"value": html}},
                            "ancestors": [{"id": i} for i, t in anc if t == "page"], "_v2": anc}
 
-    def attach(self, pid, aid, title="spec.docx", data=b"att", size=None, when="2026-01-01T00:00:00.000Z"):
+    def attach(self, pid, aid, title="spec.docx", data=b"att", size=None, when="2026-01-01T00:00:00.000Z", number=None):
         self.atts.setdefault(pid, []).append({
             "id": aid, "type": "attachment", "title": title, "status": "current", "container": {"id": pid},
-            "version": {"when": when}, "extensions": {"fileSize": size or len(data)},
+            "version": {"when": when, **({"number": number} if number is not None else {})}, "extensions": {"fileSize": size or len(data)},
             "_links": {"download": f"/download/attachments/{pid}/{title}"}})
         self.files[f"/wiki/download/attachments/{pid}/{title}"] = data
 
@@ -195,6 +195,69 @@ def test_attachment_filters(cf):
     c = crawl.crawl_confluence(cf.sid)
     assert (c["skipped_type"], c["skipped_too_large"]) == (1, 1)
     assert set(live(cf.sid)) == {"page:p1", "att:p1:a1"}
+
+
+DL = "/wiki/download/attachments/p1/spec.docx"
+
+
+def version(sid, ext="att:p1:a1"):
+    with db.connect() as c:
+        return c.execute("select source_version from documents where source_id=%s and external_id=%s", (sid, ext)).fetchone()[0]
+
+
+def offer_again(cf, when="2026-02-01T00:00:00.000Z"):
+    cf.pages["p1"]["version"]["when"] = when  # CQL offers the page, so its attachments are listed again
+    cf.calls.clear()
+
+
+def test_unchanged_attachment_is_not_downloaded_again(cf):
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"spec bytes", number=1)
+    crawl.crawl_confluence(cf.sid)
+    offer_again(cf)
+    c = crawl.crawl_confluence(cf.sid)
+    assert DL not in cf.calls and c["skipped"] >= 1
+    assert "att:p1:a1" in live(cf.sid) and version(cf.sid) == "1:2026-01-01T00:00:00.000Z"
+
+
+def test_changed_attachment_is_downloaded_and_version_stored(cf):
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"spec bytes", number=1)
+    crawl.crawl_confluence(cf.sid)
+    cf.atts["p1"][0]["version"] = {"when": "2026-02-01T00:00:00.000Z", "number": 2}
+    cf.files[DL] = b"new bytes"
+    offer_again(cf)
+    crawl.crawl_confluence(cf.sid)
+    assert cf.calls.count(DL) == 1 and version(cf.sid).startswith("2:")
+    with db.connect() as c:
+        assert c.execute("select text from documents where source_id=%s and external_id='att:p1:a1'", (cf.sid,)).fetchone()[0] == "new bytes"
+
+
+def test_unchanged_attachment_withdrawn_then_allowed_comes_back_without_download(cf):
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"spec bytes", number=1)
+    crawl.crawl_confluence(cf.sid)
+    cf.restricted.add("p1")
+    crawl.crawl_confluence(cf.sid)
+    assert "att:p1:a1" not in live(cf.sid)
+    cf.restricted.clear()
+    offer_again(cf)
+    crawl.crawl_confluence(cf.sid)
+    assert DL not in cf.calls and live(cf.sid)["att:p1:a1"] == ["g-conf"]
+
+
+def test_null_version_row_downloads_once_then_skips(cf):
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"spec bytes")
+    crawl.crawl_confluence(cf.sid)
+    assert version(cf.sid) is None
+    cf.atts["p1"][0]["version"] = {"when": "2026-01-01T00:00:00.000Z", "number": 1}
+    offer_again(cf)
+    c = crawl.crawl_confluence(cf.sid)
+    assert cf.calls.count(DL) == 1 and c["skipped"] >= 1 and version(cf.sid) == "1:2026-01-01T00:00:00.000Z"
+    offer_again(cf, "2026-03-01T00:00:00.000Z")
+    crawl.crawl_confluence(cf.sid)
+    assert DL not in cf.calls
 
 
 @pytest.mark.parametrize("email,expect", [("bot@example.com", "Basic " + base64.b64encode(f"bot@example.com:{TOKEN}".encode()).decode()),
