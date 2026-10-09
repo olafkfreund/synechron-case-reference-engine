@@ -185,3 +185,21 @@ def test_price_in_numeric_item_quote_clears_the_item():
     assert ex.strip_commercial(case) == 2
     assert case.duration_months.value is None and case.period.start is None
     assert case.team_size.value == 8 and case.title.value == "Core migration"
+
+
+def test_merged_case_checks_each_item_against_its_own_document():
+    from app.schema import Sourced
+    qa, qb = "built the onboarding portal for staff", "migrated the payroll platform to cloud"
+    texts = {1: f"Contract A. {qa}.", 2: f"Contract B. {qb}."}
+
+    def run(doc_id, quote, value):
+        c = ReferenceCase(title=Sourced[str](value=value, source_quote=quote, document_id=doc_id))
+        ex.check(c, texts)
+        return c.title
+
+    assert not run(1, qa, qa).unsourced
+    assert run(1, qb, qb).unsourced  # quote is only in B
+    assert run(99, qa, qa).unsourced  # not a member
+    t = run(None, qb, qb)  # a reviewer's Add: stamped with the first member that sources it
+    assert not t.unsourced and t.document_id == 2
+    assert run(None, "nowhere in either", "nowhere in either").unsourced

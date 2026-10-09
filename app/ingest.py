@@ -66,6 +66,13 @@ def basis_for(t: Triage, source_config: dict) -> str | None:
     return None
 
 
+def reopen_merged(conn, doc_ids: list[int]) -> None:
+    """A merged engagement whose member document changed or was retired goes back to review (#55)."""
+    conn.execute("update cases set status = 'extracted' where status = 'approved' and id in "
+                 "(select merged_into from cases where document_id = any(%s) and merged_into is not null)",
+                 (doc_ids,))
+
+
 def ingest(source_id: int, external_id: str, title: str, data: bytes, source_version: str | None = None) -> str:
     """Returns 'skipped' (same bytes), 'updated' (new version) or 'new'."""
     checksum = hashlib.sha256(data).hexdigest()
@@ -108,6 +115,7 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
         # describes delivered work (a stale case must not stay approvable)
         conn.execute("update cases set status=%s where document_id=%s",
                      ("extracted" if basis else "rejected", doc_id))
+        reopen_merged(conn, [doc_id])
         if basis:
             conn.execute("insert into jobs(kind, payload) values ('extract', jsonb_build_object("
                          "'document_id', %s::bigint, 'basis', %s::text, 'basis_reason', %s::text))",

@@ -57,6 +57,8 @@ class Sourced(_Model, Generic[T]):
     source_quote: str = ""
     # set by extract.py only; hidden from the LLM schema so the model cannot vouch for itself
     unsourced: SkipJsonSchema[bool] = False
+    # the member document this quote is from, in a merged case (#55); never from the LLM
+    document_id: SkipJsonSchema[int | None] = None
 
 
 class Outcome(_Model):
@@ -64,6 +66,7 @@ class Outcome(_Model):
     value: str
     source_quote: str = ""
     unsourced: SkipJsonSchema[bool] = False
+    document_id: SkipJsonSchema[int | None] = None  # see Sourced
 
 
 class Period(_Model):
@@ -71,6 +74,7 @@ class Period(_Model):
     end: str | None = None
     source_quote: str = ""
     unsourced: SkipJsonSchema[bool] = False
+    document_id: SkipJsonSchema[int | None] = None  # see Sourced
 
 
 class ReferenceCase(_Model):

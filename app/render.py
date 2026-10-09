@@ -17,7 +17,7 @@ from pptx import Presentation
 
 from app import anonymise, db
 from app.main import User, require
-from app.review import ACL
+from app.review import VISIBLE
 from app.schema import ReferenceCase
 
 router = APIRouter()
@@ -372,8 +372,8 @@ def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: 
         # same restrictions as search: approved, in date, and the user can open the source document
         rows = conn.execute(
             "select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null "
-            "from cases c join documents d on d.id = c.document_id left join clients cl on cl.id = c.client_id "
-            f"where c.id = any(%s) and c.status = 'approved' and c.review_due > now() and {ACL}",
+            "from cases c left join clients cl on cl.id = c.client_id "
+            f"where c.id = any(%s) and c.status = 'approved' and c.review_due > now() and {VISIBLE}",
             (ids, list(user.groups))).fetchall()
         by_id = {r[0]: r for r in rows}
         if len(by_id) != len(ids):

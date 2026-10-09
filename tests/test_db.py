@@ -74,6 +74,27 @@ def test_case_basis_defaults_to_delivered_and_is_checked():
             c.rollback()
 
 
+def test_merge_columns_are_checked():
+    db.init()
+    db.init()
+    with db.connect() as c:
+        try:
+            sid = c.execute("insert into sources(kind,name) values ('s3','mg') returning id").fetchone()[0]
+            did = c.execute("insert into documents(source_id,external_id,checksum) values (%s,'m','x') returning id", (sid,)).fetchone()[0]
+            member = c.execute("insert into cases(document_id) values (%s) returning id", (did,)).fetchone()[0]
+            for sql, args in [
+                ("insert into cases(document_id, member_count) values (null, 1)", ()),
+                ("insert into cases(document_id) values (null)", ()),
+                ("insert into cases(document_id, member_count, merged_into) values (null, 2, %s)", (member,)),
+            ]:
+                c.execute("savepoint s")
+                with pytest.raises(psycopg.errors.CheckViolation):
+                    c.execute(sql, args)
+                c.execute("rollback to savepoint s")
+        finally:
+            c.rollback()
+
+
 def test_url_from_parts_when_database_url_is_unset(monkeypatch):
     from psycopg.conninfo import conninfo_to_dict
     monkeypatch.delenv("DATABASE_URL", raising=False)

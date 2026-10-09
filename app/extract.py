@@ -75,15 +75,23 @@ def strip_commercial(case: ReferenceCase) -> int:
     return n
 
 
-def check(case: ReferenceCase, text: str) -> None:
+def check(case: ReferenceCase, text: str | dict[int, str]) -> None:
     """Set `unsourced` on every field from the document alone, never from the model's output.
 
     An empty value has nothing to vouch for, so it is not flagged. Literal fields (client name,
     tech names) must also appear in their quote; inferred ones (industry, region) need not.
+    A dict of {document_id: text} (a merged case, #55) checks each item against its own document.
     """
+    def text_for(item, value):
+        if isinstance(text, str):
+            return text
+        if item.document_id is None:  # a reviewer's Add (#40): the first member whose text sources it
+            item.document_id = next((d for d, t in text.items() if sourced(value, item.source_quote, t)), None)
+        return text.get(item.document_id, "")  # unknown or unmatched id: nothing vouches, so unsourced
+
     def mark(item, value, literal=False):
         item.unsourced = value not in (None, "") and not (
-            sourced(value, item.source_quote, text)
+            sourced(value, item.source_quote, text_for(item, value))
             and (not literal or quote_in(item.source_quote, str(value))))
 
     for s in (case.title, case.industry, case.region, case.engagement_type, case.challenge,
