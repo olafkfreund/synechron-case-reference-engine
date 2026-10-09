@@ -1,0 +1,31 @@
+name: Verification
+description: Run something already built against real services
+labels: ["type:verification"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What to run, the exact command, and against which environment.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: The pass condition, and where the result is recorded (usually `plan/`).
+      value: |
+        - [ ] 
+    validations:
+      required: true
+  - type: textarea
+    id: depends
+    attributes:
+      label: Depends on
+      description: Issues that must be closed first, one per line.
+      placeholder: "- #20"
+  - type: input
+    id: plan
+    attributes:
+      label: Plan reference
+      placeholder: https://github.com/olafkfreund/synechron-case-reference-engine/blob/<branch>/plan/<slug>.md
