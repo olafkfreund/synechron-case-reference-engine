@@ -222,6 +222,7 @@ def test_approve_409_if_client_deleted_mid_approval(make, monkeypatch):  # #84
         with db.connect() as c:
             c.execute("delete from clients where id=%s", (client_id,))
 
+
 def post(c, cid, **f):
     return c.post(f"/review/{cid}/edit", follow_redirects=False, data={"v": ver(cid), **f})
 
