@@ -3,12 +3,13 @@ import re
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 import boto3
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import db
@@ -136,6 +137,7 @@ def create_app() -> FastAPI:
     app.include_router(audit.router)
     from app import models_admin
     app.include_router(models_admin.router)
+    app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
     oauth = OAuth()
     app.state.oauth = oauth
     if all(os.environ.get(k) for k in ("OIDC_METADATA_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET")):
