@@ -47,22 +47,22 @@ data "aws_iam_policy_document" "logs_key" {
   }
 }
 
+# the key always exists: switching encryption off must not delete it, or logs written under it become unreadable
 resource "aws_kms_key" "logs" {
-  count               = var.log_kms_encryption ? 1 : 0
   description         = "${var.name} CloudWatch Logs: app log groups"
-  enable_key_rotation = true
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
   policy              = data.aws_iam_policy_document.logs_key.json
 }
 
 resource "aws_kms_alias" "logs" {
-  count         = var.log_kms_encryption ? 1 : 0
   name          = "alias/${var.name}-logs"
-  target_key_id = aws_kms_key.logs[0].key_id
+  target_key_id = aws_kms_key.logs.key_id
 }
 
 resource "aws_cloudwatch_log_group" "app" {
   for_each          = toset(local.log_groups)
   name              = "/ecs/${var.name}/${each.key}"
   retention_in_days = var.log_retention_days
-  kms_key_id        = var.log_kms_encryption ? aws_kms_key.logs[0].arn : null
+  kms_key_id        = var.log_kms_encryption ? aws_kms_key.logs.arn : null
 }

@@ -229,6 +229,20 @@ Expected: `fmt` exits 0; validate prints "Success! The configuration is valid."
    instead read the HCL against the decisions list); open the PR linking
    intent, spec and plan, saying steps 1–6 were done by `coder`.
 
+
+*Review (fresh Opus): no blockers.* Taken:
+- *Deviation:* `aws_kms_key.logs` and its alias no longer depend on
+  `log_kms_encryption`. With `count = 0`, switching off would have scheduled
+  the key for deletion (30 days) while logs are kept 90, so events would
+  become unreadable. The key always exists (about $1/month), the switch only
+  sets `kms_key_id`, and `deletion_window_in_days = 30` is explicit.
+- `web_min_count` is validated `>= 1`.
+- The README text now matches the code.
+
+Not taken: widening the exec roles to AWS's read-and-write example. They
+write only; check delivery on the first apply (#25) and add `Decrypt` and
+`ReEncrypt*` only if needed.
+
 ## Tests
 
 From the worktree root:

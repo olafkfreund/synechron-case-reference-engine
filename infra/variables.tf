@@ -75,6 +75,11 @@ variable "web_min_count" {
   description = "Web scaling floor and the service's initial desired_count."
   type        = number
   default     = 2
+
+  validation {
+    condition     = var.web_min_count >= 1
+    error_message = "web_min_count must be at least 1, or the portal can scale to no tasks."
+  }
 }
 
 variable "web_max_count" {
