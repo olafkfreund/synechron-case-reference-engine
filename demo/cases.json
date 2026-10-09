@@ -171,7 +171,7 @@
     ],
     "outcomes": [
      {
-      "metric": "Result",
+      "metric": "claim handling time",
       "value": "cut claim handling time by 38 percent",
       "source_quote": "The new platform cut claim handling time by 38 percent."
      }
@@ -256,7 +256,7 @@
     ],
     "outcomes": [
      {
-      "metric": "Result",
+      "metric": "stock-outs",
       "value": "reduced stock-outs by 22 percent",
       "source_quote": "The new platform reduced stock-outs by 22 percent."
      }
@@ -341,7 +341,7 @@
     ],
     "outcomes": [
      {
-      "metric": "Result",
+      "metric": "payment success rate",
       "value": "raised payment success rate to 99.4 percent",
       "source_quote": "The new platform raised payment success rate to 99.4 percent."
      }
@@ -426,7 +426,7 @@
     ],
     "outcomes": [
      {
-      "metric": "Result",
+      "metric": "driving hours",
       "value": "saved 1,200 driving hours per month",
       "source_quote": "The new platform saved 1,200 driving hours per month."
      }
@@ -511,7 +511,7 @@
     ],
     "outcomes": [
      {
-      "metric": "Result",
+      "metric": "online self-service",
       "value": "lifted online self-service to 71 percent",
       "source_quote": "The new platform lifted online self-service to 71 percent."
      }
@@ -596,7 +596,7 @@
     ],
     "outcomes": [
      {
-      "metric": "Result",
+      "metric": "page load time",
       "value": "cut page load time from 6 seconds to 2 seconds",
       "source_quote": "The new platform cut page load time from 6 seconds to 2 seconds."
      }
@@ -681,7 +681,7 @@
     ],
     "outcomes": [
      {
-      "metric": "Result",
+      "metric": "manual orders",
       "value": "automated 64 percent of manual orders",
       "source_quote": "The new platform automated 64 percent of manual orders."
      }
@@ -766,7 +766,7 @@
     ],
     "outcomes": [
      {
-      "metric": "Result",
+      "metric": "invoice runs",
       "value": "shortened invoice runs from 5 days to 1 day",
       "source_quote": "The new platform shortened invoice runs from 5 days to 1 day."
      }
@@ -851,7 +851,7 @@
     ],
     "outcomes": [
      {
-      "metric": "Result",
+      "metric": "app downloads",
       "value": "reached 40,000 app downloads in the first season",
       "source_quote": "The new platform reached 40,000 app downloads in the first season."
      }
@@ -934,6 +934,7 @@
       "source_quote": "The stack used Python and MLflow in production."
      }
     ],
+    "needs_attention": ["1 outcome(s) with no clear metric"],
     "outcomes": [
      {
       "metric": "metric",
@@ -1022,7 +1023,7 @@
     ],
     "outcomes": [
      {
-      "metric": "Result",
+      "metric": "active members",
       "value": "grew active members by 25 percent",
       "source_quote": "The new platform grew active members by 25 percent."
      }
@@ -1107,7 +1108,7 @@
     ],
     "outcomes": [
      {
-      "metric": "Result",
+      "metric": "searchable records",
       "value": "made 2 million records searchable",
       "source_quote": "The new platform made 2 million records searchable."
      }
