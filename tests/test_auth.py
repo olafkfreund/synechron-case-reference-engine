@@ -205,3 +205,53 @@ def test_healthz_needs_no_login_and_no_database(env, monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)  # would raise if the route touched the database
     r = client().get("/healthz")
     assert r.status_code == 200 and r.text == "ok" and "set-cookie" not in r.headers
+
+
+def fresh():
+    return f"t-{uuid.uuid4()}"  # the test database persists: never reuse a sub that may have a cutoff
+
+
+def cut(*subs):
+    with db.connect() as conn:
+        main.cut_sessions(conn, *subs)
+
+
+def test_logout_revokes_replayed_cookie(env):
+    sub = fresh()
+    a = client([USER], sub=sub)
+    b = client()
+    b.cookies.set("session", a.cookies["session"])
+    assert b.get("/me").status_code == 200
+    assert a.post("/logout", follow_redirects=False).status_code == 303
+    assert b.get("/me").status_code == 401
+    r = b.get("/me", headers={"Accept": "text/html"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login"
+
+
+def test_login_after_cutoff_works(env):
+    sub = fresh()
+    cut(sub)
+    assert client([USER], sub=sub).get("/me").status_code == 200  # newer iat
+
+
+def test_cookie_without_iat(env):
+    sub = fresh()
+    assert client([USER], sub=sub, iat=False).get("/me").status_code == 200  # pre-deploy cookie, no row
+    cut(sub)
+    assert client([USER], sub=sub, iat=False).get("/me").status_code == 401
+
+
+def test_cut_sessions_is_per_user(env):
+    a, b = fresh(), fresh()
+    ca, cb = client([USER], sub=a), client([USER], sub=b)
+    cut(a)
+    assert ca.get("/me").status_code == 401 and cb.get("/me").status_code == 200
+
+
+def test_auth_logs_login_line(env, monkeypatch, capsys):
+    db.init()
+    sub = fresh()
+    c = oidc_app(monkeypatch, {"sub": sub, "name": "Test Person", "groups": [USER]})
+    assert c.get("/auth", follow_redirects=False).status_code == 303
+    assert f"login sub={sub} name=Test Person" in capsys.readouterr().out
+    assert c.get("/me").status_code == 200
