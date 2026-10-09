@@ -328,13 +328,13 @@ def test_slow_conversion_is_killed_and_the_page_skipped(web, cleanup, monkeypatc
         return data.decode()
 
     monkeypatch.setattr(ingest, "to_markdown", stub)
-    monkeypatch.setattr(rs, "PAGE_CONVERT_TIMEOUT", 1)
+    monkeypatch.setattr(rs, "PAGE_CONVERT_TIMEOUT", 2)
     web.results = ["https://slow.example/slow", "https://fast.example/fast"]
     for h, p in (("slow.example", "/slow"), ("fast.example", "/fast")):
         web.html(h, "/robots.txt", "")
         web.html(h, p, "<p>ok</p>")
     rid = make_row(f"research test {uuid.uuid4().hex}")
-    held.acquire()
+    held.acquire()  # the test thread itself now holds it, so the forked stub blocks forever
     t = time.monotonic()
     try:
         rs.run(rid)
@@ -355,8 +355,8 @@ def test_conversion_error_and_large_output(web, monkeypatch):
     monkeypatch.setattr(ingest, "to_markdown", boom)
     with pytest.raises(rs.ConvertFailed):
         rs.convert(b"a", "a.html")
-    monkeypatch.setattr(ingest, "to_markdown", lambda data, name, **kw: "x" * 2_000_000)
-    assert len(rs.convert(b"a", "a.html")) == rs.MAX_MARKDOWN
+    monkeypatch.setattr(ingest, "to_markdown", lambda data, name, **kw: "😀" * 2_000_000)  # over the pipe buffer: join-before-recv would deadlock
+    assert rs.convert(b"a", "a.html") == "😀" * rs.MAX_MARKDOWN
 
 
 def run_search(web, replies):

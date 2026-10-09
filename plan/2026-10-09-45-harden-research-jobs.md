@@ -289,3 +289,11 @@ that edit files, so per the model split this goes to the `coder` agent:
 - review by a fresh Opus agent given only this plan path and the diff.
 
 Step 5 (runtime check and the issue comment) is done by the session model.
+
+## Review
+
+*Review:* fixes applied in one change.
+- `convert`: `p.join(5)` after `recv()`, then `kill()` and `join()` if the child is still alive, so a child hanging in its own teardown never blocks the parent. The fork context is bound once.
+- Brave: `Retry-After` parsed with `ra.isascii() and ra.isdigit()`; the client is opened with `with httpx.Client(...)` (retry loop moved to `_brave_attempts`).
+- Tests: large-output test uses `"😀" * 2_000_000` so the receive-before-join order matters; kill test uses a 2 s limit; comment on the same-thread `held.acquire()`.
+- Fork after real inference: the parent converted a made-up .docx (6.2 s) and a blank PDF page (5.1 s) with real Docling, and then 3 forked HTML conversions (0.1 s each) and a forked PDF conversion (0.9 s) all completed. The reviewer's OpenMP concern is not reproduced. The 120 s kill still covers it.

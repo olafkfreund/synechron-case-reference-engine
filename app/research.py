@@ -291,7 +291,11 @@ def brave_search(query: str) -> list[dict]:
     key = os.environ.get("BRAVE_API_KEY")
     if not key:
         raise ResearchError("BRAVE_API_KEY is not set")
-    client = httpx.Client(transport=TRANSPORT, timeout=TIMEOUT, trust_env=False)
+    with httpx.Client(transport=TRANSPORT, timeout=TIMEOUT, trust_env=False) as client:
+        return _brave_attempts(client, query, key)
+
+
+def _brave_attempts(client, query, key):
     for attempt in range(BRAVE_RETRIES + 1):
         last = attempt == BRAVE_RETRIES
         try:
@@ -306,7 +310,7 @@ def brave_search(query: str) -> list[dict]:
             return r.json().get("web", {}).get("results", [])
         if (r.status_code == 429 or r.status_code >= 500) and not last:
             ra = r.headers.get("Retry-After", "")
-            time.sleep(min(int(ra) if ra.isdigit() else 1, BRAVE_MAX_WAIT))
+            time.sleep(min(int(ra) if ra.isascii() and ra.isdigit() else 1, BRAVE_MAX_WAIT))
             continue
         raise ResearchError(f"search failed ({r.status_code})")
 
@@ -326,8 +330,9 @@ def _convert_child(conn, body, name):
 def convert(body, name):
     """Docling in a forked child that is killed on timeout; its own document_timeout does not hold for HTML."""
     ingest.warm()
-    parent, child = multiprocessing.get_context("fork").Pipe(duplex=False)
-    p = multiprocessing.get_context("fork").Process(target=_convert_child, args=(child, body, name))
+    ctx = multiprocessing.get_context("fork")
+    parent, child = ctx.Pipe(duplex=False)
+    p = ctx.Process(target=_convert_child, args=(child, body, name))
     p.start()
     child.close()
     try:
@@ -339,7 +344,10 @@ def convert(body, name):
             kind, val = parent.recv()  # receive before join: a full pipe would deadlock the child
         except EOFError:
             kind, val = "err", "EOFError"
-        p.join()
+        p.join(5)  # a child stuck in its own teardown must not block the parent
+        if p.is_alive():
+            p.kill()
+            p.join()
         if kind != "ok":
             raise ConvertFailed("conversion failed")
         return val
