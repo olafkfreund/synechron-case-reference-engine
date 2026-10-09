@@ -1,25 +1,49 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block body %}
-<h1>Client registry</h1>
-<p class="muted">Names and aliases are replaced by the label in outputs unless the client is referenceable.</p>
+<div class="page-head"><div><h1>Client registry</h1>
+<p>Names and aliases are replaced by the label in outputs unless the client is referenceable.</p>
+<details class="help-link"><summary>How aliases work</summary>
 <p class="muted">Add every spelling people use as an alias: abbreviations, former names and the email/web domain stem
-(e.g. <code>acmebank</code> for acmebank.co.uk). Short all-caps aliases match case-sensitively. Avoid
-aliases that are ordinary words ("Apex"): they would be replaced wherever the word appears.
-Enter one alias per line; commas are part of the alias. Only referenceable clients that no case uses can be deleted.</p>
-<div class="table-box"><table><tr><th>Name</th><th>Aliases (one per line)</th><th>Label</th><th>Referenceable</th><th>Logo allowed</th><th></th></tr>
-{% for id, name, aliases, label, ref, logo, v in clients %}{% set f = "c" ~ id %}<tr>
-<td><input type="text" form="{{ f }}" name="name" value="{{ name }}" aria-label="name"></td>
-<td><textarea form="{{ f }}" name="aliases" rows="2" aria-label="aliases">{{ aliases | join('\n') }}</textarea></td>
-<td><input type="text" form="{{ f }}" name="anonymised_label" value="{{ label }}" aria-label="label"></td>
-<td><input type="checkbox" form="{{ f }}" name="referenceable" {{ "checked" if ref }} aria-label="referenceable"></td>
-<td><input type="checkbox" form="{{ f }}" name="logo_allowed" {{ "checked" if logo }} aria-label="logo allowed"></td>
-<td><button form="{{ f }}">Save</button>{% if ref %} <button form="d{{ id }}">Delete</button>{% endif %}</td></tr>{% endfor %}
-<tr><td><input type="text" form="new" name="name" aria-label="new name" required></td>
-<td><textarea form="new" name="aliases" rows="2" aria-label="new aliases"></textarea></td>
-<td><input type="text" form="new" name="anonymised_label" aria-label="new label" required></td>
-<td><input type="checkbox" form="new" name="referenceable" aria-label="new referenceable"></td>
-<td><input type="checkbox" form="new" name="logo_allowed" aria-label="new logo allowed"></td>
-<td><button form="new">Add</button></td></tr></table></div>
-{% for id, name, aliases, label, ref, logo, v in clients %}<form id="c{{ id }}" method="post" action="/admin/clients/{{ id }}"><input type="hidden" name="v" value="{{ v }}"></form>{% if ref %}<form id="d{{ id }}" method="post" action="/admin/clients/{{ id }}/delete"><input type="hidden" name="v" value="{{ v }}"></form>{% endif %}{% endfor %}
-<form id="new" method="post" action="/admin/clients"></form>
+(e.g. <code>acmebank</code> for acmebank.co.uk). Short all-caps aliases match case-sensitively.</p>
+<p class="muted"><b>Avoid aliases that are ordinary words</b> (“Apex”): they would be replaced wherever the word appears.
+Enter one alias per line. Only referenceable clients that no case uses can be deleted.</p></details></div>
+<div class="page-head-actions"><details class="detail-panel head-panel"><summary>+ Add client</summary>
+<form method="post" action="/admin/clients">
+<div class="field"><label for="new-name">Name</label><input type="text" id="new-name" name="name" required></div>
+<div class="field"><label for="new-aliases">Aliases (one per line)</label><textarea id="new-aliases" name="aliases" rows="3"></textarea>
+<span class="field-help">Commas are part of the alias.</span></div>
+<div class="field"><label for="new-label">Label in outputs</label><input type="text" id="new-label" name="anonymised_label" required>
+<span class="field-help">What replaces the name, e.g. “a UK retail bank”.</span></div>
+<div class="row"><label class="check"><input type="checkbox" name="referenceable"> Referenceable</label>
+<label class="check"><input type="checkbox" name="logo_allowed"> Logo allowed</label></div>
+<div class="action-row"><button class="btn primary">Add client</button></div>
+</form></details></div></div>
+
+<div class="section-card client-list">
+<div class="card-head"><h2>Clients ({{ clients | length }})</h2></div>
+{% if not clients %}<div class="empty-state">{{ icon("users") }}<p>No clients yet.</p><p>Use “+ Add client” above.</p></div>{% endif %}
+{% for id, name, aliases, label, ref, logo, v in clients %}
+<div class="client-row">
+<span class="avatar" aria-hidden="true">{% for w in name.split()[:2] %}{{ w[0] | upper }}{% endfor %}</span>
+<div class="who"><b>{{ name }}</b><span>{{ label }}</span></div>
+<div class="chips"><span class="badge {{ 'ok' if ref else 'neutral' }}">{{ "Referenceable" if ref else "Not referenceable" }}</span>
+<span class="badge {{ 'ok' if logo else 'neutral' }}">{{ "Logo allowed" if logo else "No logo" }}</span></div>
+<details class="mini edit"><summary class="btn-sm" aria-label="Edit {{ name }}">Edit</summary>
+<form id="c{{ id }}" method="post" action="/admin/clients/{{ id }}"><input type="hidden" name="v" value="{{ v }}">
+<div class="field"><label for="c{{ id }}-name">Name</label><input type="text" id="c{{ id }}-name" name="name" value="{{ name }}"></div>
+<div class="field"><label for="c{{ id }}-aliases">Aliases (one per line)</label><textarea id="c{{ id }}-aliases" name="aliases" rows="3">{{ aliases | join('\n') }}</textarea></div>
+<div class="field"><label for="c{{ id }}-label">Label in outputs</label><input type="text" id="c{{ id }}-label" name="anonymised_label" value="{{ label }}"></div>
+<div class="row"><label class="check"><input type="checkbox" name="referenceable" {{ "checked" if ref }}> Referenceable</label>
+<label class="check"><input type="checkbox" name="logo_allowed" {{ "checked" if logo }}> Logo allowed</label></div>
+<div class="action-row"><button class="btn primary" aria-label="Save {{ name }}">Save</button></div>
+</form></details>
+{% if not ref %}<span class="slot" aria-hidden="true"></span>{% endif %}
+{% if ref %}<details class="mini del"><summary class="btn-sm" aria-label="Delete {{ name }}…">Delete…</summary>
+<form id="d{{ id }}" method="post" action="/admin/clients/{{ id }}/delete"><input type="hidden" name="v" value="{{ v }}">
+<p class="muted">Removes the client from the registry. Only possible while no case uses it.</p>
+<div class="action-row"><button aria-label="Confirm delete {{ name }}">Delete</button></div></form></details>{% endif %}
+</div>
+{% endfor %}
+</div>
 {% endblock %}

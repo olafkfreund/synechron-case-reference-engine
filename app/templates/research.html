@@ -1,10 +1,16 @@
 {% extends "base.html" %}
 {% block body %}
-<h1>Online research</h1>
-<p class="muted">Ask how the industry or a vendor does something. Only a short, generic search query leaves the company: client
-names are removed and you see the exact query before it is sent.</p>
-<form method="post" action="/research" class="card stack">
-<label for="question">1. Question</label>
-<textarea id="question" name="question" rows="4" maxlength="1000" required placeholder="e.g. How do banks run KYC onboarding on AWS?"></textarea>
-<div><button class="btn primary">Preview the search query</button></div></form>
+<div class="narrow">
+<div class="page-head"><div><h1>Online research</h1>
+<p>Ask how the industry or a vendor does something, from public sources.</p></div></div>
+<ol class="steps" aria-label="Steps"><li class="on">Ask</li><li>Preview query</li><li>Send</li></ol>
+<form method="post" action="/research" class="section-card">
+<div class="field"><label for="question">Your research question</label>
+<textarea id="question" name="question" rows="4" maxlength="1000" required placeholder="e.g. How do banks run KYC onboarding on AWS?"></textarea></div>
+<p class="muted" style="font-size:13px">Only a short, generic search query leaves the company. Client names are removed, and you see the exact query before it is sent.</p>
+<div class="action-row"><button class="btn primary">Preview the search query</button></div></form>
+<details class="detail-panel"><summary>How query preview works</summary>
+<p class="muted">Your question is turned into a short, generic search query. Client names and aliases from the registry are replaced first.
+Nothing is sent until you have read the exact query on the next page and chosen Send. Results are public web sources only and are industry context, not our own delivery.</p></details>
+</div>
 {% endblock %}

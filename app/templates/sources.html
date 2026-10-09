@@ -1,32 +1,62 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block body %}
-<h1>Sources</h1>
-<p class="muted">Data class: confidential (the default) documents are only sent to local or own-cloud models unless <a href="/admin/models">approved</a>; mark a source sanitised or public only when that is true.</p>
-<p class="muted">Contracts executed: tick it only when every statement of work or change order in the source is signed; each then becomes an engagement reference without the signature check. Ticking it also queues contracts already crawled that have no case; unticking it retires the engagements it created, approved ones included.</p>
-<p class="muted">Access groups: the Entra groups whose members can read this source. Every document from it gets these groups.
+<div class="page-head"><div><h1>Sources</h1>
+<p>Where reference documents are crawled from, and who may read them.</p>
+<div class="help-links">
+<details class="help-link"><summary>Data classes</summary>
+<p class="muted">Data class: confidential (the default) documents are only sent to local or own-cloud models unless <a href="/admin/models">approved</a>; mark a source sanitised or public only when that is true.</p></details>
+<details class="help-link"><summary>Contracts executed</summary>
+<p class="muted">Tick it only when every statement of work or change order in the source is signed; each then becomes an engagement reference without the signature check. Ticking it also queues contracts already crawled that have no case; unticking it retires the engagements it created, approved ones included.</p></details>
+<details class="help-link"><summary>Access groups</summary>
+<p class="muted">The Entra groups whose members can read this source. Every document from it gets these groups.
 SharePoint files whose permissions differ from the site root, and Confluence pages with a read restriction on themselves or an ancestor (or under a folder), are skipped.
 The crawler cannot see who may read a whole site or space: enter only groups whose members can read all of it.
-The Confluence crawler account must be a dedicated non-admin account that no restriction names.</p>
-<div class="table-box"><table><tr><th>Name</th><th>Kind</th><th>Config</th><th>Access groups</th><th>Data class</th><th>Enabled</th><th>Contracts executed</th><th>Last run</th><th>Counts</th><th></th></tr>
-{% for id, kind, name, config, acl, enabled, last_run, counts, dc in sources %}{% set f = "s" ~ id %}<tr>
-<td>{{ name }}</td><td>{{ kind }}</td><td><code>{{ config | tojson }}</code></td>
-<td><input type="text" form="{{ f }}" name="acl_groups" value="{{ acl | join(', ') }}" aria-label="access groups"></td>
-<td><select form="{{ f }}" name="data_class" aria-label="data class">{% for k in classes %}<option{{ " selected" if k == dc }}>{{ k }}</option>{% endfor %}</select></td>
-<td><input type="checkbox" form="{{ f }}" name="enabled" {{ "checked" if enabled }} aria-label="enabled"></td>
-<td><input type="checkbox" form="{{ f }}" name="executed_contracts" {{ "checked" if config.get("executed_contracts") }} aria-label="all contracts here are executed"></td>
-<td>{{ last_run or "never" }}</td>
-<td>{% if counts %}{% for k, v in counts.items() if k not in ("failed_keys", "retry_ids") %}{{ k }}: {{ v }}<br>{% endfor %}{% endif %}</td>
-<td><button form="{{ f }}">Save</button>
-<form method="post" action="/admin/sources/{{ id }}/crawl" style="display:inline;margin:0"><button>Crawl now</button></form></td></tr>{% endfor %}
-</table></div>
-{% for id, kind, name, config, acl, enabled, last_run, counts, dc in sources %}<form id="s{{ id }}" method="post" action="/admin/sources/{{ id }}"></form>{% endfor %}
-<h2>Add source</h2>
-<form method="post" action="/admin/sources" class="card stack">
-<div class="row"><select name="kind" aria-label="kind">{% for k in kinds %}<option>{{ k }}</option>{% endfor %}</select>
-<input type="text" name="name" aria-label="name" placeholder="name" required></div>
-<div class="row"><textarea name="config" rows="2" aria-label="config" placeholder='{"tenant_id": "...", "drive_id": "..."} or {"bucket": "...", "prefix": "..."} or {"base_url": "https://x.atlassian.net", "spaces": ["KEY"]}' required></textarea></div>
-<div class="row"><select name="data_class" aria-label="data class">{% for k in classes %}<option>{{ k }}</option>{% endfor %}</select>
-<input type="text" name="acl_groups" aria-label="access groups" placeholder="group ids, comma-separated" required>
-<label><input type="checkbox" name="executed_contracts"> All contracts here are executed</label>
-<button class="btn primary">Add</button></div></form>
+The Confluence crawler account must be a dedicated non-admin account that no restriction names.</p></details>
+</div></div>
+<div class="page-head-actions"><details class="detail-panel head-panel"><summary>+ Add source</summary>
+<form method="post" action="/admin/sources">
+<div class="field"><label for="new-kind">Kind</label><select name="kind" id="new-kind">{% for k in kinds %}<option>{{ k }}</option>{% endfor %}</select></div>
+<div class="field"><label for="new-name">Name</label><input type="text" id="new-name" name="name" required></div>
+<div class="field"><label for="new-config">Config (JSON)</label><textarea id="new-config" name="config" rows="3" required></textarea>
+<span class="field-help">By kind:<br>
+SharePoint: <code>{"tenant_id": "…", "drive_id": "…"}</code><br>
+S3 or upload: <code>{"bucket": "…", "prefix": "…"}</code><br>
+Confluence: <code>{"base_url": "https://x.atlassian.net", "spaces": ["KEY"]}</code></span></div>
+<div class="field"><label for="new-dc">Data class</label><select name="data_class" id="new-dc">{% for k in classes %}<option>{{ k }}</option>{% endfor %}</select></div>
+<div class="field"><label for="new-acl">Access groups</label><input type="text" id="new-acl" name="acl_groups" required>
+<span class="field-help">Group ids, comma-separated.</span></div>
+<label class="check"><input type="checkbox" name="executed_contracts"> All contracts here are executed</label>
+<div class="action-row"><button class="btn primary">Add source</button></div>
+</form></details></div></div>
+
+<div class="section-card client-list">
+<div class="card-head"><h2>Sources ({{ sources | length }})</h2></div>
+{% if not sources %}<div class="empty-state">{{ icon("database") }}<p>No sources yet.</p><p>Use “+ Add source” above.</p></div>{% endif %}
+{% for id, kind, name, config, acl, enabled, last_run, counts, dc in sources %}
+<div class="source-row">
+{{ icon("database") }}
+<div class="who"><b>{{ name }}</b><span class="badge neutral">{{ kind }}</span></div>
+<div class="chips"><span class="badge {{ 'ok' if enabled else 'neutral' }}">{{ "Enabled" if enabled else "Disabled" }}</span>
+<span class="badge {{ 'warn' if dc == 'confidential' else 'neutral' }}">{{ dc | capitalize }}</span></div>
+<span class="run">Last run: {% if last_run %}{{ last_run }}{% else %}<span class="muted">never</span>{% endif %}</span>
+{% if counts %}<span class="counts"><span>New {{ counts.get("new", 0) }}</span><span>Skipped {{ counts.get("skipped", 0) }}</span><span>Failed {{ counts.get("failed", 0) }}</span></span>{% endif %}
+<form class="inline" method="post" action="/admin/sources/{{ id }}/crawl"><button class="btn-sm" aria-label="Crawl {{ name }} now">Crawl now</button></form>
+<details class="mini"><summary class="btn-sm" aria-label="Edit {{ name }}">Edit</summary>
+<form id="s{{ id }}" method="post" action="/admin/sources/{{ id }}">
+<div class="cols">
+<div class="field"><label for="s{{ id }}-acl">Access groups</label><input type="text" id="s{{ id }}-acl" name="acl_groups" value="{{ acl | join(', ') }}"></div>
+<div class="field"><label for="s{{ id }}-dc">Data class</label><select id="s{{ id }}-dc" name="data_class">{% for k in classes %}<option{{ " selected" if k == dc }}>{{ k }}</option>{% endfor %}</select></div>
+</div>
+<div class="row"><label class="check"><input type="checkbox" name="enabled" {{ "checked" if enabled }}> Enabled</label>
+<label class="check"><input type="checkbox" name="executed_contracts" {{ "checked" if config.get("executed_contracts") }}> All contracts here are executed</label></div>
+<h3>Config</h3>
+<dl class="status-list">{% for k, v in config.items() %}<dt>{{ k }}</dt><dd>{{ v if v is string else v | tojson }}</dd>{% endfor %}</dl>
+{% if counts %}<h3>Last run counts</h3>
+<dl class="status-list">{% for k, v in counts.items() if k not in ("failed_keys", "retry_ids") %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>{% endif %}
+<div class="action-row"><button class="btn primary" aria-label="Save {{ name }}">Save</button></div>
+</form></details>
+</div>
+{% endfor %}
+</div>
 {% endblock %}

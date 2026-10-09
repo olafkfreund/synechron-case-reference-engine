@@ -1,38 +1,36 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block body %}
-<h1>Research</h1>
-<p class="muted">Query: <code>{{ query }}</code></p>
+<div class="page-head"><div><h1>Research</h1><p>Query: <code>{{ query }}</code></p></div></div>
 {% if status in ("queued", "running") %}
-<p>Running&hellip; this page refreshes by itself.</p><meta http-equiv="refresh" content="5">
+<div class="empty-state">{{ icon("clock") }}<p>Running&hellip; this page refreshes by itself.</p></div><meta http-equiv="refresh" content="5">
 {% elif status == "failed" %}<div class="note">Research failed: {{ error }}</div>
 {% else %}
 {% if note %}<div class="note">{{ note }}</div>{% endif %}
 <p class="muted" style="font-size:13px">Public sources only. This is industry context, not our own delivery.</p>
 {% if claims %}
-<h2>3. What public sources say</h2>
+<div class="section-card"><div class="card-head"><h2>What public sources say</h2></div>
 <p class="muted" style="font-size:13px">The quote is what the source says; the summary and type are the AI's reading of it. Rely on the quote.</p>
-<div class="table-box"><table><tr><th>Source says</th><th>Summary</th><th>Type</th><th>Source</th><th>Retrieved</th></tr>
-{% for c in claims %}<tr><td><q>{{ c.quote }}</q></td><td>{{ c.statement }}</td><td><span class="badge neutral">{{ c.type | replace("_", " ") }}</span></td>
-<td>{% if c.url.startswith(("http://", "https://")) %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.publisher }}</a>{% else %}{{ c.publisher }}{% endif %}</td>
-<td>{{ c.retrieved_at[:10] }}</td></tr>{% endfor %}</table></div>
-<h2>Comparison</h2>
-<div class="table-box"><table><tr><th>Who</th><th>What they say</th></tr>
+{% for c in claims %}<div class="claim"><q>{{ c.quote }}</q>
+<div class="meta">{% if c.url.startswith(("http://", "https://")) %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.publisher }}</a>{% else %}<span>{{ c.publisher }}</span>{% endif %}
+<span>retrieved {{ c.retrieved_at[:10] }}</span><span class="badge neutral">{{ c.type | replace("_", " ") }}</span></div>
+<p>{{ c.statement }}</p></div>{% endfor %}</div>
+<div class="section-card"><div class="card-head"><h2>Comparison</h2></div>
+<div class="table-box"><table><thead><tr><th>Who</th><th>What they say</th></tr></thead><tbody>
 {% if ours %}<tr><td><b>Our approach</b></td><td>{{ ours }}</td></tr>{% endif %}
 {% for publisher, items in groups.items() %}<tr><td>{{ publisher }}</td><td>{% for c in items %}<q>{{ c.quote }}</q> <small>({{ c.type | replace("_", " ") }})</small><br>{% endfor %}</td></tr>{% endfor %}
-</table></div>
+</tbody></table></div></div>
+<form method="post" action="/generate" class="section-card stack">
+<div class="card-head"><h2>Download with an "Industry context" section</h2></div><input type="hidden" name="research_id" value="{{ research_id }}">
+{% if case_id %}<label class="check"><input type="checkbox" name="case_ids" value="{{ case_id }}" checked> Include the reference case this research started from</label>{% endif %}
+<label class="check"><input type="checkbox" name="industry_context_ack"> I understand the industry context section contains public statements by third parties, not our delivery evidence (required when no case is included).</label>
+<div class="row"><label for="dl-format">Format</label><select id="dl-format" name="format" style="max-width:200px"><option value="docx">Word</option><option value="pptx">PowerPoint</option><option value="pdf_docx">PDF</option><option value="pdf_pptx">PDF slides</option><option value="md">Markdown</option></select>
+<button class="btn primary">Download</button></div></form>
 {% endif %}
-{% if claims %}
-<form method="post" action="/generate" class="card stack">
-<h2 style="margin:0">4. Download with an "Industry context" section</h2><input type="hidden" name="research_id" value="{{ research_id }}">
-{% if case_id %}<label class="row" style="font-weight:400"><input type="checkbox" name="case_ids" value="{{ case_id }}" checked> Include the reference case this research started from</label>{% endif %}
-<label class="row" style="font-weight:400"><input type="checkbox" name="industry_context_ack"> I understand the industry context section contains public statements by third parties, not our delivery evidence (required when no case is included).</label>
-<div class="row"><select name="format" style="max-width:200px" aria-label="format"><option value="docx">Word</option><option value="pptx">PowerPoint</option><option value="pdf_docx">PDF</option><option value="pdf_pptx">PDF slides</option><option value="md">Markdown</option></select>
-<button class="btn dark">Download</button></div></form>
-{% endif %}
-<h2>Sources</h2>
-{% for p in pages %}<p><b>{{ p.publisher }}</b> &middot; <a href="{{ p.url }}" rel="noopener noreferrer">{{ p.url }}</a>
+<div class="section-card"><div class="card-head"><h2>Sources</h2></div>
+{% for p in pages %}<p style="margin:0 0 6px"><b>{{ p.publisher }}</b> &middot; <a href="{{ p.url }}" rel="noopener noreferrer">{{ p.url }}</a>
 &middot; retrieved {{ p.retrieved_at[:10] }}</p>{% endfor %}
-{% if not pages %}<p>No usable sources found.</p>{% endif %}
-{% if skipped %}<p><small>{{ skipped | length }} source(s) skipped.</small></p>{% endif %}
+{% if not pages %}<p class="muted" style="margin:0">No usable sources found.</p>{% endif %}
+{% if skipped %}<p><small>{{ skipped | length }} source(s) skipped.</small></p>{% endif %}</div>
 {% endif %}
 {% endblock %}

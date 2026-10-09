@@ -1,15 +1,16 @@
 {% extends "base.html" %}
 {% block body %}
-<h1>Merge contracts</h1>
-<ul class="card" style="padding-left:40px">{% for t in titles %}<li>{{ t }}</li>{% endfor %}</ul>
-<form method="post" action="/review/merge" class="stack">
+<div class="page-head"><div><h1>Merge contracts</h1><p>These contracts become one case.</p></div></div>
+<div class="section-card"><div class="card-head"><h2>Contracts ({{ titles | length }})</h2></div>
+<ul style="margin:0;padding-left:20px">{% for t in titles %}<li>{{ t }}</li>{% endfor %}</ul></div>
+<form method="post" action="/review/merge" class="section-card">
 {% for m in members %}<input type="hidden" name="members" value="{{ m }}">{% endfor %}
-{% if fields %}<p class="muted" style="margin:0">Choose which contract each differing field comes from.</p>
-<div class="table-box"><table><thead><tr><th>Field</th><th>Value and source quote</th></tr></thead><tbody>
-{% for f in fields %}<tr><td>{{ f.label }}</td><td>
-{% for cid, value, quote in f.options %}<label><input type="radio" name="pick_{{ f.field }}" value="{{ cid }}"{% if loop.first %} checked{% endif %}> {{ value or "(empty)" }} <small>{{ quote }}</small></label><br>{% endfor %}
-</td></tr>{% endfor %}</tbody></table></div>
+<div class="card-head"><h2>Differing fields</h2></div>
+{% if fields %}<p class="muted">Choose which contract each differing field comes from.</p>
+{% for f in fields %}<fieldset class="pick"><legend>{{ f.label }}</legend>
+{% for cid, value, quote in f.options %}<label class="check"><input type="radio" name="pick_{{ f.field }}" value="{{ cid }}"{% if loop.first %} checked{% endif %}> <span>{{ value or "(empty)" }} <small class="muted">{{ quote }}</small></span></label><br>{% endfor %}
+</fieldset>{% endfor %}
 {% else %}<p class="muted">The contracts do not differ in any single-value field.</p>{% endif %}
 <p class="note">The merged case needs a new summary and a fresh approval; capabilities and tech are combined, outcomes are dropped.</p>
-<div><button class="btn primary">Merge</button></div></form>
+<div class="action-row"><button class="btn primary">Merge</button></div></form>
 {% endblock %}

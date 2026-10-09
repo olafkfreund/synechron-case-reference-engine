@@ -1,31 +1,52 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block body %}
-<h1>Audit: generated outputs</h1>
-<form method="get" action="/admin/audit" class="row" style="margin-bottom:16px"><input type="text" name="user" value="{{ who }}" placeholder="user (exact sub)" aria-label="user">
-<button>Filter</button></form>
-{% if not rows %}<p class="muted">No generations.</p>{% else %}
-<div class="table-box"><table><tr><th>When</th><th>User</th><th>Format</th><th>Cases</th><th>Anonymised</th><th>Industry-only ack</th><th>Research</th></tr>
-{% for id, at, who_, fmt, cases, anon, ack, research in rows %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ who_ }}</td><td>{{ fmt }}</td>
-<td>{% for c in cases %}<a href="/review/{{ c }}">{{ c }}</a> {% endfor %}</td>
-<td>{{ "yes" if anon else "no" }}</td><td>{{ "yes" if ack else "no" }}</td><td>{{ research or "" }}</td></tr>{% endfor %}</table></div>
-<p class="muted">{% if prev %}<a href="{{ prev }}">&laquo; newer</a>{% endif %} page {{ p }} {% if next %}<a href="{{ next }}">older &raquo;</a>{% endif %}</p>
+<div class="page-head"><div><h1>Audit activity</h1>
+<p>Generated outputs and the admin changes that decide what models and readers can see.</p></div></div>
+<div class="stat-grid">
+<div class="stat-tile"><b>{{ rows | length }}{{ "+" if next }}</b><span>Generated outputs{{ " (this page)" if p > 1 or next }}</span>{{ icon("file") }}</div>
+<div class="stat-tile"><b>{{ approvals | length }}</b><span>Model approvals</span>{{ icon("shield") }}</div>
+<div class="stat-tile"><b>{{ class_changes | length }}</b><span>Data-class changes</span>{{ icon("database") }}</div>
+<div class="stat-tile"><b>{{ acl_changes | length }}</b><span>Access-group changes</span>{{ icon("users") }}</div>
+</div>
+
+<div class="section-card">
+<div class="card-head"><h2>Generated outputs</h2>
+<form method="get" action="/admin/audit" class="row"><label for="a-user">User (exact sub)</label>
+<input type="text" id="a-user" name="user" value="{{ who }}" class="filter" maxlength="200"><button>Filter</button></form></div>
+{% if not rows %}<p class="muted">No generated outputs{{ " for this user" if who }}.</p>{% else %}
+<div class="table-box"><table><thead><tr><th>When</th><th>Format</th><th>User</th><th>Cases</th><th>Anonymised</th><th>Industry-only ack</th><th>Research</th></tr></thead><tbody>
+{% for id, at, who_, fmt, cases, anon, ack, research in rows %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td><b>{{ fmt }}</b></td><td>{{ who_ }}</td>
+<td><span class="ids">{% for c in cases %}<a href="/review/{{ c }}">{{ c }}</a>{% endfor %}</span></td>
+<td><span class="badge {{ 'ok' if anon else 'warn' }}">{{ "Yes" if anon else "No" }}</span></td><td><span class="badge {{ 'ok' if ack else 'neutral' }}">{{ "Yes" if ack else "No" }}</span></td><td>{{ research or "" }}</td></tr>{% endfor %}</tbody></table></div>
+<div class="pager">{% if prev %}<a class="btn btn-sm" href="{{ prev }}" aria-label="Newer generated outputs">&laquo; newer</a>{% endif %}<span class="muted">page {{ p }}</span>{% if next %}<a class="btn btn-sm" href="{{ next }}" aria-label="Older generated outputs">older &raquo;</a>{% endif %}</div>
 {% endif %}
-<h2>Model approvals</h2>
-{% if not approvals %}<p class="muted">None.</p>{% else %}
-<div class="table-box"><table><tr><th>Model</th><th>Data class</th><th>Approved by</th><th>Approved</th><th>Expires</th><th>Note</th></tr>
+</div>
+
+<div class="section-card">
+<div class="card-head"><h2>Model approvals</h2></div>
+{% if not approvals %}<p class="muted">No model approvals recorded.</p>{% else %}
+<div class="table-box"><table><thead><tr><th>Model</th><th>Data class</th><th>Approved by</th><th>Approved</th><th>Expires</th><th>Note</th></tr></thead><tbody>
 {% for id, model, dc, by, at, exp, active, note, revoked_by in approvals %}<tr><td>{{ model }}</td><td>{{ dc }}</td><td>{{ by }}</td><td>{{ at.strftime("%Y-%m-%d") }}</td>
-<td>{{ exp.strftime("%Y-%m-%d %H:%M") }}{{ "" if active else " (expired)" }}{% if revoked_by %} revoked by {{ revoked_by }}{% endif %}</td><td>{{ note }}</td></tr>{% endfor %}</table></div>
+<td>{{ exp.strftime("%Y-%m-%d %H:%M") }}{{ "" if active else " (expired)" }}{% if revoked_by %} revoked by {{ revoked_by }}{% endif %}</td><td>{{ note }}</td></tr>{% endfor %}</tbody></table></div>
 {% endif %}
-<h2>Source data class changes</h2>
+</div>
+
+<div class="section-card">
+<div class="card-head"><h2>Source data class changes</h2></div>
 <p class="muted">Lowering a source to sanitised or public lets its documents reach any model.</p>
-{% if not class_changes %}<p class="muted">None.</p>{% else %}
-<div class="table-box"><table><tr><th>When</th><th>Source</th><th>From</th><th>To</th><th>By</th></tr>
-{% for at, name, old, new, by in class_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ old or "(new source)" }}</td><td>{{ new }}</td><td>{{ by }}</td></tr>{% endfor %}</table></div>
+{% if not class_changes %}<p class="muted">No data-class changes recorded.</p>{% else %}
+<div class="table-box"><table><thead><tr><th>When</th><th>Source</th><th>From</th><th>To</th><th>By</th></tr></thead><tbody>
+{% for at, name, old, new, by in class_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ old or "(new source)" }}</td><td>{{ new }}</td><td>{{ by }}</td></tr>{% endfor %}</tbody></table></div>
 {% endif %}
-<h2>Access group changes</h2>
+</div>
+
+<div class="section-card">
+<div class="card-head"><h2>Access group changes</h2></div>
 <p class="muted">Changes to a source's access groups apply to its documents at once.</p>
-{% if not acl_changes %}<p class="muted">None.</p>{% else %}
-<div class="table-box"><table><tr><th>When</th><th>Source</th><th>From</th><th>To</th><th>By</th></tr>
-{% for at, name, old, new, by in acl_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ (old or [])|join(", ") }}</td><td>{{ new|join(", ") }}</td><td>{{ by }}</td></tr>{% endfor %}</table></div>
+{% if not acl_changes %}<p class="muted">No access-group changes recorded.</p>{% else %}
+<div class="table-box"><table><thead><tr><th>When</th><th>Source</th><th>From</th><th>To</th><th>By</th></tr></thead><tbody>
+{% for at, name, old, new, by in acl_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ (old or [])|join(", ") }}</td><td>{{ new|join(", ") }}</td><td>{{ by }}</td></tr>{% endfor %}</tbody></table></div>
 {% endif %}
+</div>
 {% endblock %}
