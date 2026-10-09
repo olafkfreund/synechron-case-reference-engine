@@ -18,7 +18,7 @@ The approved decisions:
 4. A PR template with full `blob/<branch>/` URLs.
 5. No CI check on the PR body.
 
-The labels exist (`gh label list`, 2026-10-09): `type:bug` ("Something built
+The labels exist (`gh label list --limit 100`, 2026-10-09; the default limit of 30 cuts off `type:bug` and `type:feature`, which are 43rd and 44th; they are in use on #53 and #52): `type:bug` ("Something built
 that does not work as intended"), `type:feature` ("New or changed product
 behaviour") and `type:verification` ("Run something already built against
 real services"). The sections copy what issues already use. Bug and
@@ -202,10 +202,13 @@ The `coder` agent did steps .
 - **Before merge:** GitHub reads issue forms and the PR template only from
   the default branch, so the branch cannot show them. Review reads the
   files in the diff against this spec.
-- **After merge, the forms appear:** `issues/new/choose` lists Bug, Feature,
-  Verification and "Blank issue". Open one test issue per form. Each gets
-  its `type:` label and its sections in order, and a missing "Done when"
-  is refused. Close the test issues as `not planned`.
+- **After merge, the forms appear:**
+  `https://github.com/olafkfreund/synechron-case-reference-engine/issues/new/choose`
+  lists Bug, Feature, Verification and "Blank issue". Open each form
+  without submitting it. It shows its sections in order, with "Done when"
+  marked required. The `type:` label each sets is checked in the YAML
+  under review. Creating test issues needs the user's go-ahead, so this
+  step doesn't create any.
 - **After merge, the PR template:** the next PR opened in the web UI, or
   with `gh pr create` without `--body`, starts from the template. This
   task's own PR is written by hand in the same shape.
