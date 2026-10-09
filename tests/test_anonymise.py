@@ -176,6 +176,59 @@ def test_create_update_and_validation(reg):
     assert c.post("/admin/clients/999999999", data={"name": name, "anonymised_label": "z", "v": v}).status_code == 404
 
 
+def _add(c, name, label, ref=False, aliases=""):
+    data = {"name": name, "anonymised_label": label, "aliases": aliases, **({"referenceable": "on"} if ref else {})}
+    return c.post("/admin/clients", data=data, follow_redirects=False)
+
+
+def _row(tag, name):
+    return next(r for r in find(tag) if r[1] == name)
+
+
+def test_new_protected_name_in_another_label_refused(reg):
+    c = client([ADMIN])
+    zl = f"Zorp Logistics {reg}"
+    assert _add(c, zl, f"a Quill{reg} partner", ref=True).status_code == 303
+    r = _add(c, f"Quill{reg}", "a publisher")
+    assert r.status_code == 400 and zl in r.json()["detail"]
+    assert [x[1] for x in find(reg)] == [zl]
+
+
+def test_unticking_referenceable_refused_when_name_in_a_label(reg):
+    c = client([ADMIN])
+    q = f"Quill{reg}"
+    assert _add(c, q, "a publisher", ref=True).status_code == 303
+    assert _add(c, f"Zorp Logistics {reg}", f"a {q} partner", ref=True).status_code == 303
+    cid, *_, v = _row(reg, q)
+    assert c.post(f"/admin/clients/{cid}", data={"name": q, "anonymised_label": "a publisher", "v": v}).status_code == 400
+    assert _row(reg, q)[4] is True
+
+
+def test_new_alias_in_another_label_refused(reg):
+    c = client([ADMIN])
+    pine = f"Pine{reg}"
+    assert _add(c, pine, "a sawmill").status_code == 303
+    assert _add(c, f"Cedar {reg}", f"a Fir{reg} firm", ref=True).status_code == 303
+    cid, *_, v = _row(reg, pine)
+    r = c.post(f"/admin/clients/{cid}", data={"name": pine, "aliases": f"Fir{reg}", "anonymised_label": "a sawmill", "v": v})
+    assert r.status_code == 400 and _row(reg, pine)[2] == []
+
+
+def test_label_recheck_leaves_other_saves_alone(reg):
+    c = client([ADMIN])
+    oak = f"Oak {reg}"
+    assert _add(c, oak, "a joinery").status_code == 303
+    cid, *_, v = _row(reg, oak)
+    assert c.post(f"/admin/clients/{cid}", data={"name": oak, "anonymised_label": "a carpenter", "v": v},
+                  follow_redirects=False).status_code == 303
+    elm = f"Elm {reg}"
+    assert _add(c, elm, "a nursery", ref=True).status_code == 303
+    assert _add(c, f"Birch {reg}", f"an {elm} unit", ref=True).status_code == 303
+    cid, *_, v = _row(reg, elm)  # referenceable: its name may appear in another label
+    assert c.post(f"/admin/clients/{cid}", data={"name": elm, "anonymised_label": "a grower", "referenceable": "on",
+                                                 "v": v}, follow_redirects=False).status_code == 303
+
+
 def test_alias_with_comma_is_one_alias(reg):
     c = client([ADMIN])
     assert c.post("/admin/clients", data={"name": f"SJ {reg}", "aliases": f"Smith, Jones Partners {reg}\r\nSJC",
