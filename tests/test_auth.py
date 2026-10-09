@@ -255,3 +255,13 @@ def test_auth_logs_login_line(env, monkeypatch, capsys):
     assert c.get("/auth", follow_redirects=False).status_code == 303
     assert f"login sub={sub} name=Test Person" in capsys.readouterr().out
     assert c.get("/me").status_code == 200
+
+
+def test_revoke_sessions_command(env):
+    from app import revoke_sessions
+    sub = fresh()
+    c = client([USER], sub=sub)
+    assert revoke_sessions.main([]) == 2
+    assert c.get("/me").status_code == 200
+    assert revoke_sessions.main([sub]) == 0
+    assert c.get("/me").status_code == 401

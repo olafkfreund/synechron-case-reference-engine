@@ -249,6 +249,8 @@ def test_print_calls_are_the_known_content_free_ones():
                         'print(f"login sub={claims[\'sub\']} name={request.session[\'user\'][\'name\']}", flush=True)'],  # #47: finds a sub
         "app/enqueue_crawls.py": ['print(f"queued {queued} crawl job(s)", flush=True)'],
         "app/worker.py": ['print(f"job {job_id} {kind} {status}: {type(e).__name__}", flush=True)'],
+        "app/revoke_sessions.py": ['print("usage: python -m app.revoke_sessions <sub> [<sub> ...]", file=sys.stderr)',
+                                   'print(f"revoked sessions of {sub}", flush=True)'],
         "app/migrate.py": ['print("schema applied", flush=True)'],
     }
     found = {}
