@@ -86,6 +86,13 @@ def test_summary_numbers_do_not_license_tailored_numbers(approved, monkeypatch):
     assert sr.pick("bid", sr.search(ME, "onboarding", {}), [])[1]
 
 
+def test_comma_decimal_fact_no_longer_licenses_15(approved, monkeypatch):
+    cid = approved(data().model_copy(update={"outcomes": [Outcome(metric="saved", value="1,5 days", source_quote="q")]}))
+    picks_reply(monkeypatch, sr.Pick(case_id=cid, reason="r", tailored="Saved 15 days."))
+    picks, notes = sr.pick("bid", sr.search(ME, "onboarding", {}), [])
+    assert picks[0]["tailored"] == "Onboarding fell from 12 days to 3 days." and notes  # summary fallback
+
+
 def test_unknown_case_id_dropped(approved, monkeypatch):
     a = approved()
     picks_reply(monkeypatch, sr.Pick(case_id=999999, reason="x", tailored="x"),
