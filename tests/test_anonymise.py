@@ -29,6 +29,18 @@ def test_referenceable_untouched_and_blocked_scrub():
     assert an.scrub("Globex rolled out Acme's Acmeville tool", REG) == "rolled out 's acmeville tool"
 
 
+def test_referenceable_name_containing_protected_name():
+    reg = [C("Zorp", label="a retailer"),
+           C("Zorp Logistics", ["ZL Freight", "Zorp Freight"], label="a logistics firm", ref=True),
+           C("Northwind", label="a wholesaler", ref=True)]
+    for s, want in [("Zorp Logistics won", "a logistics firm won"),
+                    ("Zorp Freight shipped", "a logistics firm shipped"),
+                    ("ZL Freight shipped", "ZL Freight shipped"),
+                    ("Zorp and Northwind", "a retailer and Northwind")]:
+        assert an.apply(s, reg) == want
+        assert an.blocked(an.apply(s, reg), reg) == []
+
+
 def test_shown():
     assert an.shown("Globex", "a manufacturer", True, True) == "Globex"
     assert an.shown("Globex", "a manufacturer", False, True) == "a manufacturer"
