@@ -319,7 +319,8 @@ main after #64 merges, and before starting step 8.
      1. lock with `{REVIEWABLE}`, `document_id is null`, and `{VERSION} =
         %s`, `for update of c`. This is not `load()`: no `OPEN`, and
         withdrawn members are allowed;
-     2. `update cases set merged_into = null, status = 'extracted',
+     2. `update cases set merged_into = null, status = case when status =
+        'rejected' then 'rejected' else 'extracted' end,
         approved_by = null, approved_at = null, review_due = null where
         merged_into = %s`;
      3. `update cases set status = 'rejected', approved_by = null,
@@ -383,6 +384,9 @@ main after #64 merges, and before starting step 8.
    `extracted`, and approval is refused.
 
    → verify by `docker compose build app && docker compose run --rm app pytest tests/test_sources.py`.
+
+   *Done (coder, committed):* the extended test passes. Un-merge later got
+   a fix so a retired member stays `rejected` (see *Review*).
    Traps:
    - Check #64's merged constant names and line numbers on main first. If
      they differ from #64's plan, update this step in the same commit as the
@@ -411,6 +415,27 @@ main after #64 merges, and before starting step 8.
    - Research uses `visible_case` (`app/research.py:105`); call the routes,
      not the helper.
    - The `make()` comment at line 36: don't call `db.init()` after `make()`.
+
+## Review
+
+*Review:* fixes applied after the Opus review of steps 1-9:
+1. **Blocker.** Un-merge (`app/review.py`) kept resetting every member to
+   `extracted`, reviving a member that #64 had retired. It now uses
+   `status = case when status = 'rejected' then 'rejected' else 'extracted' end`.
+   Test: `test_unticking_executed_retires_flagged_engagements` un-merges and
+   the flagged member stays `rejected`. **Step 6's un-merge SQL (item 2 of the
+   un-merge route) is corrected accordingly.**
+2. **Approve guard** also refuses when any member's `basis <> 'engagement'`
+   (`test_approve_refused_when_a_member_is_no_longer_an_engagement`).
+3. **Merge lock:** `order by c.id` before `for update of c`, so overlapping
+   merges cannot deadlock.
+4. **Need-to-know:** `test_one_visible_member_cannot_merge_unmerge_or_list_the_other`
+   covers merge preview, merge, un-merge and the candidate list for a user who
+   sees only one member's document.
+
+*Accepted risk:* if a member's document is hard-deleted, the merged case can't
+be un-merged through the app and the other member stays hidden. Nothing in the
+app hard-deletes documents today, so this is documented, not fixed.
 
 ## Tests
 

@@ -126,6 +126,8 @@ def test_unticking_executed_retires_flagged_engagements(env):  # noqa: F811
             assert c.execute("select status from cases where id=%s", (c7,)).fetchone()[0] == "approved"
             v = c.execute("select md5(data::text) from cases where id=%s", (merged,)).fetchone()[0]
         assert client([REV, "g1"]).post(f"/review/{merged}/approve", data={"v": v}).status_code == 409  # c1 is rejected
+        # un-merging must not revive the retired member
+        assert client([REV, "g1"]).post(f"/review/{merged}/unmerge", data={"v": v}, follow_redirects=False).status_code == 303
         with db.connect() as c:
             st = dict(c.execute("select id, status from cases where id in (%s,%s,%s,%s)", (c1, c2, c3, c4)).fetchall())
             assert st == {c1: "rejected", c2: "approved", c3: "approved", c4: "approved"}

@@ -211,7 +211,7 @@ def approve(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))
     with db.connect() as conn:
         case, text = load(conn, cid, user, v)
         if isinstance(text, dict) and conn.execute(
-                "select count(*) from cases where merged_into = %s and status = 'rejected'", (cid,)).fetchone()[0]:
+                "select count(*) from cases where merged_into = %s and (status = 'rejected' or basis <> 'engagement')", (cid,)).fetchone()[0]:
             raise HTTPException(409, "a member contract is no longer an engagement: un-merge")
         check(case, text)
         for n in SCALARS:  # approve without the unsourced fields
@@ -308,7 +308,7 @@ def lock_members(conn, user, members):
     sql = ("select c.id, c.data, c.status, c.basis, c.document_id, {v}, d.title, d.text from cases c "
            "left join documents d on d.id = c.document_id where c.id = any(%s) and {vis}")
     got = {r[0]: r for r in conn.execute(
-        sql.format(v=VERSION, vis=VISIBLE) + " for update of c", (list(want), list(user.groups)))}
+        sql.format(v=VERSION, vis=VISIBLE) + " order by c.id for update of c", (list(want), list(user.groups)))}
     if len(got) != len(want):
         # a member already merged is hidden by VISIBLE; tell it apart from one the user cannot see
         probe = conn.execute(sql.format(v=VERSION, vis=VISIBLE.replace("c.merged_into is null and ", "")),
@@ -380,8 +380,8 @@ def unmerge(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))
             raise HTTPException(404, "no such case")
         if row[0] != v:
             raise HTTPException(409, "case changed; reload the page")
-        conn.execute("update cases set merged_into = null, status = 'extracted', approved_by = null, approved_at = null, "
-                     "review_due = null where merged_into = %s", (cid,))
+        conn.execute("update cases set merged_into = null, status = case when status = 'rejected' then 'rejected' "
+                     "else 'extracted' end, approved_by = null, approved_at = null, review_due = null where merged_into = %s", (cid,))
         conn.execute("update cases set status = 'rejected', approved_by = null, approved_at = null, review_due = null "
                      "where id = %s", (cid,))
     return RedirectResponse("/review", status_code=303)

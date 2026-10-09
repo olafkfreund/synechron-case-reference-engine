@@ -480,6 +480,28 @@ def test_need_to_know_matrix(make, acme, monkeypatch, surface, state):
             d.execute("delete from research where case_id=%s", (new,))
 
 
+def test_one_visible_member_cannot_merge_unmerge_or_list_the_other(make, acme):
+    a = eng(make, TEXT_A, ["x"], [], acl=(GA,))
+    b = eng(make, TEXT_B, ["y"], [], acl=(GB,))
+    c = client([REV, GA])
+    ms = [f"{a}:{ver(a)}", f"{b}:{ver(b)}"]
+    assert c.post("/review/merge/preview", data={"members": ms}).status_code == 404
+    assert c.post("/review/merge", data={"members": ms}).status_code == 404
+    assert f'value="{b}:' not in c.get(f"/review/{a}").text  # candidate list
+    new = int(merge(client([REV, GA, GB]), [a, b]).headers["location"].rsplit("/", 1)[1])
+    assert c.post(f"/review/{new}/unmerge", data={"v": ver(new)}).status_code == 404
+    assert status_of(new) == "extracted" and merged_of(a) == new
+
+
+def test_approve_refused_when_a_member_is_no_longer_an_engagement(make, acme):
+    c = client(R)
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    new = int(merge(c, [a, b]).headers["location"].rsplit("/", 1)[1])
+    with db.connect() as d:
+        d.execute("update cases set basis='delivered' where id=%s", (b,))
+    assert c.post(f"/review/{new}/approve", data={"v": ver(new)}).status_code == 409
+
+
 def test_withdrawn_member_can_still_be_unmerged_but_not_edited(make, acme):
     a = eng(make, TEXT_A, ["x"], [], acl=(GA,))
     b = eng(make, TEXT_B, ["y"], [], acl=(GB,))
