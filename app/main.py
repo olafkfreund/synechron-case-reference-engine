@@ -241,7 +241,7 @@ def create_app() -> FastAPI:
             if prefix and not prefix.endswith("/"):
                 prefix += "/"
             boto3.client("s3").put_object(
-                Bucket=src[1]["bucket"], Key=f"{prefix}{uuid.uuid4().hex}-{name}", Body=data)
+                Bucket=src[1]["bucket"], Key=f"{prefix}{uuid.uuid4().hex}/{name}", Body=data)
             job_id = conn.execute(
                 "insert into jobs(kind, payload) values ('crawl_s3', jsonb_build_object('source_id', %s::bigint)) "
                 "returning id", (src[0],)).fetchone()[0]
