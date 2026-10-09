@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal
 from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -28,8 +29,44 @@ def quote_in(text: str, quote: str) -> bool:
     return q in _norm(text) or q in _norm(re.sub(r"-[ \t]*\n\s*", "", text))
 
 
-def numbers(s: object) -> set[str]:
-    return {n.replace(",", "") for n in re.findall(r"\d+(?:[.,]\d+)*", "" if s is None else str(s))}
+_UNITS = ("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+          "fifteen sixteen seventeen eighteen nineteen").split()
+_TENS = "twenty thirty forty fifty sixty seventy eighty ninety".split()
+_WORDS = {w: i for i, w in enumerate(_UNITS)} | {
+    f"{t}{sep}{u}" if u else t: 20 + 10 * i + j
+    for i, t in enumerate(_TENS) for j, u in enumerate([""] + _UNITS[1:10]) for sep in ("-", " ")}
+_WORD_RE = re.compile(r"\b(" + "|".join(sorted(map(re.escape, _WORDS), key=len, reverse=True)) + r")\b")
+
+
+def _plain(s: str) -> str:
+    return format(Decimal(s).normalize(), "f")
+
+
+def _readings(tok: str, quote: bool) -> set[str]:
+    seps, groups = re.findall(r"[.,]", tok), re.split(r"[.,]", tok)
+    if not seps:
+        return {_plain(tok)}
+    if len(seps) == 1:
+        a, b = groups
+        dec, whole = _plain(f"{a}.{b}"), _plain(a + b)
+        if len(b) != 3:
+            return {dec}
+        # "1.200" / "1,200": a quote may mean either; a claim is read the English way
+        return {dec, whole} if quote else {whole if seps[0] == "," else dec}
+    if len(set(seps)) == 1:
+        return {_plain("".join(groups))} if all(len(g) == 3 for g in groups[1:]) else {tok}
+    if seps[-1] not in seps[:-1] and all(len(g) == 3 for g in groups[1:-1]):
+        return {_plain("".join(groups[:-1]) + "." + groups[-1])}
+    return {tok}  # unreadable: matches only the same raw token
+
+
+def numbers(s: object, quote: bool = False) -> set[str]:
+    """Canonical numbers in s. quote=True (the source side) adds every reading and number words."""
+    text = "" if s is None else str(s)
+    out = set().union(*(_readings(t, quote) for t in re.findall(r"\d+(?:[.,]\d+)*", text)))
+    if quote:
+        out |= {str(_WORDS[w]) for w in _WORD_RE.findall(_norm(text))}
+    return out
 
 
 def sourced(value: object, quote: str, text: str) -> bool:
