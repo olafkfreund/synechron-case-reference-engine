@@ -108,7 +108,7 @@ def test_sourced_number_formats():
 
 def test_llm_schema_is_strict_and_hides_unsourced():
     schema = llm_schema()
-    assert "unsourced" not in json.dumps(schema)
+    assert "unsourced" not in json.dumps(schema) and "document_id" not in json.dumps(schema)
     objs = [d for d in schema["$defs"].values() if d.get("type") == "object"]
     assert objs and all(d.get("additionalProperties") is False for d in objs)
     assert schema.get("additionalProperties") is False
