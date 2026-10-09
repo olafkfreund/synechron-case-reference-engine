@@ -69,6 +69,15 @@ class Outcome(_Model):
     document_id: SkipJsonSchema[int | None] = None  # see Sourced
 
 
+PLACEHOLDER_METRICS = {"metric", "outcome", "result", "value"}
+
+
+def vague_metric(o: Outcome) -> bool:
+    """No usable metric name: empty, a placeholder word, or a copy of the value (#85)."""
+    m = o.metric.strip().lower()
+    return not m or m in PLACEHOLDER_METRICS or m == o.value.strip().lower()
+
+
 class Period(_Model):
     start: str | None = None
     end: str | None = None
@@ -191,8 +200,9 @@ def assemble(x: Extraction) -> tuple[ReferenceCase, list[str]]:
         elif f == "technology":
             c.tech_stack.append(Sourced[str](value=v, source_quote=q))
         elif f == "outcome":
-            metric, _, val = v.partition(":")
-            c.outcomes.append(Outcome(metric=metric.strip(), value=(val or metric).strip(), source_quote=q))
+            metric, sep, val = v.partition(":")
+            c.outcomes.append(Outcome(metric=metric.strip() if sep else "",
+                                      value=(val if sep else v).strip(), source_quote=q))
         elif f == "organisation":
             if v not in c.organisations:
                 c.organisations.append(v)

@@ -129,8 +129,16 @@ def test_assemble_flat_items():
     assert [s.value for s in c.capabilities] == ["A", "B"] and [s.value for s in c.tech_stack] == ["AWS", "Kubernetes"]
     assert c.organisations == ["Acme"] and (c.period.start, c.period.end) == ("2023-01", "2024-06")
     assert (c.outcomes[0].metric, c.outcomes[0].value) == ("onboarding", "12 days to 3")
-    assert (c.outcomes[1].metric, c.outcomes[1].value) == ("faster", "faster")
+    assert (c.outcomes[1].metric, c.outcomes[1].value) == ("", "faster")
     assert len(c.summary.split()) == 80 and notes == ["3 malformed or unknown item(s) skipped", "summary trimmed to 80 words"]
+
+
+@pytest.mark.parametrize("metric,value,vague", [
+    ("", "x", True), ("Metric", "x", True), (" result ", "x", True), ("Faster", "faster", True),
+    ("claim handling time", "cut by 38 percent", False), ("order value", "up 5 percent", False)])
+def test_vague_metric(metric, value, vague):
+    from app.schema import vague_metric
+    assert vague_metric(Outcome(metric=metric, value=value)) is vague
 
 
 def test_item_is_lenient():
