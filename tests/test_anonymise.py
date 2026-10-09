@@ -192,6 +192,10 @@ def test_new_protected_name_in_another_label_refused(reg):
     r = _add(c, f"Quill{reg}", "a publisher")
     assert r.status_code == 400 and zl in r.json()["detail"]
     assert [x[1] for x in find(reg)] == [zl]
+    zp = f"Zorp Packaging {reg}"  # a protected client's label counts too
+    assert _add(c, zp, f"a Quill{reg} supplier").status_code == 303
+    r = _add(c, f"Quill{reg}", "a publisher")
+    assert r.status_code == 400 and zp in r.json()["detail"]
 
 
 def test_unticking_referenceable_refused_when_name_in_a_label(reg):
@@ -200,7 +204,8 @@ def test_unticking_referenceable_refused_when_name_in_a_label(reg):
     assert _add(c, q, "a publisher", ref=True).status_code == 303
     assert _add(c, f"Zorp Logistics {reg}", f"a {q} partner", ref=True).status_code == 303
     cid, *_, v = _row(reg, q)
-    assert c.post(f"/admin/clients/{cid}", data={"name": q, "anonymised_label": "a publisher", "v": v}).status_code == 400
+    r = c.post(f"/admin/clients/{cid}", data={"name": q, "anonymised_label": "a publisher", "v": v})
+    assert r.status_code == 400 and f"Zorp Logistics {reg}" in r.json()["detail"]
     assert _row(reg, q)[4] is True
 
 
@@ -211,7 +216,7 @@ def test_new_alias_in_another_label_refused(reg):
     assert _add(c, f"Cedar {reg}", f"a Fir{reg} firm", ref=True).status_code == 303
     cid, *_, v = _row(reg, pine)
     r = c.post(f"/admin/clients/{cid}", data={"name": pine, "aliases": f"Fir{reg}", "anonymised_label": "a sawmill", "v": v})
-    assert r.status_code == 400 and _row(reg, pine)[2] == []
+    assert r.status_code == 400 and f"Cedar {reg}" in r.json()["detail"] and _row(reg, pine)[2] == []
 
 
 def test_label_recheck_leaves_other_saves_alone(reg):
