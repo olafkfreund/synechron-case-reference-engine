@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 108
 author: olafkfreund
 ---
@@ -105,3 +105,8 @@ want the smallest change, option 3 alone is enough.
 A second, smaller question: should a metric with an empty value
 (`"Revenue"`, `""`) fall under the same rule? My recommendation is yes:
 treat it as no value.
+
+## Approved answers
+
+1. Option 3 plus option 1: check() marks an outcome with an empty value unsourced, and edit refuses such a save with 400.
+2. Yes: a metric with an empty value falls under the same rule.
