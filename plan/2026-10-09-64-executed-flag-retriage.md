@@ -126,6 +126,11 @@ spec: spec/2026-10-09-64-executed-flag-retriage.md
    - `cases.basis` is a real column: set it as well as the JSON;
    - all test data is made up.
 
+
+*Done (coder, steps 1–3):* full suite 413 passed (410 + 3). Small test
+details: the delivered case uses `basis_reason=""`, because the field is a
+`str`, and the job insert casts `%s::text` so Postgres can infer the type.
+
 ## Tests
 
 - `docker compose build app && docker compose run --rm app pytest`: green.
