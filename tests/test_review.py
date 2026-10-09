@@ -195,7 +195,6 @@ def test_approve_links_case_to_registry_client(make):
             c.execute("delete from clients where id=%s", (client_id,))
 
 
-
 def test_approve_409_if_client_deleted_mid_approval(make, monkeypatch):  # #84
     from app import anonymise
     tag = uuid.uuid4().hex[:8]
