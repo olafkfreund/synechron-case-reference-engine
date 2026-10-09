@@ -1,4 +1,5 @@
 import json
+import time
 import uuid
 from base64 import b64encode
 
@@ -24,10 +25,14 @@ def env(monkeypatch):
         monkeypatch.setenv(k, v)
 
 
-def client(groups=None, origin=ORIGIN):
+def client(groups=None, origin=ORIGIN, sub="u1", name="U", iat=None):
     c = TestClient(main.create_app(), headers={"Origin": origin} if origin else {})
     if groups is not None:  # sign the session cookie the way SessionMiddleware does
-        data = b64encode(json.dumps({"user": {"sub": "u1", "name": "U", "groups": groups}}).encode())
+        db.init()
+        u = {"sub": sub, "name": name, "groups": groups, "iat": time.time() if iat is None else iat}
+        if iat is False:
+            del u["iat"]
+        data = b64encode(json.dumps({"user": u}).encode())
         c.cookies.set("session", TimestampSigner(SECRET).sign(data).decode())
     return c
 
@@ -130,10 +135,10 @@ def test_upload_rejects_bad_extension_and_oversize(upload_src, monkeypatch):
 
 
 def test_upload_without_source_is_400(env):
-    db.init()
+    cl = client([ADMIN])  # before the open connection: client() runs db.init()
     with mock_aws(), db.connect() as c:
         c.execute("delete from sources where kind='upload'")
-        assert client([ADMIN]).post("/admin/upload", files={"file": ("a.pdf", PDF)}).status_code == 400
+        assert cl.post("/admin/upload", files={"file": ("a.pdf", PDF)}).status_code == 400
 
 
 def test_oversize_anonymous_body_refused_before_parsing(env, monkeypatch):
@@ -200,3 +205,63 @@ def test_healthz_needs_no_login_and_no_database(env, monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)  # would raise if the route touched the database
     r = client().get("/healthz")
     assert r.status_code == 200 and r.text == "ok" and "set-cookie" not in r.headers
+
+
+def fresh():
+    return f"t-{uuid.uuid4()}"  # the test database persists: never reuse a sub that may have a cutoff
+
+
+def cut(*subs):
+    with db.connect() as conn:
+        main.cut_sessions(conn, *subs)
+
+
+def test_logout_revokes_replayed_cookie(env):
+    sub = fresh()
+    a = client([USER], sub=sub)
+    b = client()
+    b.cookies.set("session", a.cookies["session"])
+    assert b.get("/me").status_code == 200
+    assert a.post("/logout", follow_redirects=False).status_code == 303
+    assert b.get("/me").status_code == 401
+    r = b.get("/me", headers={"Accept": "text/html"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login"
+
+
+def test_login_after_cutoff_works(env):
+    sub = fresh()
+    cut(sub)
+    assert client([USER], sub=sub).get("/me").status_code == 200  # newer iat
+
+
+def test_cookie_without_iat(env):
+    sub = fresh()
+    assert client([USER], sub=sub, iat=False).get("/me").status_code == 200  # pre-deploy cookie, no row
+    cut(sub)
+    assert client([USER], sub=sub, iat=False).get("/me").status_code == 401
+
+
+def test_cut_sessions_is_per_user(env):
+    a, b = fresh(), fresh()
+    ca, cb = client([USER], sub=a), client([USER], sub=b)
+    cut(a)
+    assert ca.get("/me").status_code == 401 and cb.get("/me").status_code == 200
+
+
+def test_auth_logs_login_line(env, monkeypatch, capsys):
+    db.init()
+    sub = fresh()
+    c = oidc_app(monkeypatch, {"sub": sub, "name": "Test Person", "groups": [USER]})
+    assert c.get("/auth", follow_redirects=False).status_code == 303
+    assert f"login sub='{sub}' name='Test Person'" in capsys.readouterr().out
+    assert c.get("/me").status_code == 200
+
+
+def test_revoke_sessions_command(env):
+    from app import revoke_sessions
+    sub = fresh()
+    c = client([USER], sub=sub)
+    assert revoke_sessions.main([]) == 2
+    assert c.get("/me").status_code == 200
+    assert revoke_sessions.main([sub]) == 0
+    assert c.get("/me").status_code == 401

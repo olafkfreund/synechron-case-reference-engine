@@ -5,16 +5,13 @@ import socket
 import threading
 import time
 import uuid
-from base64 import b64encode
 
 import httpx
 import pytest
-from fastapi.testclient import TestClient
 from psycopg.conninfo import conninfo_to_dict
-from itsdangerous import TimestampSigner
 
 from app import anonymise as an, db, ingest, main, research as rs, worker
-from tests.test_auth import ORIGIN, SECRET, client, env  # noqa: F401
+from tests.test_auth import client, env  # noqa: F401
 
 KEY = "brave-s3cr3t-key"
 REG = [dict(name="Zorp", aliases=[], anonymised_label="a retailer", referenceable=False),
@@ -64,10 +61,7 @@ def reg(env, monkeypatch):  # noqa: F811
 
 
 def as_user(sub, groups=U):
-    c = TestClient(main.create_app(), headers={"Origin": ORIGIN})
-    data = b64encode(json.dumps({"user": {"sub": sub, "name": sub, "groups": groups}}).encode())
-    c.cookies.set("session", TimestampSigner(SECRET).sign(data).decode())
-    return c
+    return client(groups, sub=sub, name=sub)
 
 
 def test_preview_send_and_tampered_field(reg):
