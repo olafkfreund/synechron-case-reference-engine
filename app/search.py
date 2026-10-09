@@ -131,7 +131,7 @@ def results(user: User, bid_text: str, filters: dict):
 
     def view(c, **extra):
         case = c["case"]
-        return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label="a client" if anonymise.blocked(c["label"], clients) else c["label"], basis=c["basis"], **extra)
+        return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label=clean(c["label"], clients, "a client"), basis=c["basis"], **extra)
     top = [view(by_id[p["id"]], reason=p["reason"], tailored=p["tailored"],
                 outcomes=[clean((f"{o.metric}: {o.value}" if o.metric else o.value), clients, "[withheld]")
                           for o in by_id[p["id"]]["case"].outcomes if not o.unsourced]) for p in picks]
