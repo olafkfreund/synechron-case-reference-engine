@@ -73,7 +73,7 @@ def sourced(value: object, quote: str, text: str) -> bool:
     """True when the quote is in the document and backs the value it is attached to."""
     if not quote_in(text, quote):
         return False
-    if not numbers(value) <= numbers(quote):  # "12 to 1 days" against "12 days to 3 days"
+    if not numbers(value) <= numbers(quote, quote=True):  # "12 to 1 days" against "12 days to 3 days"
         return False
     return len(_norm(quote).split()) >= MIN_QUOTE_WORDS or _norm(str(value)) in _norm(quote)
 
@@ -144,7 +144,7 @@ class ReferenceCase(_Model):
 
     def summary_sourced(self) -> bool:
         """Every number in the summary appears in some source quote (else it launders invented numbers)."""
-        return numbers(self.summary) <= set().union(*map(numbers, self.quotes()))
+        return numbers(self.summary) <= set().union(*(numbers(q, quote=True) for q in self.quotes()))
 
     def search_text(self) -> str:
         """Field values only (no quotes, keys, or client name) for cases.search_text."""
