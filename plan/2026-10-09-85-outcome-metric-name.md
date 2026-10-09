@@ -202,6 +202,22 @@ Never `docker compose up` or `down`.
    `destination` in `EXTRACT_MODEL_OPTIONS`; never read the
    Synechron-presale-doc folder into the session.
 
+
+*Step 7 (session model): the eval, local `ollama_chat/qwen3:14b`, counts
+only.*
+- On the 12 local presale documents, the 2 extracted are both contracts,
+  and engagements carry no outcomes. So both runs had 0 outcomes and
+  identical counts (18/29 sourced): nothing to measure.
+- *Deviation:* so the eval also ran on the 14 made-up demo documents
+  (built from `demo/cases.json`, outside the repo):
+
+| run | outcomes | bad_metrics | sourced |
+| --- | --- | --- | --- |
+| old prompt sentence | 12 | 3 | 178/178 |
+| new prompt (this branch) | 12 | 1 | 178/178 |
+
+Bad metrics fall and sourcing holds, so the example wording stays as it is.
+
 ## Tests
 
 - `docker compose build app && docker compose run --rm app pytest` → all pass,
