@@ -9,7 +9,7 @@ import httpx
 from psycopg.types.json import Jsonb
 
 from app import db
-from app.ingest import ingest
+from app.ingest import ingest, skip_unchanged
 
 MAX_FAILED_KEYS = 20
 # multipart uploads (DataSync) get LastModified = upload *start*, so they can land behind the cursor
@@ -413,11 +413,17 @@ def crawl_confluence(source_id: int) -> dict:
                             counts["skipped_too_large"] += 1
                             continue
                         try:
+                            v = att.get("version") or {}
+                            ver = f"{v['number']}:{v['when']}" if v.get("number") is not None and v.get("when") else None
+                            if ver and skip_unchanged(source_id, ext, ver):  # unchanged: no download (#46)
+                                counts["skipped"] += 1
+                                done.add(ext)
+                                continue
                             data = c.get(base + att["_links"]["download"]).content
                             if len(data) > cap:
                                 counts["skipped_too_large"] += 1
                                 continue
-                            counts[ingest(source_id, ext, title, data)] += 1
+                            counts[ingest(source_id, ext, title, data, source_version=ver)] += 1
                             done.add(ext)
                         except Exception as e:  # noqa: BLE001
                             fail(pid, ext, e, page_ok=True)
