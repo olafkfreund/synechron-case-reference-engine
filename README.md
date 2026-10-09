@@ -64,6 +64,8 @@ paste the claims JSON from the table.
 - Port 8080 appears in three places: the `idp` port, its `SERVER_PORT`, and `OIDC_METADATA_URL` in
   `docker-compose.yml`. Change all three together.
 - Check all four logins with `scripts/check_local_login.sh` (`BASE` overrides `http://localhost:8000`).
+- Uploads go to an in-memory S3 (`s3`), lost when it restarts; `docker compose up -d s3-init` recreates the bucket.
+  As admin, add an upload source with config `{"bucket": "refs-local"}` first.
 - **Local only:** this provider logs anyone in as anything. Never expose it.
 
 ## Local development with Ollama
