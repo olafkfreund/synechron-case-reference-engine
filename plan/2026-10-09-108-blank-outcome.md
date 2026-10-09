@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 108
 spec: spec/2026-10-09-108-blank-outcome.md
 ---
