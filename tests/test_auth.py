@@ -197,6 +197,12 @@ def test_cancelled_login_is_401_not_500(env, monkeypatch):
     assert oidc_app(monkeypatch, error=True).get("/auth").status_code == 401
 
 
+def test_safe_name_is_never_a_path():  # the upload key is {uuid}/{name} (#110)
+    for raw in ("..", ".", "../..", "a/..", "/", "a/b\\c.pdf", "..\\..\\x.docx", ""):
+        n = main.safe_name(raw)
+        assert "/" not in n and "\\" not in n and n not in ("", ".", "..")
+
+
 def test_long_filename_truncated():
     n = main.safe_name("a" * 2000 + ".pdf")
     assert n.endswith(".pdf") and len(n) <= 110
