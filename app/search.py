@@ -130,7 +130,7 @@ def results(user: User, bid_text: str, filters: dict):
         case = c["case"]
         return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label=c["label"], basis=c["basis"], **extra)
     top = [view(by_id[p["id"]], reason=p["reason"], tailored=p["tailored"],
-                outcomes=[clean(f"{o.metric}: {o.value}", clients, "[withheld]")
+                outcomes=[clean((f"{o.metric}: {o.value}" if o.metric else o.value), clients, "[withheld]")
                           for o in by_id[p["id"]]["case"].outcomes if not o.unsourced]) for p in picks]
     others = [view(c, summary=clean(c["case"].summary, clients)) for c in cands if c["id"] not in chosen]
     return top, others, notes

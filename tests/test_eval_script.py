@@ -31,7 +31,8 @@ def fake(calls):
         body = ('{"kind": "case", "describes_delivered_work": true}' if "kind" in kw["messages"][0]["content"][0]["text"]
                 else '{"items": [{"field": "title", "value": "Zorbulon", "quote": "%s"}, '
                      '{"field": "outcome", "value": "settlement time: 12 days to 3 days", "quote": "%s"}, '
-                     '{"field": "bogus", "value": "x", "quote": "y"}], "summary": "Settlement fell."}' % (SECRET, SECRET))
+                     '{"field": "outcome", "value": "result: 12 days to 3 days", "quote": "%s"}, '
+                     '{"field": "bogus", "value": "x", "quote": "y"}], "summary": "Settlement fell."}' % (SECRET, SECRET, SECRET))
         return SimpleNamespace(choices=[SimpleNamespace(finish_reason="stop", message=SimpleNamespace(content=body))])
     return completion
 
@@ -67,6 +68,7 @@ def test_output_has_metrics_and_no_document_text(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(llm.litellm, "completion", fake([]))
     assert ev.main(["--docs", str(docs_dir(tmp_path)), "--models", "bedrock/m"]) == 0
     out = capsys.readouterr()
-    assert "kind=case" in out.out and "sourced=2/2" in out.out and "1 malformed" in out.out and "== bedrock/m" in out.out
+    assert "kind=case" in out.out and "sourced=3/3" in out.out and "1 malformed" in out.out and "== bedrock/m" in out.out
+    assert "bad_metrics=1" in out.out and "mean bad_metrics" in out.out
     for text in (out.out, out.err):
         assert "Zorbulon" not in text and "settlement" not in text.lower()

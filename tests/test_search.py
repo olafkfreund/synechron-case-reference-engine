@@ -77,6 +77,13 @@ def test_pick_valid_and_invented_number(approved, monkeypatch):
     assert len(notes) == 1 and str(b) not in notes[0]  # no internal ids on a user page
 
 
+def test_empty_metric_outcome_is_value_only(approved, monkeypatch):
+    a = approved(data().model_copy(update={"outcomes": [Outcome(metric="", value="cut by half", source_quote="q")]}))
+    picks_reply(monkeypatch, sr.Pick(case_id=a, reason="fits", tailored=""))
+    top, _, _ = sr.results(ME, "onboarding", {})
+    assert top[0]["outcomes"] == ["cut by half"]
+
+
 def test_summary_numbers_do_not_license_tailored_numbers(approved, monkeypatch):
     cid = approved(data().model_copy(update={"summary": "Saved 99 hours."}))
     picks_reply(monkeypatch, sr.Pick(case_id=cid, reason="r", tailored="We saved 99 hours."))
