@@ -13,10 +13,10 @@ nobody|{}|'
 fail=0
 while IFS='|' read -r name claims want; do
   jar=$tmp/$name.jar
-  authz=$(curl -s -o /dev/null -c "$jar" -b "$jar" -w '%{redirect_url}' "$BASE/login")
+  authz=$(curl -s -o /dev/null -c "$jar" -b "$jar" -w '%{redirect_url}' "$BASE/login" || true)
   [ -n "$authz" ] || { echo "FAIL $name: /login gave no redirect"; fail=1; continue; }
   cb=$(curl -s -o /dev/null -c "$jar" -b "$jar" -w '%{redirect_url}' \
-    --data-urlencode "username=$name" --data-urlencode "claims=$claims" "$authz")
+    --data-urlencode "username=$name" --data-urlencode "claims=$claims" "$authz" || true)
   [ -n "$cb" ] || { echo "FAIL $name: IdP gave no redirect"; fail=1; continue; }
   curl -s -o /dev/null -c "$jar" -b "$jar" "$cb"
   me=$(curl -s -b "$jar" "$BASE/me")
