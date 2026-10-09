@@ -189,3 +189,63 @@ def test_approve_links_case_to_registry_client(make):
         with db.connect() as c:
             c.execute("update cases set client_id=null where client_id=%s", (client_id,))
             c.execute("delete from clients where id=%s", (client_id,))
+
+
+def post(c, cid, **f):
+    return c.post(f"/review/{cid}/edit", follow_redirects=False, data={"v": ver(cid), **f})
+
+
+def test_add_capability_with_document_quote_is_sourced(make):
+    cid = make()
+    assert post(client(R), cid, field="capabilities.new", value="Customer onboarding", quote=Q_TITLE).status_code == 303
+    _, data, search_text, *_ = row(cid)
+    assert data["capabilities"][-1]["unsourced"] is False and "Customer onboarding" in search_text
+
+
+def test_add_outcome_with_foreign_quote_is_dropped_on_approval(make):
+    cid = make()
+    c = client(R)
+    q = "cost fell by thirty percent overall"
+    assert post(c, cid, field="outcomes.new", metric="cost", value="30 percent", quote=q).status_code == 303
+    assert row(cid)[1]["outcomes"][-1]["unsourced"] is True
+    c.post(f"/review/{cid}/approve", data={"v": ver(cid)})
+    assert [o["metric"] for o in row(cid)[1]["outcomes"]] == ["onboarding"]
+
+
+def test_add_needs_value_and_quote(make):
+    cid = make()
+    before = row(cid)[1]
+    c = client(R)
+    for f in (dict(field="capabilities.new", value="X", quote=""), dict(field="capabilities.new", value="", quote=Q_TITLE),
+              dict(field="outcomes.new", value="x", quote=Q_TITLE)):
+        assert post(c, cid, **f).status_code == 400
+    assert row(cid)[1] == before
+
+
+def test_remove_list_item(make):
+    cid = make(data=case_data(tech_stack=[Sourced[str](value="Acme", source_quote=Q_TITLE)]))
+    assert post(client(R), cid, action="remove", field="tech_stack.0").status_code == 303
+    assert row(cid)[1]["tech_stack"] == []
+
+
+def test_remove_only_list_items(make):
+    cid = make()
+    c = client(R)
+    for f in ("industry", "capabilities.new", "outcomes.-1"):
+        assert post(c, cid, action="remove", field=f).status_code == 400
+    assert post(c, cid, action="bogus", field="industry").status_code == 400
+
+
+def test_double_remove_is_409(make):
+    cid = make()
+    c = client(R)
+    v = ver(cid)
+    assert c.post(f"/review/{cid}/edit", data={"action": "remove", "field": "outcomes.0", "v": v},
+                  follow_redirects=False).status_code == 303
+    assert c.post(f"/review/{cid}/edit", data={"action": "remove", "field": "outcomes.0", "v": v}).status_code == 409
+
+
+def test_detail_has_add_rows_and_remove_buttons(make):
+    page = client(R).get(f"/review/{make()}").text
+    assert all(p in page for p in ("capabilities.new", "tech_stack.new", "outcomes.new"))
+    assert page.count('value="remove"') == 1
