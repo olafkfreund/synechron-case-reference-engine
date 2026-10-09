@@ -255,6 +255,12 @@ Carried over from the spec; the intent and spec are not needed to implement this
    - Synthetic HTML only.
    - `--no-deps`, so no DB container is started.
 
+
+*Step 5 done (session model):* real Docling on the 3.8 MB synthetic HTML
+page with a 5 s limit printed `timeout 5.2`. The warm parent then
+converted a small page in a new child (length 13). Coder steps 1–4: full
+suite 417 passed.
+
 ## Tests
 
 - `docker compose build app && docker compose run --rm app pytest`: the
