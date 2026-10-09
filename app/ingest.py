@@ -37,6 +37,13 @@ def _converter():
     return DocumentConverter()
 
 
+@lru_cache
+def warm():
+    """Load the Docling models once in this process, so forked children share them."""
+    from docling.datamodel.base_models import InputFormat
+    _converter().initialize_pipeline(InputFormat.PDF)
+
+
 def to_markdown(data: bytes, name: str, max_pages: int | None = None) -> str:
     from docling.datamodel.base_models import DocumentStream
     kw = {"max_num_pages": max_pages} if max_pages else {}
