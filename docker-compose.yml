@@ -45,11 +45,11 @@ services:
                 break
             except c.exceptions.BucketAlreadyOwnedByYou:
                 break
-            except Exception:
+            except Exception as e:
+                print("s3 not ready:", e, flush=True)
                 time.sleep(1)
         else:
             raise SystemExit("s3 never answered")
-    restart: "no"
   app:
     build: .
     environment:
@@ -97,7 +97,6 @@ services:
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       AWS_DEFAULT_REGION: eu-west-1
-      S3_BUCKET: refs-local
       SESSION_SECRET: dev-only-not-a-secret
       SESSION_HTTPS_ONLY: "false"  # dev over http only
       APP_ORIGIN: http://localhost:8000

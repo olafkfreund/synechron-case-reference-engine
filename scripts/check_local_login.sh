@@ -14,12 +14,13 @@ fail=0
 while IFS='|' read -r name claims want; do
   jar=$tmp/$name.jar
   authz=$(curl -s -o /dev/null -c "$jar" -b "$jar" -w '%{redirect_url}' "$BASE/login")
+  [ -n "$authz" ] || { echo "FAIL $name: /login gave no redirect"; fail=1; continue; }
   cb=$(curl -s -o /dev/null -c "$jar" -b "$jar" -w '%{redirect_url}' \
     --data-urlencode "username=$name" --data-urlencode "claims=$claims" "$authz")
+  [ -n "$cb" ] || { echo "FAIL $name: IdP gave no redirect"; fail=1; continue; }
   curl -s -o /dev/null -c "$jar" -b "$jar" "$cb"
   me=$(curl -s -b "$jar" "$BASE/me")
   got=$(printf '%s' "$me" | sed -n 's/.*"roles":\[\([^]]*\)\].*/\1/p' | tr -d '"')
-  # roles come back sorted: admin,reviewer,user
   [ -z "$got" ] || got=$(printf '%s' "$got" | tr ',' '\n' | sort | paste -sd, -)
   w=$(printf '%s' "$want" | tr ',' '\n' | sort | paste -sd, -)
   extra=""

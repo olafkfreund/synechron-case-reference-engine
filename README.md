@@ -46,7 +46,7 @@ docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e UV_CACHE_DIR=/tmp/uv 
 ## Local login (test users)
 
 ```sh
-docker compose up web worker    # starts db and idp too
+docker compose up web worker    # starts db, idp and s3 too
 ```
 
 Open http://localhost:8000. Login goes to a mock provider at `idp.localhost:8080`: type a username and
