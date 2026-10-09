@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 109
 intent: intent/2026-10-09-109-render-contained-name.md
 ---
