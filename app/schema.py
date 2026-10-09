@@ -28,8 +28,14 @@ def quote_in(text: str, quote: str) -> bool:
     return q in _norm(text) or q in _norm(re.sub(r"-[ \t]*\n\s*", "", text))
 
 
+# a comma is dropped only as a thousands separator (last group of 3 digits): "1,500" is 1500, but
+# "1,5" stays as written, so it can't license 15 (#44); every other token is read exactly as main did
+_THOUSANDS = re.compile(r"\d+(?:,\d+)*,\d{3}(?:\.\d+)?")
+
+
 def numbers(s: object) -> set[str]:
-    return {n.replace(",", "") for n in re.findall(r"\d+(?:[.,]\d+)*", "" if s is None else str(s))}
+    return {n.replace(",", "") if _THOUSANDS.fullmatch(n) else n
+            for n in re.findall(r"\d+(?:[.,]\d+)*", "" if s is None else str(s))}
 
 
 def sourced(value: object, quote: str, text: str) -> bool:

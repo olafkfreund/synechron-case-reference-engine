@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from app.schema import Outcome, ReferenceCase, Sourced, llm_schema, quote_in, sourced
+from app.schema import Outcome, ReferenceCase, Sourced, llm_schema, numbers, quote_in, sourced
 
 DOC = "The bank cut onboarding from 12 days to\n3 days.  Team “Alpha” – 8 people."
 
@@ -77,6 +77,33 @@ def test_summary_numbers_must_come_from_quotes():
     assert c.summary_sourced()
     c.summary = "Onboarding fell from 12 to 2 days."
     assert not c.summary_sourced()
+
+
+# (token, reading): plan #44, never looser than main: only thousands commas are dropped
+@pytest.mark.parametrize("tok,want", [
+    ("14", {"14"}),
+    ("1,200", {"1200"}),
+    ("1,200,000", {"1200000"}),
+    ("1,20,000", {"120000"}),
+    ("1,234.5", {"1234.5"}),
+    ("1,5", {"1,5"}),
+    ("12,34", {"12,34"}),
+    ("1.234,5", {"1.234,5"}),
+    ("1.200", {"1.200"}),
+    ("3.50", {"3.50"}),
+    (0, {"0"}),
+    (None, set()),
+])
+def test_numbers_readings(tok, want):
+    assert numbers(tok) == want
+
+
+def test_sourced_number_formats():
+    doc = "1,5 Mio. EUR saved per year. 1,200 users were onboarded."
+    assert not sourced(15, "1,5 Mio. EUR saved per year", doc)  # the #44 bug: "1,5" read as 15
+    assert sourced("1,5 Mio", "1,5 Mio. EUR saved per year", doc)
+    assert sourced("1200", "1,200 users were onboarded", doc)
+    assert not sourced("1.2", "1,200 users were onboarded", doc)
 
 
 def test_llm_schema_is_strict_and_hides_unsourced():
