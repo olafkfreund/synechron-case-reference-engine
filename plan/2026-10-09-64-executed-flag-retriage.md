@@ -131,6 +131,17 @@ spec: spec/2026-10-09-64-executed-flag-retriage.md
 details: the delivered case uses `basis_reason=""`, because the field is a
 `str`, and the job insert casts `%s::text` so Postgres can infer the type.
 
+## Review
+
+- *Review:* test fixes after review: every POST asserts 303; the untick test
+  also checks that another source's flagged case stays approved and that a
+  `running` extract job and a queued job with reason "executed contract"
+  survive; the tick test seeds a queued job for contract A and checks that no
+  second one is added.
+- Note: unticking also retires engagements created at crawl time and drops
+  their queued jobs, since crawls use the same reason; this matches the help
+  text.
+
 ## Tests
 
 - `docker compose build app && docker compose run --rm app pytest`: green.

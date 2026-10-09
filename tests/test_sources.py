@@ -64,9 +64,9 @@ def _case(c, did, status, basis, reason):
                      (did, status, basis, data)).fetchone()[0]
 
 
-def _job(c, did):
-    c.execute("insert into jobs(kind, payload) values ('extract', jsonb_build_object('document_id', %s::bigint, "
-              "'basis', 'engagement', 'basis_reason', %s::text))", (did, REASON))
+def _job(c, did, reason=REASON, status="queued"):
+    c.execute("insert into jobs(kind, payload, status) values ('extract', jsonb_build_object('document_id', %s::bigint, "
+              "'basis', 'engagement', 'basis_reason', %s::text), %s)", (did, reason, status))
 
 
 def _jobs(c, sid):
@@ -87,6 +87,7 @@ def test_ticking_executed_queues_contracts_without_a_case(env):  # noqa: F811
         sid = _src(c, False)
         a, b, cc, d = _doc(c, sid, "contract"), _doc(c, sid, "contract"), _doc(c, sid, "contract", True), _doc(c, sid, "case")
         _case(c, b, "rejected", "engagement", "unsigned")
+        _job(c, a)  # already queued: ticking must not add a second one
     try:
         form = {"acl_groups": "g1", "executed_contracts": "on"}
         for _ in range(2):  # the second save changes nothing and queues nothing more
@@ -102,19 +103,26 @@ def test_unticking_executed_retires_flagged_engagements(env):  # noqa: F811
     db.init()
     with db.connect() as c:
         sid = _src(c, True)
-        e1, e2, e3, e4 = (_doc(c, sid, "contract") for _ in range(4))
+        e1, e2, e3, e4, e5, e6 = (_doc(c, sid, "contract") for _ in range(6))
+        other = _src(c, True)
+        c4 = _case(c, _doc(c, other, "contract"), "approved", "engagement", REASON)
         c1 = _case(c, e1, "approved", "engagement", REASON)
         c2 = _case(c, e2, "approved", "engagement", "executed contract")
         c3 = _case(c, e3, "approved", "delivered", "")
         _job(c, e4)
+        _job(c, e5, status="running")
+        _job(c, e6, reason="executed contract")
     try:
-        client([ADMIN]).post(f"/admin/sources/{sid}", data={"acl_groups": "g1"})
+        assert client([ADMIN]).post(f"/admin/sources/{sid}", data={"acl_groups": "g1"}, follow_redirects=False).status_code == 303
         with db.connect() as c:
-            st = dict(c.execute("select id, status from cases where id in (%s,%s,%s)", (c1, c2, c3)).fetchall())
-            assert st == {c1: "rejected", c2: "approved", c3: "approved"}
-            assert _jobs(c, sid) == []
+            st = dict(c.execute("select id, status from cases where id in (%s,%s,%s,%s)", (c1, c2, c3, c4)).fetchall())
+            assert st == {c1: "rejected", c2: "approved", c3: "approved", c4: "approved"}
+            left = c.execute("select (payload->>'document_id')::bigint from jobs where kind='extract' and "
+                             "(payload->>'document_id')::bigint in (%s,%s,%s) order by 1", (e4, e5, e6)).fetchall()
+            assert [r[0] for r in left] == [e5, e6]
     finally:
         _clean(sid)
+        _clean(other)
 
 
 def test_saving_without_flag_change_does_nothing(env):  # noqa: F811
@@ -124,8 +132,8 @@ def test_saving_without_flag_change_does_nothing(env):  # noqa: F811
         _doc(c, off, "contract")
         e1 = _case(c, _doc(c, on, "contract"), "approved", "engagement", REASON)
     try:
-        client([ADMIN]).post(f"/admin/sources/{off}", data={"acl_groups": "g1"})
-        client([ADMIN]).post(f"/admin/sources/{on}", data={"acl_groups": "g1", "executed_contracts": "on"})
+        for sid, data in ((off, {"acl_groups": "g1"}), (on, {"acl_groups": "g1", "executed_contracts": "on"})):
+            assert client([ADMIN]).post(f"/admin/sources/{sid}", data=data, follow_redirects=False).status_code == 303
         with db.connect() as c:
             assert _jobs(c, off) == [] and _jobs(c, on) == []
             assert c.execute("select status from cases where id=%s", (e1,)).fetchone()[0] == "approved"
