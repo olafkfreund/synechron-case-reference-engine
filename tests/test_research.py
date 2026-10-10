@@ -268,6 +268,7 @@ def test_empty_run_is_not_reused_from_cache(web, cleanup):
     first = make_row(q)
     rs.run(first)
     assert row(first)[0] == "done" and row(first)[2]["pages"] == []
+    assert row(first)[2]["skipped"][0]["error"] == "RobotsDisallowed"  # the empty run keeps its reasons
     web.html("docs.example", "/robots.txt", "")
     web.html("docs.example", "/guide")
     second = make_row(q)
