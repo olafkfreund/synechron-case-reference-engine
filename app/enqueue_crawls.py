@@ -13,7 +13,14 @@ def main() -> int:
                 "insert into jobs(kind, payload) select %s, jsonb_build_object('source_id', %s::bigint) "
                 "where not exists (select 1 from jobs where kind = %s and payload->>'source_id' = %s::text "
                 "and status in ('queued', 'running'))", (JOB[kind], sid, JOB[kind], sid)).rowcount
-    print(f"queued {queued} crawl job(s)", flush=True)
+        # an extract that failed all its attempts is requeued once a day until it yields a case (#120)
+        retried = conn.execute(
+            "insert into jobs(kind, payload) select 'extract', j.payload from ("
+            "select distinct on ((payload->>'document_id')::bigint) payload, status from jobs where kind = 'extract' "
+            "order by (payload->>'document_id')::bigint, id desc) j "
+            "join documents d on d.id = (j.payload->>'document_id')::bigint and d.deleted_at is null "
+            "where j.status = 'failed' and not exists (select 1 from cases c where c.document_id = d.id)").rowcount
+    print(f"queued {queued} crawl job(s), {retried} extract retry(ies)", flush=True)
     return queued
 
 
