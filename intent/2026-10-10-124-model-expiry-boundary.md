@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 124
 author: olafkfreund
 ---
@@ -50,3 +50,8 @@ earlier. The date field has no `max`, so the admin gets no hint.
    and expect.
 2. **Add `max` to the date field as well?** **Recommendation: yes.** It is
    one attribute, and the browser then stops the admin before the request.
+
+## Approved answers
+
+1. A: fix the code, comparing dates.
+2. Yes: add max to the date field.
