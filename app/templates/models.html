@@ -23,7 +23,7 @@ read one data class until it expires (12 months at most). Revoking ends it now.<
 <input type="hidden" name="data_class" value="confidential">
 <div class="field"><label for="m-model">Model id</label><input type="text" id="m-model" name="model" required>
 <span class="field-help">The exact LiteLLM model id.</span></div>
-<div class="field"><label for="m-exp">Expiry date</label><input type="date" id="m-exp" name="expires" required>
+<div class="field"><label for="m-exp">Expiry date</label><input type="date" id="m-exp" name="expires" max="{{ max_day }}" required>
 <span class="field-help">At most 12 months from today.</span></div>
 <div class="field"><label for="m-note">Note</label><input type="text" id="m-note" name="note"></div>
 <div class="action-row"><button class="btn primary">Approve</button></div>
