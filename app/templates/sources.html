@@ -42,7 +42,7 @@ Confluence: <code>{"base_url": "https://x.atlassian.net", "spaces": ["KEY"]}</co
 <span class="badge {{ 'warn' if dc == 'confidential' else 'neutral' }}">{{ dc | capitalize }}</span></div>
 <span class="run">Last run: {% if last_run %}{{ last_run }}{% else %}<span class="muted">never</span>{% endif %}</span>
 {% if counts %}<span class="counts"><span>New {{ counts.get("new", 0) }}</span><span>Skipped {{ counts.get("skipped", 0) }}</span><span>Failed {{ counts.get("failed", 0) }}</span></span>{% endif %}
-<form class="inline" method="post" action="/admin/sources/{{ id }}/crawl"><button class="btn-sm" aria-label="Crawl {{ name }} now">Crawl now</button></form>
+{% if enabled %}<form class="inline" method="post" action="/admin/sources/{{ id }}/crawl"><button class="btn-sm" aria-label="Crawl {{ name }} now">Crawl now</button></form>{% endif %}
 {% if kind == 'upload' and enabled %}<details class="mini"><summary class="btn-sm" aria-label="Upload to {{ name }}">Upload</summary>
 <form method="post" action="/admin/upload" enctype="multipart/form-data">
 <input type="hidden" name="source_id" value="{{ id }}">
