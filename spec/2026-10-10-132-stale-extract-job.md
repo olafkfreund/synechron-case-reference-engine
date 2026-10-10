@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 132
 intent: intent/2026-10-10-132-stale-extract-job.md
 ---
