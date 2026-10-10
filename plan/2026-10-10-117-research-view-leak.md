@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 117
 spec: spec/2026-10-10-117-research-view-leak.md
 ---
