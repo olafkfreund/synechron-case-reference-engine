@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 122
 intent: intent/2026-10-10-122-query-preview-idempotent.md
 ---
