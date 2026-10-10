@@ -2,7 +2,7 @@ import json
 import re
 import time
 import uuid
-from base64 import b64encode
+from base64 import b64decode, b64encode
 
 import boto3
 import pytest
@@ -252,10 +252,11 @@ def test_cookie_without_iat(env):
 def test_session_expires_after_max_age(env):
     """Rolling renewal must not keep groups the IdP removed: a session has an absolute lifetime (#145)."""
     old = time.time() - main.SESSION_MAX_AGE - 5
-    assert client([USER], iat=old).get("/me").status_code == 401
-    r = client([USER], iat=old).get("/me", headers={"Accept": "text/html"}, follow_redirects=False)
+    sub = fresh()  # no cutoff row: only the age can refuse it
+    assert client([USER], sub=sub, iat=old).get("/me").status_code == 401
+    r = client([USER], sub=sub, iat=old).get("/me", headers={"Accept": "text/html"}, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/login"
-    assert client([USER], iat=time.time() - main.SESSION_MAX_AGE + 60).get("/me").status_code == 200
+    assert client([USER], sub=fresh(), iat=time.time() - main.SESSION_MAX_AGE + 60).get("/me").status_code == 200
 
 
 def test_login_drops_existing_user(env, monkeypatch):
@@ -265,11 +266,14 @@ def test_login_drops_existing_user(env, monkeypatch):
     c = client([USER])
 
     async def fake(request, redirect_uri):
+        request.session["_state_oidc_x"] = {"data": {}}  # as authlib does
         return RedirectResponse("http://idp/authorize", status_code=302)
     monkeypatch.setattr(c.app.state.oauth.oidc, "authorize_redirect", fake)
     assert c.get("/me").status_code == 200
-    assert c.get("/login", follow_redirects=False).status_code == 302
-    assert c.get("/me").status_code == 401
+    r = c.get("/login", follow_redirects=False)
+    assert r.status_code == 302
+    sent = json.loads(b64decode(TimestampSigner(SECRET).unsign(r.cookies["session"])))
+    assert "_state_oidc_x" in sent and "user" not in sent
 
 
 def test_cut_sessions_is_per_user(env):

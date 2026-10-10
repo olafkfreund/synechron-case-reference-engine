@@ -49,6 +49,10 @@ def current_user(request: Request) -> User:
     s = request.session.get("user")
     if not s:
         raise HTTPException(401, "login required")
+    iat = s.get("iat")  # SessionMiddleware renews the cookie on use, so only iat bounds a session (#145)
+    if not isinstance(iat, (int, float)) or time.time() - iat > SESSION_MAX_AGE:
+        request.session.clear()  # the browser drops the dead cookie
+        raise HTTPException(401, "session expired; log in again")
     with db.connect() as conn:
         row = conn.execute("select valid_after from session_cutoffs where sub = %s", (s["sub"],)).fetchone()
     if row and s.get("iat", 0) <= row[0].timestamp():
@@ -180,6 +184,7 @@ def create_app() -> FastAPI:
 
     @app.get("/login")
     async def login(request: Request):
+        request.session.pop("user", None)  # starting a sign-in ends the old one (#145)
         # fixed callback in production: behind the ALB, url_for would build http:// unless
         # FORWARDED_ALLOW_IPS trusts the ALB
         redirect = os.environ.get("OIDC_REDIRECT_URI") or request.url_for("auth")

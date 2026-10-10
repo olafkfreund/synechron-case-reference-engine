@@ -107,3 +107,7 @@ default `iat` is `time.time()`, so they are unaffected.
 Revert the commit. Sessions then go back to being renewable indefinitely.
 There is no schema or data change. Everyone is signed out at most once, when
 the fix is deployed, and only if their session was older than 8 hours.
+
+## Deviations
+- `test_session_expires_after_max_age` uses `fresh()` subs: other tests cut `u1`, so with the default sub the old-iat case was refused by the cutoff on main too, and the in-date case was refused on the branch.
+- `test_login_drops_existing_user` decodes the session cookie `/login` sets instead of calling `/me` again: the test's hand-set cookie and the server's cookie are separate jar entries, so `/me` kept sending the old one. The fake stores a state key as authlib does, and the test asserts it is kept and `user` is gone.
