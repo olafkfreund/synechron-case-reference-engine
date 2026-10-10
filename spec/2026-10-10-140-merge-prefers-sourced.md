@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 140
 intent: intent/2026-10-10-140-merge-prefers-sourced.md
 ---
