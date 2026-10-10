@@ -129,9 +129,11 @@ def test_spacing_dash_accent_and_domain_variants_are_caught():
     assert an.blocked(an.apply("Acme-Bank and AcmeBank", reg), reg) == []
 
 
-def test_short_caps_alias_is_case_sensitive():
+def test_short_caps_alias_matches_any_case():
     reg = [C("Acme Corporate Bank", ["ACB"], label="a bank")]
-    assert an.apply("ACB and acb", reg) == "a bank and acb"
+    out = an.apply("ACB and acb", reg)
+    assert out == "a bank and a bank"
+    assert an.blocked(out, reg) == []
 
 
 def test_hyphenated_name_matches_spaced_joined_and_dashed():
