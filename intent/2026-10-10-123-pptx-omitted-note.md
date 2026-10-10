@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 123
 author: olafkfreund
 ---
@@ -41,3 +41,7 @@ and Markdown, in both layouts. So an empty or shortened slide explains itself.
 ## Open questions
 
 None. The note goes after the statements in the same box, in both branches.
+
+## Approved answers
+
+None needed.
