@@ -21,9 +21,15 @@ def load_clients(conn=None) -> list[dict]:
         return load_clients(c)
 
 
+def _visible(s: str) -> str:
+    """NFKC, minus format characters (Cf: soft hyphen, zero-width, BOM, bidi controls) (#125). Most have no glyph;
+    the few that shape text (ZWJ/ZWNJ in emoji or Indic scripts, Arabic number signs) lose that shaping."""
+    return "".join(ch for ch in unicodedata.normalize("NFKC", s) if unicodedata.category(ch) != "Cf")
+
+
 def fold(s: str) -> str:
     """Case, accents and width folded ("Société" = "SOCIETE", "Straße" = "strasse", "İ" = "i")."""
-    s = unicodedata.normalize("NFKD", unicodedata.normalize("NFKC", s).casefold())
+    s = unicodedata.normalize("NFKD", _visible(s).casefold())
     return "".join(ch for ch in s if not unicodedata.combining(ch))
 
 
@@ -51,14 +57,14 @@ def apply(text: str, clients) -> str:
 
     Best effort on the text as written; blocked() is the fail-closed check that must run after it.
     """
-    text = unicodedata.normalize("NFKC", text)
+    text = _visible(text)
     pairs = [(n, c["anonymised_label"]) for c in clients if not c["referenceable"] for n in _names(c)]
     # one pattern for all protected names: folded text is lowercase, so re.I matches blocked() exactly
     prot = "|".join(_pattern(fold(n)).pattern for n, _ in pairs)
     contains = re.compile(prot, re.I).search if prot else lambda _: None
     pairs += [(n, c["anonymised_label"]) for c in clients if c["referenceable"] for n in _names(c) if contains(fold(n))]
     for name, label in _by_length(pairs):  # a function, so a "\" in a label is text, not a template
-        text = _pattern(unicodedata.normalize("NFKC", name)).sub(lambda _m, label=label: label, text)
+        text = _pattern(_visible(name)).sub(lambda _m, label=label: label, text)
     return text
 
 

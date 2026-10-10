@@ -395,3 +395,8 @@ def test_pdf_busy_when_slots_are_taken(monkeypatch):
     finally:
         for _ in held:
             render.PDF_SLOTS.release()
+
+
+def test_invisible_character_in_name_is_rewritten_not_shipped():
+    cl = [{"id": 1, "name": "Zorp Bank", "aliases": ["Zorp"], "anonymised_label": "a bank", "referenceable": False}]
+    assert render.protect([{"summary": "Run for Zo\u00adrp"}], cl)[0]["summary"] == "Run for a bank"
