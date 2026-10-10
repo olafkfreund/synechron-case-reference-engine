@@ -156,3 +156,9 @@ work goes to the `coder` agent.
 
 Revert the step commits. No migration is involved. Cases that an edit withdrew
 stay `extracted` and need approving again, which is the decided behaviour.
+
+## Deviations
+- Step 5: the POSTs that expect 303 pass `follow_redirects=False` (the test client follows redirects by default).
+- Step 5: the re-approve test builds its case with a sourced industry. The default fixture's industry is unsourced, `approve` strips it, and the case would leave the "Aerospace" search for that reason, not this change.
+- Step 5: a small `in_search(cid)` helper is shared by the new tests.
+- Steps 2 and 3 share `app/review.py` and are one commit.
