@@ -19,6 +19,7 @@
 <div class="row"><span class="badge neutral">{{ status }}</span>
 <span class="badge {{ "ok" if basis == "delivered" else "neutral" }}">{{ "Engagement (contracted scope)" if basis == "engagement" else "Delivered case" }}</span>
 {% if attn.n %}<span class="badge bad">{{ attn.n }} unsourced</span>{% endif %}{% if notes %}<span class="badge warn">{{ notes | length }} notes</span>{% endif %}</div></div></div>
+{% if reviewable and status == "approved" and due %}<p class="muted" role="note">This case is approved and in search until {{ due }}. Approving it again renews it for 12 months. Saving any change takes it out of search until you approve it again.</p>{% endif %}
 
 <div class="section-card">
 <div class="card-head"><h2>Case {{ id }}</h2></div>
