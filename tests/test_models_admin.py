@@ -1,6 +1,8 @@
 import uuid
 from datetime import date, timedelta
 
+import pytest
+
 from app import db
 from tests.test_auth import ADMIN, REV, client, env  # noqa: F401
 from tests.test_review import DOCS, R, make  # noqa: F401
@@ -45,9 +47,13 @@ def test_expiry_exactly_12_months_ahead_is_accepted(env):  # noqa: F811
         limit = c.execute("select (now() + interval '12 months')::date").fetchone()[0]
     form = lambda d: {"model": model, "data_class": "confidential", "expires": d.isoformat()}  # noqa: E731
     try:
-        assert a.post("/admin/models", data=form(limit), follow_redirects=False).status_code == 303
-        assert a.post("/admin/models", data=form(limit + timedelta(days=1))).status_code == 400
-        assert f'max="{limit.isoformat()}"' in a.get("/admin/models").text
+        ok = a.post("/admin/models", data=form(limit), follow_redirects=False).status_code
+        over = a.post("/admin/models", data=form(limit + timedelta(days=1))).status_code
+        page = a.get("/admin/models").text
+        with db.connect() as c:
+            if c.execute("select (now() + interval '12 months')::date").fetchone()[0] != limit:
+                pytest.skip("the date changed mid-test (midnight)")
+        assert ok == 303 and over == 400 and f'max="{limit.isoformat()}"' in page
     finally:
         cleanup(model)
 

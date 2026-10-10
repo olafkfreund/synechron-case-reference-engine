@@ -75,3 +75,10 @@ hold.
 ## Rollback
 
 Revert the commit. Approvals already stored are unaffected.
+
+## Deviations
+
+- **Review fix (should-fix):** the boundary test re-reads the 12-month limit
+  after its requests, and skips if midnight passed meanwhile. Otherwise the
+  "day after" POST could return 303 near midnight, because each request opens
+  a new connection with a new `now()`.
