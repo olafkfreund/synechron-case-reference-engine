@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 125
 spec: spec/2026-10-10-125-invisible-chars.md
 ---
