@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 121
 intent: intent/2026-10-10-121-s3-failed-version.md
 ---
