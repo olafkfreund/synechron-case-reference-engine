@@ -58,3 +58,13 @@ The full suite must pass, and the new test must fail on main.
 ## Rollback
 
 Revert the commit. `retry_ids` in `last_counts` is ignored by the old code.
+
+## Deviations
+
+- **Review fix (should-fix):** the empty-listing branch keeps last run's list
+  (`retry = sorted(prev_retry)`) instead of storing `[]`. An empty listing is
+  already treated as a prefix or permission mistake, so nothing was tried, and
+  wiping the list would lose the failed key for good once the listing came
+  back. This replaces the step 1 trap that called `[]` correct there.
+- **Test:** the test also asserts `last_counts.retry_ids == ["in/a.docx"]`
+  after the failing crawl.

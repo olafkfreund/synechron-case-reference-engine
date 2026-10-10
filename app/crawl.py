@@ -82,6 +82,7 @@ def crawl_s3(source_id: int) -> dict:
             else:
                 # an empty listing with live documents is a prefix or permission mistake, not a mass delete
                 counts["empty_listing"] = True
+                retry = sorted(prev_retry)  # nothing was tried: keep last run's failures
             conn.execute("update sources set cursor=%s, last_run_at=now(), last_counts=%s where id=%s",
                          (newest, Jsonb({**counts, "failed_keys": failed, "retry_ids": retry}), source_id))
     return counts

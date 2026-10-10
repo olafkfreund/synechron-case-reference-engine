@@ -264,6 +264,8 @@ def test_failed_new_version_is_retried_past_the_cursor(env, monkeypatch):
     monkeypatch.setattr(ing, "to_markdown", boom)
     s3.put_object(Bucket="src", Key="in/a.docx", Body=b"v2")
     assert crawl.crawl_s3(sid)["failed"] == 1
+    with db.connect() as c:
+        assert c.execute("select last_counts->'retry_ids' from sources where id=%s", (sid,)).fetchone()[0] == ["in/a.docx"]
     set_cursor(sid, "2999-01-01T00:00:00+00:00")  # later uploads moved the cursor far past it
     monkeypatch.setattr(ing, "to_markdown", real)
     assert crawl.crawl_s3(sid)["updated"] == 1  # main: skipped on the cursor, never downloaded
