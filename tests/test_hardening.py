@@ -12,7 +12,7 @@ import pytest
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from app import db, extract, ingest as ing, llm, search as sr, worker
-from app.main import User
+from app.main import BODY_CAP, User
 from tests.test_auth import ADMIN, REV, client, env  # noqa: F401
 from tests.test_review import DOCS, R, make  # noqa: F401
 from tests.test_search import approved, data  # noqa: F401
@@ -267,3 +267,16 @@ def test_print_calls_are_the_known_content_free_ones():
             if re.search(r"\bprint\(", line):
                 found.setdefault(str(path.relative_to(ROOT)), []).append(line.strip())
     assert found == allowed
+
+
+def test_every_response_refuses_framing(env):
+    """Clickjacking: no page may be framed, refusals and static files included (#146)."""
+    rs = [client().get("/healthz"), client().get("/static/portal.css"),
+          client().get("/review", headers={"Accept": "text/html"}, follow_redirects=False),
+          client([REV]).get("/review"),
+          client([REV], origin="http://evil.example").post("/review/1/approve"),
+          client([REV]).post("/review/1/approve", content=b"x" * (BODY_CAP + 70_000))]
+    assert [r.status_code for r in rs] == [200, 200, 303, 200, 403, 413]
+    for r in rs:
+        assert r.headers["x-frame-options"] == "DENY"
+        assert r.headers["content-security-policy"] == "frame-ancestors 'none'"
