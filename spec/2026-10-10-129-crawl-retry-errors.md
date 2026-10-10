@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 129
 intent: intent/2026-10-10-129-crawl-retry-errors.md
 ---
