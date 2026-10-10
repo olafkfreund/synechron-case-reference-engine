@@ -83,3 +83,6 @@ must pass in full. Both new tests must fail against main's `app/ingest.py`.
 ## Rollback
 
 Revert the two commits. There is no data or schema change.
+
+## Deviations
+- Review: the two planned tests commit the toggle before ingest's write transaction, so they passed without the lock. `test_ingest_waits_for_an_uncommitted_tick` holds an admin save open (row locked, flag set) while ingest runs; it fails if the `for share` is removed.

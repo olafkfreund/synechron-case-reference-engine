@@ -149,6 +149,26 @@ def test_executed_unticked_during_triage_queues_nothing(env, monkeypatch):
     assert jobs() == 0
 
 
+def test_ingest_waits_for_an_uncommitted_tick(env, monkeypatch):
+    """The flag read takes the share lock: an admin's save still in flight is waited for, not read stale (#133)."""
+    import threading
+    _, sid = env
+    monkeypatch.setattr(ing, "triage_text", lambda text, data_class: ing.Triage(
+        kind="contract", describes_delivered_work=False, executed=False))
+    save = db.connect()  # stands in for the admin save: row locked, flag set, not yet committed
+    try:
+        save.execute("select 1 from sources where id=%s for update", (sid,))
+        save.execute("update sources set config=config || '{\"executed_contracts\": true}' where id=%s", (sid,))
+        t = threading.Thread(target=ing.ingest, args=(sid, "a", "a", b"x"))
+        t.start()
+        _wait_for_lock_wait(save)
+        save.commit()
+    finally:
+        save.close()
+    t.join(10)
+    assert not t.is_alive() and _flag_jobs(sid) == [("engagement", "source marked executed")]
+
+
 def test_triage_input_includes_the_tail(monkeypatch):
     seen = []
     monkeypatch.setattr(ing, "complete_json", lambda m, s, text, *a, **k: seen.append(text) or CASE)
