@@ -94,3 +94,8 @@ threshold).
 
 Revert the step commits. There is no schema or data change, and merged cases
 already written are not affected.
+
+## Deviations
+- Review: `review_merge.html` pre-checked the first member's radio, so when values differed the browser always sent that pick and the new default never ran. A shared `first_sourced()` now gives both `combine` and `merge_preview` the default, and the template checks that radio (`test_preview_preselects_the_sourced_copy`).
+- `first_sourced()` also skips an empty copy (no value; for period, no start or end), so it cannot win over a sourced copy further down (`test_combine_default_skips_an_empty_copy`).
+- The dedupe test asserts the kept copy's spelling.

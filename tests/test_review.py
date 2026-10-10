@@ -460,12 +460,13 @@ def test_combine_prefers_sourced_scalar():
 
 
 def test_combine_dedupe_keeps_sourced_copy():
+    """A duplicate keeps its place but takes the sourced copy and its document (#140)."""
     from app.review import combine
     a = _rc(capabilities=[Sourced[str](value="Onboarding", source_quote="q"),
                           Sourced[str](value="Payments", source_quote="q", unsourced=True)])
     b = _rc(capabilities=[Sourced[str](value="payments", source_quote="q")])
     caps = combine([(1, 10, a), (2, 20, b)], {}).capabilities
-    assert [x.value.casefold() for x in caps] == ["onboarding", "payments"]  # A's position, B's copy
+    assert [x.value for x in caps] == ["Onboarding", "payments"]  # A's position, B's copy and spelling
     assert not caps[1].unsourced and caps[1].document_id == 20
 
 
@@ -514,6 +515,24 @@ def test_preview_has_one_radio_group_per_differing_field(make, acme):
     assert 'name="pick_client_mention"' not in page  # identical in both
     assert page.count(f'name="members" value="{a}:{ver(a)}"') == 1 and "<script" not in page
     assert client(R).post("/review/merge/preview", data={"members": [f"{a}:{ver(a)}"]}).status_code == 400
+
+
+def test_preview_preselects_the_sourced_copy(make, acme):
+    """The radio the browser sends by default is the sourced copy, as combine's default is (#140)."""
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    with db.connect() as c:  # a's industry stays unsourced (case_data); b's is sourced and differs
+        c.execute("""update cases set data = jsonb_set(data, '{industry}', '{"value": "Banking", "source_quote": "a UK bank", "unsourced": false}') where id=%s""", (b,))
+    page = client(R).post("/review/merge/preview", data={"members": [f"{a}:{ver(a)}", f"{b}:{ver(b)}"]}).text
+    group = page.split("<legend>industry</legend>", 1)[1].split("</fieldset>", 1)[0]
+    assert f'value="{b}" checked' in group and f'value="{a}" checked' not in group
+
+
+def test_combine_default_skips_an_empty_copy():
+    from app.review import combine
+    a = _rc(title=Sourced[str](value="X", source_quote="q", unsourced=True))
+    empty, c = _rc(title=Sourced[str](value="", source_quote="")), _rc(title=Sourced[str](value="X", source_quote="q"))
+    t = combine([(1, 10, a), (2, 20, empty), (3, 30, c)], {}).title
+    assert t.document_id == 30 and not t.unsourced
 
 
 def test_merged_detail_and_list_show_members(make, acme):
