@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 139
 author: olafkfreund
 ---
@@ -51,3 +51,5 @@ review, in search, in what the model is given, and in outputs.
 
    **Recommendation: B.** It is the same one-line guard render already has,
    and it covers existing rows.
+
+**Decision (approved by olafkfreund, 2026-10-10): B.**
