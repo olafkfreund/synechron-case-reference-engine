@@ -74,8 +74,12 @@ def search(user: User, bid_text: str, filters: dict) -> list[dict]:
             f"select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null, c.basis, {rank} as rank from cases c "
             f"left join clients cl on cl.id = c.client_id {join} "
             f"where {' and '.join(where)} order by rank desc, (c.basis = 'delivered') desc, c.id limit {TOP}", params).fetchall()
-    return [dict(id=i, case=ReferenceCase.model_validate(d), label=anonymise.shown(name, label, ref, linked), basis=b, rank=r)
-            for i, d, name, label, ref, linked, b, r in rows]
+    cands = [dict(id=i, case=ReferenceCase.model_validate(d), label=anonymise.shown(name, label, ref, linked), basis=b, rank=r)
+             for i, d, name, label, ref, linked, b, r in rows]
+    for c in cands:
+        if c["basis"] == "engagement":
+            c["case"].outcomes = []  # contracted scope claims no results, whatever the record holds (#139)
+    return cands
 
 
 def clean(text, clients, fallback=""):
