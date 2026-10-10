@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 130
 intent: intent/2026-10-10-130-local-override-env-base.md
 ---
