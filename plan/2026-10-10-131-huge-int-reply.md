@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 131
 spec: spec/2026-10-10-131-huge-int-reply.md
 ---
