@@ -48,9 +48,8 @@ threshold).
    Also update the docstring: scalars come from "the first sourced member
    unless picked".
    Traps:
-   - Every `MERGE_FIELDS` value is a `Sourced`, period included, so
-     `.unsourced` exists on every one. Check this in `app/schema.py` before
-     editing; if period is not `Sourced`, use `getattr(..., "unsourced", False)`.
+   - Every `MERGE_FIELDS` value has `.unsourced`. Period does too: `approve`
+     reads `case.period.unsourced` at `app/review.py:232`.
    - Don't touch `merge_preview`.
 
 2. `tests/test_review.py`: add two pure tests after
@@ -68,13 +67,9 @@ threshold).
      - A has `capabilities=[Sourced(value="Onboarding", source_quote="q"),
        Sourced(value="Payments", source_quote="q", unsourced=True)]`.
      - B has `[Sourced(value="payments", source_quote="q")]`.
-     - The result's values are `["Onboarding", "Payments"]` (A's spelling
-       and position). `[1]` is not unsourced and has `document_id == 20`.
-
-   Note that the replacement copies B's spelling ("payments"). If the
-   assertion should keep A's spelling, the spec says only "one 'Payments'
-   item, in A's position", so assert
-   `[x.value.casefold() for x in ...] == ["onboarding", "payments"]`.
+     - `[x.value.casefold() for x in caps] == ["onboarding", "payments"]`:
+       one item, in A's position. The kept copy is B's, spelling included.
+     - `caps[1]` is not unsourced and has `document_id == 20`.
 
    → verify by
    `docker compose build app && docker compose run --rm app timeout 900 pytest -q -p no:cacheprovider tests/test_review.py -k "combine"`.
