@@ -293,6 +293,18 @@ def test_identifiers_stripped_from_query():
     assert "kyc" in q
 
 
+def test_finalize_is_a_fixed_point():
+    q = rs.finalize("Basel 2023 Zorp 2024 reporting", REG)
+    assert rs.finalize(q, REG) == q and "2023" not in q
+
+
+def test_finalize_cap_cannot_leave_a_name_fragment():
+    pad = "x " * 98
+    assert len(pad) + len("zorp") == rs.MAX_QUERY  # the cap cuts "zorpers" to "zorp"
+    q = rs.finalize(pad + "zorpers", REG)
+    assert "zorp" not in q and rs.finalize(q, REG) == q
+
+
 def test_nat64_metadata_address_refused(web):
     web.dns["n64.example"] = "64:ff9b::a9fe:a9fe"  # 169.254.169.254 via DNS64
     with pytest.raises(rs.Blocked):
