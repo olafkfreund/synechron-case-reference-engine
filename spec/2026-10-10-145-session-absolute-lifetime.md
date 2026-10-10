@@ -1,7 +1,7 @@
 ---
 status: draft
 issue: 145
-intent: intent/2026-10-10-145-session-max-age.md
+intent: intent/2026-10-10-145-session-absolute-lifetime.md
 ---
 
 # Spec: A session ends 8 hours after its login, however often it is re-signed
