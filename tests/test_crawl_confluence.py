@@ -312,6 +312,38 @@ def test_failure_withdraws_and_is_retried_next_run(cf):
     assert "page:p1" in live(cf.sid) and src(cf.sid)[1]["retry_ids"] == []
 
 
+def _timeout_on_page_fetch(monkeypatch, cf):
+    def boom(request):
+        if request.url.path == f"{API}/p1":
+            raise httpx.ReadTimeout("t")
+
+    monkeypatch.setattr(crawl, "TRANSPORT", httpx.MockTransport(lambda r: boom(r) or cf(r)))
+
+
+def test_timeout_on_retried_page_does_not_stop_the_crawl(cf, monkeypatch):
+    cf.page("p1", when="2026-01-01T00:00:00.000Z")
+    crawl.crawl_confluence(cf.sid)
+    cf.pages["p1"]["version"]["when"] = "2026-01-02T00:00:00.000Z"
+    cf.queue[f"{API}/p1/restriction/byOperation/read"] = [(500, {})]
+    assert crawl.crawl_confluence(cf.sid)["failed"] == 1 and src(cf.sid)[1]["retry_ids"] == ["p1"]
+    cf.queue.clear()
+    cf.pages["p1"]["version"]["when"] = "2025-01-01T00:00:00.000Z"  # CQL will not offer it
+    _timeout_on_page_fetch(monkeypatch, cf)
+    crawl.crawl_confluence(cf.sid)
+    assert src(cf.sid)[1]["retry_ids"] == ["p1"]
+
+
+def test_timeout_on_attachment_page_fetch_is_a_page_failure(cf, monkeypatch):
+    cf.page("p1")
+    cf.pages["p1"]["status"] = "historical"  # in ENG but not offered by search (#127); only its attachment is
+    cf.attach("p1", "a1")  # its page is fetched by id
+    _timeout_on_page_fetch(monkeypatch, cf)
+    last = crawl.crawl_confluence(cf.sid)
+    assert last["failed"] == 1
+    last = src(cf.sid)[1]
+    assert last["failed_keys"][0]["error"] == "ReadTimeout" and "p1" in last["retry_ids"]
+
+
 def test_concurrent_crawl_reports_running(cf):
     with db.connect(autocommit=True) as other:
         other.execute("select pg_advisory_lock(2, %s)", (cf.sid,))
@@ -388,6 +420,7 @@ def test_new_attachment_on_unchanged_page_is_found(cf):
     cf.attach("p3", "a7", "late.pdf", b"late", when="2026-06-01T00:00:00.000Z")  # p3 itself unchanged
     crawl.crawl_confluence(cf.sid)
     assert "att:p3:a7" in live(cf.sid)
+
 
 def _change_groups_after_first_ingest(monkeypatch, sid):
     """As an admin's save does mid-crawl: new groups on the source and on its documents already written."""
