@@ -118,6 +118,37 @@ def test_contract_payload_and_source_flag(env):
     assert got == [("engagement", "source marked executed"), ("engagement", "executed contract")]
 
 
+def _toggle_during_triage(monkeypatch, sid, sql):
+    """As an admin's save does while a document converts: the flag changes after the early read (#133)."""
+    def triage(text, data_class):
+        with db.connect() as c:
+            c.execute(sql, (sid,))
+        return ing.Triage(kind="contract", describes_delivered_work=False, executed=False)
+    monkeypatch.setattr(ing, "triage_text", triage)
+
+
+def _flag_jobs(sid):
+    with db.connect() as c:
+        return c.execute("select payload->>'basis', payload->>'basis_reason' from jobs where (payload->>'document_id')::bigint in "
+                         "(select id from documents where source_id=%s) order by id", (sid,)).fetchall()
+
+
+def test_executed_ticked_during_triage_queues_engagement(env, monkeypatch):
+    _, sid = env
+    _toggle_during_triage(monkeypatch, sid, "update sources set config=config || '{\"executed_contracts\": true}' where id=%s")
+    ing.ingest(sid, "a", "a", b"x")
+    assert _flag_jobs(sid) == [("engagement", "source marked executed")]
+
+
+def test_executed_unticked_during_triage_queues_nothing(env, monkeypatch):
+    _, sid = env
+    with db.connect() as c:
+        c.execute("update sources set config=config || '{\"executed_contracts\": true}' where id=%s", (sid,))
+    _toggle_during_triage(monkeypatch, sid, "update sources set config=config - 'executed_contracts' where id=%s")
+    ing.ingest(sid, "a", "a", b"x")
+    assert jobs() == 0
+
+
 def test_triage_input_includes_the_tail(monkeypatch):
     seen = []
     monkeypatch.setattr(ing, "complete_json", lambda m, s, text, *a, **k: seen.append(text) or CASE)
