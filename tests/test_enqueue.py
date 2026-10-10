@@ -3,7 +3,7 @@ import uuid
 import pytest
 
 from app import db, enqueue_crawls, ingest as ing
-from tests.test_ingest import env  # noqa: F401
+from tests.test_ingest import TRIAGE, env  # noqa: F401
 
 
 @pytest.fixture
@@ -82,7 +82,7 @@ def test_failed_extract_is_requeued_once(env):
     assert len(_extracts(did)) == 2
 
 
-@pytest.mark.parametrize("variant", ["case", "deleted", "done"])
+@pytest.mark.parametrize("variant", ["case", "deleted", "done", "disabled", "newer_done"])
 def test_no_requeue_with_case_deleted_or_done(env, variant):
     _, sid = env
     did = _failed_doc(sid)
@@ -91,7 +91,33 @@ def test_no_requeue_with_case_deleted_or_done(env, variant):
             c.execute("insert into cases(document_id, status) values (%s, 'rejected')", (did,))
         elif variant == "deleted":
             c.execute("update documents set deleted_at=now() where id=%s", (did,))
-        else:
+        elif variant == "done":
             c.execute("update jobs set status='done' where kind='extract' and (payload->>'document_id')::bigint=%s", (did,))
+        elif variant == "disabled":
+            c.execute("update sources set enabled=false where id=%s", (sid,))
+        else:  # an older failed job, then a newer done one: the latest decides
+            c.execute("insert into jobs(kind, payload, status) select kind, payload, 'done' from jobs "
+                      "where kind='extract' and (payload->>'document_id')::bigint=%s", (did,))
+    before = len(_extracts(did))
     _run_main_only_for(sid)
-    assert len(_extracts(did)) == 1
+    assert len(_extracts(did)) == before
+
+
+def test_newer_failed_after_done_is_requeued(env):
+    _, sid = env
+    did = _failed_doc(sid)
+    with db.connect() as c:  # older done, newer failed
+        c.execute("update jobs set status='done' where kind='extract' and (payload->>'document_id')::bigint=%s", (did,))
+        c.execute("insert into jobs(kind, payload, status) select kind, payload, 'failed' from jobs "
+                  "where kind='extract' and (payload->>'document_id')::bigint=%s", (did,))
+    _run_main_only_for(sid)
+    assert [st for st, _ in _extracts(did)] == ["done", "failed", "queued"]
+
+
+def test_failed_extract_of_an_older_version_is_not_requeued(env):
+    _, sid = env
+    did = _failed_doc(sid)  # v1 failed to extract, so it has no case
+    TRIAGE["v"] = ing.Triage(kind="other", describes_delivered_work=False)
+    ing.ingest(sid, "in/a.docx", "a.docx", b"two")  # v2 is no longer a case: no new extract
+    _run_main_only_for(sid)
+    assert [st for st, _ in _extracts(did)] == ["failed"]

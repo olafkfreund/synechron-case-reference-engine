@@ -91,3 +91,24 @@ succeeds or fails again.
   retries, so no stray queued job leaks into later tests, such as the worker's
   claim order. The "case" variant inserts a bare `cases(document_id, status)`
   row, which is all the `not exists` needs.
+- **Review fix (blocking):** a failed v1 extract must not run on v2.
+  - **The problem:** if v2 of a document is no longer a case, `ingest()`
+    queues nothing. So v1's failed job stayed the latest one, and the retry
+    would have extracted v2's text with v1's basis.
+  - **The fix:** both extract-job builders put the document's `checksum` in
+    the payload. Those are `app/ingest.py`, and `QUEUE_CONTRACTS` in
+    `app/sources.py`. The retry now requires
+    `d.checksum = j.payload->>'checksum'`.
+  - **Older jobs:** jobs queued before this change have no checksum, so they
+    are never retried. That is the safe direction.
+  - **Files:** this adds two app files to the plan.
+- **Review fix (should-fix):** documents of disabled sources are not retried
+  (`join sources s ... and s.enabled`).
+- **Review fix (tests):** new tests cover:
+  - the latest job wins, both orders (older failed then newer done, and the
+    reverse);
+  - a disabled source;
+  - a newer version that is no longer a case.
+- **`tests/test_hardening.py`:** the `print` allow-list entry for
+  `enqueue_crawls.py` now holds the new line. It is still counts only, with
+  no content.

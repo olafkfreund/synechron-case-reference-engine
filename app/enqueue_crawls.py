@@ -19,6 +19,8 @@ def main() -> int:
             "select distinct on ((payload->>'document_id')::bigint) payload, status from jobs where kind = 'extract' "
             "order by (payload->>'document_id')::bigint, id desc) j "
             "join documents d on d.id = (j.payload->>'document_id')::bigint and d.deleted_at is null "
+            "and d.checksum = j.payload->>'checksum' "  # the version it was queued for: a newer one decided again
+            "join sources s on s.id = d.source_id and s.enabled "
             "where j.status = 'failed' and not exists (select 1 from cases c where c.document_id = d.id)").rowcount
     print(f"queued {queued} crawl job(s), {retried} extract retry(ies)", flush=True)
     return queued
