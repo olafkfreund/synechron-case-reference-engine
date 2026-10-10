@@ -83,27 +83,43 @@ def test_list_shows_extracted_and_expired_only(make):
     assert f"/review/{new}\"" in r and f"/review/{expired}\"" in r and f"/review/{fresh}\"" not in r
 
 
+SOURCED = dict(industry=Sourced[str](value="Aerospace", source_quote=Q_TITLE))  # found by in_search()
+
+
 def in_search(cid):
     return f'name="case_id" value="{cid}"' in client([USER, DOCS]).post("/search", data={"industry": "Aerospace"}).text
 
 
 def test_due_soon_case_can_be_reapproved_and_stays_searchable(make):
     # a sourced industry: approve strips unsourced fields, which would drop the case from this search
-    cid = make("approved", "10 days", data=case_data(industry=Sourced[str](value="Aerospace", source_quote=Q_TITLE)))
+    cid = make("approved", "10 days", data=case_data(**SOURCED))
     page = client(R).get(f"/review/{cid}").text
     assert f'action="/review/{cid}/approve"' in page and "Approving it again renews it" in page
     assert in_search(cid)
     assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}, follow_redirects=False).status_code == 303
-    assert row(cid)[0] == "approved" and row(cid)[4]
+    assert row(cid)[0] == "approved" and row(cid)[4] and row(cid)[3]  # renewed, by this reviewer
     assert in_search(cid)
 
 
 def test_edit_on_due_soon_case_withdraws_approval(make):
-    cid = make("approved", "10 days")
-    assert client(R).post(f"/review/{cid}/edit", data={"field": "industry", "value": "Banking", "v": ver(cid)}, follow_redirects=False).status_code == 303
-    assert row(cid)[0] == "extracted" and not row(cid)[5]
+    cid = make("approved", "10 days", data=case_data(**SOURCED))
+    assert in_search(cid)
+    r = client(R).post(f"/review/{cid}/edit", data={"field": "summary", "value": "Edited.", "v": ver(cid)},
+                       follow_redirects=False)  # a field search does not filter on
+    assert r.status_code == 303 and row(cid)[0] == "extracted" and not row(cid)[5]
     assert f'/review/{cid}"' in client(R).get("/review").text
     assert not in_search(cid)
+
+
+def test_expired_case_keeps_todays_behaviour(make):
+    cid = make("approved", "-1 day", data=case_data(**SOURCED))
+    page = client(R).get(f"/review/{cid}").text
+    assert f'action="/review/{cid}/approve"' in page and "in search until" not in page
+    r = client(R).post(f"/review/{cid}/edit", data={"field": "summary", "value": "Edited.", "v": ver(cid)},
+                       follow_redirects=False)
+    assert r.status_code == 303 and row(cid)[0] == "approved" and row(cid)[5]  # still expired, not withdrawn
+    later = make("approved", "31 days")  # outside the 30-day window: not open yet
+    assert f'action="/review/{later}/approve"' not in client(R).get(f"/review/{later}").text
 
 
 def test_due_soon_case_not_listed_twice(make):

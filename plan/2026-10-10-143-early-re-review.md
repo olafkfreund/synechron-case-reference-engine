@@ -162,3 +162,6 @@ stay `extracted` and need approving again, which is the decided behaviour.
 - Step 5: the re-approve test builds its case with a sourced industry. The default fixture's industry is unsourced, `approve` strips it, and the case would leave the "Aerospace" search for that reason, not this change.
 - Step 5: a small `in_search(cid)` helper is shared by the new tests.
 - Steps 2 and 3 share `app/review.py` and are one commit.
+- Review: the "in date" test for the note uses the database clock (`case when c.review_due > now() ...` in the select), as search does, instead of the app clock; the `datetime` import is gone.
+- Review: the edit test edits `summary` on a case with a sourced industry and checks it is in search before and not after, so it proves the withdraw rather than a changed filter. New `test_expired_case_keeps_todays_behaviour`: no note on an expired case, editing it leaves it approved, and a case due in 31 days is not open. The re-approve test also checks `approved_by`.
+- `test_due_soon_case_not_listed_twice` passes on main as well (main lists only expired cases); it guards against the queue using the new `OPEN`, not against main.

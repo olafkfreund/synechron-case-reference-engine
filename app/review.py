@@ -1,6 +1,5 @@
 import hashlib
 import copy
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -137,7 +136,8 @@ def review_list(request: Request, user: User = Depends(require("reviewer"))):
 def review_detail(cid: int, request: Request, user: User = Depends(require("reviewer"))):
     with db.connect() as conn:
         r = conn.execute(
-            f"select c.data, c.status, d.title, d.external_id, s.name, {OPEN}, {VERSION}, c.member_count, c.basis, c.review_due "
+            f"select c.data, c.status, d.title, d.external_id, s.name, {OPEN}, {VERSION}, c.member_count, c.basis, "
+            f"case when c.review_due > now() then c.review_due end "
             f"from cases c left join documents d on d.id = c.document_id left join sources s on s.id = d.source_id "
             f"where c.id = %s and {REVIEWABLE}", (cid, list(user.groups))).fetchone()
         registry = anonymise.load_clients(conn)
@@ -158,7 +158,7 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
                 external_id=r[3], source=r[4], merged=bool(members),
                 reviewable=r[5] and not any(m[6] for m in members), v=r[6],
-                due=r[9].strftime("%Y-%m-%d") if r and r[9] and r[9] > datetime.now(timezone.utc) else None)
+                due=r[9].strftime("%Y-%m-%d") if r[9] else None)  # in date by the database clock, as search judges it
 
 
 @router.post("/review/{cid}/edit")
