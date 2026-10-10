@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 120
 author: olafkfreund
 ---
@@ -65,3 +65,8 @@ stuck.
 2. **Add backoff to the worker's immediate retries?** **Recommendation: no**,
    not in this issue. The crawl-time requeue is the backoff: it retries once a
    day.
+
+## Approved answers
+
+1. A: requeue the last failed extract job, policy failures included.
+2. No worker backoff in this issue.
