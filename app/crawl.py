@@ -357,6 +357,7 @@ def crawl_confluence(source_id: int) -> dict:
         spaces = config["spaces"]
         if not isinstance(spaces, list) or not spaces:
             raise ValueError("config.spaces must be a non-empty list of space keys")
+        in_scope = {str(k).casefold() for k in spaces}  # CQL matches space keys regardless of case
         c = Confluence(config["base_url"], config.get("api_prefix", "/wiki"))
         cap = int(os.environ.get("CONFLUENCE_MAX_BYTES", 50 * 1024 * 1024))
         exts = {"docx", "pptx", "pdf"}
@@ -374,6 +375,8 @@ def crawl_confluence(source_id: int) -> dict:
             """Neither the page nor any ancestor restricts reading. Cloud: v2 ancestors (complete, paged,
             typed); a non-page ancestor (a folder) fails closed, because the API reports no restrictions
             for folders (CONFCLOUD-82920). Data Center: v1 expand=ancestors (pages only)."""
+            if str((page.get("space") or {}).get("key", "")).casefold() not in in_scope:
+                return False  # moved out of the configured spaces (#127): its space permissions are not the source's groups
             if c.cloud:
                 ids, url = [], f"{c.base}/api/v2/pages/{pid}/ancestors?limit=250"
                 while url:
@@ -450,14 +453,14 @@ def crawl_confluence(source_id: int) -> dict:
             cql += f' and lastmodified > "{datetime.fromisoformat(cursor) - CURSOR_SLACK:%Y/%m/%d %H:%M}"'
         newest = datetime.fromisoformat(cursor) if cursor else None
         search = f"{c.api}/content/search?" + urlencode(
-            {"cql": cql, "expand": "body.storage,version,ancestors,container", "limit": 25})
+            {"cql": cql, "expand": "body.storage,version,ancestors,container,space", "limit": 25})
         for results, _ in c.paged(search):  # an error here raises: the cursor stays
             for hit in results:
                 if hit.get("type") == "attachment":  # crawl its page (and so all its attachments) once
                     pid = hit.get("container", {}).get("id")
                     if pid and pid not in visited:
                         try:
-                            do_page(c.get(f"{c.api}/content/{pid}?expand=body.storage,version,ancestors").json())
+                            do_page(c.get(f"{c.api}/content/{pid}?expand=body.storage,version,ancestors,space").json())
                         except ConfluenceError as e:
                             fail(pid, f"page:{pid}", e)
                 else:
@@ -469,7 +472,7 @@ def crawl_confluence(source_id: int) -> dict:
             if f"page:{pid}" in done:
                 continue
             try:
-                do_page(c.get(f"{c.api}/content/{pid}?expand=body.storage,version,ancestors").json())
+                do_page(c.get(f"{c.api}/content/{pid}?expand=body.storage,version,ancestors,space").json())
             except ConfluenceError as e:
                 if e.status == 404:
                     withdraw(f"page:{pid}")
@@ -484,7 +487,7 @@ def crawl_confluence(source_id: int) -> dict:
                 continue
             _, pid, *att = ext.split(":")
             try:
-                page = c.get(f"{c.api}/content/{pid}?expand=ancestors").json()
+                page = c.get(f"{c.api}/content/{pid}?expand=ancestors,space").json()
                 ok = page.get("status") == "current" and allowed(pid, page)
                 if ok and att:  # still current AND still on the same (allowed) page: it may have been moved
                     a = c.get(f"{c.api}/content/{att[0]}?expand=container").json()
