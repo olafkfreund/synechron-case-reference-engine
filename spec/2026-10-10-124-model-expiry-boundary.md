@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 124
 intent: intent/2026-10-10-124-model-expiry-boundary.md
 ---
