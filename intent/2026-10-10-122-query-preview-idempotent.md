@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 122
 author: olafkfreund
 ---
@@ -50,3 +50,7 @@ shown on the preview is the query that is sent.
 
 None. Running the identifier filter again after the scrub makes one pass give
 the final result.
+
+## Approved answers
+
+None needed.
