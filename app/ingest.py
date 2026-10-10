@@ -118,8 +118,8 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
         reopen_merged(conn, [doc_id])
         if basis:
             conn.execute("insert into jobs(kind, payload) values ('extract', jsonb_build_object("
-                         "'document_id', %s::bigint, 'basis', %s::text, 'basis_reason', %s::text))",
-                         (doc_id, basis, reason))
+                         "'document_id', %s::bigint, 'basis', %s::text, 'basis_reason', %s::text, 'checksum', %s::text))",
+                         (doc_id, basis, reason, checksum))  # checksum: a retry must not outlive its version (#120)
     return "updated" if row else "new"
 
 

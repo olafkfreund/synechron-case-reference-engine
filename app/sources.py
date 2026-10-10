@@ -29,7 +29,8 @@ REQUIRED = {"s3": ("bucket",), "upload": ("bucket",), "sharepoint": ("tenant_id"
 
 # #64: flipping "contracts executed" re-triages what is already crawled
 QUEUE_CONTRACTS = """insert into jobs(kind, payload)
-    select 'extract', jsonb_build_object('document_id', d.id, 'basis', 'engagement', 'basis_reason', 'source marked executed')
+    select 'extract', jsonb_build_object('document_id', d.id, 'basis', 'engagement', 'basis_reason', 'source marked executed',
+                                         'checksum', d.checksum)
     from documents d where d.source_id=%s and d.kind='contract' and d.deleted_at is null
     and not exists (select 1 from cases c where c.document_id=d.id)
     and not exists (select 1 from jobs j where j.kind='extract' and j.status in ('queued','running')
