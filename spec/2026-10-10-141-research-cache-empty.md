@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 141
 intent: intent/2026-10-10-141-research-cache-empty.md
 ---
