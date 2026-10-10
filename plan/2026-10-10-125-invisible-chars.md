@@ -79,3 +79,10 @@ The full suite must pass, and the new tests must fail on main.
 ## Rollback
 
 Revert the commit.
+
+## Deviations
+
+- **Review fix (nit):** the `_visible` docstring now says that some Cf
+  characters do affect display (ZWJ/ZWNJ in emoji or Indic scripts, and
+  Arabic number signs), and that dropping them loses that shaping. Our
+  corpus is English bid text, so this is accepted.

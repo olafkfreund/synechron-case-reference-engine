@@ -22,7 +22,8 @@ def load_clients(conn=None) -> list[dict]:
 
 
 def _visible(s: str) -> str:
-    """NFKC, minus format characters (Cf: soft hyphen, zero-width, BOM, bidi controls) that have no glyph (#125)."""
+    """NFKC, minus format characters (Cf: soft hyphen, zero-width, BOM, bidi controls) (#125). Most have no glyph;
+    the few that shape text (ZWJ/ZWNJ in emoji or Indic scripts, Arabic number signs) lose that shaping."""
     return "".join(ch for ch in unicodedata.normalize("NFKC", s) if unicodedata.category(ch) != "Cf")
 
 
