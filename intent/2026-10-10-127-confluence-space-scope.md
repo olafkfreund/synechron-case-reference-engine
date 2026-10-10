@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 127
 author: olafkfreund
 ---
@@ -53,3 +53,7 @@ This is an ACL leak.
 None. The check compares the page's space key with `config.spaces` in
 `allowed()`, and the by-id fetches and search hits add `space` to their
 expand.
+
+## Approved answers
+
+None needed.
