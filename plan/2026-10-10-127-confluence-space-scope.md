@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 127
 spec: spec/2026-10-10-127-confluence-space-scope.md
 ---
