@@ -134,6 +134,17 @@ def test_short_caps_alias_is_case_sensitive():
     assert an.apply("ACB and acb", reg) == "a bank and acb"
 
 
+def test_hyphenated_name_matches_spaced_joined_and_dashed():
+    reg = [C("Zorp-Tek", [], label="a maker")]
+    for form in ("Zorp-Tek", "Zorp Tek", "ZorpTek", "Zorp\u2013Tek"):
+        assert an.apply(f"{form} won", reg) == "a maker won", form
+        assert an.blocked(form, reg) == ["Zorp-Tek"], form
+
+
+def test_dash_only_name_does_not_match_everything():
+    assert an.blocked("plain text", [C("-", [], label="x")]) == []
+
+
 @pytest.fixture
 def reg(env):  # noqa: F811
     db.init()
