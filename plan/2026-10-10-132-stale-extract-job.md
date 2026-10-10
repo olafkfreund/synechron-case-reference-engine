@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 132
 spec: spec/2026-10-10-132-stale-extract-job.md
 ---
