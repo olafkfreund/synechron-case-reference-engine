@@ -260,8 +260,8 @@ def crawl_sharepoint(source_id: int) -> dict:
                 continue
             try:
                 handle(g.get(f"{GRAPH}/drives/{drive}/items/{iid}").json())
-            except GraphError as e:
-                if e.status == 404:
+            except Exception as e:  # noqa: BLE001 - one bad item must not stop the crawl (#129)
+                if getattr(e, "status", None) == 404:
                     counts["deleted"] += withdraw(iid)
                 else:
                     retry.append(iid)
@@ -461,7 +461,7 @@ def crawl_confluence(source_id: int) -> dict:
                     if pid and pid not in visited:
                         try:
                             do_page(c.get(f"{c.api}/content/{pid}?expand=body.storage,version,ancestors,space").json())
-                        except ConfluenceError as e:
+                        except Exception as e:  # noqa: BLE001 (#129)
                             fail(pid, f"page:{pid}", e)
                 else:
                     do_page(hit)
@@ -473,8 +473,8 @@ def crawl_confluence(source_id: int) -> dict:
                 continue
             try:
                 do_page(c.get(f"{c.api}/content/{pid}?expand=body.storage,version,ancestors,space").json())
-            except ConfluenceError as e:
-                if e.status == 404:
+            except Exception as e:  # noqa: BLE001 (#129)
+                if getattr(e, "status", None) == 404:
                     withdraw(f"page:{pid}")
                     withdraw(f"att:{pid}:", prefix=True)
                 else:
