@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 125
 intent: intent/2026-10-10-125-invisible-chars.md
 ---
