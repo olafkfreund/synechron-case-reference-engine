@@ -127,6 +127,13 @@ def test_a_claim_naming_a_protected_client_is_replaced_or_dropped_and_counted(ro
     assert only.status_code == 400                                                  # nothing usable is left
 
 
+def test_pptx_industry_slide_shows_the_omitted_note(rows, approved, reg):
+    rid = rows([claim(), claim(f"{reg.replace('o', 'ö')} runs this in production daily")])
+    _, out = slides(gen(rid, [approved()], "pptx").content)
+    st = out[1]["Statements"]
+    assert st[0].startswith("Supported out of the box") and st[-1] == "1 public statement omitted: it named a protected client"
+
+
 def test_script_in_a_quote_is_escaped_everywhere(rows, approved):
     evil = "<script>alert(1)</script> & more"
     rid, cid = rows([claim(evil)]), approved()
@@ -161,6 +168,18 @@ def test_fallback_to_case_layout_without_industry_layout(rows, approved, tmp_pat
     ind = out[1]
     assert ind["Outcomes"][0].startswith("Supported out of the box") and Q1[:40] in ind["Outcomes"][0]
     assert ind["Challenge"] == [""] and ind["Solution"] == [""]
+
+
+def test_fallback_layout_shows_the_omitted_note(rows, approved, reg, tmp_path, monkeypatch):
+    from pptx import Presentation
+    prs = Presentation(render.MASTER)
+    next(l for l in prs.slide_layouts if l.name == render.INDUSTRY_LAYOUT).name = "Something else"
+    alt = tmp_path / "m.pptx"
+    prs.save(alt)
+    monkeypatch.setattr(render, "MASTER", alt)
+    rid = rows([claim(), claim(f"{reg.replace('o', 'ö')} runs this in production daily")])
+    _, out = slides(gen(rid, [approved()], "pptx").content)
+    assert out[1]["Outcomes"][-1] == "1 public statement omitted: it named a protected client"
 
 
 def test_citation_is_never_rewritten_and_client_site_is_dropped(rows, approved, reg):
