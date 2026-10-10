@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 129
 author: olafkfreund
 ---
@@ -44,3 +44,7 @@ is ingested, and no access is re-checked.
 
 None. The per-item `except` in these three places widens to `Exception`, and
 the 404 branch is kept.
+
+## Approved answers
+
+None needed.
