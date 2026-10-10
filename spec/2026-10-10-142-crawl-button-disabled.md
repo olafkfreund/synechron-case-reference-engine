@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 142
 intent: intent/2026-10-10-142-crawl-button-disabled.md
 ---
