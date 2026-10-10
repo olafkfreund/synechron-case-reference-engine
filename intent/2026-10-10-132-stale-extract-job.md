@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 132
 author: olafkfreund
 ---
@@ -59,3 +59,5 @@ job that is overtaken by a newer version does nothing.
 
    **Recommendation: B.** It covers the running case too, and it uses the
    checksum #120 already put in every payload.
+
+**Decision (approved by olafkfreund, 2026-10-10): B.**
