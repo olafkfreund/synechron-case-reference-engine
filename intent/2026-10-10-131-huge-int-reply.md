@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 131
 author: olafkfreund
 ---
@@ -40,3 +40,7 @@ None. A first number longer than a plausible size (more than 12 digits,
 separators included) counts the item as malformed. The fix doesn't just cap
 the regex, because a capped match would take the first 12 digits of a longer
 run, which is an invented value.
+
+## Approved answers
+
+None needed.
