@@ -6,6 +6,7 @@ from base64 import b64encode
 
 import boto3
 import pytest
+from fastapi.responses import RedirectResponse
 from fastapi.testclient import TestClient
 from itsdangerous import TimestampSigner
 from moto import mock_aws
@@ -243,9 +244,32 @@ def test_login_after_cutoff_works(env):
 
 def test_cookie_without_iat(env):
     sub = fresh()
-    assert client([USER], sub=sub, iat=False).get("/me").status_code == 200  # pre-deploy cookie, no row
+    assert client([USER], sub=sub, iat=False).get("/me").status_code == 401  # fail closed (#145)
     cut(sub)
     assert client([USER], sub=sub, iat=False).get("/me").status_code == 401
+
+
+def test_session_expires_after_max_age(env):
+    """Rolling renewal must not keep groups the IdP removed: a session has an absolute lifetime (#145)."""
+    old = time.time() - main.SESSION_MAX_AGE - 5
+    assert client([USER], iat=old).get("/me").status_code == 401
+    r = client([USER], iat=old).get("/me", headers={"Accept": "text/html"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login"
+    assert client([USER], iat=time.time() - main.SESSION_MAX_AGE + 60).get("/me").status_code == 200
+
+
+def test_login_drops_existing_user(env, monkeypatch):
+    for k, v in dict(OIDC_METADATA_URL="http://idp/.well-known", OIDC_CLIENT_ID="c",
+                     OIDC_CLIENT_SECRET="s").items():
+        monkeypatch.setenv(k, v)
+    c = client([USER])
+
+    async def fake(request, redirect_uri):
+        return RedirectResponse("http://idp/authorize", status_code=302)
+    monkeypatch.setattr(c.app.state.oauth.oidc, "authorize_redirect", fake)
+    assert c.get("/me").status_code == 200
+    assert c.get("/login", follow_redirects=False).status_code == 302
+    assert c.get("/me").status_code == 401
 
 
 def test_cut_sessions_is_per_user(env):
