@@ -9,7 +9,8 @@ from app import db
 # Words inside a name may be joined by any spacing or dash ("Acme Bank", "Acme-Bank", "AcmeBank",
 # "jane@acmebank.co.uk"). Boundaries are lookarounds on \w, not \b, so "C++ Ltd" still matches.
 # Possessives need no special case: "Acme's" matches "Acme" and the "'s" stays.
-_JOIN = r"[\s\-‐‑–—]*"
+_SEP = r"[\s\-‐‑–—]"
+_JOIN = _SEP + "*"
 
 
 def load_clients(conn=None) -> list[dict]:
@@ -31,7 +32,8 @@ def _names(c) -> list[str]:
 
 
 def _pattern(name: str) -> re.Pattern:
-    body = _JOIN.join(re.escape(w) for w in name.split())
+    words = [w for w in re.split(_SEP + "+", name) if w] or [name]  # "-" alone stays literal, never empty
+    body = _JOIN.join(re.escape(w) for w in words)
     # short all-caps aliases ("ACB") match case-sensitively so they don't rewrite ordinary words
     flags = 0 if name.isupper() and len(name) <= 5 else re.I
     return re.compile(rf"(?<!\w){body}(?!\w)", flags)
