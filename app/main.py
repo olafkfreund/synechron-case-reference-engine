@@ -123,22 +123,21 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def guard(request: Request, call_next):
         """Runs before any body is read or any route/auth dependency runs."""
+        response = None
         if request.method not in SAFE_METHODS:
             # CSRF: SameSite=lax still sends the cookie from sibling subdomains, so check the origin
             o = request.headers.get("origin")
             if (o or "").rstrip("/") != origin and not (o is None and request.headers.get("sec-fetch-site") == "same-origin"):
                 response = JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
-                response.headers.update(NO_FRAME)
-                return response
-            # size before parsing: FastAPI spools a multipart body before auth runs
-            cap = upload_cap() if request.url.path == "/admin/upload" else BODY_CAP
-            length = request.headers.get("content-length")
-            if length is None or not length.isdigit() or int(length) > cap + 64 * 1024:
-                response = JSONResponse({"detail": f"body missing a length or larger than {cap} bytes"}, status_code=413)
-                response.headers.update(NO_FRAME)
-                return response
-        response = await call_next(request)
-        response.headers.update(NO_FRAME)
+            else:
+                # size before parsing: FastAPI spools a multipart body before auth runs
+                cap = upload_cap() if request.url.path == "/admin/upload" else BODY_CAP
+                length = request.headers.get("content-length")
+                if length is None or not length.isdigit() or int(length) > cap + 64 * 1024:
+                    response = JSONResponse({"detail": f"body missing a length or larger than {cap} bytes"}, status_code=413)
+        if response is None:
+            response = await call_next(request)
+        response.headers.update(NO_FRAME)  # one exit: a new refusal cannot skip it
         return response
 
     @app.exception_handler(401)
