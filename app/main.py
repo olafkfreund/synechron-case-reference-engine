@@ -50,7 +50,7 @@ def current_user(request: Request) -> User:
     if not s:
         raise HTTPException(401, "login required")
     iat = s.get("iat")  # SessionMiddleware renews the cookie on use, so only iat bounds a session (#145)
-    if not isinstance(iat, (int, float)) or time.time() - iat > SESSION_MAX_AGE:
+    if not isinstance(iat, (int, float)) or not 0 <= time.time() - iat <= SESSION_MAX_AGE:  # NaN and future fail too
         request.session.clear()  # the browser drops the dead cookie
         raise HTTPException(401, "session expired; log in again")
     with db.connect() as conn:

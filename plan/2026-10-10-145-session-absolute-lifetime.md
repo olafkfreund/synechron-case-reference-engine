@@ -111,3 +111,4 @@ the fix is deployed, and only if their session was older than 8 hours.
 ## Deviations
 - `test_session_expires_after_max_age` uses `fresh()` subs: other tests cut `u1`, so with the default sub the old-iat case was refused by the cutoff on main too, and the in-date case was refused on the branch.
 - `test_login_drops_existing_user` decodes the session cookie `/login` sets instead of calling `/me` again: the test's hand-set cookie and the server's cookie are separate jar entries, so `/me` kept sending the old one. The fake stores a state key as authlib does, and the test asserts it is kept and `user` is gone.
+- Review: the age check is two-sided (`0 <= age <= SESSION_MAX_AGE`), so a future, infinite or NaN `iat` from a forged cookie is refused too; the test covers these and that the refused cookie is deleted.

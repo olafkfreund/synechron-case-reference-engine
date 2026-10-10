@@ -255,8 +255,10 @@ def test_session_expires_after_max_age(env):
     sub = fresh()  # no cutoff row: only the age can refuse it
     assert client([USER], sub=sub, iat=old).get("/me").status_code == 401
     r = client([USER], sub=sub, iat=old).get("/me", headers={"Accept": "text/html"}, follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/login"
+    assert r.status_code == 303 and r.headers["location"] == "/login" and "session=null" in r.headers["set-cookie"]
     assert client([USER], sub=fresh(), iat=time.time() - main.SESSION_MAX_AGE + 60).get("/me").status_code == 200
+    for bad in (time.time() + 3600, float("inf"), float("nan")):  # a forged iat cannot make a session endless
+        assert client([USER], sub=fresh(), iat=bad).get("/me").status_code == 401
 
 
 def test_login_drops_existing_user(env, monkeypatch):
