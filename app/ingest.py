@@ -85,19 +85,23 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
             conn.execute("update documents set acl_groups=(select acl_groups from sources where id=%s for share), "
                          "deleted_at=null, source_version=%s where id=%s", (source_id, source_version, row[0]))
             return "skipped"
-        src = conn.execute("select data_class, config from sources where id=%s", (source_id,)).fetchone()
+        src = conn.execute("select data_class from sources where id=%s", (source_id,)).fetchone()
         if not src:
             raise LookupError(f"source {source_id} no longer exists")
-        data_class, config = src
+        data_class = src[0]
 
     key = f"originals/{checksum}"
     boto3.client("s3").put_object(Bucket=os.environ["S3_BUCKET"], Key=key, Body=data)
     text = to_markdown(data, title or PurePosixPath(external_id).name)  # title carries the extension; SharePoint/Confluence ids do not
     triage = triage_text(text, data_class)
 
-    basis = basis_for(triage, config)
-    reason = {"delivered": "", "engagement": "executed contract" if triage.executed else "source marked executed"}.get(basis)
     with db.connect() as conn:
+        # the flag is read under the lock an admin's save takes, so a toggle during triage applies here (#133)
+        cfg = conn.execute("select config from sources where id=%s for share", (source_id,)).fetchone()
+        if not cfg:
+            raise LookupError(f"source {source_id} no longer exists")
+        basis = basis_for(triage, cfg[0])
+        reason = {"delivered": "", "engagement": "executed contract" if triage.executed else "source marked executed"}.get(basis)
         # upsert: an upload and a crawl of the same item may race past the select above
         # the groups are read from the source here, under for share, so a concurrent save is never overwritten
         got = conn.execute(
