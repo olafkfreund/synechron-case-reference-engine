@@ -176,6 +176,20 @@ def test_engagement_ranks_after_delivered_on_tie_and_is_badged(approved, monkeyp
     assert "Delivered case" in r.text and "Engagement (contracted scope)" in r.text
 
 
+def test_engagement_outcomes_not_shown_or_given_to_model(approved, monkeypatch):  # #139
+    eng = approved()
+    set_basis(eng, "engagement")
+    seen = []
+
+    def fake(m, s, user, *a, **k):
+        seen.append(user)
+        return sr.Picks(picks=[sr.Pick(case_id=eng, reason="", tailored="x")])
+    monkeypatch.setattr(sr, "complete_json", fake)
+    top, others, _ = sr.results(ME, "onboarding", {})
+    assert [t["id"] for t in top] == [eng] and top[0]["outcomes"] == []
+    assert "12 to 3 days" not in seen[0]
+
+
 def test_page_for_plain_user_hides_quotes_and_orgs(approved, monkeypatch):
     c1 = approved(data(organisations=["Secret Org Ltd"]).model_copy(
         update={"title": S("Faster onboarding", "Hidden source quote text")}))
