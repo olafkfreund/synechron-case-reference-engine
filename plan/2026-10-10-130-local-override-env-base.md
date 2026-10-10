@@ -69,3 +69,13 @@ The full suite passes, and the new test fails on main.
 ## Rollback
 
 Revert the commit.
+
+## Deviations
+
+- **Review fix (should-fix):** the check refuses any `*.ollama.com` host, not
+  only `ollama.com`, so `api.ollama.com` with `destination: local` is refused.
+  This is the new helper `_ollama_cloud()`.
+- **Review fix (nit, taken):** the `OLLAMA_CLOUD_KEY` line also uses
+  `effective_base` and `_ollama_cloud`. A cloud base set only in the
+  environment then gets the cloud key, matching the classification. The
+  spec left this line optional.

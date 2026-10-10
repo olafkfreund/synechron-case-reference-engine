@@ -35,6 +35,11 @@ def effective_base(model: str, opts: dict) -> str:
     return (os.environ.get("OLLAMA_API_BASE") or "http://localhost:11434") if model.startswith("ollama") else ""
 
 
+def _ollama_cloud(base: str) -> bool:
+    host = urlparse(base).hostname or ""
+    return host == "ollama.com" or host.endswith(".ollama.com")
+
+
 def destination(model: str, opts: dict) -> str:
     """local | our-cloud | third-party. Fails closed: anything unknown is third-party."""
     dest = opts.get("destination")
@@ -42,7 +47,7 @@ def destination(model: str, opts: dict) -> str:
         return dest
     if dest in ("local", "our-cloud"):
         # an override may name a host the inference cannot see (Docker), never contradict a known third party
-        if "cloud" in model.lower() or urlparse(effective_base(model, opts)).hostname == "ollama.com":
+        if "cloud" in model.lower() or _ollama_cloud(effective_base(model, opts)):
             raise RuntimeError(f"destination {dest!r} contradicts the model or api_base; fix the *_OPTIONS")
         return dest
     if model.startswith("bedrock/"):
@@ -89,7 +94,7 @@ def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: t
             if k in opts:
                 extra[k] = opts[k]
         # not OLLAMA_API_KEY: LiteLLM reads that one itself and sends it to every Ollama host
-        if urlparse(opts.get("api_base", "")).hostname == "ollama.com" and os.environ.get("OLLAMA_CLOUD_KEY"):
+        if _ollama_cloud(effective_base(model, opts)) and os.environ.get("OLLAMA_CLOUD_KEY"):
             extra["api_key"] = os.environ["OLLAMA_CLOUD_KEY"]
     resp = litellm.completion(
         model=model,

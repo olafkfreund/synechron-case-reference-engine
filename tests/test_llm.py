@@ -115,6 +115,8 @@ def test_override_checks_env_base(monkeypatch):
             llm.destination(LOCAL, {"destination": dest})
     assert llm.destination(LOCAL, {}) == "third-party"
     assert llm.destination(LOCAL, {"destination": "local", "api_base": "http://host.docker.internal:11434"}) == "local"
+    with pytest.raises(RuntimeError, match="contradicts"):  # any ollama.com subdomain is the cloud too
+        llm.destination(LOCAL, {"destination": "local", "api_base": "https://api.ollama.com"})
 
 
 def test_policy_error_has_no_content_and_blocks_before_request(monkeypatch):
