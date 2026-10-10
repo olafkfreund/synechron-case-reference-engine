@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 133
 spec: spec/2026-10-10-133-config-read-under-lock.md
 ---
