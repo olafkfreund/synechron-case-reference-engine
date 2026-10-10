@@ -103,3 +103,6 @@ The full suite passes, and the three new tests fail on main.
 ## Rollback
 
 Revert the commits.
+
+## Deviations
+- After rebasing on #127 (space scope), the Confluence fake drops an attachment whose page it does not know, so `test_timeout_on_attachment_page_fetch_is_a_page_failure` now adds page p1 in ENG as `historical` (not offered by search). The conflict in `crawl_confluence` kept `,space` in both by-id fetches with this branch's `except Exception`. The test still fails on main.

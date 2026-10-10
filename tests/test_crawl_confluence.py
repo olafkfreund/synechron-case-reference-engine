@@ -334,7 +334,9 @@ def test_timeout_on_retried_page_does_not_stop_the_crawl(cf, monkeypatch):
 
 
 def test_timeout_on_attachment_page_fetch_is_a_page_failure(cf, monkeypatch):
-    cf.attach("p1", "a1")  # only the attachment is offered; its page is fetched by id
+    cf.page("p1")
+    cf.pages["p1"]["status"] = "historical"  # in ENG but not offered by search (#127); only its attachment is
+    cf.attach("p1", "a1")  # its page is fetched by id
     _timeout_on_page_fetch(monkeypatch, cf)
     last = crawl.crawl_confluence(cf.sid)
     assert last["failed"] == 1
