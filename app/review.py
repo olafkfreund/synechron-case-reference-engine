@@ -194,7 +194,7 @@ def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: 
                     raise IndexError
                 obj = getattr(case, name)[int(idx)]
                 if isinstance(obj, Outcome):
-                    if not value:  # an empty outcome is removed, not saved (#108)
+                    if not value or case.basis == "engagement":  # empty: removed, not saved (#108); engagement: remove only (#139)
                         raise ValueError
                     obj.metric, obj.value = metric or "", value or ""
                 elif value is not None:
