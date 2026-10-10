@@ -167,3 +167,6 @@ def test_extract_handler_passes_checksum(monkeypatch):
     monkeypatch.setattr(worker.extract, "extract", lambda *a: got.setdefault("a", a))
     worker.HANDLERS["extract"]({"document_id": 7, "checksum": "c"})
     assert got["a"] == (7, "delivered", "", "c")
+    got.clear()
+    worker.HANDLERS["extract"]({"document_id": 7})  # queued before #120: no checksum
+    assert got["a"] == (7, "delivered", "", None)

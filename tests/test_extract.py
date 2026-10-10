@@ -250,6 +250,25 @@ def test_version_replaced_during_model_call_writes_no_case(doc, monkeypatch):
     assert cases_for(did) == []
 
 
+def test_extract_waits_for_an_uncommitted_new_version(doc, monkeypatch):
+    """The write-time check takes a share lock: a version ingest has not committed yet is waited for (#132)."""
+    import threading
+    from tests.test_ingest import _wait_for_lock_wait
+    did, reply = doc
+    reply["v"] = case()
+    holder = db.connect()  # stands in for ingest: new checksum written, not committed
+    try:
+        holder.execute("update documents set checksum='y' where id=%s", (did,))
+        t = threading.Thread(target=ex.extract, args=(did,), kwargs={"checksum": "x"})
+        t.start()
+        _wait_for_lock_wait(holder)
+        holder.commit()
+    finally:
+        holder.close()
+    t.join(10)
+    assert not t.is_alive() and cases_for(did) == []
+
+
 def test_no_checksum_still_extracts(doc):
     did, reply = doc
     reply["v"] = case()

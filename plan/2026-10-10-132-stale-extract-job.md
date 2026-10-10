@@ -104,3 +104,5 @@ nothing else reads it.
 
 ## Deviations
 - Step 1: a small `cases_for(did)` helper in `tests/test_extract.py` is shared by the three new extract tests.
+- Review: `sources.update` now applies the documents ACL update before the executed-contracts branch, so the untick locks documents before cases, like ingest and extract; otherwise an untick that also changes groups could deadlock with a running extract.
+- Review: `test_extract_waits_for_an_uncommitted_new_version` holds ingest's checksum update open while extract runs; it fails if the `for share` is removed. The worker test also covers a payload with no checksum.
