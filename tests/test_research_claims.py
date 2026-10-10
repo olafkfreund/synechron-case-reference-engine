@@ -132,11 +132,11 @@ def sent(c, cid):
     return r.headers["location"]
 
 
-def finish(loc, claims):
+def finish(loc, claims, pages=()):
     rid = int(loc.rsplit("/", 1)[1])
     with db.connect() as conn:
         conn.execute("update research set status='done', results=%s where id=%s",
-                     (json.dumps({"pages": [], "skipped": [], "claims": claims}), rid))
+                     (json.dumps({"pages": list(pages), "skipped": [], "claims": claims}), rid))
 
 
 def test_view_shows_our_approach_only_while_visible_and_applies_protection(approved, reg, echo):
@@ -171,6 +171,23 @@ def test_view_is_private_and_escapes_claims(reg):
     t = c.get(loc).text
     assert "<script>alert" not in t and "&lt;script&gt;" in t and "vendor claim" in t
     assert as_user("u2").get(loc).status_code == 404
+
+
+def test_view_hides_protected_names_in_claims_and_sources(reg):
+    c = as_user("u1")
+    loc = sent(c, None)
+    base = {"statement": "S", "type": "vendor_claim", "retrieved_at": "2026-10-01T00:00:00+00:00", "rank": 3}
+    finish(loc, [
+        {**base, "quote": f"{reg} runs this nightly in production", "url": "https://v.example/a", "publisher": "v.example"},
+        {**base, "quote": "dropped publisher claim", "url": "https://w.example/b", "publisher": f"{reg}.example"},
+        {**base, "quote": "clean claim quote", "url": "https://v.example/c", "publisher": "v.example"},
+        {**base, "quote": "url only claim", "url": f"https://v.example/{reg}", "publisher": "v.example"}],
+        pages=[{"url": f"https://{reg}.example/x", "publisher": "w.example", "retrieved_at": "2026-10-01T00:00:00+00:00"},
+               {"url": "https://v.example/c", "publisher": "v.example", "retrieved_at": "2026-10-01T00:00:00+00:00"}])
+    t = c.get(loc).text
+    assert reg.lower() not in t.lower()
+    assert "2 statement(s) not shown" in t and "1 source(s) skipped." in t
+    assert "clean claim quote" in t and "runs this nightly in production" in t
 
 
 def test_search_page_has_research_button(approved, monkeypatch):

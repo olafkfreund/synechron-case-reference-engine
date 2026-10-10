@@ -7,6 +7,7 @@
 {% elif status == "failed" %}<div class="note">Research failed: {{ error }}</div>
 {% else %}
 {% if note %}<div class="note">{{ note }}</div>{% endif %}
+{% if omitted %}<div class="note">{{ omitted }} statement(s) not shown: they named a protected client.</div>{% endif %}
 <p class="muted" style="font-size:13px">Public sources only. This is industry context, not our own delivery.</p>
 {% if claims %}
 <div class="section-card"><div class="card-head"><h2>What public sources say</h2></div>

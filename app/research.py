@@ -159,6 +159,17 @@ def research_send(query: str = Form(), case_id: int | None = Form(None), user: U
     return RedirectResponse(f"/research/{rid}", status_code=303)
 
 
+def visible_claims(claims, clients) -> tuple[list[dict], int]:
+    """The download's rule (render.industry_section) for the screen: apply(), then drop what blocked() still finds."""
+    out = []
+    for c in claims:
+        c = {**c, "quote": anonymise.apply(str(c.get("quote") or ""), clients),
+             "statement": anonymise.apply(str(c.get("statement") or ""), clients)}
+        if not anonymise.blocked("\n".join(str(c.get(k, "")) for k in ("quote", "statement", "publisher", "url")), clients):
+            out.append(c)
+    return out, len(claims) - len(out)
+
+
 @router.get("/research/{rid}")
 def research_view(rid: int, request: Request, user: User = Depends(require("user"))):
     with db.connect() as conn:
@@ -173,12 +184,15 @@ def research_view(rid: int, request: Request, user: User = Depends(require("user
         text = "; ".join(x for x in [case.solution.value if not case.solution.unsourced else None,
                                       ", ".join(t.value for t in case.tech_stack if t.value and not t.unsourced)] if x)
         ours = clean(text, clients, "[withheld]") if text else None
-    claims = row[3].get("claims", [])
+    claims, omitted = visible_claims(row[3].get("claims", []), clients)
     groups: dict[str, list] = {}
     for c in claims:
         groups.setdefault(c["publisher"], []).append(c)
-    return page(request, "research_view.html", user, query=row[0], status=row[1], error=row[2], ours=ours,
-                pages=row[3].get("pages", []), skipped=row[3].get("skipped", []), claims=claims, groups=groups,
+    pages = [p for p in row[3].get("pages", []) if not anonymise.blocked(f"{p.get('publisher', '')}\n{p.get('url', '')}", clients)]
+    skipped = row[3].get("skipped", []) + [{}] * (len(row[3].get("pages", [])) - len(pages))
+    query = "[withheld]" if anonymise.blocked(row[0], clients) else row[0]  # a client protected after it was sent
+    return page(request, "research_view.html", user, query=query, status=row[1], error=row[2], ours=ours,
+                pages=pages, skipped=skipped, omitted=omitted, claims=claims, groups=groups,
                 note=row[3].get("note"), case_id=row[4] if case else None, research_id=rid)
 
 
