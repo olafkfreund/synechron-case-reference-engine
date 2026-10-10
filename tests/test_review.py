@@ -373,6 +373,44 @@ def merged_of(cid):
         return c.execute("select merged_into from cases where id=%s", (cid,)).fetchone()[0]
 
 
+def _merged(make):
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    new = int(merge(client(R), [a, b]).headers["location"].rsplit("/", 1)[1])
+    return new, b
+
+
+def _data_and_doc(cid, member=None):
+    with db.connect() as c:
+        data = c.execute("select data from cases where id=%s", (cid,)).fetchone()[0]
+        doc = c.execute("select document_id from cases where id=%s", (member,)).fetchone()[0] if member else None
+    return data, doc
+
+
+def test_merged_edit_can_quote_another_member(make, acme):
+    new, b = _merged(make)
+    client(R).post(f"/review/{new}/edit", data={"field": "industry", "value": "Payments",
+                   "quote": "Acme moved payments to the cloud", "v": ver(new)})
+    data, doc_b = _data_and_doc(new, b)
+    assert data["industry"]["unsourced"] is False and data["industry"]["document_id"] == doc_b
+
+
+def test_merged_edit_quote_in_no_member_is_unsourced(make, acme):
+    new, _ = _merged(make)
+    client(R).post(f"/review/{new}/edit", data={"field": "industry", "value": "Payments",
+                   "quote": "this sentence is in neither of the two contracts", "v": ver(new)})
+    data, _ = _data_and_doc(new)
+    assert data["industry"]["unsourced"] is True and data["industry"]["document_id"] is None
+
+
+def test_merged_edit_same_quote_keeps_origin(make, acme):
+    new, _ = _merged(make)
+    before, _ = _data_and_doc(new)
+    q = before["title"]["source_quote"]
+    client(R).post(f"/review/{new}/edit", data={"field": "title", "value": q[:20], "quote": q, "v": ver(new)})
+    after, _ = _data_and_doc(new)
+    assert after["title"]["value"] == q[:20] and after["title"]["document_id"] == before["title"]["document_id"]
+
+
 def test_merge_combines_checked_fields(make, acme):
     a = eng(make, TEXT_A, ["Onboarding", "Payments"], ["Python", "AWS"])
     b = eng(make, TEXT_B, ["payments", "Cloud"], ["Rust", "python"])
