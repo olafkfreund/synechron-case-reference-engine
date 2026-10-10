@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 117
 author: olafkfreund
 ---
@@ -63,3 +63,8 @@ Putting the two side by side defeats the anonymisation.
    **Recommendation: A**, so screen and download match.
 2. **Source pages:** drop a page whose publisher or URL names a protected
    client, and count it with the skipped sources. **Recommendation: yes.**
+
+## Approved answers
+
+1. A: apply() on quote and statement, then drop the claim if blocked() finds a name in quote, statement, publisher or URL (the download's rule).
+2. Yes: drop a source page whose publisher or URL names a protected client, counted with the skipped sources.
