@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 144
 spec: spec/2026-10-10-144-merged-approve-race.md
 ---
