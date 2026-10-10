@@ -13,7 +13,7 @@ router = APIRouter()
 VERSION = "md5(row(name, aliases, anonymised_label, referenceable, logo_allowed)::text)"
 
 
-def clean(name, aliases, label, cid=None):
+def clean(name, aliases, label, referenceable, cid=None):
     name, label = name.strip(), label.strip()
     aliases = list(dict.fromkeys(a.strip() for a in aliases.splitlines() if a.strip()))
     if not name or not label:
@@ -26,6 +26,14 @@ def clean(name, aliases, label, cid=None):
                               "and id is distinct from %s", (cid,)).fetchall()
     if anonymise.has_name(label, [n for nm, al in others for n in [nm, *al]]):
         raise HTTPException(400, "the label must not contain another client's name or alias")
+    if not referenceable:  # this client's names are protected: no other label may contain them (#115)
+        with db.connect() as conn:
+            labels = conn.execute("select name, anonymised_label from clients where id is distinct from %s",
+                                  (cid,)).fetchall()
+        hit = sorted(nm for nm, lbl in labels if anonymise.has_name(lbl, [name, *aliases]))
+        if hit:
+            raise HTTPException(400, "these clients' labels contain this client's name or an alias; "
+                                     f"change them first: {', '.join(hit)}")
     # a name or alias shared with another client would attribute cases to the wrong client
     with db.connect() as conn:
         taken = conn.execute("select name, aliases from clients where id is distinct from %s", (cid,)).fetchall()
@@ -47,7 +55,7 @@ def clients_page(request: Request, user: User = Depends(require("admin"))):
 def create(name: str = Form(), aliases: str = Form(""), anonymised_label: str = Form(),
            referenceable: bool = Form(False), logo_allowed: bool = Form(False),
            next: str = Form(""), user: User = Depends(require("admin"))):
-    name, alias_list, label = clean(name, aliases, anonymised_label)
+    name, alias_list, label = clean(name, aliases, anonymised_label, referenceable)
     try:
         with db.connect() as conn:
             conn.execute("insert into clients(name, aliases, anonymised_label, referenceable, logo_allowed) "
@@ -65,7 +73,7 @@ def update(cid: int, name: str = Form(), aliases: str = Form(""), anonymised_lab
     with db.connect() as conn:  # unknown id is 404 before any validation message
         if not conn.execute("select 1 from clients where id=%s", (cid,)).fetchone():
             raise HTTPException(404, "no such client")
-    name, alias_list, label = clean(name, aliases, anonymised_label, cid)
+    name, alias_list, label = clean(name, aliases, anonymised_label, referenceable, cid)
     try:
         with db.connect() as conn:
             n = conn.execute(
