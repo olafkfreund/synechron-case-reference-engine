@@ -35,7 +35,7 @@ The rest of the transaction is unchanged:
 The lock already held makes the sub-select's `for share` redundant. It stays,
 because removing it would add diff and gain nothing.
 
-**Why this closes both windows.** `sources.save` (`app/sources.py`, `save`)
+**Why this closes both windows.** `app/sources.py` `update` (`POST /admin/sources/{sid}`)
 locks the row `for update` before it changes the config. It then runs
 `QUEUE_CONTRACTS`, or `RETIRE_FLAGGED` with `DROP_FLAGGED_JOBS`.
 
