@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 139
 spec: spec/2026-10-10-139-engagement-outcomes.md
 ---
