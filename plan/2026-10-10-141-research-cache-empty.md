@@ -57,12 +57,9 @@ threshold).
    The new test fails on main (`check.sh`).
 
    Traps:
-   - Check what `row()` returns: the index of `results` may not be `[2]`.
-     Read `row` at `tests/test_research.py:226` and adjust.
-   - robots.txt is cached on the fetcher instance (`self.robots`). If one
-     instance is shared across runs, the second run would reuse "disallow".
-     Confirm `run` builds a new fetcher per run; if it doesn't, use a
-     different path on the same host instead of changing robots.
+   - `row()` returns `(status, error, results)`.
+   - `run` builds a new `Fetcher()` for each run (`app/research.py:452`), so
+     the robots.txt cache does not carry over between the two runs.
    - There is no bind mount, so always build first.
    - Never run `docker compose up` or `down`.
    - The repo is public: use made-up names only.
