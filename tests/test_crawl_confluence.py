@@ -21,14 +21,15 @@ class Conf:
 
     def __init__(self):
         self.pages, self.restricted, self.atts, self.files, self.queue = {}, set(), {}, {}, {}
-        self.calls, self.auth, self.cqls = [], [], []
+        self.calls, self.auth, self.cqls, self.expands = [], [], [], []
 
-    def page(self, pid, html="<p>hello</p>", when="2026-01-01T00:00:00.000Z", ancestors=(), title=None):
+    def page(self, pid, html="<p>hello</p>", when="2026-01-01T00:00:00.000Z", ancestors=(), title=None, space="ENG"):
         # ancestors: ids, or (id, type) for non-page ancestors such as folders
         anc = [a if isinstance(a, tuple) else (a, "page") for a in ancestors]
         self.pages[pid] = {"id": pid, "type": "page", "title": title or f"Page {pid}", "status": "current",
                            "version": {"when": when}, "body": {"storage": {"value": html}},
-                           "ancestors": [{"id": i} for i, t in anc if t == "page"], "_v2": anc}
+                           "ancestors": [{"id": i} for i, t in anc if t == "page"], "_v2": anc,
+                           "space": {"key": space}}
 
     def attach(self, pid, aid, title="spec.docx", data=b"att", size=None, when="2026-01-01T00:00:00.000Z", number=None):
         self.atts.setdefault(pid, []).append({
@@ -40,6 +41,7 @@ class Conf:
     def __call__(self, request):
         path, q = request.url.path, dict(request.url.params)
         self.calls.append(path)
+        self.expands.append(q.get("expand"))
         self.auth.append(request.headers.get("authorization"))
         if self.queue.get(path):
             code, headers = self.queue[path][0] if len(self.queue[path]) == 1 and self.queue[path][0][0] >= 500 else self.queue[path].pop(0)
@@ -58,7 +60,11 @@ class Conf:
             since = re.search(r'lastmodified > "([^"]+)"', q["cql"])
             floor = datetime.strptime(since[1], "%Y/%m/%d %H:%M") if since else None
             items = [p for _, p in sorted(self.pages.items())] + [a for _, al in sorted(self.atts.items()) for a in al]
-            hits = [p for p in items if p["status"] == "current"  # CQL: current content only
+            scope = {k.replace('\\"', '"').casefold() for k in
+                     re.findall(r'"((?:[^"\\]|\\.)*)"', re.search(r"space in \(([^)]*)\)", q["cql"])[1])}
+            space = lambda p: (p if p["type"] == "page" else self.pages.get(p["container"]["id"], {})).get("space", {}).get("key", "")  # noqa: E731
+            hits = [p for p in items if p["status"] == "current"  # CQL: current content only, in the listed spaces
+                    and space(p).casefold() in scope
                     and (not floor or datetime.fromisoformat(p["version"]["when"]).replace(tzinfo=None) > floor)]
             start = int(q.get("start", 0))
             if start + 2 < len(hits):
@@ -323,6 +329,44 @@ def test_page_under_folder_fails_closed(cf):
     cf.page("p1", ancestors=[("f9", "folder")])
     c = crawl.crawl_confluence(cf.sid)
     assert c["skipped_restricted"] == 1 and "page:p1" not in live(cf.sid)
+
+
+def test_page_moved_out_of_scope_is_withdrawn(cf):
+    cf.page("p1")
+    cf.attach("p1", "a1")
+    crawl.crawl_confluence(cf.sid)
+    assert {"page:p1", "att:p1:a1"} <= set(live(cf.sid))
+    cf.pages["p1"]["space"] = {"key": "HR"}  # same id, another space: CQL on ENG no longer offers it
+    crawl.crawl_confluence(cf.sid)
+    assert live(cf.sid) == {}
+
+
+def test_retry_of_moved_page_is_not_ingested(cf):
+    cf.page("p1")
+    cf.queue[f"{API}/p1/restriction/byOperation/read"] = [(500, {})]
+    crawl.crawl_confluence(cf.sid)
+    assert src(cf.sid)[1]["retry_ids"] == ["p1"]
+    cf.queue.clear()
+    cf.pages["p1"]["space"] = {"key": "HR"}
+    crawl.crawl_confluence(cf.sid)
+    assert "page:p1" not in live(cf.sid)
+
+
+def test_space_key_matches_case_insensitively(cf):
+    with db.connect() as c:
+        c.execute("""update sources set config = config || '{"spaces": ["eng"]}' where id=%s""", (cf.sid,))
+    cf.page("p1")
+    crawl.crawl_confluence(cf.sid)
+    assert "page:p1" in live(cf.sid)
+
+
+def test_page_fetches_expand_space(cf):
+    cf.page("p1")
+    cf.attach("p1", "a1")
+    crawl.crawl_confluence(cf.sid)
+    crawl.crawl_confluence(cf.sid)  # the second run re-checks live documents by id
+    got = [e for e in cf.expands if e and "ancestors" in e]
+    assert got and all("space" in e for e in got)
 
 
 def test_attachment_moved_to_another_page_is_withdrawn(cf):
