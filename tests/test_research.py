@@ -260,6 +260,22 @@ def test_run_failure_is_recorded_without_the_key(web, cleanup, monkeypatch):
     assert row(rid)[:2] == ("failed", "BRAVE_API_KEY is not set")
 
 
+def test_empty_run_is_not_reused_from_cache(web, cleanup):
+    """A run where every page failed is retried, not served for 30 days (#141)."""
+    q = f"research test {uuid.uuid4().hex}"
+    web.results = ["https://docs.example/guide"]
+    web.html("docs.example", "/robots.txt", "User-agent: *\nDisallow: /\n")
+    first = make_row(q)
+    rs.run(first)
+    assert row(first)[0] == "done" and row(first)[2]["pages"] == []
+    assert row(first)[2]["skipped"][0]["error"] == "RobotsDisallowed"  # the empty run keeps its reasons
+    web.html("docs.example", "/robots.txt", "")
+    web.html("docs.example", "/guide")
+    second = make_row(q)
+    rs.run(second)
+    assert len(web.brave_calls) == 2 and len(row(second)[2]["pages"]) == 1
+
+
 def test_cache_hit_within_30_days_skips_brave(web, cleanup):
     q = f"research test {uuid.uuid4().hex}"
     web.results = ["https://docs.example/guide"]
