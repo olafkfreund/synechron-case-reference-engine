@@ -315,3 +315,11 @@ def test_name_or_alias_shared_with_another_client_refused(reg):
     c.post("/admin/clients", data={"name": f"Insurer {reg}", "aliases": f"Acme {reg}", "anonymised_label": "an insurer"})
     r = c.post("/admin/clients", data={"name": f"acme-{reg}", "anonymised_label": "a bank"})
     assert r.status_code == 400 and "already used" in r.text
+
+
+@pytest.mark.parametrize("ch", ["\u00ad", "\u200b", "\u2060", "\ufeff", "\u202e"])
+def test_invisible_characters_inside_a_name(ch):
+    reg = [C("Zorp Bank", ["Zorp"], label="a bank")]
+    t = f"Run for Zo{ch}rp"
+    assert an.blocked(t, reg) == ["Zorp"]
+    assert an.apply(t, reg) == "Run for a bank"
