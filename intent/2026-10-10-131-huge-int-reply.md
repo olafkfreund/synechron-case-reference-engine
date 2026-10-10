@@ -36,5 +36,7 @@ case has already been reopened, so a stale case stays in review.
 
 ## Open questions
 
-None. The fix caps the regex at a plausible length (12 digits with
-separators), so longer runs don't match and the item counts as malformed.
+None. A first number longer than a plausible size (more than 12 digits,
+separators included) counts the item as malformed. The fix doesn't just cap
+the regex, because a capped match would take the first 12 digits of a longer
+run, which is an invented value.
