@@ -22,6 +22,8 @@ SESSION_MAX_AGE = 8 * 3600
 UPLOAD_MAGIC = {".docx": b"PK\x03\x04", ".pptx": b"PK\x03\x04", ".pdf": b"%PDF"}
 BODY_CAP = 1024 * 1024  # non-upload POSTs (forms)
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+# clickjacking: a sibling subdomain could frame /review and borrow a reviewer's click (#146)
+NO_FRAME = {"X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'"}
 
 
 @dataclass(frozen=True)
@@ -125,13 +127,19 @@ def create_app() -> FastAPI:
             # CSRF: SameSite=lax still sends the cookie from sibling subdomains, so check the origin
             o = request.headers.get("origin")
             if (o or "").rstrip("/") != origin and not (o is None and request.headers.get("sec-fetch-site") == "same-origin"):
-                return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
+                response = JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
+                response.headers.update(NO_FRAME)
+                return response
             # size before parsing: FastAPI spools a multipart body before auth runs
             cap = upload_cap() if request.url.path == "/admin/upload" else BODY_CAP
             length = request.headers.get("content-length")
             if length is None or not length.isdigit() or int(length) > cap + 64 * 1024:
-                return JSONResponse({"detail": f"body missing a length or larger than {cap} bytes"}, status_code=413)
-        return await call_next(request)
+                response = JSONResponse({"detail": f"body missing a length or larger than {cap} bytes"}, status_code=413)
+                response.headers.update(NO_FRAME)
+                return response
+        response = await call_next(request)
+        response.headers.update(NO_FRAME)
+        return response
 
     @app.exception_handler(401)
     async def unauthorized(request: Request, exc):
