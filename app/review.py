@@ -268,7 +268,7 @@ def combine(members, pick):
     """One case from checked members [(case_id, document_id, ReferenceCase)]; pick maps field -> case_id.
 
     No model is called. Scalars, duration, team size and period are each taken whole from one member
-    (the first unless picked); capabilities and tech are the de-duplicated union; outcomes are dropped.
+    (the first sourced member unless picked); capabilities and tech are the de-duplicated union; outcomes are dropped.
     """
     def stamped(item, doc_id):
         item = copy.deepcopy(item)
@@ -278,15 +278,19 @@ def combine(members, pick):
     by_id = {cid: (doc, case) for cid, doc, case in members}
     out = {}
     for f in MERGE_FIELDS:
-        doc, case = by_id[pick.get(f, members[0][0])]
+        default = next((cid for cid, _, c in members if not getattr(c, f).unsourced), members[0][0])
+        doc, case = by_id[pick.get(f, default)]
         out[f] = stamped(getattr(case, f), doc)
     for f in ("capabilities", "tech_stack"):
-        seen, items = set(), []
+        seen, items = {}, []  # casefolded value -> index in items
         for _, doc, case in members:
             for i in getattr(case, f):
-                if (k := (i.value or "").casefold()) not in seen:
-                    seen.add(k)
+                k = (i.value or "").casefold()
+                if k not in seen:
+                    seen[k] = len(items)
                     items.append(stamped(i, doc))
+                elif items[seen[k]].unsourced and not i.unsourced:
+                    items[seen[k]] = stamped(i, doc)  # same position, the sourced copy's origin (#140)
         out[f] = items
     uniq = lambda xs: list(dict.fromkeys(x for x in xs if x))
     notes = [f"merged from {len(members)} contracts: write a summary",
