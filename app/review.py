@@ -26,7 +26,9 @@ SCALARS = ("title", "client_mention", "industry", "region", "engagement_type", "
 INTS = ("duration_months", "team_size")
 LISTS = ("capabilities", "tech_stack", "outcomes")
 # a case can be edited/approved/rejected only while it is new or its approval has expired
-OPEN = "(c.status = 'extracted' or (c.status = 'approved' and c.review_due < now()))"
+OPEN = "(c.status = 'extracted' or (c.status = 'approved' and c.review_due <= now() + interval '30 days'))"
+# the queue lists only new and expired cases; due-soon ones have their own list (#143)
+QUEUE = "(c.status = 'extracted' or (c.status = 'approved' and c.review_due < now()))"
 # need-to-know: every document behind a case must be live and open to the user;
 # a member is never shown on its own while merged (its content is inside the merged case)
 VISIBLE = ("c.merged_into is null and coalesce(c.member_count, 1) = (select count(*) from cases m "
@@ -117,7 +119,7 @@ def review_list(request: Request, user: User = Depends(require("reviewer"))):
     with db.connect() as conn:
         found = conn.execute(
             f"select c.id, c.status, c.data, d.title, c.member_count from cases c left join documents d on d.id = c.document_id "
-            f"where {REVIEWABLE} and {OPEN} order by c.id", (list(user.groups),)).fetchall()
+            f"where {REVIEWABLE} and {QUEUE} order by c.id", (list(user.groups),)).fetchall()
         # reminders: approvals that expire within 30 days (the list above only has the expired ones)
         soon = conn.execute(
             "select c.id, c.data, d.title, c.review_due, c.member_count from cases c left join documents d on d.id = c.document_id "
@@ -134,7 +136,8 @@ def review_list(request: Request, user: User = Depends(require("reviewer"))):
 def review_detail(cid: int, request: Request, user: User = Depends(require("reviewer"))):
     with db.connect() as conn:
         r = conn.execute(
-            f"select c.data, c.status, d.title, d.external_id, s.name, {OPEN}, {VERSION}, c.member_count, c.basis "
+            f"select c.data, c.status, d.title, d.external_id, s.name, {OPEN}, {VERSION}, c.member_count, c.basis, "
+            f"case when c.review_due > now() then c.review_due end "
             f"from cases c left join documents d on d.id = c.document_id left join sources s on s.id = d.source_id "
             f"where c.id = %s and {REVIEWABLE}", (cid, list(user.groups))).fetchone()
         registry = anonymise.load_clients(conn)
@@ -154,7 +157,8 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
                 unlisted=unlisted, members=members, cands=cands,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
                 external_id=r[3], source=r[4], merged=bool(members),
-                reviewable=r[5] and not any(m[6] for m in members), v=r[6])
+                reviewable=r[5] and not any(m[6] for m in members), v=r[6],
+                due=r[9].strftime("%Y-%m-%d") if r[9] else None)  # in date by the database clock, as search judges it
 
 
 @router.post("/review/{cid}/edit")
@@ -213,6 +217,8 @@ def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: 
         check(case, text)
         fix_summary(case)
         save(conn, cid, case)
+        conn.execute("update cases set status='extracted', approved_by=null, approved_at=null, review_due=null "
+                     "where id=%s and status='approved' and review_due > now()", (cid,))  # unreviewed edits never go live (#143)
     return RedirectResponse(f"/review/{cid}", status_code=303)
 
 
