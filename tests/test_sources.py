@@ -191,7 +191,8 @@ def test_crawl_now_shown_only_on_enabled_sources(env):  # noqa: F811
                              (uuid.uuid4().hex, Jsonb({"bucket": "b"}), en)).fetchone()[0] for en in (True, False))
     try:
         t = client([ADMIN]).get("/admin/sources").text
-        assert f'action="/admin/sources/{on}/crawl"' in t and f'action="/admin/sources/{off}/crawl"' not in t
+        assert f'action="/admin/sources/{on}/crawl"' in t
+        assert f'action="/admin/sources/{off}/crawl"' not in t
     finally:
         with db.connect() as c:
             c.execute("delete from sources where id = any(%s)", ([on, off],))
