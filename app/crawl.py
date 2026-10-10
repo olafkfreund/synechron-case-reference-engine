@@ -27,18 +27,19 @@ def crawl_s3(source_id: int) -> dict:
         # one crawl per source: the schedule and a manual trigger must not race (released on close)
         if not lock.execute("select pg_try_advisory_lock(2, %s)", (source_id,)).fetchone()[0]:
             return {"status": "running"}
-        config, cursor = lock.execute(
-            "select config, cursor from sources where id=%s", (source_id,)).fetchone()
+        config, cursor, last = lock.execute(
+            "select config, cursor, last_counts from sources where id=%s", (source_id,)).fetchone()
         known = {r[0] for r in lock.execute(
             "select external_id from documents where source_id=%s", (source_id,))}
         since = datetime.fromisoformat(cursor) - CURSOR_SLACK if cursor else None
+        prev_retry = set((last or {}).get("retry_ids", []))  # last run's failures: never skipped on the cursor (#121)
         s3 = boto3.client("s3")
         seen, newest = [], cursor
         exts = {e.lower().lstrip(".") for e in config.get("include_ext", ["docx", "pptx", "pdf"])}
         cap = int(os.environ.get("S3_MAX_BYTES", 50 * 1024 * 1024))
         counts = {"new": 0, "updated": 0, "skipped": 0, "deleted": 0, "failed": 0,
                   "skipped_type": 0, "skipped_too_large": 0}
-        failed = []
+        failed, retry = [], []
         for page in s3.get_paginator("list_objects_v2").paginate(
                 Bucket=config["bucket"], Prefix=config.get("prefix", "")):
             for obj in page.get("Contents", []):
@@ -55,13 +56,14 @@ def crawl_s3(source_id: int) -> dict:
                     continue
                 modified = obj["LastModified"]
                 newest = max(newest or modified.isoformat(), modified.isoformat())
-                if key in known and since and modified < since:
+                if key in known and since and modified < since and key not in prev_retry:
                     continue
                 try:
                     body = s3.get_object(Bucket=config["bucket"], Key=key)["Body"].read()
                     counts[ingest(source_id, key, key.rsplit("/", 1)[-1], body)] += 1
                 except Exception as e:  # noqa: BLE001 - one bad file must not stop the crawl
                     counts["failed"] += 1
+                    retry.append(key)  # every one, uncapped: failed_keys below is display only
                     if len(failed) < MAX_FAILED_KEYS:
                         failed.append({"key": key, "error": type(e).__name__})  # no message: may quote the file
 
@@ -81,7 +83,7 @@ def crawl_s3(source_id: int) -> dict:
                 # an empty listing with live documents is a prefix or permission mistake, not a mass delete
                 counts["empty_listing"] = True
             conn.execute("update sources set cursor=%s, last_run_at=now(), last_counts=%s where id=%s",
-                         (newest, Jsonb({**counts, "failed_keys": failed}), source_id))
+                         (newest, Jsonb({**counts, "failed_keys": failed, "retry_ids": retry}), source_id))
     return counts
 
 
