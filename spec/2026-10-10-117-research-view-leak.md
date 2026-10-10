@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 117
 intent: intent/2026-10-10-117-research-view-leak.md
 ---
