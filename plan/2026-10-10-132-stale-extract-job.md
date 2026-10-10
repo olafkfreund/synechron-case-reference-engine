@@ -101,3 +101,6 @@ Coder handoff: yes. Three steps edit files, in four files.
 
 Revert the branch's commits. The payload's checksum stays harmless, because
 nothing else reads it.
+
+## Deviations
+- Step 1: a small `cases_for(did)` helper in `tests/test_extract.py` is shared by the three new extract tests.

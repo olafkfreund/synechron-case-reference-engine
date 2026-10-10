@@ -138,13 +138,19 @@ def build(full_text: str, data_class: str, basis: str = "delivered", basis_reaso
     return case
 
 
-def extract(document_id: int, basis: str = "delivered", basis_reason: str = "") -> None:
+def extract(document_id: int, basis: str = "delivered", basis_reason: str = "", checksum: str | None = None) -> None:
     with db.connect() as conn:
-        row = conn.execute("select d.text, s.data_class from documents d join sources s on s.id=d.source_id where d.id=%s", (document_id,)).fetchone()
+        row = conn.execute("select d.text, s.data_class, d.checksum from documents d join sources s on s.id=d.source_id where d.id=%s", (document_id,)).fetchone()
         if not row:
             raise LookupError(f"document {document_id} not found")
+        if checksum and row[2] != checksum:
+            return  # a newer version replaced this one (#132)
         case = build(row[0], row[1], basis, basis_reason)
         data = case.model_dump()
+        # the version this job was queued for must still be current (#132)
+        if checksum and not conn.execute("select 1 from documents where id=%s and checksum=%s for share",
+                                         (document_id, checksum)).fetchone():
+            return
         conn.execute(
             "insert into cases(document_id, data, summary, search_text, basis, status) "
             "values (%s,%s,%s,%s,%s,'extracted') on conflict (document_id) do update set "
