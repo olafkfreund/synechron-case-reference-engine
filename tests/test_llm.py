@@ -108,6 +108,17 @@ def test_policy_matrix(dc, dest, approval):
             c.commit()
 
 
+def test_override_checks_env_base(monkeypatch):
+    monkeypatch.setenv("OLLAMA_API_BASE", "https://ollama.com")
+    for dest in ("local", "our-cloud"):
+        with pytest.raises(RuntimeError, match="contradicts"):
+            llm.destination(LOCAL, {"destination": dest})
+    assert llm.destination(LOCAL, {}) == "third-party"
+    assert llm.destination(LOCAL, {"destination": "local", "api_base": "http://host.docker.internal:11434"}) == "local"
+    with pytest.raises(RuntimeError, match="contradicts"):  # any ollama.com subdomain is the cloud too
+        llm.destination(LOCAL, {"destination": "local", "api_base": "https://api.ollama.com"})
+
+
 def test_policy_error_has_no_content_and_blocks_before_request(monkeypatch):
     from app import db
     db.init()

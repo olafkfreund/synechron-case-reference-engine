@@ -28,6 +28,18 @@ def profile(alias: str) -> dict:
     return opts
 
 
+def effective_base(model: str, opts: dict) -> str:
+    """Where LiteLLM sends the request: api_base, else OLLAMA_API_BASE (which LiteLLM reads) for Ollama models (#130)."""
+    if opts.get("api_base"):
+        return opts["api_base"]
+    return (os.environ.get("OLLAMA_API_BASE") or "http://localhost:11434") if model.startswith("ollama") else ""
+
+
+def _ollama_cloud(base: str) -> bool:
+    host = urlparse(base).hostname or ""
+    return host == "ollama.com" or host.endswith(".ollama.com")
+
+
 def destination(model: str, opts: dict) -> str:
     """local | our-cloud | third-party. Fails closed: anything unknown is third-party."""
     dest = opts.get("destination")
@@ -35,14 +47,14 @@ def destination(model: str, opts: dict) -> str:
         return dest
     if dest in ("local", "our-cloud"):
         # an override may name a host the inference cannot see (Docker), never contradict a known third party
-        if "cloud" in model.lower() or urlparse(opts.get("api_base", "")).hostname == "ollama.com":
+        if "cloud" in model.lower() or _ollama_cloud(effective_base(model, opts)):
             raise RuntimeError(f"destination {dest!r} contradicts the model or api_base; fix the *_OPTIONS")
         return dest
     if model.startswith("bedrock/"):
         return "our-cloud"
     # "cloud" anywhere (name-cloud, name:cloud, any case): the local Ollama forwards those to ollama.com
     if model.startswith("ollama") and "cloud" not in model.lower():
-        base = opts.get("api_base") or os.environ.get("OLLAMA_API_BASE") or "http://localhost:11434"
+        base = effective_base(model, opts)
         if urlparse(base).hostname in ("localhost", "127.0.0.1", "::1"):
             return "local"
     return "third-party"
@@ -82,7 +94,7 @@ def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: t
             if k in opts:
                 extra[k] = opts[k]
         # not OLLAMA_API_KEY: LiteLLM reads that one itself and sends it to every Ollama host
-        if urlparse(opts.get("api_base", "")).hostname == "ollama.com" and os.environ.get("OLLAMA_CLOUD_KEY"):
+        if _ollama_cloud(effective_base(model, opts)) and os.environ.get("OLLAMA_CLOUD_KEY"):
             extra["api_key"] = os.environ["OLLAMA_CLOUD_KEY"]
     resp = litellm.completion(
         model=model,
