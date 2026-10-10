@@ -440,6 +440,7 @@ def run(research_id: int) -> None:
         query = conn.execute("update research set status='running' where id=%s returning query", (research_id,)).fetchone()[0]
         cached = conn.execute(
             "select results, retrieved_at from research where query=%s and status='done' and id<>%s "
+            "and jsonb_array_length(coalesce(results->'pages', '[]'::jsonb)) > 0 "  # a run that got nothing is retried (#141)
             f"and retrieved_at > now() - interval '{CACHE_DAYS} days' order by id desc limit 1", (query, research_id)).fetchone()
     try:
         if cached:
