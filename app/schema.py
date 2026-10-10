@@ -170,6 +170,7 @@ class Extraction(_Model):
 
 _TEXTS = ("title", "client_mention", "industry", "region", "engagement_type", "challenge", "solution")
 _INTS = ("duration_months", "team_size")
+MAX_INT_CHARS = 12  # "1,000,000" fits; a longer run is a runaway reply, not a count (#131)
 FIELDS = (*_TEXTS, *_INTS, "period_start", "period_end", "capability", "technology", "outcome", "organisation")
 
 
@@ -184,7 +185,7 @@ def assemble(x: Extraction) -> tuple[ReferenceCase, list[str]]:
         elif f in _INTS:
             # the first number only: joining digits would turn "18 months to 2 years" into an invented 182
             first = re.search(r"\d[\d,]*", v)
-            if not first:
+            if not first or len(first.group()) > MAX_INT_CHARS:  # int() would raise past 4300 digits (#131)
                 bad += 1
             elif getattr(c, f).value is None:  # first value wins
                 setattr(c, f, Sourced[int](value=int(first.group().replace(",", "")), source_quote=q))
