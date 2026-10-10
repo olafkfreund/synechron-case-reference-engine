@@ -38,6 +38,20 @@ def test_approvals_admin_only_bounded_and_revocable(env):  # noqa: F811
         cleanup(model)
 
 
+def test_expiry_exactly_12_months_ahead_is_accepted(env):  # noqa: F811
+    db.init()
+    model, a = f"openai/m-{uuid.uuid4().hex[:8]}", client([ADMIN])
+    with db.connect() as c:
+        limit = c.execute("select (now() + interval '12 months')::date").fetchone()[0]
+    form = lambda d: {"model": model, "data_class": "confidential", "expires": d.isoformat()}  # noqa: E731
+    try:
+        assert a.post("/admin/models", data=form(limit), follow_redirects=False).status_code == 303
+        assert a.post("/admin/models", data=form(limit + timedelta(days=1))).status_code == 400
+        assert f'max="{limit.isoformat()}"' in a.get("/admin/models").text
+    finally:
+        cleanup(model)
+
+
 def test_source_data_class_saved_and_validated(env):  # noqa: F811
     db.init()
     name, a = f"s3-{uuid.uuid4().hex[:8]}", client([ADMIN])
