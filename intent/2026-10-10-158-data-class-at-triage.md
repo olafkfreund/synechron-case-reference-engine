@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 158
 author: olafkfreund
 ---
@@ -58,3 +58,5 @@ class when the job runs.
    which is the real exposure. The seconds-long call window is the same
    one any in-flight request has when a setting changes, and B would make
    admin saves wait on model latency.
+
+**Decision (approved by olafkfreund, 2026-10-10): A.**
