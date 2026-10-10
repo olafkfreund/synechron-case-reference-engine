@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 128
 author: olafkfreund
 ---
@@ -49,3 +49,7 @@ are unchanged.
 
 None. When a quote is supplied, the edit clears the field's `document_id`,
 and `check` resolves it.
+
+## Approved answers
+
+None needed.
