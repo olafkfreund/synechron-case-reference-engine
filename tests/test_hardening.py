@@ -267,3 +267,15 @@ def test_print_calls_are_the_known_content_free_ones():
             if re.search(r"\bprint\(", line):
                 found.setdefault(str(path.relative_to(ROOT)), []).append(line.strip())
     assert found == allowed
+
+
+def test_every_response_refuses_framing(env):
+    """Clickjacking: no page may be framed, refusals and static files included (#146)."""
+    rs = [client().get("/healthz"), client().get("/static/portal.css"),
+          client().get("/review", headers={"Accept": "text/html"}, follow_redirects=False),
+          client([REV]).get("/review"),
+          client([REV], origin="http://evil.example").post("/review/1/approve")]
+    assert [r.status_code for r in rs] == [200, 200, 303, 200, 403]
+    for r in rs:
+        assert r.headers["x-frame-options"] == "DENY"
+        assert r.headers["content-security-policy"] == "frame-ancestors 'none'"
