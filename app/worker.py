@@ -8,7 +8,7 @@ from app import crawl, db, extract, llm, research
 MAX_ATTEMPTS = 3
 HEARTBEAT = 60  # seconds; 15 ticks inside the shortest stale window
 HANDLERS = {
-    "extract": lambda p: extract.extract(p["document_id"], p.get("basis", "delivered"), p.get("basis_reason", "")),
+    "extract": lambda p: extract.extract(p["document_id"], p.get("basis", "delivered"), p.get("basis_reason", ""), p.get("checksum")),
     "crawl_s3": lambda p: crawl.crawl_s3(p["source_id"]),
     "crawl_sharepoint": lambda p: crawl.crawl_sharepoint(p["source_id"]),
     "crawl_confluence": lambda p: crawl.crawl_confluence(p["source_id"]),
