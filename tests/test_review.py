@@ -373,6 +373,48 @@ def merged_of(cid):
         return c.execute("select merged_into from cases where id=%s", (cid,)).fetchone()[0]
 
 
+def _merged(make):
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    new = int(merge(client(R), [a, b]).headers["location"].rsplit("/", 1)[1])
+    return new, b
+
+
+def _data_and_doc(cid, member=None):
+    with db.connect() as c:
+        data = c.execute("select data from cases where id=%s", (cid,)).fetchone()[0]
+        doc = c.execute("select document_id from cases where id=%s", (member,)).fetchone()[0] if member else None
+    return data, doc
+
+
+def test_merged_edit_can_quote_another_member(make, acme):
+    new, b = _merged(make)
+    client(R).post(f"/review/{new}/edit", data={"field": "industry", "value": "Payments",
+                   "quote": "Acme moved payments to the cloud", "v": ver(new)})
+    data, doc_b = _data_and_doc(new, b)
+    assert data["industry"]["unsourced"] is False and data["industry"]["document_id"] == doc_b
+
+
+def test_merged_edit_quote_in_no_member_is_unsourced(make, acme):
+    new, _ = _merged(make)
+    client(R).post(f"/review/{new}/edit", data={"field": "industry", "value": "Payments",
+                   "quote": "this sentence is in neither of the two contracts", "v": ver(new)})
+    data, _ = _data_and_doc(new)
+    assert data["industry"]["unsourced"] is True and data["industry"]["document_id"] is None
+
+
+def test_merged_edit_same_quote_keeps_origin(make, acme):
+    new, b = _merged(make)
+    _, doc_b = _data_and_doc(new, b)
+    q = "for a UK bank"  # in both members: clearing the origin would move it to the first, a
+    with db.connect() as c:
+        c.execute("update cases set data = jsonb_set(jsonb_set(data, '{title,document_id}', to_jsonb(%s::bigint)), "
+                  "'{title,source_quote}', to_jsonb(%s::text)) where id=%s", (doc_b, q, new))
+    client(R).post(f"/review/{new}/edit", data={"field": "title", "value": "UK bank", "quote": "for a\r\nUK  bank",
+                                                "v": ver(new)})  # the same quote, as a textarea posts it
+    after, _ = _data_and_doc(new)
+    assert after["title"]["value"] == "UK bank" and after["title"]["document_id"] == doc_b
+
+
 def test_merge_combines_checked_fields(make, acme):
     a = eng(make, TEXT_A, ["Onboarding", "Payments"], ["Python", "AWS"])
     b = eng(make, TEXT_B, ["payments", "Cloud"], ["Rust", "python"])
