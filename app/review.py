@@ -204,6 +204,8 @@ def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: 
             else:
                 raise HTTPException(400, "unknown field")
             if obj is not None and quote is not None:
+                if quote != obj.source_quote:
+                    obj.document_id = None  # a new quote has no origin yet: check() finds the member that sources it (#128)
                 obj.source_quote = quote
             case = ReferenceCase.model_validate(case.model_dump())  # re-run validators (summary length)
         except (ValueError, IndexError, ValidationError):  # no input echoed back
