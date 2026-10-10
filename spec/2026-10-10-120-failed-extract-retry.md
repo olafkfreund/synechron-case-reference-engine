@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 120
 intent: intent/2026-10-10-120-failed-extract-retry.md
 ---
