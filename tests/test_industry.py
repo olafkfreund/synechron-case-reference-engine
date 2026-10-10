@@ -132,6 +132,9 @@ def test_pptx_industry_slide_shows_the_omitted_note(rows, approved, reg):
     _, out = slides(gen(rid, [approved()], "pptx").content)
     st = out[1]["Statements"]
     assert st[0].startswith("Supported out of the box") and st[-1] == "1 public statement omitted: it named a protected client"
+    many = rows([claim(f"{Q1} {i}") for i in range(render.SLIDE_ITEMS + 1)] + [claim(f"{reg.replace('o', 'ö')} runs this daily")])
+    st = slides(gen(many, [approved()], "pptx").content)[1][1]["Statements"]
+    assert len(st) == render.SLIDE_ITEMS + 1 and st[-1].startswith("1 public statement omitted")  # the cap never cuts the note
 
 
 def test_script_in_a_quote_is_escaped_everywhere(rows, approved):

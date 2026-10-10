@@ -66,3 +66,9 @@ The full suite must pass, and the two new assertions must fail on main.
 ## Rollback
 
 Revert the commit.
+
+## Deviations
+
+- **Review fix (test):** the dedicated-layout test also covers six normal
+  claims plus one that names the client. The slide then holds `SLIDE_ITEMS`
+  statements plus the note, so the cap never cuts the note.
