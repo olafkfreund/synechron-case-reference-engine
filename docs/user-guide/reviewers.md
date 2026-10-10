@@ -134,7 +134,8 @@ approved again.
 **Steps**
 
 1. Check **Due for re-review within 30 days** on the queue page.
-2. Open each case and review it as above.
+2. Open each case. Approve it as it is to renew it for 12 months; it stays in search. If you edit it,
+   it leaves search until you approve it again.
 
 **What you see**
 
