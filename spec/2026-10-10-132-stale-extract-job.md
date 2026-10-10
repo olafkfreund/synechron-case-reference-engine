@@ -74,7 +74,7 @@ it. Nothing is logged, matching how the other skips in `ingest()` behave.
 
 ## Verification
 
-New tests in `tests/test_extract.py`. Both must fail on main.
+New tests that must fail on main:
 
 - `test_stale_checksum_writes_no_case`: the document has checksum `x`.
   `extract(did, checksum="old")` leaves no case row, and the model fake is never
@@ -82,15 +82,13 @@ New tests in `tests/test_extract.py`. Both must fail on main.
 - `test_version_replaced_during_model_call_writes_no_case`: the model fake
   updates `documents.checksum` to `y` in its own connection, then returns a
   good reply. `extract(did, checksum="x")` leaves no case row.
+- `test_extract_handler_passes_checksum` in `tests/test_worker.py`: with
+  `extract.extract` monkeypatched, the handler hands `p["checksum"]` through.
 
-New tests that must pass on main and after the fix:
+This test must pass on main and after the fix:
 
 - `test_no_checksum_still_extracts` in `tests/test_extract.py`:
   `extract(did)` with no checksum still writes an `extracted` case, so old
   jobs are unaffected.
-- `test_extract_handler_passes_checksum` in `tests/test_worker.py`: the
-  handler hands `p["checksum"]` to `extract.extract`, checked with a
-  monkeypatched `extract.extract`. On main, the 3-argument handler doesn't pass
-  the checksum, so this test fails on main.
 
 The full suite must pass.
