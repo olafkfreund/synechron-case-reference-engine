@@ -386,6 +386,8 @@ def do_merge(members, pick, user):
 def unmerge(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))):
     """Any status, even with a withdrawn member. The merged row is kept: generations and research point at it."""
     with db.connect() as conn:
+        # members before M, the order ingest and the untick take via reopen_merged, or they deadlock (#144)
+        conn.execute("select 1 from cases where merged_into = %s order by id for update", (cid,))
         row = conn.execute(
             f"select {VERSION} from cases c where c.id = %s and {REVIEWABLE} and c.document_id is null for update of c",
             (cid, list(user.groups))).fetchone()

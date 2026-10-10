@@ -393,7 +393,7 @@ def test_member_change_during_merged_approve_reopens_it(env):
     finally:
         first.close()  # releases the lock (rolls back on failure), or teardown blocks on it
     t.join(10)
-    assert status(new) == "extracted"
+    assert not t.is_alive() and status(new) == "extracted"
 
 
 def _wait_for_lock_wait(conn, timeout=10):

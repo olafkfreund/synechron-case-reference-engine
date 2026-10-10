@@ -86,3 +86,7 @@ Two steps, two files: implement it yourself, no coder handoff.
 
 Revert the commit. Restoring `status = 'approved'` brings back the race, but
 nothing else depends on it. There is no schema or data change.
+
+## Deviations
+- Review: the spec's "no new deadlock" missed `unmerge`, which locked M before its members (`app/review.py`). With M now matched while `extracted`, ingest (member, then M) and unmerge (M, then members) could deadlock. `unmerge` now locks the members `order by id for update` first; `test_unmerge_locks_members_before_the_merged_case` fails without it. A rejected M is reachable (unmerge sets it), so the `<> 'rejected'` guard does real work.
+- The step 1 test also asserts the ingest thread finished.
