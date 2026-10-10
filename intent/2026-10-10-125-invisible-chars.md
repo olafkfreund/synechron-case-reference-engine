@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 125
 author: olafkfreund
 ---
@@ -62,3 +62,8 @@ fail-closed check. It reaches every output format, the search summaries
    bidirectional controls (U+202A-E, U+2066-9), which can reorder how a name
    is displayed. **Recommendation: all of Cf.** A list would have to be kept up
    to date by hand.
+
+## Approved answers
+
+1. A: drop format characters in fold() and in the text apply() rewrites.
+2. All of Unicode category Cf.
