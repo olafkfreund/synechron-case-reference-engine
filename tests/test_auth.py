@@ -2,10 +2,11 @@ import json
 import re
 import time
 import uuid
-from base64 import b64encode
+from base64 import b64decode, b64encode
 
 import boto3
 import pytest
+from fastapi.responses import RedirectResponse
 from fastapi.testclient import TestClient
 from itsdangerous import TimestampSigner
 from moto import mock_aws
@@ -243,9 +244,38 @@ def test_login_after_cutoff_works(env):
 
 def test_cookie_without_iat(env):
     sub = fresh()
-    assert client([USER], sub=sub, iat=False).get("/me").status_code == 200  # pre-deploy cookie, no row
+    assert client([USER], sub=sub, iat=False).get("/me").status_code == 401  # fail closed (#145)
     cut(sub)
     assert client([USER], sub=sub, iat=False).get("/me").status_code == 401
+
+
+def test_session_expires_after_max_age(env):
+    """Rolling renewal must not keep groups the IdP removed: a session has an absolute lifetime (#145)."""
+    old = time.time() - main.SESSION_MAX_AGE - 5
+    sub = fresh()  # no cutoff row: only the age can refuse it
+    assert client([USER], sub=sub, iat=old).get("/me").status_code == 401
+    r = client([USER], sub=sub, iat=old).get("/me", headers={"Accept": "text/html"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login" and "session=null" in r.headers["set-cookie"]
+    assert client([USER], sub=fresh(), iat=time.time() - main.SESSION_MAX_AGE + 60).get("/me").status_code == 200
+    for bad in (time.time() + 3600, float("inf"), float("nan")):  # a forged iat cannot make a session endless
+        assert client([USER], sub=fresh(), iat=bad).get("/me").status_code == 401
+
+
+def test_login_drops_existing_user(env, monkeypatch):
+    for k, v in dict(OIDC_METADATA_URL="http://idp/.well-known", OIDC_CLIENT_ID="c",
+                     OIDC_CLIENT_SECRET="s").items():
+        monkeypatch.setenv(k, v)
+    c = client([USER])
+
+    async def fake(request, redirect_uri):
+        request.session["_state_oidc_x"] = {"data": {}}  # as authlib does
+        return RedirectResponse("http://idp/authorize", status_code=302)
+    monkeypatch.setattr(c.app.state.oauth.oidc, "authorize_redirect", fake)
+    assert c.get("/me").status_code == 200
+    r = c.get("/login", follow_redirects=False)
+    assert r.status_code == 302
+    sent = json.loads(b64decode(TimestampSigner(SECRET).unsign(r.cookies["session"])))
+    assert "_state_oidc_x" in sent and "user" not in sent
 
 
 def test_cut_sessions_is_per_user(env):
