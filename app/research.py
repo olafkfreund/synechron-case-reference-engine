@@ -163,7 +163,8 @@ def visible_claims(claims, clients) -> tuple[list[dict], int]:
     """The download's rule (render.industry_section) for the screen: apply(), then drop what blocked() still finds."""
     out = []
     for c in claims:
-        c = {**c, "quote": anonymise.apply(c.get("quote", ""), clients), "statement": anonymise.apply(c.get("statement", ""), clients)}
+        c = {**c, "quote": anonymise.apply(str(c.get("quote") or ""), clients),
+             "statement": anonymise.apply(str(c.get("statement") or ""), clients)}
         if not anonymise.blocked("\n".join(str(c.get(k, "")) for k in ("quote", "statement", "publisher", "url")), clients):
             out.append(c)
     return out, len(claims) - len(out)
@@ -189,7 +190,8 @@ def research_view(rid: int, request: Request, user: User = Depends(require("user
         groups.setdefault(c["publisher"], []).append(c)
     pages = [p for p in row[3].get("pages", []) if not anonymise.blocked(f"{p.get('publisher', '')}\n{p.get('url', '')}", clients)]
     skipped = row[3].get("skipped", []) + [{}] * (len(row[3].get("pages", [])) - len(pages))
-    return page(request, "research_view.html", user, query=row[0], status=row[1], error=row[2], ours=ours,
+    query = "[withheld]" if anonymise.blocked(row[0], clients) else row[0]  # a client protected after it was sent
+    return page(request, "research_view.html", user, query=query, status=row[1], error=row[2], ours=ours,
                 pages=pages, skipped=skipped, omitted=omitted, claims=claims, groups=groups,
                 note=row[3].get("note"), case_id=row[4] if case else None, research_id=rid)
 

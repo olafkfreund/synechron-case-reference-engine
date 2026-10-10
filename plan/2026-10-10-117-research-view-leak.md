@@ -92,3 +92,14 @@ must pass in full, and the new test must fail on main.
 ## Rollback
 
 Revert the commits. Nothing is stored or migrated.
+
+## Deviations
+
+- **Review fix (should-fix):** the query line is the one other field the view
+  prints. It is now shown as "[withheld]" when `blocked()` finds a protected
+  name in it, for example when a client was made protected after the research
+  was sent.
+- **Review fix (nit):** `apply()` gets `str(c.get(k) or "")`, so a stored
+  `null` quote doesn't raise. This is the same as the download.
+- **Test:** the name check is case-insensitive, and a fourth claim names the
+  client only in its URL. That makes "2 statement(s) not shown".

@@ -180,12 +180,13 @@ def test_view_hides_protected_names_in_claims_and_sources(reg):
     finish(loc, [
         {**base, "quote": f"{reg} runs this nightly in production", "url": "https://v.example/a", "publisher": "v.example"},
         {**base, "quote": "dropped publisher claim", "url": "https://w.example/b", "publisher": f"{reg}.example"},
-        {**base, "quote": "clean claim quote", "url": "https://v.example/c", "publisher": "v.example"}],
+        {**base, "quote": "clean claim quote", "url": "https://v.example/c", "publisher": "v.example"},
+        {**base, "quote": "url only claim", "url": f"https://v.example/{reg}", "publisher": "v.example"}],
         pages=[{"url": f"https://{reg}.example/x", "publisher": "w.example", "retrieved_at": "2026-10-01T00:00:00+00:00"},
                {"url": "https://v.example/c", "publisher": "v.example", "retrieved_at": "2026-10-01T00:00:00+00:00"}])
     t = c.get(loc).text
-    assert reg not in t
-    assert "1 statement(s) not shown" in t and "1 source(s) skipped." in t
+    assert reg.lower() not in t.lower()
+    assert "2 statement(s) not shown" in t and "1 source(s) skipped." in t
     assert "clean claim quote" in t and "runs this nightly in production" in t
 
 
