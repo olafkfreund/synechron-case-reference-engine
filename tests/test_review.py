@@ -244,6 +244,26 @@ def test_add_outcome_with_foreign_quote_is_dropped_on_approval(make):
     assert [o["metric"] for o in row(cid)[1]["outcomes"]] == ["onboarding"]
 
 
+def test_engagement_add_outcome_refused(make):  # #139
+    cid = make(basis="engagement")
+    before = row(cid)[1]["outcomes"]
+    r = post(client(R), cid, field="outcomes.new", metric="cost", value="30 percent", quote=Q_TITLE)
+    assert r.status_code == 400
+    assert row(cid)[1]["outcomes"] == before
+
+
+def test_engagement_review_page_has_no_add_outcome(make):  # #139
+    assert "outcomes.new" not in client(R).get(f"/review/{make(basis='engagement')}").text
+    assert "outcomes.new" in client(R).get(f"/review/{make()}").text  # guard against a vacuous pass
+
+
+def test_approve_engagement_drops_outcomes(make):  # #139
+    cid = make(basis="engagement")
+    assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}).status_code == 200
+    status, data, *_ = row(cid)
+    assert status == "approved" and data["outcomes"] == []
+
+
 def test_add_needs_value_and_quote(make):
     cid = make()
     before = row(cid)[1]
