@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 119
 author: olafkfreund
 ---
@@ -67,3 +67,8 @@ refused downloads, and protected names never pass `blocked()`.
 2. **Should the registry warn when an alias of five or fewer letters is
    added?** **Recommendation: no.** Revisit if word-like aliases turn up in
    real data.
+
+## Approved answers
+
+1. A: apply() matches short all-caps aliases case-insensitively, the same as blocked().
+2. No registry warning for short aliases.
