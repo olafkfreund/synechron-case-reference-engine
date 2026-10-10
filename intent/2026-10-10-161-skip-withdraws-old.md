@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 161
 author: olafkfreund
 ---
@@ -63,3 +63,5 @@ everywhere else: a changed document reopens or retires its case.
    **Recommendation: A.** It is the simpler rule and fails closed, and
    narrowing a source is an explicit admin act. The source page's help
    text should say so.
+
+**Decision (approved by olafkfreund, 2026-10-10): A.**
