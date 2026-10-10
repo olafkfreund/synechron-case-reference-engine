@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 163
 author: olafkfreund
 ---
@@ -72,3 +72,5 @@ confidentiality leak, not just an annoyance.
 
    **Recommendation: A.** It covers the reported cases and keeps the
    existing "C++ Ltd" rule.
+
+**Decision (approved by olafkfreund, 2026-10-10): A.**
