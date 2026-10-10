@@ -264,11 +264,18 @@ def reject(cid: int, v: str = Form(), user: User = Depends(require("reviewer")))
 MERGE_FIELDS = (*SCALARS, "period")  # a reviewer picks which member each of these comes from
 
 
+def first_sourced(members, f):
+    """The first (cid, case) whose copy of f has a value and a quote, else the first: a merge's default (#140)."""
+    def good(o):
+        return not o.unsourced and ((o.start or o.end) if f == "period" else o.value not in (None, ""))
+    return next((cid for cid, c in members if good(getattr(c, f))), members[0][0])
+
+
 def combine(members, pick):
     """One case from checked members [(case_id, document_id, ReferenceCase)]; pick maps field -> case_id.
 
     No model is called. Scalars, duration, team size and period are each taken whole from one member
-    (the first unless picked); capabilities and tech are the de-duplicated union; outcomes are dropped.
+    (the first sourced member unless picked); capabilities and tech are the de-duplicated union; outcomes are dropped.
     """
     def stamped(item, doc_id):
         item = copy.deepcopy(item)
@@ -278,15 +285,18 @@ def combine(members, pick):
     by_id = {cid: (doc, case) for cid, doc, case in members}
     out = {}
     for f in MERGE_FIELDS:
-        doc, case = by_id[pick.get(f, members[0][0])]
+        doc, case = by_id[pick.get(f, first_sourced([(cid, c) for cid, _, c in members], f))]
         out[f] = stamped(getattr(case, f), doc)
     for f in ("capabilities", "tech_stack"):
-        seen, items = set(), []
+        seen, items = {}, []  # casefolded value -> index in items
         for _, doc, case in members:
             for i in getattr(case, f):
-                if (k := (i.value or "").casefold()) not in seen:
-                    seen.add(k)
+                k = (i.value or "").casefold()
+                if k not in seen:
+                    seen[k] = len(items)
                     items.append(stamped(i, doc))
+                elif items[seen[k]].unsourced and not i.unsourced:
+                    items[seen[k]] = stamped(i, doc)  # same position, the sourced copy's origin (#140)
         out[f] = items
     uniq = lambda xs: list(dict.fromkeys(x for x in xs if x))
     notes = [f"merged from {len(members)} contracts: write a summary",
@@ -351,7 +361,8 @@ def merge_preview(request: Request, members: list[str] = Form([]), user: User = 
     for f in MERGE_FIELDS:
         opts = [(i, *show(c, f)) for i, _, c, _, _ in found]
         if len({o[1] for o in opts}) > 1:  # only the fields where the members differ
-            fields.append(dict(field=f, label=f.replace("_", " "), options=opts))
+            fields.append(dict(field=f, label=f.replace("_", " "), options=opts,
+                               default=first_sourced([(i, c) for i, _, c, _, _ in found], f)))
     return page(request, "review_merge.html", user, members=members, titles=[t for *_, t, _ in found], fields=fields)
 
 
