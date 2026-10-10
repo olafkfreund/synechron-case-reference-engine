@@ -28,6 +28,13 @@ def profile(alias: str) -> dict:
     return opts
 
 
+def effective_base(model: str, opts: dict) -> str:
+    """Where LiteLLM sends the request: api_base, else OLLAMA_API_BASE (which LiteLLM reads) for Ollama models (#130)."""
+    if opts.get("api_base"):
+        return opts["api_base"]
+    return (os.environ.get("OLLAMA_API_BASE") or "http://localhost:11434") if model.startswith("ollama") else ""
+
+
 def destination(model: str, opts: dict) -> str:
     """local | our-cloud | third-party. Fails closed: anything unknown is third-party."""
     dest = opts.get("destination")
@@ -35,14 +42,14 @@ def destination(model: str, opts: dict) -> str:
         return dest
     if dest in ("local", "our-cloud"):
         # an override may name a host the inference cannot see (Docker), never contradict a known third party
-        if "cloud" in model.lower() or urlparse(opts.get("api_base", "")).hostname == "ollama.com":
+        if "cloud" in model.lower() or urlparse(effective_base(model, opts)).hostname == "ollama.com":
             raise RuntimeError(f"destination {dest!r} contradicts the model or api_base; fix the *_OPTIONS")
         return dest
     if model.startswith("bedrock/"):
         return "our-cloud"
     # "cloud" anywhere (name-cloud, name:cloud, any case): the local Ollama forwards those to ollama.com
     if model.startswith("ollama") and "cloud" not in model.lower():
-        base = opts.get("api_base") or os.environ.get("OLLAMA_API_BASE") or "http://localhost:11434"
+        base = effective_base(model, opts)
         if urlparse(base).hostname in ("localhost", "127.0.0.1", "::1"):
             return "local"
     return "third-party"
