@@ -158,6 +158,15 @@ def test_assemble_takes_the_first_number_only():
     assert case.duration_months.value == 18 and case.team_size.value == 1200
 
 
+def test_assemble_skips_runaway_numbers():
+    from app.schema import Extraction, Item, assemble
+    for runaway in ("1" * 4301, "1" * 13):
+        case, notes = assemble(Extraction(items=[Item(field="team_size", value=runaway, quote="q")]))
+        assert case.team_size.value is None and "1 malformed" in notes[0]
+    case, _ = assemble(Extraction(items=[Item(field="team_size", value="1,000,000", quote="q")]))
+    assert case.team_size.value == 1000000
+
+
 def test_null_values_do_not_fail_the_reply():
     from app.schema import Extraction
     x = Extraction.model_validate_json('{"items": [{"field": "industry", "value": null, "quote": null}], "summary": ""}')
