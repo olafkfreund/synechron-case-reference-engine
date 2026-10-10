@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 121
 author: olafkfreund
 ---
@@ -55,3 +55,7 @@ retried next run, whatever the cursor says. S3 has no equivalent.
 1. **Cap the size of the stored retry list?** SharePoint and Confluence store
    every failed ID with no cap. **Recommendation: no cap, the same as them.**
    The list is only as long as the number of failing files.
+
+## Approved answers
+
+1. No cap on the stored retry list, the same as SharePoint and Confluence.
