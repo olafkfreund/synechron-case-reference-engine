@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 143
 intent: intent/2026-10-10-143-early-re-review.md
 ---
