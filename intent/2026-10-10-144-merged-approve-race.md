@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 144
 author: olafkfreund
 ---
@@ -60,3 +60,5 @@ review, whichever transaction commits first.
 
    **Recommendation: A.** It is the smallest change, with no new lock order.
    Reopening an already `extracted` case is a no-op.
+
+**Decision (approved by olafkfreund, 2026-10-10): A.**
