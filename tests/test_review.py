@@ -441,6 +441,34 @@ def test_merge_combines_checked_fields(make, acme):
     assert client(R).get(f"/review/{a}").status_code == 404 and client(R).get(f"/review/{new}").status_code == 200
 
 
+def _rc(**kw):
+    return ReferenceCase.model_validate_json(case_data(**kw))
+
+
+def test_combine_prefers_sourced_scalar():
+    """Unpicked, a merge takes the sourced copy, not the first member's unsourced one (#140)."""
+    from app.review import combine
+    a = _rc(title=Sourced[str](value="Same", source_quote="q", unsourced=True))
+    b = _rc(title=Sourced[str](value="Same", source_quote="q"))
+    members = [(1, 10, a), (2, 20, b)]
+    t = combine(members, {}).title
+    assert not t.unsourced and t.document_id == 20
+    t = combine(members, {"title": 1}).title  # a reviewer's pick still wins
+    assert t.unsourced and t.document_id == 10
+    t = combine([(1, 10, a), (2, 20, a)], {}).title  # all unsourced: the first member
+    assert t.unsourced and t.document_id == 10
+
+
+def test_combine_dedupe_keeps_sourced_copy():
+    from app.review import combine
+    a = _rc(capabilities=[Sourced[str](value="Onboarding", source_quote="q"),
+                          Sourced[str](value="Payments", source_quote="q", unsourced=True)])
+    b = _rc(capabilities=[Sourced[str](value="payments", source_quote="q")])
+    caps = combine([(1, 10, a), (2, 20, b)], {}).capabilities
+    assert [x.value.casefold() for x in caps] == ["onboarding", "payments"]  # A's position, B's copy
+    assert not caps[1].unsourced and caps[1].document_id == 20
+
+
 def test_merge_refusals(make, acme):
     c = client(R)
     a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
