@@ -73,9 +73,10 @@ SLIDE_QUOTE = 140
 
 def slide_statements(ind: dict) -> list[str]:
     """Every slide line keeps its verbatim quote next to the phrase: the phrase comes from an AI-chosen
-    type, the quote is what lets a reader check it."""
+    type, the quote is what lets a reader check it. The omitted-statements note (if any) comes last, as in
+    Word and Markdown (#123)."""
     return [f"{i['phrase']}: \u201c{excerpt(i['quote'], SLIDE_QUOTE)}\u201d \u2014 {i['publisher']}, {i['date']}"
-            for i in ind["statements"]][:SLIDE_ITEMS]
+            for i in ind["statements"]][:SLIDE_ITEMS] + ([ind["note"]] if ind["note"] else [])
 
 
 def section(case: ReferenceCase, client: str) -> dict:
