@@ -26,7 +26,9 @@ SCALARS = ("title", "client_mention", "industry", "region", "engagement_type", "
 INTS = ("duration_months", "team_size")
 LISTS = ("capabilities", "tech_stack", "outcomes")
 # a case can be edited/approved/rejected only while it is new or its approval has expired
-OPEN = "(c.status = 'extracted' or (c.status = 'approved' and c.review_due < now()))"
+OPEN = "(c.status = 'extracted' or (c.status = 'approved' and c.review_due <= now() + interval '30 days'))"
+# the queue lists only new and expired cases; due-soon ones have their own list (#143)
+QUEUE = "(c.status = 'extracted' or (c.status = 'approved' and c.review_due < now()))"
 # need-to-know: every document behind a case must be live and open to the user;
 # a member is never shown on its own while merged (its content is inside the merged case)
 VISIBLE = ("c.merged_into is null and coalesce(c.member_count, 1) = (select count(*) from cases m "
@@ -117,7 +119,7 @@ def review_list(request: Request, user: User = Depends(require("reviewer"))):
     with db.connect() as conn:
         found = conn.execute(
             f"select c.id, c.status, c.data, d.title, c.member_count from cases c left join documents d on d.id = c.document_id "
-            f"where {REVIEWABLE} and {OPEN} order by c.id", (list(user.groups),)).fetchall()
+            f"where {REVIEWABLE} and {QUEUE} order by c.id", (list(user.groups),)).fetchall()
         # reminders: approvals that expire within 30 days (the list above only has the expired ones)
         soon = conn.execute(
             "select c.id, c.data, d.title, c.review_due, c.member_count from cases c left join documents d on d.id = c.document_id "
