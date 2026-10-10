@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 166
 author: olafkfreund
 ---
@@ -72,3 +72,5 @@ an ordinary spelling difference.
    **Recommendation: B.** It turns "apply replaces whatever blocked finds"
    into a property the tests can assert, rather than a list of spellings to
    keep chasing.
+
+**Decision (approved by olafkfreund, 2026-10-10): B.**
