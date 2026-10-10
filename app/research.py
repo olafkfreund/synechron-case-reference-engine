@@ -80,8 +80,13 @@ _IDENTIFIERS = re.compile(r"\S+@\S+|\b[a-z][a-z0-9+.-]*://\S+|\bwww\.\S+|[\d][\d
 
 def finalize(text: str, clients) -> str:
     """Strip emails, URLs and long numbers, scrub names, cap, and refuse if a registry name still shows
-    (fail closed). Used again on send, so the preview is exactly what is sent."""
-    q = anonymise.scrub(_IDENTIFIERS.sub(" ", text), clients)[:MAX_QUERY].strip()
+    (fail closed). Run to a fixed point and used again on send, so the preview is exactly what is sent."""
+    q = text
+    while True:  # each pass only removes text, so this ends; removing one thing can expose another (#122)
+        nxt = anonymise.scrub(_IDENTIFIERS.sub(" ", q), clients)[:MAX_QUERY].strip()
+        if nxt == q:
+            break
+        q = nxt
     if not q or anonymise.blocked(q, clients):
         raise ValueError("the query is empty or still contains a protected client name")
     return q
