@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 160
 author: olafkfreund
 ---
@@ -65,3 +65,5 @@ tick silently does nothing.
    decision and is exact. It is one column, set in one statement and read
    in one statement, and the unmarked old rows fail safe by staying
    rejected.
+
+**Decision (approved by olafkfreund, 2026-10-10): B.**
