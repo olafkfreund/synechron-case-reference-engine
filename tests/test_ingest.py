@@ -252,6 +252,28 @@ def test_bad_document_does_not_stop_crawl(env, monkeypatch):
     assert "SECRET" not in str(counts)
 
 
+def test_failed_new_version_is_retried_past_the_cursor(env, monkeypatch):
+    s3, sid = env
+    real = ing.to_markdown
+    s3.put_object(Bucket="src", Key="in/a.docx", Body=b"v1")
+    crawl.crawl_s3(sid)
+    def boom(data, name):
+        if data == b"v2":
+            raise ValueError("corrupt")
+        return real(data, name)
+    monkeypatch.setattr(ing, "to_markdown", boom)
+    s3.put_object(Bucket="src", Key="in/a.docx", Body=b"v2")
+    assert crawl.crawl_s3(sid)["failed"] == 1
+    set_cursor(sid, "2999-01-01T00:00:00+00:00")  # later uploads moved the cursor far past it
+    monkeypatch.setattr(ing, "to_markdown", real)
+    assert crawl.crawl_s3(sid)["updated"] == 1  # main: skipped on the cursor, never downloaded
+    with db.connect() as c:
+        assert c.execute("select text from documents where source_id=%s and external_id='in/a.docx'",
+                         (sid,)).fetchone()[0] == "v2"
+    r = crawl.crawl_s3(sid)  # succeeded, so off the retry list: skipped on the cursor again
+    assert r["updated"] == 0 and r["skipped"] == 0
+
+
 def test_acl_change_and_reappearing_key_apply_without_redownload(env):
     s3, sid = env
     s3.put_object(Bucket="src", Key="in/a.docx", Body=b"aaa")
