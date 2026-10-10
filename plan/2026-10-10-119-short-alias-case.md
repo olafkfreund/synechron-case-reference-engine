@@ -51,3 +51,11 @@ record it as a deviation in this plan.
 ## Rollback
 
 Revert the commit.
+
+## Deviations
+
+- **Step 3:** the test passes `[cl]`. `render.protect` takes a list of
+  clients, and the plan's `cl` was a typo.
+- **Review fix (should-fix):** the help text in `app/templates/clients.html:8`
+  described the removed case-sensitive rule. It now says that aliases match in
+  any case, and that this costs a word-like alias.
