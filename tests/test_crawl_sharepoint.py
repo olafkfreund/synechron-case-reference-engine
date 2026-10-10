@@ -283,6 +283,7 @@ def test_failed_item_is_retried_next_run(sp):
     counts = crawl.crawl_sharepoint(sp.sid)
     assert counts["new"] == 1 and source(sp.sid)[1]["retry_ids"] == [] and docs(sp.sid)["f1"][0] is False
 
+
 def test_timeout_on_retried_item_does_not_stop_the_crawl(sp, monkeypatch):
     sp.files = {"f1": b"one", "f2": b"two"}
     sp.statuses["f1"] = [(503, {"Retry-After": "1"})]

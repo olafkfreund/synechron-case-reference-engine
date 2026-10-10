@@ -419,6 +419,7 @@ def test_new_attachment_on_unchanged_page_is_found(cf):
     crawl.crawl_confluence(cf.sid)
     assert "att:p3:a7" in live(cf.sid)
 
+
 def _change_groups_after_first_ingest(monkeypatch, sid):
     """As an admin's save does mid-crawl: new groups on the source and on its documents already written."""
     real, done = crawl.ingest, []
