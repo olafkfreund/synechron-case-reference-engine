@@ -119,3 +119,6 @@ Coder handoff: yes. Four files, in four steps that edit files.
 
 Revert the branch's commits. No data or schema change; approved engagement
 cases saved after the fix keep `outcomes == []`, which is correct anyway.
+
+## Deviations
+- Step 1: `test_approve_engagement_drops_outcomes` also asserts the approve returns 200 after the redirect, as the existing approve test does.
