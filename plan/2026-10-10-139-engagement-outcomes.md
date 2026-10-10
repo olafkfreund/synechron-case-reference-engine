@@ -122,3 +122,4 @@ cases saved after the fix keep `outcomes == []`, which is correct anyway.
 
 ## Deviations
 - Step 1: `test_approve_engagement_drops_outcomes` also asserts the approve returns 200 after the redirect, as the existing approve test does.
+- Review: an existing outcome on an engagement case can be removed but not edited (400), so the page no longer offers a Save that approval would undo (`test_engagement_existing_outcome_can_be_removed_not_edited`).
