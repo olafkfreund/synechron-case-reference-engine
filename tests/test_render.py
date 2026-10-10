@@ -236,6 +236,12 @@ def test_control_character_cannot_rebuild_a_protected_name(approved, reg):
         assert name.encode() not in body and b"a UK retailer" in body, fmt
 
 
+def test_lowercase_short_alias_is_rewritten_not_withheld():
+    cl = {"id": 1, "name": "Union Bank of Zeta", "aliases": ["UBZ"], "anonymised_label": "a Swiss bank", "referenceable": False}
+    out = render.protect([{"text": "Contact ops@ubz.example and the Ubz team"}], [cl])
+    assert "ubz" not in out[0]["text"].lower()
+
+
 def test_master_layout_has_unique_idx_and_no_slides():
     prs = Presentation(render.MASTER)
     layout = next(l for l in prs.slide_layouts if l.name == "Reference case")
