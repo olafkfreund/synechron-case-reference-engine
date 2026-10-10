@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 143
 spec: spec/2026-10-10-143-early-re-review.md
 ---
