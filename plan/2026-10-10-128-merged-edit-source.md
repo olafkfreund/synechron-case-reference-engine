@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 128
 spec: spec/2026-10-10-128-merged-edit-source.md
 ---
