@@ -16,8 +16,8 @@ it already has.
   type and size filters to after them. A skipped key is then missing from `seen`.
   The existing sweep at the end sets `deleted_at` on every live document not in
   `seen`, and counts it under `deleted`. A key that fits again is back in `seen`
-  on a later crawl. The same sweep clears `deleted_at`, and the file is
-  downloaded because its modified time is newer or its document is withdrawn.
+  on a later crawl, and the same sweep clears `deleted_at`. An unchanged key is
+  not downloaded again: its stored text is what it held before.
   The comment "a skipped key is not a deletion" changes to say it is now
   withdrawn (#161). Decisions are still made from the listing alone, so a
   skipped file is never downloaded.
@@ -72,7 +72,7 @@ it already has.
 - **Add `test_confluence_attachment_grown_past_cap_is_withdrawn`** in
   `tests/test_crawl_confluence.py`. The same check for an attachment.
 - **Existing tests stay green:**
-  - `test_crawl_skips_types_and_large_files_without_download` checks counts and
+  - `test_crawl_skips_type_and_size_without_downloading` checks counts and
     downloads. On its second crawl `deleted` stays 0, because those files were
     never held.
   - The empty-listing tests.
