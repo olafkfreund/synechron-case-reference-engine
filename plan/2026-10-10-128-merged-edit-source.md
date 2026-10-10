@@ -84,3 +84,15 @@ The full suite passes, and the first new test fails on main.
 ## Rollback
 
 Revert the commit. No stored data changes shape.
+
+## Deviations
+
+- **Review fix (should-fix):** "the quote changed" is decided on
+  `schema._norm`, both sides, so textarea `\r\n` or padding is not a new
+  quote. Otherwise an unchanged multi-line quote would lose its origin on
+  every save.
+- **Review fix (test):** the same-quote test was rewritten so it can fail.
+  - **Setup:** the origin is member b, and the quote ("for a UK bank") is in
+    both members.
+  - **The edit** posts the same quote with `\r\n` and a double space.
+  - **The check:** the origin stays b. Clearing it would move it to a.

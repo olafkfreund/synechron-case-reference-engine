@@ -403,12 +403,16 @@ def test_merged_edit_quote_in_no_member_is_unsourced(make, acme):
 
 
 def test_merged_edit_same_quote_keeps_origin(make, acme):
-    new, _ = _merged(make)
-    before, _ = _data_and_doc(new)
-    q = before["title"]["source_quote"]
-    client(R).post(f"/review/{new}/edit", data={"field": "title", "value": q[:20], "quote": q, "v": ver(new)})
+    new, b = _merged(make)
+    _, doc_b = _data_and_doc(new, b)
+    q = "for a UK bank"  # in both members: clearing the origin would move it to the first, a
+    with db.connect() as c:
+        c.execute("update cases set data = jsonb_set(jsonb_set(data, '{title,document_id}', to_jsonb(%s::bigint)), "
+                  "'{title,source_quote}', to_jsonb(%s::text)) where id=%s", (doc_b, q, new))
+    client(R).post(f"/review/{new}/edit", data={"field": "title", "value": "UK bank", "quote": "for a\r\nUK  bank",
+                                                "v": ver(new)})  # the same quote, as a textarea posts it
     after, _ = _data_and_doc(new)
-    assert after["title"]["value"] == q[:20] and after["title"]["document_id"] == before["title"]["document_id"]
+    assert after["title"]["value"] == "UK bank" and after["title"]["document_id"] == doc_b
 
 
 def test_merge_combines_checked_fields(make, acme):

@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from app import anonymise, db
 from app.extract import MAX_CHARS, check
 from app.main import User, require
-from app.schema import Outcome, Period, ReferenceCase, Sourced
+from app.schema import Outcome, Period, ReferenceCase, Sourced, _norm
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")  # autoescape on
@@ -204,7 +204,7 @@ def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: 
             else:
                 raise HTTPException(400, "unknown field")
             if obj is not None and quote is not None:
-                if quote != obj.source_quote:
+                if _norm(quote) != _norm(obj.source_quote or ""):  # line breaks or spacing are not a new quote
                     obj.document_id = None  # a new quote has no origin yet: check() finds the member that sources it (#128)
                 obj.source_quote = quote
             case = ReferenceCase.model_validate(case.model_dump())  # re-run validators (summary length)
