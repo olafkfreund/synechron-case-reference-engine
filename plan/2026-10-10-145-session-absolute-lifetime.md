@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 145
 spec: spec/2026-10-10-145-session-absolute-lifetime.md
 ---
