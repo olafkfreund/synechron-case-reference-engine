@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 143
 author: olafkfreund
 ---
@@ -56,3 +56,5 @@ and the documented workflow works.
    and it closes the search gap. The spec must check how an edit on an
    approved case behaves, whether it resets the status, and keep the case
    searchable while it is under review.
+
+**Decision (approved by olafkfreund, 2026-10-10): B.**
