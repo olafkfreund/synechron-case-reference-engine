@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 123
 spec: spec/2026-10-10-123-pptx-omitted-note.md
 ---
