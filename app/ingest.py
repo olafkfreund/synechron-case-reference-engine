@@ -68,7 +68,7 @@ def basis_for(t: Triage, source_config: dict) -> str | None:
 
 def reopen_merged(conn, doc_ids: list[int]) -> None:
     """A merged engagement whose member document changed or was retired goes back to review (#55)."""
-    conn.execute("update cases set status = 'extracted' where status = 'approved' and id in "
+    conn.execute("update cases set status = 'extracted' where status <> 'rejected' and id in "
                  "(select merged_into from cases where document_id = any(%s) and merged_into is not null)",
                  (doc_ids,))
 

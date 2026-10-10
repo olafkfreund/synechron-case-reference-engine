@@ -596,6 +596,30 @@ def test_need_to_know_matrix(make, acme, monkeypatch, surface, state):
             d.execute("delete from research where case_id=%s", (new,))
 
 
+def test_unmerge_locks_members_before_the_merged_case(make, acme):
+    """Ingest locks a member, then reopens M; unmerge must take the same order or they deadlock (#144)."""
+    import threading
+    from tests.test_ingest import _wait_for_lock_wait
+    c = client(R)
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    new = int(merge(c, [a, b]).headers["location"].rsplit("/", 1)[1])
+    v, got = ver(new), []
+    holder = db.connect()  # stands in for ingest: holds member a, then wants M
+    try:
+        holder.execute("select 1 from cases where id=%s for update", (a,))
+        t = threading.Thread(target=lambda: got.append(c.post(f"/review/{new}/unmerge", data={"v": v},
+                                                               follow_redirects=False).status_code))
+        t.start()
+        _wait_for_lock_wait(holder)
+        holder.execute("set local lock_timeout = '5s'")
+        holder.execute("select 1 from cases where id=%s for update", (new,))  # deadlocks if unmerge holds M
+        holder.commit()
+    finally:
+        holder.close()
+    t.join(10)
+    assert got == [303] and status_of(new) == "rejected"
+
+
 def test_one_visible_member_cannot_merge_unmerge_or_list_the_other(make, acme):
     a = eng(make, TEXT_A, ["x"], [], acl=(GA,))
     b = eng(make, TEXT_B, ["y"], [], acl=(GB,))

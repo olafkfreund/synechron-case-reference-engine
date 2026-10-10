@@ -375,6 +375,27 @@ def test_executed_flag_must_be_true_not_truthy():
     assert ing.basis_for(t, {"executed_contracts": True}) == "engagement"
 
 
+def test_member_change_during_merged_approve_reopens_it(env):
+    """A member change that lands while M is being approved waits for it, then reopens M (#144)."""
+    import threading
+    _, sid = env
+    new, _ = merged_pair(sid)
+    with db.connect() as c:
+        c.execute("update cases set status='extracted' where id=%s", (new,))
+    first = db.connect()  # stands in for approve: load() holds M's row lock
+    first.execute("select 1 from cases where id=%s for update", (new,))
+    t = threading.Thread(target=ing.ingest, args=(sid, "a", "a", b"two"))
+    t.start()
+    try:
+        _wait_for_lock_wait(first)
+        first.execute("update cases set status='approved' where id=%s", (new,))
+        first.commit()
+    finally:
+        first.close()  # releases the lock (rolls back on failure), or teardown blocks on it
+    t.join(10)
+    assert not t.is_alive() and status(new) == "extracted"
+
+
 def _wait_for_lock_wait(conn, timeout=10):
     """Until another backend is waiting on a row lock (the ingest blocked by the open save)."""
     import time
