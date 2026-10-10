@@ -153,6 +153,11 @@ PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentatio
 NAMES = ("Title", "Client", "Summary", "Challenge", "Solution", "Outcomes", "Technology")
 
 
+def test_markdown_escapes_ampersand():
+    assert render.md("Zo&#114;p") == "Zo\\&\\#114;p"  # neither & nor # left bare: no entity is decoded
+    assert render.md("R&D") == "R\\&D"
+
+
 def slides(content):
     """[{placeholder name: [paragraph texts]}] per slide, names taken from the slide's layout."""
     prs = Presentation(BytesIO(content))

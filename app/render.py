@@ -271,10 +271,10 @@ def to_pdf(data: bytes, suffix: str) -> bytes:
 
 
 def md(s: str) -> str:
-    """Markdown escaping: newlines become spaces; backslash, backtick, * _ [ ] < > # | ~ are
+    """Markdown escaping: newlines become spaces; backslash, backtick, * _ [ ] < > # | ~ & are
     escaped; a leading list or numbered marker is escaped, so a value placed at the start of a
     paragraph or bullet cannot become a heading, list, table or strike-through."""
-    s = re.sub(r"([\\`*_\[\]<>#|~])", r"\\\1", " ".join(str(s).split()))
+    s = re.sub(r"([\\`*_\[\]<>#|~&])", r"\\\1", " ".join(str(s).split()))  # &: no entity decodes to a name (#126)
     return re.sub(r"^(\d+)([.)])|^([-+=])", lambda m: f"{m[1]}\\{m[2]}" if m[1] else f"\\{m[3]}", s)
 
 
