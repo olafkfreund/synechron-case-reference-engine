@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 164
 author: olafkfreund
 ---
@@ -65,3 +65,5 @@ names must stay hidden". A rename is the same loss by another route.
    **Recommendation: A.** A rename is the common case, and A handles it with
    no extra step. If removing a wrong alias proves to be a real need, C can be
    added later as its own change.
+
+**Decision (approved by olafkfreund, 2026-10-10): A.**
