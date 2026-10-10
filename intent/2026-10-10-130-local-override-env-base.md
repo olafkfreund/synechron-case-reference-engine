@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 130
 author: olafkfreund
 ---
@@ -51,3 +51,7 @@ otherwise `OLLAMA_API_BASE` for Ollama models.
 ## Open questions
 
 None.
+
+## Approved answers
+
+None needed.
