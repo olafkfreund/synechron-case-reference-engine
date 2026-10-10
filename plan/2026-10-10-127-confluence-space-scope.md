@@ -118,3 +118,9 @@ the full suite passes. The new tests that need to fail on main do.
 
 Revert the commits. Withdrawn documents come back on the next crawl if they
 are still in scope.
+
+## Deviations
+
+- **Review fix (nit, taken):** a blank space key in `config.spaces` is refused
+  like an empty list. Otherwise `""` would be "in scope" and admit a page
+  with no `space`.

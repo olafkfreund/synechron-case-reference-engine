@@ -355,8 +355,8 @@ def crawl_confluence(source_id: int) -> dict:
         config, cursor, last = lock.execute(
             "select config, cursor, last_counts from sources where id=%s", (source_id,)).fetchone()
         spaces = config["spaces"]
-        if not isinstance(spaces, list) or not spaces:
-            raise ValueError("config.spaces must be a non-empty list of space keys")
+        if not isinstance(spaces, list) or not spaces or not all(str(k).strip() for k in spaces):
+            raise ValueError("config.spaces must be a non-empty list of space keys")  # "" would admit pages with no space
         in_scope = {str(k).casefold() for k in spaces}  # CQL matches space keys regardless of case
         c = Confluence(config["base_url"], config.get("api_prefix", "/wiki"))
         cap = int(os.environ.get("CONFLUENCE_MAX_BYTES", 50 * 1024 * 1024))
