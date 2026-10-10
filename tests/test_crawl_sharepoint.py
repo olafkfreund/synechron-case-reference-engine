@@ -283,6 +283,24 @@ def test_failed_item_is_retried_next_run(sp):
     counts = crawl.crawl_sharepoint(sp.sid)
     assert counts["new"] == 1 and source(sp.sid)[1]["retry_ids"] == [] and docs(sp.sid)["f1"][0] is False
 
+def test_timeout_on_retried_item_does_not_stop_the_crawl(sp, monkeypatch):
+    sp.files = {"f1": b"one", "f2": b"two"}
+    sp.statuses["f1"] = [(503, {"Retry-After": "1"})]
+    sp.delta[ROOT] = (200, page([f("f1")], delta=f"{ROOT}?token=d1"))
+    assert crawl.crawl_sharepoint(sp.sid)["failed"] == 1 and source(sp.sid)[1]["retry_ids"] == ["f1"]
+
+    def boom(request):
+        if request.url.path.endswith("/items/f1"):
+            raise httpx.ReadTimeout("t")
+
+    monkeypatch.setattr(crawl, "TRANSPORT", httpx.MockTransport(lambda r: boom(r) or sp(r)))
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([f("f2", "b.pdf")], delta=f"{ROOT}?token=d2"))
+    counts = crawl.crawl_sharepoint(sp.sid)
+    assert counts["new"] == 1 and "f2" in docs(sp.sid)
+    cursor, last, _ = source(sp.sid)
+    assert last["retry_ids"] == ["f1"] and cursor.endswith("token=d2")
+
+
 def _change_groups_after_first_ingest(monkeypatch, sid):
     """As an admin's save does mid-crawl: new groups on the source and on its documents already written."""
     real, done = crawl.ingest, []
