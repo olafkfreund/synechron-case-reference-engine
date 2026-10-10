@@ -181,3 +181,17 @@ def test_sources_page_upload_control_and_notices(env):  # noqa: F811
     finally:
         with db.connect() as c:
             c.execute("delete from sources where id = any(%s)", (list(ids.values()),))
+
+
+def test_crawl_now_shown_only_on_enabled_sources(env):  # noqa: F811
+    """A disabled source's crawl route is a 404, so it offers no button (#142)."""
+    db.init()
+    with db.connect() as c:
+        on, off = (c.execute("insert into sources(kind,name,config,enabled) values ('s3',%s,%s,%s) returning id",
+                             (uuid.uuid4().hex, Jsonb({"bucket": "b"}), en)).fetchone()[0] for en in (True, False))
+    try:
+        t = client([ADMIN]).get("/admin/sources").text
+        assert f'action="/admin/sources/{on}/crawl"' in t and f'action="/admin/sources/{off}/crawl"' not in t
+    finally:
+        with db.connect() as c:
+            c.execute("delete from sources where id = any(%s)", ([on, off],))
