@@ -81,3 +81,13 @@ The full suite must pass, and the requeue test must fail on main.
 
 Revert the commit. Any extra queued extract jobs are harmless. Each either
 succeeds or fails again.
+
+## Deviations
+
+- **Step 2:** the tests call `main()` through a small helper,
+  `_run_main_only_for(sid)`. `main()` queues crawl jobs for every enabled
+  source and requeues other tests' failed extracts in the shared test DB. The
+  helper deletes every job `main()` added except this source's extract
+  retries, so no stray queued job leaks into later tests, such as the worker's
+  claim order. The "case" variant inserts a bare `cases(document_id, status)`
+  row, which is all the `not exists` needs.
