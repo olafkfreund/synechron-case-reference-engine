@@ -226,6 +226,18 @@ def test_unchanged_attachment_is_not_downloaded_again(cf):
     assert "att:p1:a1" in live(cf.sid) and version(cf.sid) == "1:2026-01-01T00:00:00.000Z"
 
 
+def test_confluence_attachment_grown_past_cap_is_withdrawn(cf):
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"spec bytes")
+    crawl.crawl_confluence(cf.sid)
+    assert "att:p1:a1" in live(cf.sid)
+    cf.atts["p1"][0]["extensions"]["fileSize"] = 10**9
+    offer_again(cf)
+    crawl.crawl_confluence(cf.sid)
+    assert "att:p1:a1" not in live(cf.sid) and "page:p1" in live(cf.sid)
+    assert DL not in cf.calls
+
+
 def test_changed_attachment_is_downloaded_and_version_stored(cf):
     cf.page("p1")
     cf.attach("p1", "a1", "spec.docx", b"spec bytes", number=1)
