@@ -107,3 +107,4 @@ reverting, or by ticking referenceable.
 ## Deviations
 
 None yet.
+- Step 3: the three tests share a small `_rename` helper (create + post the rename), placed after the `_add`/`_row` helpers it uses.

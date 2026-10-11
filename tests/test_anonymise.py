@@ -261,6 +261,35 @@ def test_label_recheck_leaves_other_saves_alone(reg):
                                                  "v": v}, follow_redirects=False).status_code == 303
 
 
+def _rename(c, reg, old, new, aliases="", ref=False, new_ref=False):
+    assert _add(c, old, "a lender", ref=ref, aliases=aliases).status_code == 303
+    cid, *_, v = _row(reg, old)
+    return c.post(f"/admin/clients/{cid}", data={"name": new, "anonymised_label": "a lender", "v": v,
+                                                 **({"referenceable": "on"} if new_ref else {})}, follow_redirects=False)
+
+
+def test_renaming_a_protected_client_keeps_the_old_name(reg):
+    c = client([ADMIN])
+    r = _rename(c, reg, f"Zorp Bank {reg}", f"Zorp Financial {reg}", aliases=f"ZB{reg}")
+    assert (r.status_code, r.headers["location"]) == (303, "/admin/clients?kept=2")
+    (_, name, aliases, label, *_), = find(reg)
+    assert aliases == [f"Zorp Bank {reg}", f"ZB{reg}"]
+    assert "Kept 2 former name(s)" in c.get("/admin/clients?kept=2").text
+    assert an.apply(f"Zorp Bank {reg} said", [C(name, aliases, label)]) == "a lender said"
+
+
+def test_renaming_a_referenceable_client_keeps_nothing(reg):
+    r = _rename(client([ADMIN]), reg, f"Zorp Bank {reg}", f"Zorp Financial {reg}", ref=True, new_ref=True)
+    assert (r.status_code, r.headers["location"]) == (303, "/admin/clients")
+    assert find(reg)[0][2] == []
+
+
+def test_case_only_rename_keeps_nothing(reg):
+    r = _rename(client([ADMIN]), reg, f"zorp bank {reg}", f"Zorp Bank {reg}")
+    assert (r.status_code, r.headers["location"]) == (303, "/admin/clients")
+    assert find(reg)[0][2] == []
+
+
 def test_alias_with_comma_is_one_alias(reg):
     c = client([ADMIN])
     assert c.post("/admin/clients", data={"name": f"SJ {reg}", "aliases": f"Smith, Jones Partners {reg}\r\nSJC",
