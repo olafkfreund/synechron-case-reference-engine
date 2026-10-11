@@ -124,7 +124,7 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
         doc_id = got[0]
         # a changed document re-opens its case for review, or retires it when it no longer
         # describes delivered work (a stale case must not stay approvable)
-        conn.execute("update cases set status=%s where document_id=%s",
+        conn.execute("update cases set status=%s, retired_by=null where document_id=%s",
                      ("extracted" if basis else "rejected", doc_id))
         reopen_merged(conn, [doc_id])
         if basis:
