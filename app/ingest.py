@@ -95,6 +95,11 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
     key = f"originals/{checksum}"
     boto3.client("s3").put_object(Bucket=os.environ["S3_BUCKET"], Key=key, Body=data)
     text = to_markdown(data, title or PurePosixPath(external_id).name)  # title carries the extension; SharePoint/Confluence ids do not
+    with db.connect() as conn:  # conversion can take minutes; an admin may have raised the class (#158)
+        src = conn.execute("select data_class from sources where id=%s", (source_id,)).fetchone()
+    if not src:
+        raise LookupError(f"source {source_id} no longer exists")
+    data_class = src[0]
     triage = triage_text(text, data_class)
 
     with db.connect() as conn:
