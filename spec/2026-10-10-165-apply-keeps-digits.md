@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 165
 intent: intent/2026-10-10-165-apply-keeps-digits.md
 ---
