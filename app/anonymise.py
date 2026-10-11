@@ -9,8 +9,10 @@ from app import db
 # Words inside a name may be joined by any spacing or dash ("Acme Bank", "Acme-Bank", "AcmeBank",
 # "jane@acmebank.co.uk"). Boundaries are lookarounds on \w, not \b, so "C++ Ltd" still matches.
 # Possessives need no special case: "Acme's" matches "Acme" and the "'s" stays.
-_SEP = r"[\s\-‐‑–—]"
+# A comma joins words too, a dot is optional and apostrophe variants are one ("Acme, Inc." = "Acme Inc") (#163).
+_SEP = r"[\s,\-‐‑–—]"
 _JOIN = _SEP + "*"
+_APOS = "'’‘ʼ′"
 
 
 def load_clients(conn=None) -> list[dict]:
@@ -42,9 +44,16 @@ def _names(c) -> list[str]:
     return [n.strip() for n in [c["name"], *c["aliases"]] if n.strip()]
 
 
+def _loose(word: str) -> str:
+    """An escaped word with optional dots and any apostrophe. Only for names with a word character: "." alone
+    would become an empty match."""
+    word = word.replace(r"\.", r"\.?")
+    return "".join(f"[{_APOS}]" if ch in _APOS else ch for ch in word)
+
+
 def _pattern(name: str) -> re.Pattern:
     words = [w for w in re.split(_SEP + "+", name) if w] or [name]  # "-" alone stays literal, never empty
-    body = _JOIN.join(re.escape(w) for w in words)
+    body = _JOIN.join(_loose(re.escape(w)) if re.search(r"\w", name) else re.escape(w) for w in words)
     return re.compile(rf"(?<!\w){body}(?!\w)", re.I)
 
 
