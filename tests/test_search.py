@@ -261,6 +261,7 @@ def test_referenceable_name_containing_protected_name_shows_its_label(approved, 
 
 
 def test_pick_leaves_out_a_candidate_with_a_name_apply_missed(monkeypatch):  # #165
+    monkeypatch.setattr(sr.anonymise, "apply", lambda t, c: t)  # since #166 apply() catches this spelling; force a miss
     reg = [dict(name="Zorp Bank", aliases=[], anonymised_label="a bank", referenceable=False)]
     leak = data().model_copy(update={"summary": "Ｚｏｒｐ Bank onboarding fell from 12 days to 3 days."})
     cands = [dict(id=1, basis="delivered", case=leak), dict(id=2, basis="delivered", case=data())]

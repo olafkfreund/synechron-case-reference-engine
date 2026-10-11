@@ -220,3 +220,4 @@ There is no data or schema change.
 ## Deviations
 
 None yet.
+- Steps 3/4: four more tests relied on a misspelling getting past `apply()`: three in `tests/test_industry.py` (claims dropped and counted as omitted) and #165's `test_pick_leaves_out_a_candidate_with_a_name_apply_missed`. Each now asserts the accented spelling is replaced, then patches `apply` so it misses the name and checks that `blocked()` still drops or withholds it. In the first industry test the patch misses only text containing "ö", so the plain-name claim is still replaced by the real `apply()`.
