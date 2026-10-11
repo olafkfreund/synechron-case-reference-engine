@@ -61,6 +61,17 @@ def test_dedupe(env):
     assert jobs() == 1
 
 
+def test_same_bytes_rename_updates_title(env):
+    _, sid = env
+    assert ing.ingest(sid, "a", "old.docx", b"one") == "new"
+    n = jobs()
+    assert ing.ingest(sid, "a", "new.docx", b"one") == "skipped"
+    with db.connect() as c:
+        assert c.execute("select title from documents where source_id=%s and external_id='a'",
+                         (sid,)).fetchone()[0] == "new.docx"
+    assert jobs() == n
+
+
 def test_new_version_updates_in_place_and_reopens_case(env):
     _, sid = env
     ing.ingest(sid, "a", "a", b"one")

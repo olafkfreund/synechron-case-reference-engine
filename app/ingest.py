@@ -81,9 +81,11 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
             "select id, checksum from documents where source_id=%s and external_id=%s",
             (source_id, external_id)).fetchone()
         if row and row[1] == checksum:
-            # same bytes; ACLs may still have changed, and a reappeared file is not deleted
+            # same bytes; ACLs may still have changed, a reappeared file is not deleted,
+            # and a renamed file shows its new name (#162)
             conn.execute("update documents set acl_groups=(select acl_groups from sources where id=%s for share), "
-                         "deleted_at=null, source_version=%s where id=%s", (source_id, source_version, row[0]))
+                         "deleted_at=null, source_version=%s, title=%s where id=%s",
+                         (source_id, source_version, title, row[0]))
             return "skipped"
         src = conn.execute("select data_class from sources where id=%s", (source_id,)).fetchone()
         if not src:
