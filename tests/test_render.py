@@ -94,13 +94,17 @@ def test_client_display_rules(approved, reg):
         assert conn.execute("select anonymised from generations order by id desc limit 1").fetchone()[0] is False
 
 
-def test_protected_name_replaced_or_withheld(approved, reg):
+def test_protected_name_replaced_or_withheld(approved, reg, monkeypatch):
     name, cid_client = reg("Zorp", "a UK retailer")
     ok = approved(full().model_copy(update={"challenge": Sourced[str](value=f"Built for {name} in 2024", source_quote="q")}))
     t = gen([ok]).text
     assert name not in t and "Built for a UK retailer in 2024" in t
-    evasion = name.replace("o", "ö")  # apply() misses the accent, blocked() folds it
-    bad = approved(full().model_copy(update={"challenge": Sourced[str](value=f"Built for {evasion}", source_quote="q")}))
+    evasion = name.replace("o", "ö")  # #166: apply() replaces what blocked() finds
+    ev = approved(full().model_copy(update={"challenge": Sourced[str](value=f"Built for {evasion}", source_quote="q")}))
+    r = gen([ev])
+    assert r.status_code == 200 and "Built for a UK retailer" in r.text and evasion not in r.text
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)  # force apply() to miss: the fail-closed path
+    bad = approved(full().model_copy(update={"challenge": Sourced[str](value=f"Built for {name}", source_quote="q")}))
     r = gen([bad])
     assert r.status_code == 409 and r.json()["detail"] == render.WITHHELD and name not in r.text
     with db.connect() as conn:
@@ -201,9 +205,10 @@ def test_pptx_slide_shaping(approved):
     assert out[0]["Challenge"][0].endswith(" …") and len(out[0]["Challenge"][0]) <= render.SLIDE_TEXT + 2
 
 
-def test_pptx_protected_name_withheld(approved, reg):
+def test_pptx_protected_name_withheld(approved, reg, monkeypatch):
     name, _ = reg("Zorp", "a UK retailer")
-    bad = approved(full().model_copy(update={"challenge": Sourced[str](value=name.replace("o", "ö"), source_quote="q")}))
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)
+    bad = approved(full().model_copy(update={"challenge": Sourced[str](value=name, source_quote="q")}))
     r = gen([bad], "pptx")
     assert r.status_code == 409 and r.json()["detail"] == render.WITHHELD
 
