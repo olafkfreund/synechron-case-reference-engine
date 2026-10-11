@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 166
 intent: intent/2026-10-10-166-accentless-names.md
 ---
