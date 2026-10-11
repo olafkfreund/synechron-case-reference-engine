@@ -46,7 +46,6 @@ def crawl_s3(source_id: int) -> dict:
                 key = obj["Key"]
                 if key.endswith("/"):
                     continue
-                seen.append(key)  # before the filters: a skipped key is not a deletion
                 # decided from the listing alone: a skipped file is never downloaded or copied
                 if PurePosixPath(key).suffix.lower().lstrip(".") not in exts:
                     counts["skipped_type"] += 1
@@ -54,6 +53,7 @@ def crawl_s3(source_id: int) -> dict:
                 if obj["Size"] > cap:
                     counts["skipped_too_large"] += 1
                     continue
+                seen.append(key)  # after the filters: a key we now skip is withdrawn by the sweep (#161)
                 modified = obj["LastModified"]
                 newest = max(newest or modified.isoformat(), modified.isoformat())
                 if key in known and since and modified < since and key not in prev_retry:
