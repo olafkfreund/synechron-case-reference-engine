@@ -71,8 +71,17 @@ def update(cid: int, name: str = Form(), aliases: str = Form(""), anonymised_lab
            v: str = Form(), referenceable: bool = Form(False), logo_allowed: bool = Form(False),
            user: User = Depends(require("admin"))):
     with db.connect() as conn:  # unknown id is 404 before any validation message
-        if not conn.execute("select 1 from clients where id=%s", (cid,)).fetchone():
+        old = conn.execute("select name, aliases, referenceable from clients where id=%s", (cid,)).fetchone()
+        if not old:
             raise HTTPException(404, "no such client")
+    kept = []
+    if not old[2] and not referenceable:  # a protected client keeps every name it had (#164)
+        have = {anonymise._key(n) for n in [name, *aliases.splitlines()] if n.strip()}
+        for n in [old[0], *old[1]]:
+            if anonymise._key(n) not in have:
+                have.add(anonymise._key(n))
+                kept.append(n)
+        aliases = "\n".join([aliases, *kept])
     name, alias_list, label = clean(name, aliases, anonymised_label, referenceable, cid)
     try:
         with db.connect() as conn:
@@ -84,7 +93,7 @@ def update(cid: int, name: str = Form(), aliases: str = Form(""), anonymised_lab
                 raise HTTPException(409 if exists else 404, "client changed; reload the page" if exists else "no such client")
     except UniqueViolation:
         raise HTTPException(400, "a client with that name already exists") from None
-    return RedirectResponse("/admin/clients", status_code=303)
+    return RedirectResponse(f"/admin/clients?kept={len(kept)}" if kept else "/admin/clients", status_code=303)
 
 
 @router.post("/admin/clients/{cid}/delete")
