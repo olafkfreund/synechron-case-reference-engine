@@ -96,6 +96,8 @@ class Web:
         self.db_host = conninfo_to_dict(db.url()).get("host")  # read once: with DB_SECRET_ARN, url() calls AWS
         self.pages = {}   # (host, path) -> (status, headers, body)
         self.seen = []    # (host, path)
+        self.slow = set()  # (host, path) that block until the test ends
+        self.gate = threading.Event()
         self.brave_calls = []
         self.brave_replies = []  # popped per call: an exception to raise or an httpx.Response
         monkeypatch.setattr(rs.socket, "getaddrinfo", self.getaddrinfo)
@@ -123,6 +125,8 @@ class Web:
             return httpx.Response(200, json={"web": {"results": [{"url": u, "title": "T"} for u in self.results]}})
         host = request.headers["host"].split(":")[0]
         self.seen.append((host, request.url.path))
+        if (host, request.url.path) in self.slow:
+            self.gate.wait(3)  # Event.wait: time.sleep is patched out
         status, headers, body = self.pages.get((host, request.url.path), (404, {}, b""))
         return httpx.Response(status, headers=headers, content=body)
 
@@ -135,7 +139,9 @@ def web(monkeypatch):
     monkeypatch.setenv("BRAVE_API_KEY", KEY)
     monkeypatch.setattr(ingest, "to_markdown", lambda data, name, **kw: data.decode())
     monkeypatch.setattr(ingest, "warm", lambda: None)
-    return Web(monkeypatch)
+    w = Web(monkeypatch)
+    yield w
+    w.gate.set()  # let blocked threads end
 
 
 @pytest.mark.parametrize("host,ip", [("a.example", "127.0.0.1"), ("b.example", "10.1.2.3"), ("meta.example", "169.254.169.254"),
@@ -177,6 +183,27 @@ def test_redirect_limit_and_normal_redirect(web):
     web.html("ok.example", "/b", "final")
     body, ctype, final = rs.Fetcher().fetch("https://ok.example/a")
     assert body == b"final" and final.endswith("/b")
+
+
+def test_slow_headers_hit_the_wall_clock_limit(web, monkeypatch):
+    monkeypatch.setattr(rs, "TIMEOUT", 0.3)
+    web.html("slow.example", "/robots.txt", "")
+    web.html("slow.example", "/p")
+    web.slow.add(("slow.example", "/p"))
+    t = time.monotonic()
+    with pytest.raises(rs.ResearchError, match="took too long"):
+        rs.Fetcher().fetch("https://slow.example/p")
+    assert time.monotonic() - t < 1.5
+
+
+def test_slow_robots_txt_is_disallowed(web, monkeypatch):
+    monkeypatch.setattr(rs, "TIMEOUT", 0.3)
+    web.html("slow.example", "/robots.txt", "")
+    web.html("slow.example", "/p")
+    web.slow.add(("slow.example", "/robots.txt"))
+    t = time.monotonic()
+    assert rs.Fetcher().allowed("https://slow.example/p") is False
+    assert time.monotonic() - t < 1.5
 
 
 def test_size_content_type_and_robots(web, monkeypatch):
@@ -251,6 +278,27 @@ def test_run_stores_pages_skips_bad_ones_and_never_stores_the_key(web, cleanup):
     assert results["skipped"] == [{"domain": "blog.example", "error": "RobotsDisallowed"}, {"domain": "127.0.0.1", "error": "Blocked"}]
     assert web.brave_calls == [{"q": q, "count": "10"}]
     assert KEY not in json.dumps(results) and KEY not in json.dumps(error)
+
+
+# the slow hop thread is still alive when Docling forks for the other page; the child never touches it
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
+def test_run_skips_a_slow_page_and_keeps_the_others(web, cleanup, monkeypatch):
+    monkeypatch.setattr(rs, "TIMEOUT", 0.3)
+    q = f"research test {uuid.uuid4().hex}"
+    web.results = ["https://slow.example/p", "https://docs.example/guide"]
+    for h in ("slow.example", "docs.example"):
+        web.html(h, "/robots.txt", "")
+    web.html("slow.example", "/p")
+    web.html("docs.example", "/guide", "<h1>Guide</h1>")
+    web.slow.add(("slow.example", "/p"))
+    rid = make_row(q)
+    t = time.monotonic()
+    rs.run(rid)
+    assert time.monotonic() - t < 1.5  # main waits out the slow page (3 s) before its own check fires
+    status, error, results = row(rid)
+    assert status == "done" and error is None
+    assert [p["publisher"] for p in results["pages"]] == ["docs.example"]
+    assert results["skipped"] == [{"domain": "slow.example", "error": "ResearchError"}]
 
 
 def test_run_failure_is_recorded_without_the_key(web, cleanup, monkeypatch):

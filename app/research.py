@@ -3,6 +3,7 @@ import multiprocessing
 import os
 import re
 import socket
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
@@ -237,6 +238,27 @@ def vet_url(url: str) -> tuple[httpx.URL, int]:
     return u, port
 
 
+def _within(seconds, fn):
+    """fn() in a daemon thread, at most `seconds` of wall clock: httpx's timeout is per read, so a
+    server trickling one byte at a time never trips it (#147)."""
+    out = {}
+
+    def call():
+        try:
+            out["v"] = fn()
+        except BaseException as e:  # noqa: BLE001 - re-raised in the caller
+            out["e"] = e
+
+    t = threading.Thread(target=call, daemon=True)
+    t.start()
+    t.join(seconds)
+    if t.is_alive():
+        raise ResearchError("fetch took too long")
+    if "e" in out:
+        raise out["e"]
+    return out["v"]
+
+
 class Fetcher:
     """SSRF-safe fetching: we run inside the VPC, so every hop is vetted before a byte is sent."""
 
@@ -256,27 +278,43 @@ class Fetcher:
                 time.sleep(wait)
             self.last[u.host] = time.monotonic()
             target = u.copy_with(host=ip)  # connect to the vetted address; Host and SNI keep the name
-            deadline = time.monotonic() + TIMEOUT
-            with self.http.stream("GET", target, headers={"Host": u.netloc.decode(), "User-Agent": UA,
-                                                          "Accept": "text/html,application/pdf"},
-                                  extensions={"sni_hostname": u.host}) as r:
-                if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
-                    url = urljoin(str(u), r.headers["location"])
-                    if check_robots and not self.allowed(url):  # a new host has its own robots.txt
-                        raise RobotsDisallowed("disallowed by robots.txt")
-                    continue
-                if r.status_code >= 400:
-                    raise ResearchError(f"HTTP {r.status_code}")
-                ctype = r.headers.get("content-type", "").split(";")[0].strip().lower()
-                body = b""
-                for chunk in r.iter_bytes():
-                    body += chunk
-                    if len(body) > limit:
-                        raise TooLarge("response too large")
-                    if time.monotonic() > deadline:
-                        raise ResearchError("fetch took too long")
-                return body, ctype, str(u)
+            opened = []
+            try:
+                body, ctype, location = _within(TIMEOUT, lambda: self._hop(u, target, limit, opened))
+            except ResearchError:
+                for r in opened:
+                    r.close()  # the abandoned hop stops at its next read
+                # ponytail: a host that stalls before its headers leaves nothing to close; that daemon thread
+                # lives until httpx's per-read timeout. A custom transport could kill it if threads pile up.
+                raise
+            if body is None:
+                url = urljoin(str(u), location)
+                if check_robots and not self.allowed(url):  # a new host has its own robots.txt
+                    raise RobotsDisallowed("disallowed by robots.txt")
+                continue
+            return body, ctype, location
         raise Blocked("too many redirects")
+
+    def _hop(self, u, target, limit, opened):
+        """One request. (None, None, location) for a redirect, else (body, content type, final URL)."""
+        deadline = time.monotonic() + TIMEOUT
+        with self.http.stream("GET", target, headers={"Host": u.netloc.decode(), "User-Agent": UA,
+                                                      "Accept": "text/html,application/pdf"},
+                              extensions={"sni_hostname": u.host}) as r:
+            opened.append(r)
+            if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
+                return None, None, r.headers["location"]
+            if r.status_code >= 400:
+                raise ResearchError(f"HTTP {r.status_code}")
+            ctype = r.headers.get("content-type", "").split(";")[0].strip().lower()
+            body = b""
+            for chunk in r.iter_bytes():
+                body += chunk
+                if len(body) > limit:
+                    raise TooLarge("response too large")
+                if time.monotonic() > deadline:
+                    raise ResearchError("fetch took too long")
+            return body, ctype, str(u)
 
     def allowed(self, url: str) -> bool:
         u, _ = vet_url(url)  # before any request, robots.txt included
