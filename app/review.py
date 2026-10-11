@@ -102,7 +102,7 @@ def rows(case, docs=None):
         out += [dict(row(f"{n}.{i}", f"{n.replace('_', ' ')} #{i + 1}", o, ["value"]), item=True) for i, o in enumerate(getattr(case, n))]
         out.append(new(n, f"add {label}", ["value"]))
     out += [dict(row(f"outcomes.{i}", f"outcome #{i + 1}", o, ["metric", "value"]), item=True) for i, o in enumerate(case.outcomes)]
-    out.append(new("outcomes", "add outcome", ["metric", "value"]))
+    if case.basis != "engagement": out.append(new("outcomes", "add outcome", ["metric", "value"]))  # contracted scope claims no results (#139)
     out.append(row("period", "period", case.period, ["start", "end"]))
     out.append(dict(path="summary", label="summary", quote="", unsourced=False, no_quote=True,
                     inputs=[("value", case.summary)]))
@@ -183,7 +183,8 @@ def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: 
                 if value is not None:
                     obj.value = (int(value) if value.strip() else None) if name in INTS else (value or None)
             elif name in LISTS and idx == "new":
-                if not (value or "").strip() or not (quote or "").strip() or (name == "outcomes" and not (metric or "").strip()):
+                if not (value or "").strip() or not (quote or "").strip() or (name == "outcomes" and not (metric or "").strip()) \
+                        or (name == "outcomes" and case.basis == "engagement"):
                     raise ValueError
                 obj = Outcome(metric=metric, value=value) if name == "outcomes" else Sourced[str](value=value)
                 getattr(case, name).append(obj)
@@ -197,7 +198,7 @@ def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: 
                     raise IndexError
                 obj = getattr(case, name)[int(idx)]
                 if isinstance(obj, Outcome):
-                    if not value:  # an empty outcome is removed, not saved (#108)
+                    if not value or case.basis == "engagement":  # empty: removed, not saved (#108); engagement: remove only (#139)
                         raise ValueError
                     obj.metric, obj.value = metric or "", value or ""
                 elif value is not None:
@@ -236,7 +237,7 @@ def approve(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))
                 s.value, s.source_quote, s.unsourced = None, "", False
         case.capabilities = [c for c in case.capabilities if not c.unsourced]
         case.tech_stack = [t for t in case.tech_stack if not t.unsourced]
-        case.outcomes = [o for o in case.outcomes if not o.unsourced]
+        case.outcomes = [] if case.basis == "engagement" else [o for o in case.outcomes if not o.unsourced]  # contracted scope claims no results (#139, spec #52)
         if case.period.unsourced:
             case.period = type(case.period)()
         if not case.title.value:
