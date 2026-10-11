@@ -1,6 +1,6 @@
 import re
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from psycopg.errors import ForeignKeyViolation, UniqueViolation
 
@@ -44,11 +44,11 @@ def clean(name, aliases, label, referenceable, cid=None):
 
 
 @router.get("/admin/clients")
-def clients_page(request: Request, user: User = Depends(require("admin"))):
+def clients_page(request: Request, kept: int = Query(0, ge=0), user: User = Depends(require("admin"))):
     with db.connect() as conn:
         rows = conn.execute(f"select id, name, aliases, anonymised_label, referenceable, logo_allowed, "
                             f"{VERSION} from clients order by name").fetchall()
-    return page(request, "clients.html", user, clients=rows)
+    return page(request, "clients.html", user, clients=rows, kept=kept)
 
 
 @router.post("/admin/clients")
@@ -71,8 +71,19 @@ def update(cid: int, name: str = Form(), aliases: str = Form(""), anonymised_lab
            v: str = Form(), referenceable: bool = Form(False), logo_allowed: bool = Form(False),
            user: User = Depends(require("admin"))):
     with db.connect() as conn:  # unknown id is 404 before any validation message
-        if not conn.execute("select 1 from clients where id=%s", (cid,)).fetchone():
+        old = conn.execute(f"select name, aliases, referenceable, {VERSION} from clients where id=%s", (cid,)).fetchone()
+        if not old:
             raise HTTPException(404, "no such client")
+    if old[3] != v:  # changed since the form loaded: say so before validating names the admin never saw
+        raise HTTPException(409, "client changed; reload the page")
+    kept = []
+    if not old[2] and not referenceable:  # a protected client keeps every name it had (#164)
+        have = {anonymise._key(n) for n in [name, *aliases.splitlines()] if n.strip()}
+        for n in [old[0], *old[1]]:
+            if anonymise._key(n) not in have:
+                have.add(anonymise._key(n))
+                kept.append(n)
+        aliases = "\n".join([aliases, *kept])
     name, alias_list, label = clean(name, aliases, anonymised_label, referenceable, cid)
     try:
         with db.connect() as conn:
@@ -84,7 +95,7 @@ def update(cid: int, name: str = Form(), aliases: str = Form(""), anonymised_lab
                 raise HTTPException(409 if exists else 404, "client changed; reload the page" if exists else "no such client")
     except UniqueViolation:
         raise HTTPException(400, "a client with that name already exists") from None
-    return RedirectResponse("/admin/clients", status_code=303)
+    return RedirectResponse(f"/admin/clients?kept={len(kept)}" if kept else "/admin/clients", status_code=303)
 
 
 @router.post("/admin/clients/{cid}/delete")

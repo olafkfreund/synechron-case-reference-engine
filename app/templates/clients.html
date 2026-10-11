@@ -7,7 +7,7 @@
 <p class="muted">Add every spelling people use as an alias: abbreviations, former names and the email/web domain stem
 (e.g. <code>acmebank</code> for acmebank.co.uk). Aliases match in any case, so a short alias that is also a word (<code>ACE</code>) also replaces that word.</p>
 <p class="muted"><b>Avoid aliases that are ordinary words</b> (“Apex”): they would be replaced wherever the word appears.
-Enter one alias per line. Only referenceable clients that no case uses can be deleted.</p></details></div>
+Enter one alias per line. Saving a non-referenceable client keeps any name you remove as an alias, so it stays hidden. Only referenceable clients that no case uses can be deleted.</p></details></div>
 <div class="page-head-actions"><details class="detail-panel head-panel"><summary>+ Add client</summary>
 <form method="post" action="/admin/clients">
 <div class="field"><label for="new-name">Name</label><input type="text" id="new-name" name="name" required></div>
@@ -19,7 +19,7 @@ Enter one alias per line. Only referenceable clients that no case uses can be de
 <label class="check"><input type="checkbox" name="logo_allowed"> Logo allowed</label></div>
 <div class="action-row"><button class="btn primary">Add client</button></div>
 </form></details></div></div>
-
+{% if kept %}<p class="badge ok" role="status">Kept {{ kept }} former name(s) as aliases, so they stay hidden.</p>{% endif %}
 <div class="section-card client-list">
 <div class="card-head"><h2>Clients ({{ clients | length }})</h2></div>
 {% if not clients %}<div class="empty-state">{{ icon("users") }}<p>No clients yet.</p><p>Use “+ Add client” above.</p></div>{% endif %}
