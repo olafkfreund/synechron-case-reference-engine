@@ -175,3 +175,6 @@ crawl:
 
 - **S3:** the sweep clears `deleted_at` for every listed key.
 - **SharePoint and Confluence:** when delta or CQL next offers the item.
+
+## Deviations
+- Review: the help line and the guide sentence say `include_ext` applies to S3 and SharePoint. Confluence ignores it (its types are fixed in `crawl_confluence`), so the plan's wording would have promised a withdrawal that never happens there.

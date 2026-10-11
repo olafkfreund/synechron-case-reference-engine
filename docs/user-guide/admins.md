@@ -40,7 +40,7 @@ Pulling in new documents without waiting for the schedule.
 
 The row shows New, Skipped and Failed counts for the last run. "Skipped" includes files left out
 because of their permissions or restrictions.
-Files skipped for their type or size are also withdrawn if an earlier version is in search, so narrowing a source's types withdraws matching documents on the next crawl.
+Files skipped for their type or size are also withdrawn if an earlier version is in search, so narrowing an S3 or SharePoint source's types (`include_ext`) withdraws matching documents on the next crawl.
 
 ## Upload a document
 
