@@ -53,7 +53,8 @@ def _loose(word: str) -> str:
 
 def _pattern(name: str) -> re.Pattern:
     words = [w for w in re.split(_SEP + "+", name) if w] or [name]  # "-" alone stays literal, never empty
-    body = _JOIN.join(_loose(re.escape(w)) if re.search(r"\w", name) else re.escape(w) for w in words)
+    loose = _loose if re.search(r"\w", name) else str
+    body = _JOIN.join(loose(re.escape(w)) for w in words)
     return re.compile(rf"(?<!\w){body}(?!\w)", re.I)
 
 
