@@ -274,3 +274,62 @@ def test_no_checksum_still_extracts(doc):
     reply["v"] = case()
     ex.extract(did)
     assert cases_for(did) == [("extracted",)]
+
+
+TICK = ("update sources set config = config || '{\"executed_contracts\": true}' "
+        "where id = (select source_id from documents where id=%s)")
+UNTICK = "update sources set config = config - 'executed_contracts' where id = (select source_id from documents where id=%s)"
+
+
+def test_flagged_job_on_unticked_source_writes_no_case_and_calls_no_model(doc, monkeypatch):
+    did, _ = doc
+
+    def boom(*a, **k):
+        raise AssertionError("model called")
+
+    monkeypatch.setattr(ex, "complete_json", boom)
+    ex.extract(did, "engagement", "source marked executed")
+    assert cases_for(did) == []
+
+
+def test_untick_during_flagged_extract_writes_no_case(doc, monkeypatch):
+    did, _ = doc
+    with db.connect() as c:
+        c.execute(TICK, (did,))
+
+    def untick(*a, **k):
+        with db.connect(autocommit=True) as c:
+            c.execute(UNTICK, (did,))
+        return case()
+
+    monkeypatch.setattr(ex, "complete_json", untick)
+    ex.extract(did, "engagement", "source marked executed")
+    assert cases_for(did) == []
+
+
+def test_executed_contract_reason_ignores_the_flag(doc):
+    did, reply = doc
+    reply["v"] = case()
+    ex.extract(did, "engagement", "executed contract")
+    assert cases_for(did) == [("extracted",)]
+
+
+def test_flagged_extract_waits_for_an_uncommitted_untick(doc):
+    """The write-time flag check takes a share lock on the source: an untick not yet committed is waited for (#159)."""
+    import threading
+    from tests.test_ingest import _wait_for_lock_wait
+    did, reply = doc
+    reply["v"] = case()
+    with db.connect() as c:
+        c.execute(TICK, (did,))
+    holder = db.connect()  # stands in for the admin save: flag removed, not committed
+    try:
+        holder.execute(UNTICK, (did,))
+        t = threading.Thread(target=ex.extract, args=(did, "engagement", "source marked executed"))
+        t.start()
+        _wait_for_lock_wait(holder)
+        holder.commit()
+    finally:
+        holder.close()
+    t.join(10)
+    assert not t.is_alive() and cases_for(did) == []
