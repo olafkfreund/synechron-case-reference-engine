@@ -78,3 +78,5 @@ Revert the commits. Matching only narrows back to its previous behaviour. No sto
 ## Deviations
 
 None yet.
+- Step 1, approved by the user after review: only a dot at the end of a word is optional ("Inc.", "Ltd."). Dots inside a word stay required, so the alias "U.S." no longer matches the word "us" ("I.T." / "it", "E.ON" / "eon"), which would have made `blocked()` refuse nearly every reference. The spec's accepted widening "A.B.C" = "ABC" no longer happens.
+- Step 2: the test also asserts "U.S." does not match "us" and still matches "U.S.".

@@ -153,6 +153,8 @@ def test_punctuation_variants_of_a_name():
     assert an.apply("Zorp, Inc. said", [C("Zorp Inc", label="a firm")]) == "a firm. said"
     assert an.blocked("C Ltd", [C("C++ Ltd")]) == []
     assert an.blocked("plain text. more", [C(".", label="x")]) == []
+    assert an.blocked("tell us about it", [C("Zorp Holdings", ["U.S.", "I.T."])]) == []
+    assert an.blocked("U.S. arm", [C("Zorp Holdings", ["U.S."])]) == ["U.S."]
 
 
 def test_dash_only_name_does_not_match_everything():

@@ -9,7 +9,8 @@ from app import db
 # Words inside a name may be joined by any spacing or dash ("Acme Bank", "Acme-Bank", "AcmeBank",
 # "jane@acmebank.co.uk"). Boundaries are lookarounds on \w, not \b, so "C++ Ltd" still matches.
 # Possessives need no special case: "Acme's" matches "Acme" and the "'s" stays.
-# A comma joins words too, a dot is optional and apostrophe variants are one ("Acme, Inc." = "Acme Inc") (#163).
+# A comma joins words too, a word's last dot is optional and apostrophe variants are one ("Acme, Inc." = "Acme Inc")
+# (#163).
 _SEP = r"[\s,\-‐‑–—]"
 _JOIN = _SEP + "*"
 _APOS = "'’‘ʼ′"
@@ -45,9 +46,10 @@ def _names(c) -> list[str]:
 
 
 def _loose(word: str) -> str:
-    """An escaped word with optional dots and any apostrophe. Only for names with a word character: "." alone
-    would become an empty match."""
-    word = word.replace(r"\.", r"\.?")
+    """An escaped word with an optional trailing dot and any apostrophe. Only for names with a word character:
+    "." alone would become an empty match. Inner dots stay, or "U.S." would match "us" (#163)."""
+    if word.endswith(r"\."):
+        word += "?"
     return "".join(f"[{_APOS}]" if ch in _APOS else ch for ch in word)
 
 
