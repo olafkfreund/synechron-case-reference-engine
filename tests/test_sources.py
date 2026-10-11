@@ -139,6 +139,42 @@ def test_unticking_executed_retires_flagged_engagements(env):  # noqa: F811
         _clean(other)
 
 
+def test_reticking_brings_back_untick_rejects(env):  # noqa: F811
+    db.init()
+    with db.connect() as c:
+        sid = _src(c, True)
+        d = _doc(c, sid, "contract")
+        cid = _case(c, d, "approved", "engagement", REASON)
+    try:
+        a = client([ADMIN])
+        assert a.post(f"/admin/sources/{sid}", data={"acl_groups": "g1"}, follow_redirects=False).status_code == 303
+        with db.connect() as c:
+            assert c.execute("select status, retired_by from cases where id=%s", (cid,)).fetchone() == ("rejected", "untick")
+        form = {"acl_groups": "g1", "executed_contracts": "on"}
+        assert a.post(f"/admin/sources/{sid}", data=form, follow_redirects=False).status_code == 303
+        with db.connect() as c:
+            rows = _jobs(c, sid)
+        assert [r[0] for r in rows] == [{"document_id": d, "basis": "engagement", "basis_reason": REASON, "checksum": "x"}]
+    finally:
+        _clean(sid)
+
+
+def test_reticking_keeps_a_reviewers_reject(env):  # noqa: F811
+    db.init()
+    with db.connect() as c:
+        sid = _src(c, False)
+        d = _doc(c, sid, "contract")
+        cid = _case(c, d, "rejected", "engagement", REASON)  # no untick mark
+    try:
+        form = {"acl_groups": "g1", "executed_contracts": "on"}
+        assert client([ADMIN]).post(f"/admin/sources/{sid}", data=form, follow_redirects=False).status_code == 303
+        with db.connect() as c:
+            assert _jobs(c, sid) == []
+            assert c.execute("select status from cases where id=%s", (cid,)).fetchone() == ("rejected",)
+    finally:
+        _clean(sid)
+
+
 def test_saving_without_flag_change_does_nothing(env):  # noqa: F811
     db.init()
     with db.connect() as c:
