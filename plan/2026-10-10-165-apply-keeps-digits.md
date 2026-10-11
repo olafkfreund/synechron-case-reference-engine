@@ -95,3 +95,4 @@ change is involved.
 
 ## Deviations
 - Step 1: `apply()` uses `_no_format(unicodedata.normalize("NFC", text))`, not `_no_format(text)`. Without any composition, decomposed (NFD) text such as "Société" no longer matched the NFC name, so `test_spacing_dash_accent_and_domain_variants_are_caught` failed. NFC only joins canonical sequences and leaves 10⁶, m², ½ as they are.
+- Review, approved by the user: without NFKC on the text, a protected name in a compatibility form (full-width "Ｚｏｒｐ", the "ﬁ" ligature, "™", mathematical or circled letters, full-width hyphens) is no longer replaced by `apply()`. Callers that run `blocked()` refuse such output; `search.pick()` did not, so the name could reach the draft model's prompt. `pick()` now leaves out any candidate whose anonymised text `blocked()` flags, with `tests/test_search.py::test_pick_leaves_out_a_candidate_with_a_name_apply_missed`. #166 removes the gap by matching on folded text.

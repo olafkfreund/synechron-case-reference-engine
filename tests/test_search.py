@@ -258,3 +258,13 @@ def test_referenceable_name_containing_protected_name_shows_its_label(approved, 
     assert x["label"] == "a logistics firm"
     assert x["title"] == "Faster onboarding for a logistics firm"
     assert p not in x["title"] + x["label"]
+
+
+def test_pick_leaves_out_a_candidate_with_a_name_apply_missed(monkeypatch):  # #165
+    reg = [dict(name="Zorp Bank", aliases=[], anonymised_label="a bank", referenceable=False)]
+    leak = data().model_copy(update={"summary": "Ｚｏｒｐ Bank onboarding fell from 12 days to 3 days."})
+    cands = [dict(id=1, basis="delivered", case=leak), dict(id=2, basis="delivered", case=data())]
+    seen = []
+    monkeypatch.setattr(sr, "complete_json", lambda m, s, user, *a, **k: seen.append(user) or sr.Picks(picks=[]))
+    sr.pick("onboarding", cands, reg)
+    assert "case_id 2 " in seen[0] and "case_id 1 " not in seen[0] and "Ｚｏｒｐ" not in seen[0]
