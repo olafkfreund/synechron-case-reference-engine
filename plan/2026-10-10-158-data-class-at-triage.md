@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 158
 spec: spec/2026-10-10-158-data-class-at-triage.md
 ---
