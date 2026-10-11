@@ -96,6 +96,8 @@ class Web:
         self.db_host = conninfo_to_dict(db.url()).get("host")  # read once: with DB_SECRET_ARN, url() calls AWS
         self.pages = {}   # (host, path) -> (status, headers, body)
         self.seen = []    # (host, path)
+        self.slow = set()  # (host, path) that block until the test ends
+        self.gate = threading.Event()
         self.brave_calls = []
         self.brave_replies = []  # popped per call: an exception to raise or an httpx.Response
         monkeypatch.setattr(rs.socket, "getaddrinfo", self.getaddrinfo)
@@ -123,6 +125,8 @@ class Web:
             return httpx.Response(200, json={"web": {"results": [{"url": u, "title": "T"} for u in self.results]}})
         host = request.headers["host"].split(":")[0]
         self.seen.append((host, request.url.path))
+        if (host, request.url.path) in self.slow:
+            self.gate.wait(3)  # Event.wait: time.sleep is patched out
         status, headers, body = self.pages.get((host, request.url.path), (404, {}, b""))
         return httpx.Response(status, headers=headers, content=body)
 
@@ -135,7 +139,9 @@ def web(monkeypatch):
     monkeypatch.setenv("BRAVE_API_KEY", KEY)
     monkeypatch.setattr(ingest, "to_markdown", lambda data, name, **kw: data.decode())
     monkeypatch.setattr(ingest, "warm", lambda: None)
-    return Web(monkeypatch)
+    w = Web(monkeypatch)
+    yield w
+    w.gate.set()  # let blocked threads end
 
 
 @pytest.mark.parametrize("host,ip", [("a.example", "127.0.0.1"), ("b.example", "10.1.2.3"), ("meta.example", "169.254.169.254"),
