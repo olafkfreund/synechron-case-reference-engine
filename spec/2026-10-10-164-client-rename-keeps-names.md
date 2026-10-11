@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 164
 intent: intent/2026-10-10-164-client-rename-keeps-names.md
 ---
