@@ -416,6 +416,18 @@ def test_changed_document_no_longer_a_case_retires_it(env):
     assert jobs() == before
 
 
+
+def test_changed_document_clears_the_untick_mark(env):  # #160: a reject by ingest is not an untick reject
+    _, sid = env
+    ing.ingest(sid, "a", "a", b"one")
+    with db.connect() as c:
+        did = c.execute("select id from documents where source_id=%s", (sid,)).fetchone()[0]
+        c.execute("insert into cases(document_id,status,retired_by) values (%s,'rejected','untick')", (did,))
+    TRIAGE["v"] = ing.Triage(kind="other", describes_delivered_work=False)
+    ing.ingest(sid, "a", "a", b"two")
+    with db.connect() as c:
+        assert c.execute("select status, retired_by from cases where document_id=%s", (did,)).fetchone() == ("rejected", None)
+
 def merged_pair(sid):
     """Two ingested documents "a" and "b", each with an engagement case, merged into one approved case."""
     ing.ingest(sid, "a", "a", b"one")

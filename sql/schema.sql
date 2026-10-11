@@ -88,6 +88,7 @@ alter table cases add constraint cases_merge_check check (
   and (member_count is null or member_count >= 2)
   and (merged_into is null or document_id is not null));
 create index if not exists cases_merged_into_idx on cases (merged_into);
+alter table cases add column if not exists retired_by text;  -- 'untick': rejected by the source flag (#160)
 
 create table if not exists jobs (
   id bigserial primary key,

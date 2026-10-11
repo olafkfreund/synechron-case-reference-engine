@@ -342,3 +342,13 @@ def test_flagged_extract_waits_for_an_uncommitted_untick(doc):
         holder.close()
     t.join(10)
     assert not t.is_alive() and errors == [] and cases_for(did) == []
+
+
+def test_extract_clears_retired_by(doc):
+    did, _ = doc
+    run(doc, case())
+    with db.connect() as c:
+        c.execute("update cases set status='rejected', retired_by='untick' where document_id=%s", (did,))
+    run(doc, case())
+    with db.connect() as c:
+        assert c.execute("select status, retired_by from cases where document_id=%s", (did,)).fetchone() == ("extracted", None)

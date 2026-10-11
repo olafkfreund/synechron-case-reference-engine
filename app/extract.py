@@ -164,5 +164,5 @@ def extract(document_id: int, basis: str = "delivered", basis_reason: str = "", 
             "insert into cases(document_id, data, summary, search_text, basis, status) "
             "values (%s,%s,%s,%s,%s,'extracted') on conflict (document_id) do update set "
             "data=excluded.data, basis=excluded.basis, summary=excluded.summary, search_text=excluded.search_text, "
-            "status='extracted', approved_by=null, approved_at=null, review_due=null",
+            "status='extracted', approved_by=null, approved_at=null, review_due=null, retired_by=null",
             (document_id, Jsonb(data), case.summary, case.search_text(), case.basis))

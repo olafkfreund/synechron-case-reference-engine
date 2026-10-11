@@ -32,10 +32,10 @@ QUEUE_CONTRACTS = """insert into jobs(kind, payload)
     select 'extract', jsonb_build_object('document_id', d.id, 'basis', 'engagement', 'basis_reason', 'source marked executed',
                                          'checksum', d.checksum)
     from documents d where d.source_id=%s and d.kind='contract' and d.deleted_at is null
-    and not exists (select 1 from cases c where c.document_id=d.id)
+    and not exists (select 1 from cases c where c.document_id=d.id and c.retired_by is distinct from 'untick')
     and not exists (select 1 from jobs j where j.kind='extract' and j.status in ('queued','running')
                     and (j.payload->>'document_id')::bigint=d.id)"""
-RETIRE_FLAGGED = """update cases c set status='rejected' from documents d
+RETIRE_FLAGGED = """update cases c set status='rejected', retired_by='untick' from documents d
     where d.id=c.document_id and d.source_id=%s and c.basis='engagement'
     and c.data->>'basis_reason'='source marked executed' and c.status<>'rejected'
     returning c.document_id"""
