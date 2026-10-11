@@ -278,7 +278,8 @@ def test_no_checksum_still_extracts(doc):
 
 TICK = ("update sources set config = config || '{\"executed_contracts\": true}' "
         "where id = (select source_id from documents where id=%s)")
-UNTICK = "update sources set config = config - 'executed_contracts' where id = (select source_id from documents where id=%s)"
+UNTICK = ("update sources set config = jsonb_set(config, '{executed_contracts}', 'false') "  # as the admin save writes it
+          "where id = (select source_id from documents where id=%s)")
 
 
 def test_flagged_job_on_unticked_source_writes_no_case_and_calls_no_model(doc, monkeypatch):
@@ -322,14 +323,22 @@ def test_flagged_extract_waits_for_an_uncommitted_untick(doc):
     reply["v"] = case()
     with db.connect() as c:
         c.execute(TICK, (did,))
+    errors = []
+
+    def run():
+        try:
+            ex.extract(did, "engagement", "source marked executed")
+        except Exception as e:  # a crash after the wait must fail the test, not pass it
+            errors.append(e)
+
     holder = db.connect()  # stands in for the admin save: flag removed, not committed
     try:
         holder.execute(UNTICK, (did,))
-        t = threading.Thread(target=ex.extract, args=(did, "engagement", "source marked executed"))
+        t = threading.Thread(target=run)
         t.start()
         _wait_for_lock_wait(holder)
         holder.commit()
     finally:
         holder.close()
     t.join(10)
-    assert not t.is_alive() and cases_for(did) == []
+    assert not t.is_alive() and errors == [] and cases_for(did) == []
