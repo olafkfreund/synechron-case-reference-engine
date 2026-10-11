@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 161
 intent: intent/2026-10-10-161-skip-withdraws-old.md
 ---
