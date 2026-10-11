@@ -417,9 +417,11 @@ def crawl_confluence(source_id: int) -> dict:
                         title = att.get("title", "")
                         if PurePosixPath(title).suffix.lower().lstrip(".") not in exts:
                             counts["skipped_type"] += 1
+                            withdraw(ext)  # a file the source would no longer take is not live (#161)
                             continue
                         if att.get("extensions", {}).get("fileSize", 0) > cap:
                             counts["skipped_too_large"] += 1
+                            withdraw(ext)
                             continue
                         try:
                             v = att.get("version") or {}
@@ -431,6 +433,7 @@ def crawl_confluence(source_id: int) -> dict:
                             data = c.get(base + att["_links"]["download"]).content
                             if len(data) > cap:
                                 counts["skipped_too_large"] += 1
+                                withdraw(ext)
                                 continue
                             counts[ingest(source_id, ext, title, data, source_version=ver)] += 1
                             done.add(ext)
