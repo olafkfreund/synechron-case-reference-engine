@@ -139,14 +139,23 @@ def build(full_text: str, data_class: str, basis: str = "delivered", basis_reaso
 
 
 def extract(document_id: int, basis: str = "delivered", basis_reason: str = "", checksum: str | None = None) -> None:
+    flagged = basis_reason == "source marked executed"  # queued only because of the source flag (#159)
     with db.connect() as conn:
-        row = conn.execute("select d.text, s.data_class, d.checksum from documents d join sources s on s.id=d.source_id where d.id=%s", (document_id,)).fetchone()
+        row = conn.execute("select d.text, s.data_class, d.checksum, s.config->'executed_contracts' = 'true'::jsonb "
+                           "from documents d join sources s on s.id=d.source_id where d.id=%s", (document_id,)).fetchone()
         if not row:
             raise LookupError(f"document {document_id} not found")
         if checksum and row[2] != checksum:
             return  # a newer version replaced this one (#132)
+        if flagged and row[3] is not True:
+            return  # the source was unticked: no case, and no model call (#159)
         case = build(row[0], row[1], basis, basis_reason)
         data = case.model_dump()
+        # under the lock the admin's save takes, so an untick during the model call applies here (#159)
+        if flagged and not conn.execute(
+                "select 1 from sources s join documents d on d.source_id = s.id where d.id = %s "
+                "and s.config->'executed_contracts' = 'true'::jsonb for share of s", (document_id,)).fetchone():
+            return
         # the version this job was queued for must still be current (#132)
         if checksum and not conn.execute("select 1 from documents where id=%s and checksum=%s for share",
                                          (document_id, checksum)).fetchone():
