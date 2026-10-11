@@ -215,9 +215,11 @@ def crawl_sharepoint(source_id: int) -> dict:
             name = item.get("name", "")
             if PurePosixPath(name).suffix.lower().lstrip(".") not in exts:
                 counts["skipped_type"] += 1
+                withdraw(iid)  # a file the source would no longer take is not live (#161)
                 return
             if item.get("size", 0) > cap:
                 counts["skipped_too_large"] += 1
+                withdraw(iid)
                 return
             try:
                 if not same_access(iid):
@@ -227,6 +229,7 @@ def crawl_sharepoint(source_id: int) -> dict:
                 data = g.get(f"{GRAPH}/drives/{drive}/items/{iid}/content").content
                 if len(data) > cap:
                     counts["skipped_too_large"] += 1
+                    withdraw(iid)
                     return
                 counts[ingest(source_id, iid, name, data)] += 1
             except Exception as e:  # noqa: BLE001 - one bad file must not stop the crawl
