@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 158
 intent: intent/2026-10-10-158-data-class-at-triage.md
 ---
