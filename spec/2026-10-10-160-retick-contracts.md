@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 160
 intent: intent/2026-10-10-160-retick-contracts.md
 ---
