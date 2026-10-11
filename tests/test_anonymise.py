@@ -373,3 +373,21 @@ def test_apply_keeps_superscripts_and_fractions():
     assert an.apply(t, []) == t
     reg = [C("Zorp Bank", label="a bank")]
     assert an.apply("Zorp Bank cut 10⁶ to 10³", reg) == "a bank cut 10⁶ to 10³"
+
+
+def test_apply_replaces_folded_spellings():
+    reg = [C("Société Zorpale", label="a bank"), C("Straße AG", label="a firm")]
+    for t, label in [("Societe Zorpale", "a bank"), ("SOCIETE ZORPALE", "a bank"), ("Sociéte Zorpale", "a bank"),
+                     ("STRASSE AG", "a firm")]:
+        assert an.apply(f"Équipe: {t} paid 10⁶ m² ½", reg) == f"Équipe: {label} paid 10⁶ m² ½", t
+
+
+def test_apply_then_blocked_is_empty():
+    reg = [C("Société Zorpale", ["Zorp"], label="a bank"), C("Straße AG", label="a firm")]
+    for t in ["Société Zorpale", "Societe Zorpale", "SOCIÉTÉ ZORPALE", "Socie\u0301te\u0301 Zorpale",
+              "Ｓｏｃｉｅｔｅ Ｚｏｒｐａｌｅ", "Soc\u200biété Zorpale", "Zo­rp", "Straße AG", "STRASSE AG", "strasse ag"]:
+        out = an.apply(f"{t} won", reg)
+        assert an.blocked(out, reg) == [] and out.endswith(" won"), t
+    assert an.apply("Zorp\u0301 won", reg) == "a bank won"  # the trailing mark goes with the name
+    two = [C("Zorp Bank", label="a bank"), C("Bank Ltd", label="a firm")]
+    assert an.blocked(an.apply("Zorp Bank Ltd", two), two) == []  # a label re-forms a name a longer hit hid

@@ -113,9 +113,13 @@ def test_pptx_industry_slide_keeps_the_quote_next_to_the_phrase(rows, approved):
     assert gen(rid, [cid], "pdf_pptx").content.startswith(b"%PDF")
 
 
-def test_a_claim_naming_a_protected_client_is_replaced_or_dropped_and_counted(rows, approved, reg):
+def test_a_claim_naming_a_protected_client_is_replaced_or_dropped_and_counted(rows, approved, reg, monkeypatch):
     name = reg
     evasion = name.replace("o", "ö")
+    kept = gen(rows([claim(f"{evasion} runs this in production daily")]), ack=True)  # #166: replaced, not dropped
+    assert kept.status_code == 200 and "a retailer runs this in production daily" in kept.text and "omitted" not in kept.text
+    real = render.anonymise.apply
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t if "ö" in t else real(t, c))  # misses only the accent: blocked() must still guard
     rid = rows([claim(f"{name} runs passwordless sign in out of the box"), claim(f"{evasion} runs this in production daily"),
                 claim(Q2, "configuration")])
     r = gen(rid, [approved()], ack=True)
@@ -127,8 +131,11 @@ def test_a_claim_naming_a_protected_client_is_replaced_or_dropped_and_counted(ro
     assert only.status_code == 400                                                  # nothing usable is left
 
 
-def test_pptx_industry_slide_shows_the_omitted_note(rows, approved, reg):
+def test_pptx_industry_slide_shows_the_omitted_note(rows, approved, reg, monkeypatch):
     rid = rows([claim(), claim(f"{reg.replace('o', 'ö')} runs this in production daily")])
+    kept = slides(gen(rid, [approved()], "pptx").content)[1][1]["Statements"]  # #166: replaced, not dropped
+    assert len(kept) == 2 and "omitted" not in "".join(kept)
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)  # apply() misses: blocked() alone must still guard
     _, out = slides(gen(rid, [approved()], "pptx").content)
     st = out[1]["Statements"]
     assert st[0].startswith("Supported out of the box") and st[-1] == "1 public statement omitted: it named a protected client"
@@ -181,6 +188,8 @@ def test_fallback_layout_shows_the_omitted_note(rows, approved, reg, tmp_path, m
     prs.save(alt)
     monkeypatch.setattr(render, "MASTER", alt)
     rid = rows([claim(), claim(f"{reg.replace('o', 'ö')} runs this in production daily")])
+    assert "omitted" not in slides(gen(rid, [approved()], "pptx").content)[1][1]["Outcomes"][-1]  # #166: replaced, not dropped
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)  # apply() misses: blocked() alone must still guard
     _, out = slides(gen(rid, [approved()], "pptx").content)
     assert out[1]["Outcomes"][-1] == "1 public statement omitted: it named a protected client"
 

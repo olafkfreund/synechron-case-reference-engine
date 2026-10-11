@@ -139,7 +139,7 @@ def finish(loc, claims, pages=()):
                      (json.dumps({"pages": list(pages), "skipped": [], "claims": claims}), rid))
 
 
-def test_view_shows_our_approach_only_while_visible_and_applies_protection(approved, reg, echo):
+def test_view_shows_our_approach_only_while_visible_and_applies_protection(approved, reg, echo, monkeypatch):
     name = reg
     cid = approved(case_with().model_copy(update={"solution": Sourced[str](value=f"Built for {name} on Kafka", source_quote="q")}))
     c = as_user("u1", ["g-user", DOCS])
@@ -157,7 +157,10 @@ def test_view_shows_our_approach_only_while_visible_and_applies_protection(appro
         conn.execute("update documents set acl_groups=%s where id=(select document_id from cases where id=%s)", ([DOCS], cid))
     with db.connect() as conn:
         conn.execute("update cases set data = jsonb_set(data, '{solution,value}', to_jsonb(%s::text)) where id=%s",
-                     (f"Built for {name.replace('o', chr(246))}", cid))  # accented evasion survives apply()
+                     (f"Built for {name.replace('o', chr(246))}", cid))  # #166: replaced, not withheld
+    t = c.get(loc).text
+    assert "Built for a retailer" in t and "[withheld]" not in t and name not in t
+    monkeypatch.setattr(rs.anonymise, "apply", lambda t, c: t)
     t = c.get(loc).text
     assert "[withheld]" in t and name not in t
 

@@ -138,7 +138,7 @@ def test_client_name_removed_from_llm_text(approved, monkeypatch):
     picks_reply(monkeypatch, sr.Pick(case_id=a, reason="Zorp wanted this", tailored="Zörp's onboarding, by ZORP."))
     p = sr.pick("bid", sr.search(ME, "onboarding", {}), reg)[0][0]
     assert p["reason"] == "a retailer wanted this"
-    assert "orp" not in p["tailored"]  # accented evasion survives apply(), blocked() catches it -> summary
+    assert "orp" not in p["tailored"]  # #166: every spelling is replaced
 
 
 def test_llm_failure_uses_rank_order(approved, monkeypatch):
@@ -261,6 +261,7 @@ def test_referenceable_name_containing_protected_name_shows_its_label(approved, 
 
 
 def test_pick_leaves_out_a_candidate_with_a_name_apply_missed(monkeypatch):  # #165
+    monkeypatch.setattr(sr.anonymise, "apply", lambda t, c: t)  # since #166 apply() catches this spelling; force a miss
     reg = [dict(name="Zorp Bank", aliases=[], anonymised_label="a bank", referenceable=False)]
     leak = data().model_copy(update={"summary": "Ｚｏｒｐ Bank onboarding fell from 12 days to 3 days."})
     cands = [dict(id=1, basis="delivered", case=leak), dict(id=2, basis="delivered", case=data())]
