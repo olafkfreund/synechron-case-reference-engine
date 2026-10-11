@@ -180,7 +180,6 @@ def test_ingest_waits_for_an_uncommitted_tick(env, monkeypatch):
     assert not t.is_alive() and _flag_jobs(sid) == [("engagement", "source marked executed")]
 
 
-
 def test_data_class_raised_during_conversion_triages_under_new_class(env, monkeypatch):
     _, sid = env
     with db.connect() as c:
@@ -195,6 +194,7 @@ def test_data_class_raised_during_conversion_triages_under_new_class(env, monkey
     monkeypatch.setattr(ing, "triage_text", lambda text, data_class: seen.append(data_class) or CASE)
     ing.ingest(sid, "a", "a", b"x")
     assert seen == ["confidential"]
+
 
 def test_triage_input_includes_the_tail(monkeypatch):
     seen = []
