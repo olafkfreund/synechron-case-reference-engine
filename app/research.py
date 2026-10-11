@@ -283,7 +283,9 @@ class Fetcher:
                 body, ctype, location = _within(TIMEOUT, lambda: self._hop(u, target, limit, opened))
             except ResearchError:
                 for r in opened:
-                    r.close()  # a timed-out hop stops reading
+                    r.close()  # the abandoned hop stops at its next read
+                # ponytail: a host that stalls before its headers leaves nothing to close; that daemon thread
+                # lives until httpx's per-read timeout. A custom transport could kill it if threads pile up.
                 raise
             if body is None:
                 url = urljoin(str(u), location)

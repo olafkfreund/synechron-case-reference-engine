@@ -147,3 +147,8 @@ closes on timeout. The behaviour is the spec's.
 ## Rollback
 
 Revert the branch's commits. No schema or data change.
+
+## Deviations
+- Review: `test_run_skips_a_slow_page_and_keeps_the_others` passed on main, because main's in-loop check fires on the first chunk after the 3 s wait. It now also asserts the run takes under 1.5 s. The trap note on test 1 was wrong in the same way: on main it raises "took too long" after 3 s, and only the elapsed-time assert catches it.
+- Review: in that test the abandoned hop thread is still alive when `convert()` forks for the other page, and Python 3.12 warns about forking a multi-threaded process. The test filters that warning. Known ceiling, not fixed here: if an abandoned thread held a lock the child needs, the child would hang until `PAGE_CONVERT_TIMEOUT` kills it and the page is lost as `ConvertTimeout`.
+- Review: a host that stalls before sending headers leaves nothing in `opened` to close, so that daemon thread lives until httpx's per-read timeout (a `ponytail:` comment marks this ceiling). The worst case per `fetch()` is per hop: `(MAX_REDIRECTS + 1) × (TIMEOUT + robots TIMEOUT)` plus pacing, not 10 s in total.

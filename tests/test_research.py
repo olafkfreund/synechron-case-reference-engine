@@ -280,6 +280,8 @@ def test_run_stores_pages_skips_bad_ones_and_never_stores_the_key(web, cleanup):
     assert KEY not in json.dumps(results) and KEY not in json.dumps(error)
 
 
+# the slow hop thread is still alive when Docling forks for the other page; the child never touches it
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
 def test_run_skips_a_slow_page_and_keeps_the_others(web, cleanup, monkeypatch):
     monkeypatch.setattr(rs, "TIMEOUT", 0.3)
     q = f"research test {uuid.uuid4().hex}"
@@ -290,7 +292,9 @@ def test_run_skips_a_slow_page_and_keeps_the_others(web, cleanup, monkeypatch):
     web.html("docs.example", "/guide", "<h1>Guide</h1>")
     web.slow.add(("slow.example", "/p"))
     rid = make_row(q)
+    t = time.monotonic()
     rs.run(rid)
+    assert time.monotonic() - t < 1.5  # main waits out the slow page (3 s) before its own check fires
     status, error, results = row(rid)
     assert status == "done" and error is None
     assert [p["publisher"] for p in results["pages"]] == ["docs.example"]
