@@ -185,6 +185,27 @@ def test_redirect_limit_and_normal_redirect(web):
     assert body == b"final" and final.endswith("/b")
 
 
+def test_slow_headers_hit_the_wall_clock_limit(web, monkeypatch):
+    monkeypatch.setattr(rs, "TIMEOUT", 0.3)
+    web.html("slow.example", "/robots.txt", "")
+    web.html("slow.example", "/p")
+    web.slow.add(("slow.example", "/p"))
+    t = time.monotonic()
+    with pytest.raises(rs.ResearchError, match="took too long"):
+        rs.Fetcher().fetch("https://slow.example/p")
+    assert time.monotonic() - t < 1.5
+
+
+def test_slow_robots_txt_is_disallowed(web, monkeypatch):
+    monkeypatch.setattr(rs, "TIMEOUT", 0.3)
+    web.html("slow.example", "/robots.txt", "")
+    web.html("slow.example", "/p")
+    web.slow.add(("slow.example", "/robots.txt"))
+    t = time.monotonic()
+    assert rs.Fetcher().allowed("https://slow.example/p") is False
+    assert time.monotonic() - t < 1.5
+
+
 def test_size_content_type_and_robots(web, monkeypatch):
     web.pages[("ok.example", "/robots.txt")] = (200, {"content-type": "text/plain"}, b"User-agent: *\nDisallow: /private\n")
     web.html("ok.example", "/big", "x" * 100)
@@ -257,6 +278,23 @@ def test_run_stores_pages_skips_bad_ones_and_never_stores_the_key(web, cleanup):
     assert results["skipped"] == [{"domain": "blog.example", "error": "RobotsDisallowed"}, {"domain": "127.0.0.1", "error": "Blocked"}]
     assert web.brave_calls == [{"q": q, "count": "10"}]
     assert KEY not in json.dumps(results) and KEY not in json.dumps(error)
+
+
+def test_run_skips_a_slow_page_and_keeps_the_others(web, cleanup, monkeypatch):
+    monkeypatch.setattr(rs, "TIMEOUT", 0.3)
+    q = f"research test {uuid.uuid4().hex}"
+    web.results = ["https://slow.example/p", "https://docs.example/guide"]
+    for h in ("slow.example", "docs.example"):
+        web.html(h, "/robots.txt", "")
+    web.html("slow.example", "/p")
+    web.html("docs.example", "/guide", "<h1>Guide</h1>")
+    web.slow.add(("slow.example", "/p"))
+    rid = make_row(q)
+    rs.run(rid)
+    status, error, results = row(rid)
+    assert status == "done" and error is None
+    assert [p["publisher"] for p in results["pages"]] == ["docs.example"]
+    assert results["skipped"] == [{"domain": "slow.example", "error": "ResearchError"}]
 
 
 def test_run_failure_is_recorded_without_the_key(web, cleanup, monkeypatch):
