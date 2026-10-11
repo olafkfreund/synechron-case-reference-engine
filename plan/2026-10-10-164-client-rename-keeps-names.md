@@ -84,8 +84,8 @@ Approved decisions (spec, decision **A**):
    - `test_case_only_rename_keeps_nothing`: protected `zorp bank {reg}` renamed to `Zorp Bank {reg}` stores `[]`
      and redirects to `/admin/clients`.
 
-   → verify: the same command. The three tests fail on main, except the referenceable one, which guards the
-   unchanged path and passes on both.
+   → verify: the same command. Only the protected-rename test fails on main. The referenceable and
+   case-only tests pass on both: they guard against keeping too much.
 
    Traps: `reg` is a lowercase hex tag, so `_key` of the case-only rename is equal by construction. Names must
    contain `{reg}` so the fixture cleans them up.
@@ -108,3 +108,4 @@ reverting, or by ticking referenceable.
 
 None yet.
 - Step 3: the three tests share a small `_rename` helper (create + post the rename), placed after the `_add`/`_row` helpers it uses.
+- Review: `update` compares the form's version with the row it just read and returns 409 before validating, so a stale save never shows a validation error about a name the admin did not type. `kept` is `Query(0, ge=0)`.

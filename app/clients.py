@@ -1,6 +1,6 @@
 import re
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from psycopg.errors import ForeignKeyViolation, UniqueViolation
 
@@ -44,7 +44,7 @@ def clean(name, aliases, label, referenceable, cid=None):
 
 
 @router.get("/admin/clients")
-def clients_page(request: Request, kept: int = 0, user: User = Depends(require("admin"))):
+def clients_page(request: Request, kept: int = Query(0, ge=0), user: User = Depends(require("admin"))):
     with db.connect() as conn:
         rows = conn.execute(f"select id, name, aliases, anonymised_label, referenceable, logo_allowed, "
                             f"{VERSION} from clients order by name").fetchall()
@@ -71,9 +71,11 @@ def update(cid: int, name: str = Form(), aliases: str = Form(""), anonymised_lab
            v: str = Form(), referenceable: bool = Form(False), logo_allowed: bool = Form(False),
            user: User = Depends(require("admin"))):
     with db.connect() as conn:  # unknown id is 404 before any validation message
-        old = conn.execute("select name, aliases, referenceable from clients where id=%s", (cid,)).fetchone()
+        old = conn.execute(f"select name, aliases, referenceable, {VERSION} from clients where id=%s", (cid,)).fetchone()
         if not old:
             raise HTTPException(404, "no such client")
+    if old[3] != v:  # changed since the form loaded: say so before validating names the admin never saw
+        raise HTTPException(409, "client changed; reload the page")
     kept = []
     if not old[2] and not referenceable:  # a protected client keeps every name it had (#164)
         have = {anonymise._key(n) for n in [name, *aliases.splitlines()] if n.strip()}
