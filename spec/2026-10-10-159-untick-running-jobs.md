@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 159
 intent: intent/2026-10-10-159-untick-running-jobs.md
 ---
