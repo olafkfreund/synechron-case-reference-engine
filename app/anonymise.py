@@ -62,7 +62,7 @@ def apply(text: str, clients) -> str:
 
     Best effort on the text as written; blocked() is the fail-closed check that must run after it.
     """
-    text = _no_format(text)  # not NFKC: the output keeps 10⁶, m², ½ (#165)
+    text = _no_format(unicodedata.normalize("NFC", text))  # NFC joins split accents; not NFKC, which turns 10⁶ into 106 (#165)
     pairs = [(n, c["anonymised_label"]) for c in clients if not c["referenceable"] for n in _names(c)]
     # one pattern for all protected names: folded text is lowercase, so re.I matches blocked() exactly
     prot = "|".join(_pattern(fold(n)).pattern for n, _ in pairs)

@@ -92,3 +92,6 @@ These decisions are copied from the approved spec:
 
 Revert the commit. `apply()` goes back to NFKC output; no data or schema
 change is involved.
+
+## Deviations
+- Step 1: `apply()` uses `_no_format(unicodedata.normalize("NFC", text))`, not `_no_format(text)`. Without any composition, decomposed (NFD) text such as "Société" no longer matched the NFC name, so `test_spacing_dash_accent_and_domain_variants_are_caught` failed. NFC only joins canonical sequences and leaves 10⁶, m², ½ as they are.
