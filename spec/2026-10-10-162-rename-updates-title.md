@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 162
 intent: intent/2026-10-10-162-rename-updates-title.md
 ---
