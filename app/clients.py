@@ -44,11 +44,11 @@ def clean(name, aliases, label, referenceable, cid=None):
 
 
 @router.get("/admin/clients")
-def clients_page(request: Request, user: User = Depends(require("admin"))):
+def clients_page(request: Request, kept: int = 0, user: User = Depends(require("admin"))):
     with db.connect() as conn:
         rows = conn.execute(f"select id, name, aliases, anonymised_label, referenceable, logo_allowed, "
                             f"{VERSION} from clients order by name").fetchall()
-    return page(request, "clients.html", user, clients=rows)
+    return page(request, "clients.html", user, clients=rows, kept=kept)
 
 
 @router.post("/admin/clients")
