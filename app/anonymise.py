@@ -21,10 +21,15 @@ def load_clients(conn=None) -> list[dict]:
         return load_clients(c)
 
 
-def _visible(s: str) -> str:
-    """NFKC, minus format characters (Cf: soft hyphen, zero-width, BOM, bidi controls) (#125). Most have no glyph;
+def _no_format(s: str) -> str:
+    """Drop format characters (Cf: soft hyphen, zero-width, BOM, bidi controls) (#125). Most have no glyph;
     the few that shape text (ZWJ/ZWNJ in emoji or Indic scripts, Arabic number signs) lose that shaping."""
-    return "".join(ch for ch in unicodedata.normalize("NFKC", s) if unicodedata.category(ch) != "Cf")
+    return "".join(ch for ch in s if unicodedata.category(ch) != "Cf")
+
+
+def _visible(s: str) -> str:
+    """NFKC, minus format characters. For matching only: NFKC rewrites 10⁶ as 106 (#165)."""
+    return _no_format(unicodedata.normalize("NFKC", s))
 
 
 def fold(s: str) -> str:
@@ -57,7 +62,7 @@ def apply(text: str, clients) -> str:
 
     Best effort on the text as written; blocked() is the fail-closed check that must run after it.
     """
-    text = _visible(text)
+    text = _no_format(unicodedata.normalize("NFC", text))  # NFC joins split accents; not NFKC, which turns 10⁶ into 106 (#165)
     pairs = [(n, c["anonymised_label"]) for c in clients if not c["referenceable"] for n in _names(c)]
     # one pattern for all protected names: folded text is lowercase, so re.I matches blocked() exactly
     prot = "|".join(_pattern(fold(n)).pattern for n, _ in pairs)

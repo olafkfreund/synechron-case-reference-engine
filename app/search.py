@@ -96,9 +96,11 @@ def pick(bid_text: str, candidates: list[dict], clients) -> tuple[list[dict], li
     by_id = {c["id"]: c for c in candidates}
     notes, picks = [], []
     try:
-        listing = "\n".join(
-            f"case_id {c['id']} (basis: {c['basis']}): {anonymise.apply(' | '.join([*facts(c['case']), c['case'].summary]), clients)[:MAX_CANDIDATE_CHARS]}"
-            for c in candidates)
+        texts = [(c, anonymise.apply(' | '.join([*facts(c['case']), c['case'].summary]), clients)[:MAX_CANDIDATE_CHARS])
+                 for c in candidates]
+        # a name apply() missed ("Ｚｏｒｐ", "ﬁ") never reaches the model: that candidate is left out (#165)
+        listing = "\n".join(f"case_id {c['id']} (basis: {c['basis']}): {t}"
+                            for c, t in texts if not anonymise.blocked(t, clients))
         reply = complete_json("DRAFT_MODEL", SYSTEM, f"BID:\n{bid_text[:MAX_BID_CHARS]}\n\nCANDIDATES:\n{listing}", Picks,
                               data_class="confidential")
         for p in reply.picks:

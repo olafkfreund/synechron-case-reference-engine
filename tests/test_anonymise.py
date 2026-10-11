@@ -323,3 +323,10 @@ def test_invisible_characters_inside_a_name(ch):
     t = f"Run for Zo{ch}rp"
     assert an.blocked(t, reg) == ["Zorp"]
     assert an.apply(t, reg) == "Run for a bank"
+
+
+def test_apply_keeps_superscripts_and_fractions():
+    t = "up to 10⁶ messages/day across 5,000 m²; saved ½"
+    assert an.apply(t, []) == t
+    reg = [C("Zorp Bank", label="a bank")]
+    assert an.apply("Zorp Bank cut 10⁶ to 10³", reg) == "a bank cut 10⁶ to 10³"
