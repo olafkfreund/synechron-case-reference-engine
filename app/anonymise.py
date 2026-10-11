@@ -72,7 +72,8 @@ def has_name(text: str, names: list[str]) -> bool:
 def apply(text: str, clients) -> str:
     """Replace names/aliases of non-referenceable clients, and referenceable names/aliases that contain one, with the client's anonymised label.
 
-    Best effort on the text as written; blocked() is the fail-closed check that must run after it.
+    Matches on fold(text) with blocked()'s patterns and replaces the matching original characters, so the rest keeps its
+    case and accents. blocked() is still the fail-closed check that must run after it.
     """
     text = _no_format(unicodedata.normalize("NFC", text))  # NFC joins split accents; not NFKC, which turns 10⁶ into 106 (#165)
     pairs = [(n, c["anonymised_label"]) for c in clients if not c["referenceable"] for n in _names(c)]
@@ -80,8 +81,24 @@ def apply(text: str, clients) -> str:
     prot = "|".join(_pattern(fold(n)).pattern for n, _ in pairs)
     contains = re.compile(prot, re.I).search if prot else lambda _: None
     pairs += [(n, c["anonymised_label"]) for c in clients if c["referenceable"] for n in _names(c) if contains(fold(n))]
-    for name, label in _by_length(pairs):  # a function, so a "\" in a label is text, not a template
-        text = _pattern(_visible(name)).sub(lambda _m, label=label: label, text)
+    folded, at = [], []  # at[j] = index in text of folded[j]; fold(ch) per char equals fold(text) (#166)
+    for i, ch in enumerate(text):
+        f = fold(ch)
+        folded.append(f)
+        at += [i] * len(f)
+    folded = "".join(folded)
+    spans = []
+    for name, label in _by_length(pairs):
+        for m in _pattern(fold(name)).finditer(folded):  # the patterns blocked() uses, on the text it sees
+            if m.end() == m.start():
+                continue
+            s, e = at[m.start()], at[m.end() - 1] + 1
+            while e < len(text) and not fold(text[e]):  # a trailing combining accent goes with the name
+                e += 1
+            if all(e <= s2 or s >= e2 for s2, e2, _ in spans):  # longer names came first and win
+                spans.append((s, e, label))
+    for s, e, label in sorted(spans, reverse=True):  # right to left, by slicing: a "\" in a label is text
+        text = text[:s] + label + text[e:]
     return text
 
 
