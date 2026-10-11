@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 147
 spec: spec/2026-10-10-147-research-fetch-deadline.md
 ---
