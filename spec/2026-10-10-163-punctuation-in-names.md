@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 163
 intent: intent/2026-10-10-163-punctuation-in-names.md
 ---
