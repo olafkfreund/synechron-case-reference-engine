@@ -143,6 +143,20 @@ def test_hyphenated_name_matches_spaced_joined_and_dashed():
         assert an.blocked(form, reg) == ["Zorp-Tek"], form
 
 
+def test_punctuation_variants_of_a_name():
+    reg = [C("Zorpo's Bank", label="a bank")]
+    assert an.apply("We helped Zorpo’s Bank", reg) == "We helped a bank"
+    assert an.blocked("Zorpo’s Bank", reg) == ["Zorpo's Bank"]
+    assert "zorpo" not in an.scrub("core banking for Zorpo’s Bank", reg)
+    assert an.blocked("Zorpo's Bank", [C("Zorpo’s Bank")]) == ["Zorpo’s Bank"]
+    assert an.apply("Zorp Inc said", [C("Zorp Inc.", label="a firm")]) == "a firm said"
+    assert an.apply("Zorp, Inc. said", [C("Zorp Inc", label="a firm")]) == "a firm. said"
+    assert an.blocked("C Ltd", [C("C++ Ltd")]) == []
+    assert an.blocked("plain text. more", [C(".", label="x")]) == []
+    assert an.blocked("tell us about it", [C("Zorp Holdings", ["U.S.", "I.T."])]) == []
+    assert an.blocked("U.S. arm", [C("Zorp Holdings", ["U.S."])]) == ["U.S."]
+
+
 def test_dash_only_name_does_not_match_everything():
     assert an.blocked("plain text", [C("-", [], label="x")]) == []
 
