@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 166
 spec: spec/2026-10-10-166-accentless-names.md
 ---
