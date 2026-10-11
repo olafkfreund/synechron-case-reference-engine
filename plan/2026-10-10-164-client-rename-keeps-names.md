@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 164
 spec: spec/2026-10-10-164-client-rename-keeps-names.md
 ---
