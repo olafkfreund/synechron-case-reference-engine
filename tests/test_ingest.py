@@ -271,7 +271,7 @@ def test_crawl_skips_type_and_size_without_downloading(env, monkeypatch):
     assert not set(fetched) & {"in/c.mp4", "in/d.txt", "in/e.pdf"}
 
 
-def test_crawl_include_ext_and_oversized_existing_doc_stays_live(env, monkeypatch):
+def test_crawl_oversized_existing_doc_is_withdrawn(env, monkeypatch):
     s3, sid = env
     monkeypatch.setenv("S3_MAX_BYTES", "10")
     with db.connect() as c:
@@ -281,10 +281,23 @@ def test_crawl_include_ext_and_oversized_existing_doc_stays_live(env, monkeypatc
     assert crawl.crawl_s3(sid)["new"] == 2
     s3.put_object(Bucket="src", Key="in/a.docx", Body=b"now far too large")
     counts = crawl.crawl_s3(sid)
-    assert (counts["skipped_too_large"], counts["deleted"]) == (1, 0)
+    assert (counts["skipped_too_large"], counts["deleted"]) == (1, 1)
     with db.connect() as c:
-        assert c.execute("select deleted_at is null, text from documents where external_id='in/a.docx'").fetchone() == (
-            True, "small")
+        assert c.execute("select deleted_at is not null from documents where external_id='in/a.docx'").fetchone()[0]
+
+
+def test_crawl_s3_type_narrowed_withdraws(env):
+    s3, sid = env
+    s3.put_object(Bucket="src", Key="in/a.docx", Body=b"aaa")
+    s3.put_object(Bucket="src", Key="in/b.pdf", Body=b"bbb")
+    assert crawl.crawl_s3(sid)["new"] == 2
+    with db.connect() as c:
+        c.execute("""update sources set config = config || '{"include_ext": ["docx"]}' where id=%s""", (sid,))
+    counts = crawl.crawl_s3(sid)
+    assert (counts["deleted"], counts["skipped_type"]) == (1, 1)
+    with db.connect() as c:
+        rows = dict(c.execute("select external_id, deleted_at is not null from documents where source_id=%s", (sid,)))
+    assert rows == {"in/a.docx": False, "in/b.pdf": True}
 
 
 def test_real_docling_conversion():

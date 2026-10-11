@@ -22,7 +22,8 @@ The Confluence crawler account must be a dedicated non-admin account that no res
 <span class="field-help">By kind:<br>
 SharePoint: <code>{"tenant_id": "…", "drive_id": "…"}</code><br>
 S3 or upload: <code>{"bucket": "…", "prefix": "…"}</code><br>
-Confluence: <code>{"base_url": "https://x.atlassian.net", "spaces": ["KEY"]}</code></span></div>
+Confluence: <code>{"base_url": "https://x.atlassian.net", "spaces": ["KEY"]}</code><br>
+S3 and SharePoint: optional <code>"include_ext"</code> (default docx, pptx, pdf) limits the file types. Narrowing these withdraws matching documents already in search on the next crawl.</span></div>
 <div class="field"><label for="new-dc">Data class</label><select name="data_class" id="new-dc">{% for k in classes %}<option>{{ k }}</option>{% endfor %}</select></div>
 <div class="field"><label for="new-acl">Access groups</label><input type="text" id="new-acl" name="acl_groups" required>
 <span class="field-help">Group ids, comma-separated.</span></div>

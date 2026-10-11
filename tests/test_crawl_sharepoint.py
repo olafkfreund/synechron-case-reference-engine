@@ -224,6 +224,16 @@ def test_type_and_size_filters(sp):
     assert (c["new"], c["skipped_type"], c["skipped_too_large"]) == (1, 1, 1)
 
 
+def test_sharepoint_item_grown_past_cap_is_withdrawn(sp):
+    first_run(sp)
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([f("f1", size=10**9)], delta=f"{ROOT}?token=d2"))
+    sp.calls.clear()
+    c = crawl.crawl_sharepoint(sp.sid)
+    assert c["skipped_too_large"] == 1
+    assert docs(sp.sid)["f1"][0] is True and docs(sp.sid)["f2"][0] is False
+    assert sp.content_calls() == []
+
+
 def test_concurrent_crawl_reports_running(sp):
     with db.connect(autocommit=True) as other:
         other.execute("select pg_advisory_lock(2, %s)", (sp.sid,))

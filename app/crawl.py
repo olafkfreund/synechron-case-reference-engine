@@ -46,7 +46,6 @@ def crawl_s3(source_id: int) -> dict:
                 key = obj["Key"]
                 if key.endswith("/"):
                     continue
-                seen.append(key)  # before the filters: a skipped key is not a deletion
                 # decided from the listing alone: a skipped file is never downloaded or copied
                 if PurePosixPath(key).suffix.lower().lstrip(".") not in exts:
                     counts["skipped_type"] += 1
@@ -54,6 +53,7 @@ def crawl_s3(source_id: int) -> dict:
                 if obj["Size"] > cap:
                     counts["skipped_too_large"] += 1
                     continue
+                seen.append(key)  # after the filters: a key we now skip is withdrawn by the sweep (#161)
                 modified = obj["LastModified"]
                 newest = max(newest or modified.isoformat(), modified.isoformat())
                 if key in known and since and modified < since and key not in prev_retry:
@@ -215,9 +215,11 @@ def crawl_sharepoint(source_id: int) -> dict:
             name = item.get("name", "")
             if PurePosixPath(name).suffix.lower().lstrip(".") not in exts:
                 counts["skipped_type"] += 1
+                withdraw(iid)  # a file the source would no longer take is not live (#161)
                 return
             if item.get("size", 0) > cap:
                 counts["skipped_too_large"] += 1
+                withdraw(iid)
                 return
             try:
                 if not same_access(iid):
@@ -227,6 +229,7 @@ def crawl_sharepoint(source_id: int) -> dict:
                 data = g.get(f"{GRAPH}/drives/{drive}/items/{iid}/content").content
                 if len(data) > cap:
                     counts["skipped_too_large"] += 1
+                    withdraw(iid)
                     return
                 counts[ingest(source_id, iid, name, data)] += 1
             except Exception as e:  # noqa: BLE001 - one bad file must not stop the crawl
@@ -414,9 +417,11 @@ def crawl_confluence(source_id: int) -> dict:
                         title = att.get("title", "")
                         if PurePosixPath(title).suffix.lower().lstrip(".") not in exts:
                             counts["skipped_type"] += 1
+                            withdraw(ext)  # a file the source would no longer take is not live (#161)
                             continue
                         if att.get("extensions", {}).get("fileSize", 0) > cap:
                             counts["skipped_too_large"] += 1
+                            withdraw(ext)
                             continue
                         try:
                             v = att.get("version") or {}
@@ -428,6 +433,7 @@ def crawl_confluence(source_id: int) -> dict:
                             data = c.get(base + att["_links"]["download"]).content
                             if len(data) > cap:
                                 counts["skipped_too_large"] += 1
+                                withdraw(ext)
                                 continue
                             counts[ingest(source_id, ext, title, data, source_version=ver)] += 1
                             done.add(ext)
