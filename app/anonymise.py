@@ -69,18 +69,8 @@ def has_name(text: str, names: list[str]) -> bool:
     return any(_pattern(fold(n)).search(t) for n in names)
 
 
-def apply(text: str, clients) -> str:
-    """Replace names/aliases of non-referenceable clients, and referenceable names/aliases that contain one, with the client's anonymised label.
-
-    Matches on fold(text) with blocked()'s patterns and replaces the matching original characters, so the rest keeps its
-    case and accents. blocked() is still the fail-closed check that must run after it.
-    """
-    text = _no_format(unicodedata.normalize("NFC", text))  # NFC joins split accents; not NFKC, which turns 10⁶ into 106 (#165)
-    pairs = [(n, c["anonymised_label"]) for c in clients if not c["referenceable"] for n in _names(c)]
-    # one pattern for all protected names: folded text is lowercase, so re.I matches blocked() exactly
-    prot = "|".join(_pattern(fold(n)).pattern for n, _ in pairs)
-    contains = re.compile(prot, re.I).search if prot else lambda _: None
-    pairs += [(n, c["anonymised_label"]) for c in clients if c["referenceable"] for n in _names(c) if contains(fold(n))]
+def _replace_once(text: str, pairs) -> str:
+    """One pass: match on fold(text) with blocked()'s patterns, replace the matching original characters."""
     folded, at = [], []  # at[j] = index in text of folded[j]; fold(ch) per char equals fold(text) (#166)
     for i, ch in enumerate(text):
         f = fold(ch)
@@ -99,6 +89,26 @@ def apply(text: str, clients) -> str:
                 spans.append((s, e, label))
     for s, e, label in sorted(spans, reverse=True):  # right to left, by slicing: a "\" in a label is text
         text = text[:s] + label + text[e:]
+    return text
+
+
+def apply(text: str, clients) -> str:
+    """Replace names/aliases of non-referenceable clients, and referenceable names/aliases that contain one, with the client's anonymised label.
+
+    Matches on fold(text) with blocked()'s patterns and replaces the matching original characters, so the rest keeps its
+    case and accents. blocked() is still the fail-closed check that must run after it.
+    """
+    text = _no_format(unicodedata.normalize("NFC", text))  # NFC joins split accents; not NFKC, which turns 10⁶ into 106 (#165)
+    pairs = [(n, c["anonymised_label"]) for c in clients if not c["referenceable"] for n in _names(c)]
+    # one pattern for all protected names: folded text is lowercase, so re.I matches blocked() exactly
+    prot = "|".join(_pattern(fold(n)).pattern for n, _ in pairs)
+    contains = re.compile(prot, re.I).search if prot else lambda _: None
+    pairs += [(n, c["anonymised_label"]) for c in clients if c["referenceable"] for n in _names(c) if contains(fold(n))]
+    for _ in range(3):  # a label can re-form a name a longer hit hid ("Zorp Bank Ltd"); ponytail: 3 rounds suffice
+        new = _replace_once(text, pairs)
+        if new == text:
+            break
+        text = new
     return text
 
 
