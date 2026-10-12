@@ -143,9 +143,11 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
         registry = anonymise.load_clients(conn)
         merged = r and r[7] is not None
         members = conn.execute(
-            "select m.id, d.title, s.name, d.external_id, m.data->>'basis_reason', m.status, d.deleted_at is not null, d.id "
+            "select m.id, d.title, s.name, d.external_id, m.data->>'basis_reason', m.status, d.deleted_at is not null, d.id, "
+            "md5(m.data::text) is distinct from m.merged_version "
             "from cases m join documents d on d.id = m.document_id join sources s on s.id = d.source_id "
             "where m.merged_into = %s order by m.id", (cid,)).fetchall() if merged else []
+        remerge = bool(merged and any(m[6] or m[8] for m in members) and sum(not m[6] for m in members) >= 2)
         cands = candidates(conn, cid, user) if r and r[5] and r[7] is None and r[8] == "engagement" else []
     if not r:
         raise HTTPException(404, "no such case")
@@ -154,7 +156,7 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
     # organisations come from extraction; no LLM call on page view
     unlisted = anonymise.unlisted([*case.organisations, case.client_mention.value or ""], registry) if r[5] else []
     return page(request, "review_detail.html", user, id=cid, rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
-                unlisted=unlisted, members=members, cands=cands,
+                unlisted=unlisted, members=members, cands=cands, remerge=remerge,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
                 external_id=r[3], source=r[4], merged=bool(members),
                 reviewable=r[5] and not any(m[6] for m in members), v=r[6],
@@ -327,6 +329,13 @@ def candidates(conn, cid, user):
             if want is not None and i != cid and anonymise.resolve(d["client_mention"]["value"], registry) == want]
 
 
+def same_client(conn, cases: dict[int, ReferenceCase]) -> None:
+    registry = anonymise.load_clients(conn)
+    clients = {anonymise.resolve(c.client_mention.value, registry) for c in cases.values()}
+    if len(clients) != 1 or None in clients:
+        raise HTTPException(400, "the contracts must be for the same registered client")
+
+
 def lock_members(conn, user, members):
     """Parse "<case id>:<version>" values, lock and check the cases; return [(id, document id, case, title, text)]."""
     try:
@@ -349,11 +358,8 @@ def lock_members(conn, user, members):
         raise HTTPException(409, "case changed; reload the page")
     if any(r[3] != "engagement" or r[4] is None or r[2] == "rejected" for r in got.values()):
         raise HTTPException(400, "only engagements that are not rejected can be merged")
-    registry = anonymise.load_clients(conn)
     cases = {i: ReferenceCase.model_validate(got[i][1]) for i in want}
-    clients = {anonymise.resolve(c.client_mention.value, registry) for c in cases.values()}
-    if len(clients) != 1 or None in clients:
-        raise HTTPException(400, "the contracts must be for the same registered client")
+    same_client(conn, cases)
     return [(i, got[i][4], cases[i], got[i][6], got[i][7][:MAX_CHARS]) for i in want]
 
 
@@ -396,7 +402,7 @@ def do_merge(members, pick, user):
             "insert into cases(document_id, member_count, basis, status, data, summary, search_text) "
             "values (null, %s, 'engagement', 'extracted', %s, %s, %s) returning id",
             (len(ids), Jsonb(case.model_dump()), case.summary, case.search_text())).fetchone()[0]
-        conn.execute("update cases set merged_into = %s where id = any(%s)", (new, ids))
+        conn.execute("update cases set merged_into = %s, merged_version = md5(data::text) where id = any(%s)", (new, ids))
     return RedirectResponse(f"/review/{new}", status_code=303)
 
 
@@ -418,3 +424,39 @@ def unmerge(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))
         conn.execute("update cases set status = 'rejected', approved_by = null, approved_at = null, review_due = null "
                      "where id = %s", (cid,))
     return RedirectResponse("/review", status_code=303)
+
+
+@router.post("/review/{cid}/remerge")
+def remerge(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))):
+    """Rebuild a merged case from its members' current data, keeping the field choices (#190)."""
+    with db.connect() as conn:
+        # members before M, as unmerge does (#144)
+        conn.execute("select 1 from cases where merged_into = %s order by id for update", (cid,))
+        row = conn.execute(
+            f"select {VERSION}, c.data from cases c where c.id = %s and {REVIEWABLE} and c.document_id is null "
+            "for update of c", (cid, list(user.groups))).fetchone()
+        if not row:
+            raise HTTPException(404, "no such case")
+        if row[0] != v:
+            raise HTTPException(409, "case changed; reload the page")
+        merged = ReferenceCase.model_validate(row[1])
+        found = conn.execute(
+            "select m.id, m.document_id, m.data, m.status, m.basis, d.text, d.deleted_at is not null "
+            "from cases m join documents d on d.id = m.document_id where m.merged_into = %s order by m.id",
+            (cid,)).fetchall()
+        live = [m for m in found if not m[6]]
+        if any(m[3] == "rejected" or m[4] != "engagement" for m in live):
+            raise HTTPException(409, "a member contract is no longer an engagement: un-merge")
+        if len(live) < 2:
+            raise HTTPException(409, "fewer than 2 contracts remain: un-merge")
+        cases = {m[0]: ReferenceCase.model_validate(m[2]) for m in live}
+        same_client(conn, cases)
+        pick = {f: m[0] for f in MERGE_FIELDS for m in live if m[1] == getattr(merged, f).document_id}
+        case = combine([(m[0], m[1], cases[m[0]]) for m in live], pick)
+        check(case, {m[1]: m[5][:MAX_CHARS] for m in live})
+        save(conn, cid, case)
+        conn.execute("update cases set status = 'extracted', approved_by = null, approved_at = null, "
+                     "review_due = null, member_count = %s where id = %s", (len(live), cid))
+        conn.execute("update cases set merged_into = null where id = any(%s)", ([m[0] for m in found if m[6]],))
+        conn.execute("update cases set merged_version = md5(data::text) where id = any(%s)", ([m[0] for m in live],))
+    return RedirectResponse(f"/review/{cid}", status_code=303)

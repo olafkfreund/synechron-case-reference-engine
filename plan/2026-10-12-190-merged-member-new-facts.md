@@ -77,6 +77,8 @@ These are carried over from the approved spec, which was checked against HEAD
    -p no:cacheprovider tests/test_review.py -k "remerge or
    records_member_versions"`. All six must fail.
 
+   Deviation: `test_unchanged_merged_case_offers_no_remerge` also makes a real member change and expects the badge, so it fails on main.
+
    Traps:
    - Rebuild the image before every test run. There is no bind mount.
    - A changed `data` changes `ver()`, so read `v` after the edit.
