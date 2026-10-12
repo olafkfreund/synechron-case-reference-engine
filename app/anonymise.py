@@ -10,7 +10,7 @@ from app import db
 # "jane@acmebank.co.uk"). Boundaries are lookarounds on \w, not \b, so "C++ Ltd" still matches.
 # Possessives need no special case: "Acme's" matches "Acme" and the "'s" stays.
 # A comma joins words too, a word's last dot is optional and apostrophe variants are one ("Acme, Inc." = "Acme Inc")
-# (#163).
+# (#163), and a dot after a word is optional (#188).
 _SEP = r"[\s,\-‐‑–—]"
 _JOIN = _SEP + "*"
 _APOS = "'’‘ʼ′"
@@ -56,7 +56,8 @@ def _loose(word: str) -> str:
 def _pattern(name: str) -> re.Pattern:
     words = [w for w in re.split(_SEP + "+", name) if w] or [name]  # "-" alone stays literal, never empty
     loose = _loose if re.search(r"\w", name) else str
-    body = _JOIN.join(loose(re.escape(w)) for w in words)
+    join = r"\.?" + _JOIN if loose is _loose else _JOIN  # "St. James" = "St James"; the last word's dot stays text (#188)
+    body = join.join(loose(re.escape(w)) for w in words)
     return re.compile(rf"(?<!\w){body}(?!\w)", re.I)
 
 
