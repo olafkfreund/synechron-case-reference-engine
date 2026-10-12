@@ -898,6 +898,7 @@ def test_reviewer_writes_section_and_approve_keeps_it(make):
     assert post(client(R), cid, field="implementation", value="Phased rollout", written="true").status_code == 303
     item = row(cid)[1]["implementation"]
     assert item["by_reviewer"] is True and item["unsourced"] is False and item["source_quote"] == ""
+    assert "written by reviewer" in client(R).get(f"/review/{cid}").text
     assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}).status_code == 200
     assert row(cid)[1]["implementation"]["value"] == "Phased rollout"
 
