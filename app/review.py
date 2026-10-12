@@ -22,7 +22,8 @@ templates.env.globals["css_version"] = hashlib.sha256(
     (Path(__file__).parent / "static" / "portal.css").read_bytes()).hexdigest()[:12]
 
 SCALARS = ("title", "client_mention", "industry", "region", "engagement_type", "challenge",
-           "solution", "duration_months", "team_size")
+           "solution", "implementation", "configuration", "lessons_learned", "duration_months", "team_size")
+WRITABLE = ("implementation", "configuration", "lessons_learned")  # a reviewer may write these by hand (#198)
 INTS = ("duration_months", "team_size")
 LISTS = ("capabilities", "tech_stack", "outcomes")
 # a case can be edited/approved/rejected only while it is new or its approval has expired
@@ -94,8 +95,10 @@ def rows(case, docs=None):
     def row(path, label, obj, names):  # docs: {document_id: title}, for a merged case
         return dict(path=path, label=label, quote=obj.source_quote, unsourced=obj.unsourced,
                     doc=(docs or {}).get(obj.document_id, ""),
+                    written=getattr(obj, "by_reviewer", False), writable=path in WRITABLE,
                     inputs=[(n, "" if getattr(obj, n) is None else getattr(obj, n)) for n in names])
-    out = [row(n, n.replace("_", " "), getattr(case, n), ["value"]) for n in SCALARS]
+    out = [row(n, n.replace("_", " "), getattr(case, n), ["value"]) for n in SCALARS
+           if not (n == "lessons_learned" and case.basis == "engagement")]  # as outcomes (#198)
     def new(n, label, names):
         return dict(path=f"{n}.new", label=label, quote="", unsourced=False, new=True, inputs=[(i, "") for i in names])
     for n, label in (("capabilities", "capability"), ("tech_stack", "tech")):
@@ -166,7 +169,7 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
 @router.post("/review/{cid}/edit")
 def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: str | None = Form(None),
          start: str | None = Form(None), end: str | None = Form(None), quote: str | None = Form(None),
-         action: str = Form("save"), v: str = Form(), user: User = Depends(require("reviewer"))):
+         written: bool = Form(False), action: str = Form("save"), v: str = Form(), user: User = Depends(require("reviewer"))):
     # `unsourced` is never read from the form: check() recomputes it against the document
     value, metric, start, end, quote = (s.strip() if s is not None else None for s in (value, metric, start, end, quote))
     with db.connect() as conn:
@@ -177,6 +180,8 @@ def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: 
                 raise HTTPException(400, "unknown action")
             if action == "remove" and not (name in LISTS and idx and idx != "new"):
                 raise HTTPException(400, "unknown field")
+            if (written and field not in WRITABLE) or (field == "lessons_learned" and case.basis == "engagement"):
+                raise HTTPException(400, "unknown field")
             if field == "summary":
                 case.summary = value or ""
                 obj = None
@@ -184,6 +189,12 @@ def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: 
                 obj = getattr(case, name)
                 if value is not None:
                     obj.value = (int(value) if value.strip() else None) if name in INTS else (value or None)
+                if written:  # the reviewer's own text: no quote, never checked against the document (#198)
+                    if not value:
+                        raise ValueError
+                    obj.by_reviewer, obj.source_quote, obj.document_id = True, "", None
+                elif name in WRITABLE:
+                    obj.by_reviewer = False
             elif name in LISTS and idx == "new":
                 if not (value or "").strip() or not (quote or "").strip() or (name == "outcomes" and not (metric or "").strip()) \
                         or (name == "outcomes" and case.basis == "engagement"):
@@ -210,7 +221,7 @@ def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: 
                 obj.start, obj.end = start or None, end or None
             else:
                 raise HTTPException(400, "unknown field")
-            if obj is not None and quote is not None:
+            if obj is not None and quote is not None and not written:
                 if _norm(quote) != _norm(obj.source_quote or ""):  # line breaks or spacing are not a new quote
                     obj.document_id = None  # a new quote has no origin yet: check() finds the member that sources it (#128)
                 obj.source_quote = quote
@@ -240,6 +251,8 @@ def approve(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))
         case.capabilities = [c for c in case.capabilities if not c.unsourced]
         case.tech_stack = [t for t in case.tech_stack if not t.unsourced]
         case.outcomes = [] if case.basis == "engagement" else [o for o in case.outcomes if not o.unsourced]  # contracted scope claims no results (#139, spec #52)
+        if case.basis == "engagement":
+            case.lessons_learned = Sourced[str]()  # nor lessons (#198)
         if case.period.unsourced:
             case.period = type(case.period)()
         if not case.title.value:
@@ -270,7 +283,7 @@ def reject(cid: int, v: str = Form(), user: User = Depends(require("reviewer")))
 
 # ---- merging related engagements into one reference (#55) ----
 
-MERGE_FIELDS = (*SCALARS, "period")  # a reviewer picks which member each of these comes from
+MERGE_FIELDS = (*(f for f in SCALARS if f != "lessons_learned"), "period")  # a merged case is an engagement (#198)
 
 
 def first_sourced(members, f):
@@ -288,7 +301,8 @@ def combine(members, pick):
     """
     def stamped(item, doc_id):
         item = copy.deepcopy(item)
-        item.document_id = doc_id
+        if not getattr(item, "by_reviewer", False):  # reviewer text has no origin document (#198)
+            item.document_id = doc_id
         return item
 
     by_id = {cid: (doc, case) for cid, doc, case in members}

@@ -462,3 +462,37 @@ def test_pdf_busy_when_slots_are_taken(monkeypatch):
 def test_invisible_character_in_name_is_rewritten_not_shipped():
     cl = [{"id": 1, "name": "Zorp Bank", "aliases": ["Zorp"], "anonymised_label": "a bank", "referenceable": False}]
     assert render.protect([{"summary": "Run for Zo\u00adrp"}], cl)[0]["summary"] == "Run for a bank"
+
+
+def sections(**kw):
+    S = lambda v: Sourced[str](value=v, source_quote="q")  # noqa: E731
+    return full(implementation=S("Phased rollout"), configuration=S("SSO via OIDC"), lessons_learned=S("Start earlier"), **kw)
+
+
+def test_new_sections_in_word_and_markdown(approved):
+    cid = approved(sections())
+    for t in (doc_text(gen([cid], "docx").content), gen([cid], "md").text):
+        for want in ("Implementation approach", "Phased rollout", "Configuration and integration", "SSO via OIDC",
+                     "Lessons learned", "Start earlier"):
+            assert want in t, want
+
+
+def test_engagement_output_has_no_lessons_learned(approved):
+    cid = approved(sections(basis="engagement", basis_reason="executed contract"))
+    m = gen([cid], "md").text
+    assert "Phased rollout" in m and "Lessons learned" not in m and "Start earlier" not in m
+
+
+def test_pptx_unchanged_by_new_sections(approved):
+    plain, rich = approved(full()), approved(sections())
+    _, a = slides(gen([plain], "pptx").content)
+    _, b = slides(gen([rich], "pptx").content)
+    assert a == b
+
+
+def test_new_section_naming_client_is_anonymised(approved, reg):
+    name, label_id = reg("Zorp", "a UK retailer")
+    cid = approved(full(implementation=Sourced[str](value=f"Rolled out at {name}", source_quote="q")))
+    link(cid, label_id)
+    t = gen([cid]).text
+    assert name not in t and "Rolled out at a UK retailer" in t

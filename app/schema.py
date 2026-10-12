@@ -59,6 +59,7 @@ class Sourced(_Model, Generic[T]):
     unsourced: SkipJsonSchema[bool] = False
     # the member document this quote is from, in a merged case (#55); never from the LLM
     document_id: SkipJsonSchema[int | None] = None
+    by_reviewer: SkipJsonSchema[bool] = False  # a reviewer's own text, no quote (#198); never from the LLM
 
 
 class Outcome(_Model):
@@ -94,6 +95,9 @@ class ReferenceCase(_Model):
     engagement_type: Sourced[str] = Sourced[str]()
     challenge: Sourced[str] = Sourced[str]()
     solution: Sourced[str] = Sourced[str]()
+    implementation: Sourced[str] = Sourced[str]()
+    configuration: Sourced[str] = Sourced[str]()
+    lessons_learned: Sourced[str] = Sourced[str]()
     capabilities: list[Sourced[str]] = []
     tech_stack: list[Sourced[str]] = []
     outcomes: list[Outcome] = []
@@ -119,7 +123,8 @@ class ReferenceCase(_Model):
 
     def quotes(self) -> list[str]:
         items = [self.title, self.client_mention, self.industry, self.region, self.engagement_type,
-                 self.challenge, self.solution, *self.capabilities, *self.tech_stack,
+                 self.challenge, self.solution, self.implementation, self.configuration,
+                 self.lessons_learned, *self.capabilities, *self.tech_stack,
                  self.duration_months, self.team_size, *self.outcomes, self.period]
         # an unsourced quote must not vouch for summary numbers
         return [i.source_quote for i in items if i.source_quote and not i.unsourced]
@@ -132,6 +137,7 @@ class ReferenceCase(_Model):
         """Field values only (no quotes, keys, or client name) for cases.search_text."""
         parts = [self.title.value, self.industry.value, self.region.value,
                  self.engagement_type.value, self.challenge.value, self.solution.value,
+                 self.implementation.value, self.configuration.value, self.lessons_learned.value,
                  *(c.value for c in self.capabilities), *(t.value for t in self.tech_stack),
                  *(f"{o.metric} {o.value}" for o in self.outcomes), self.summary]
         return " ".join(p for p in parts if p)
@@ -168,7 +174,8 @@ class Extraction(_Model):
     summary: str = Field("", description="At most 80 words. Use only numbers that appear in the quotes.")
 
 
-_TEXTS = ("title", "client_mention", "industry", "region", "engagement_type", "challenge", "solution")
+_TEXTS = ("title", "client_mention", "industry", "region", "engagement_type", "challenge", "solution",
+          "implementation", "configuration", "lessons_learned")
 _INTS = ("duration_months", "team_size")
 MAX_INT_CHARS = 12  # "1,000,000" fits; a longer run is a runaway reply, not a count (#131)
 FIELDS = (*_TEXTS, *_INTS, "period_start", "period_end", "capability", "technology", "outcome", "organisation")

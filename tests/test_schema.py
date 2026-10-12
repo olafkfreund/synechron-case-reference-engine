@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from app.schema import Outcome, ReferenceCase, Sourced, llm_schema, numbers, quote_in, sourced
+from app.schema import Extraction, Outcome, ReferenceCase, Sourced, llm_schema, numbers, quote_in, sourced
 
 DOC = "The bank cut onboarding from 12 days to\n3 days.  Team “Alpha” – 8 people."
 
@@ -187,3 +187,23 @@ def test_basis_hidden_from_llm_and_search():
     c.basis, c.basis_reason = "engagement", "ZZREASON"
     assert "engagement" not in c.search_text() and "ZZREASON" not in c.search_text()
     assert "ZZREASON" not in "".join(c.quotes())
+
+
+def test_old_case_data_validates_without_new_sections():
+    # rows written before #198 have none of the new keys, nor by_reviewer
+    d = {"title": {"value": "T", "source_quote": "q", "unsourced": False, "document_id": None}}
+    c = ReferenceCase.model_validate(d)
+    assert not c.implementation.value and not c.lessons_learned.by_reviewer
+    assert c.title.by_reviewer is False
+
+
+def test_by_reviewer_hidden_from_llm_schema():
+    assert "by_reviewer" not in json.dumps(llm_schema())
+    assert "by_reviewer" not in json.dumps(llm_schema(Extraction))
+
+
+def test_reviewer_text_does_not_vouch_for_summary_numbers():
+    c = make()
+    c.implementation = Sourced[str](value="Rolled out in 9 weeks", by_reviewer=True)
+    c.summary = "Delivered in 9 weeks."
+    assert not c.summary_sourced()

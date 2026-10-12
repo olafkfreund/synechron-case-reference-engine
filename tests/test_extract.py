@@ -1,9 +1,10 @@
 import uuid
 
 import pytest
+from psycopg.types.json import Jsonb
 
 from app import db, extract as ex
-from app.schema import Extraction, Item, ReferenceCase
+from app.schema import Extraction, Item, ReferenceCase, Sourced
 
 DOC = ("Acme Bank cut customer onboarding from 12 days to 3 days. "
        "The programme ran for 18 months with a team of 8 engineers, "
@@ -352,3 +353,74 @@ def test_extract_clears_retired_by(doc):
     run(doc, case())
     with db.connect() as c:
         assert c.execute("select status, retired_by from cases where document_id=%s", (did,)).fetchone() == ("extracted", None)
+
+
+def test_new_sections_extracted_and_checked(doc):
+    data, *_ = run(doc, case(("implementation", "Phased rollout", "The programme ran for 18 months"),
+                             ("configuration", "Kubernetes on AWS", "on AWS and Kubernetes"),
+                             ("lessons_learned", "Start earlier", "invented passage not in the document")))
+    assert data["implementation"]["value"] == "Phased rollout" and data["implementation"]["unsourced"] is False
+    assert data["configuration"]["unsourced"] is False
+    assert data["lessons_learned"]["unsourced"] is True
+
+
+def test_engagement_never_gets_lessons_learned(doc):
+    did, reply = doc
+    reply["v"] = case(("lessons_learned", "Start earlier", "The programme ran for 18 months"))
+    ex.extract(did, "engagement", "executed contract")
+    with db.connect() as c:
+        data = c.execute("select data from cases where document_id=%s", (did,)).fetchone()[0]
+    assert data["lessons_learned"]["value"] is None
+
+
+@pytest.mark.parametrize("f", ["implementation", "configuration", "lessons_learned"])
+def test_strip_commercial_clears_new_sections(f):
+    c = ReferenceCase(title=Sourced[str]())
+    setattr(c, f, Sourced[str](value="Fixed-price delivery", source_quote="a fixed-price delivery of scope"))
+    assert ex.strip_commercial(c) == 1 and getattr(c, f).value is None
+
+
+def test_check_leaves_reviewer_text_sourced():
+    c = ReferenceCase(title=Sourced[str](), implementation=Sourced[str](value="Our own words", by_reviewer=True, unsourced=True))
+    ex.check(c, {1: DOC})
+    assert c.implementation.unsourced is False and c.implementation.document_id is None
+
+
+def reviewer_text(did, f="implementation"):
+    with db.connect() as c:
+        data = c.execute("select data from cases where document_id=%s", (did,)).fetchone()[0]
+        data[f] = {"value": "Our own words", "source_quote": "", "unsourced": False, "document_id": None, "by_reviewer": True}
+        c.execute("update cases set data=%s where document_id=%s", (Jsonb(data), did))
+
+
+def test_reextract_keeps_reviewer_written_section_with_note(doc):
+    run(doc, case())
+    reviewer_text(doc[0])
+    data, *_ = run(doc, case())
+    assert data["implementation"]["value"] == "Our own words" and data["implementation"]["by_reviewer"] is True
+    assert data["needs_attention"] == ["Implementation approach: your text from before the document changed was kept; check it still holds"]
+
+
+def test_reextract_quote_replaces_reviewer_text(doc):
+    run(doc, case())
+    reviewer_text(doc[0])
+    data, *_ = run(doc, case(("implementation", "Phased rollout", "The programme ran for 18 months")))
+    assert data["implementation"]["value"] == "Phased rollout" and data["implementation"]["by_reviewer"] is False
+    assert data["needs_attention"] == ["Implementation approach: the document now states this; your earlier text was replaced"]
+
+
+def test_reextract_engagement_drops_reviewer_lessons(doc):
+    did, reply = doc
+    run(doc, case())
+    reviewer_text(did, "lessons_learned")
+    reply["v"] = case()
+    ex.extract(did, "engagement", "executed contract")
+    with db.connect() as c:
+        data = c.execute("select data from cases where document_id=%s", (did,)).fetchone()[0]
+    assert data["lessons_learned"]["value"] is None and data["needs_attention"] == []
+
+
+def test_check_ignores_by_reviewer_on_other_fields():
+    c = ReferenceCase(title=Sourced[str](value="Made up", by_reviewer=True))
+    ex.check(c, "some document text")
+    assert c.title.unsourced is True

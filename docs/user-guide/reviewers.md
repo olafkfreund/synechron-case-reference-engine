@@ -34,8 +34,9 @@ Knowing which facts are backed by the source document.
 **Steps**
 
 1. On a case page, read the **Needs attention** box above **Fields**: it lists the fields that need a look first. Then read the **Fields** section.
-2. Check the badge on each field: "sourced", "unsourced", "empty", or "no quote (generated)".
+2. Check the badge on each field: "sourced", "unsourced", "empty", "written by reviewer", or "no quote (generated)".
 3. Compare the value with its **Source quote**.
+4. For implementation, configuration or lessons learned that the document doesn't describe, write the text, tick **I wrote this: no document quote** and Save. Approving keeps it; outputs show it without a mark.
 
 **What you see**
 
