@@ -78,7 +78,7 @@ def crawl_s3(source_id: int) -> dict:
                     "select count(*) from documents where source_id=%s and deleted_at is null "
                     "and not (external_id = any(%s))", (source_id, live)).fetchone()[0]
                 # one pass over the full listing: the source's current ACL (read here, under for share)
-                # applies to every document, and a reappeared key is live again even if it was not re-downloaded
+                # applies to every document; a live key that did not change was not re-downloaded, a withdrawn one was (#189)
                 conn.execute(
                     "update documents d set acl_groups=s.acl_groups, deleted_at = case when external_id = any(%s) "
                     "then null else coalesce(deleted_at, now()) end "
