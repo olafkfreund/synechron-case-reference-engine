@@ -27,10 +27,10 @@ def rows(env):  # noqa: F811
     db.init()
     made = []
 
-    def add(claims, by="u1", status="done"):
+    def add(claims, by="u1", status="done", case_id=None):
         with db.connect() as c:
-            made.append(c.execute("insert into research(query, created_by, status, results) values ('q',%s,%s,%s) returning id",
-                                  (by, status, json.dumps({"pages": [], "skipped": [], "claims": claims}))).fetchone()[0])
+            made.append(c.execute("insert into research(query, created_by, status, results, case_id) values ('q',%s,%s,%s,%s) returning id",
+                                  (by, status, json.dumps({"pages": [], "skipped": [], "claims": claims}), case_id)).fetchone()[0])
         return made[-1]
     yield add
     with db.connect() as c:
@@ -230,3 +230,152 @@ def test_research_text_never_reaches_cases(rows, approved):
     with db.connect() as c:
         data, search_text = c.execute("select data::text, search_text from cases where id=%s", (cid,)).fetchone()
     assert Q1[:30] not in data and Q1[:30] not in search_text
+    rid2 = rows([claim()], case_id=cid)
+    assert attach(cid, rid2, [0]).status_code == 303
+    with db.connect() as c:
+        data, search_text = c.execute("select data::text, search_text from cases where id=%s", (cid,)).fetchone()
+    assert Q1[:30] not in data and Q1[:30] not in search_text
+
+
+# ---- public sources attached to a case (#199) ----
+
+RV = ["g-rev", DOCS]
+
+
+def token(cid):
+    with db.connect() as c:
+        return c.execute("select md5(public_sources::text) from cases where id=%s", (cid,)).fetchone()[0]
+
+
+def stored(cid):
+    with db.connect() as c:
+        return c.execute("select public_sources from cases where id=%s", (cid,)).fetchone()[0]
+
+
+def attach(cid, rid, n, s=None, user="u1", groups=RV, **extra):
+    return as_user(user, groups).post(f"/review/{cid}/sources", follow_redirects=False,
+                                      data={"research_id": rid, "n": n, "s": s or token(cid), **extra})
+
+
+def test_reviewer_attaches_chosen_claims_to_the_case(rows, approved):
+    cid = approved()
+    rid = rows([claim(), claim(Q2, "configuration", "docs.vendor.io", "https://docs.vendor.io/x")], case_id=cid)
+    r = attach(cid, rid, [1])
+    assert r.status_code == 303 and r.headers["location"] == f"/review/{cid}"
+    (item,) = stored(cid)
+    assert item["quote"] == Q2 and item["research_id"] == rid and item["attached_by"] == "u1" and item["attached_at"]
+    assert "statement" not in item
+    page = as_user("u1", RV).get(f"/review/{cid}").text
+    assert "Public sources (not delivery evidence)" in page and Q2 in page and Q1 not in page
+    assert 'action="/review/%d/sources"' % cid in as_user("u1", RV).get(f"/research/{rid}").text
+    assert "/sources" not in as_user("u1", G).get(f"/research/{rid}").text.replace("/sources/", "")  # a plain user cannot attach
+
+
+def test_attach_refuses_research_not_yours_not_done_or_from_another_case(rows, approved):
+    cid, other = approved(), approved()
+    for rid in (rows([claim()], by="u2", case_id=cid), rows([claim()], status="running", case_id=cid),
+                rows([claim()], case_id=other), rows([claim()]), 999999999):
+        assert attach(cid, rid, [0]).status_code == 404
+    assert attach(cid, rows([claim()], case_id=cid), [0], groups=G).status_code == 403
+    assert stored(cid) == []
+
+
+def test_attach_copies_from_the_row_not_the_form(rows, approved):
+    cid = approved()
+    rid = rows([claim()], case_id=cid)
+    attach(cid, rid, [0, 7, -1], quote="forged", url="https://evil.example/x", publisher="forged")
+    (item,) = stored(cid)
+    assert item["quote"] == Q1 and item["url"] == "https://learn.microsoft.com/entra" and item["publisher"] == "learn.microsoft.com"
+
+
+def test_attach_skips_a_claim_naming_a_protected_client(rows, approved, reg):
+    cid = approved()
+    rid = rows([claim(f"{reg.replace('o', 'ö')} runs this daily"), claim(publisher=reg.lower() + ".com", url=f"https://{reg.lower()}.com/p"),
+                claim(Q2, "configuration")], case_id=cid)
+    attach(cid, rid, [0, 1, 2])
+    got = stored(cid)
+    assert [c["quote"] for c in got] == ["a retailer runs this daily", Q2] and reg not in json.dumps(got)
+
+
+def test_attach_dedupes_and_caps_at_20(rows, approved):
+    cid = approved()
+    rid = rows([claim(f"{Q1} {i}") for i in range(21)], case_id=cid)
+    assert attach(cid, rid, [0, 0, 1]).status_code == 303 and attach(cid, rid, [1, 2]).status_code == 303
+    assert len(stored(cid)) == 3
+    assert attach(cid, rid, list(range(3, 20))).status_code == 303 and len(stored(cid)) == 20
+    before = stored(cid)
+    assert attach(cid, rid, [20]).status_code == 400 and stored(cid) == before
+
+
+def test_attach_and_remove_need_the_current_list(rows, approved):
+    cid = approved()
+    rid = rows([claim(), claim(Q2, "configuration")], case_id=cid)
+    stale = token(cid)
+    assert attach(cid, rid, [0], s=stale).status_code == 303
+    assert attach(cid, rid, [1], s=stale).status_code == 409
+    rm = lambda i, s: as_user("u1", RV).post(f"/review/{cid}/sources/remove", data={"i": i, "s": s}, follow_redirects=False)  # noqa: E731
+    assert rm(0, stale).status_code == 409 and len(stored(cid)) == 1
+    assert rm(5, token(cid)).status_code == 400
+    assert rm(0, token(cid)).status_code == 303 and stored(cid) == []
+
+
+def test_attached_sources_appear_in_every_format(rows, approved):
+    cid = approved()
+    attach(cid, rows([claim()], case_id=cid), [0])
+    md = gen(None, [cid]).text
+    assert "# Best practice and public sources" in md and "Industry context" not in md and Q1 in md
+    assert render.INDUSTRY_DISCLAIMER.replace("_", "\\_") in md
+    t = doc_text(gen(None, [cid], "docx").content)
+    assert render.SOURCES_HEADING in t and Q1 in t and "learn.microsoft.com" in t
+    _, out = slides(gen(None, [cid], "pptx").content)
+    assert out[1]["Title"] == [render.SOURCES_HEADING] and Q1[:40] in out[1]["Statements"][0]
+    assert audit()[0] == [cid]
+    with db.connect() as c:
+        assert c.execute("select research_id from generations order by id desc limit 1").fetchone()[0] is None
+
+
+def test_attached_and_download_research_are_merged_without_duplicates(rows, approved):
+    cid = approved()
+    attach(cid, rows([claim()], case_id=cid), [0])
+    rid = rows([claim(), claim(Q2, "configuration", "docs.vendor.io", "https://docs.vendor.io/x")])
+    md = gen(rid, [cid]).text.replace("\\", "")
+    assert md.count(Q1) == 1 and Q2 in md and md.index(Q1) < md.index(Q2) and "# Best practice and public sources" in md
+    with db.connect() as c:
+        assert c.execute("select research_id from generations order by id desc limit 1").fetchone()[0] == rid
+
+
+def test_research_only_output_keeps_the_industry_heading(rows, approved):
+    cid = approved()
+    md = gen(rows([claim()]), [cid]).text
+    assert "# Industry context (public sources)" in md and "Best practice" not in md
+
+
+def test_client_protected_after_attach_is_dropped_at_render(rows, approved, reg):
+    cid = approved()
+    attach(cid, rows([claim(Q2, "configuration")], case_id=cid), [0])
+    with db.connect() as c:  # the client joined the registry after the attach
+        c.execute("update cases set public_sources = jsonb_build_array(public_sources->0 || jsonb_build_object('quote', %s::text), "
+                  "public_sources->0)", (f"{reg} runs this daily",))
+    md = gen(None, [cid]).text
+    assert reg not in md and "a retailer runs this daily" in md and Q2 in md
+
+
+def test_attached_sources_survive_reextraction_and_research_deletion(rows, approved):
+    cid = approved()
+    rid = rows([claim()], case_id=cid)
+    attach(cid, rid, [0])
+    with db.connect() as c:
+        c.execute("delete from research where id=%s", (rid,))
+        c.execute("update cases set data = data || '{\"summary\": \"re-extracted\"}'::jsonb where id=%s", (cid,))
+    assert [c["quote"] for c in stored(cid)] == [Q1] and Q1 in gen(None, [cid]).text
+
+
+def test_attach_does_not_reopen_an_approved_case(rows, approved):
+    cid = approved()
+    with db.connect() as c:
+        before = c.execute("select status, review_due, approved_by, data::text, search_text from cases where id=%s", (cid,)).fetchone()
+    attach(cid, rows([claim()], case_id=cid), [0])
+    as_user("u1", RV).post(f"/review/{cid}/sources/remove", data={"i": 0, "s": token(cid)})
+    attach(cid, rows([claim()], case_id=cid), [0])
+    with db.connect() as c:
+        assert c.execute("select status, review_due, approved_by, data::text, search_text from cases where id=%s", (cid,)).fetchone() == before
