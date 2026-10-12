@@ -397,7 +397,9 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
     for c in attached + claims:  # attached first: they win the slide's 5 places
         if (k := (c.get("url"), c.get("quote"))) not in seen:
             seen.add(k); merged.append(c)
-    industry = industry_section(merged, clients, heading=SOURCES_HEADING if attached else INDUSTRY_HEADING) \
+    # the new heading only if an attached claim survives apply()/blocked() at render
+    cited = bool(attached) and bool((industry_section(attached, clients) or {}).get("statements"))
+    industry = industry_section(merged, clients, heading=SOURCES_HEADING if cited else INDUSTRY_HEADING) \
         if merged else None
     if not ids and not (industry and industry["statements"]):
         raise HTTPException(400, "the research has no usable public statements")

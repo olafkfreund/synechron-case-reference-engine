@@ -43,9 +43,9 @@
 <div class="section-card"><div class="card-head"><h2>Fields</h2></div>
 {% for r in rows %}{% if not (r.unsourced and not r.new) %}{{ field_row(r, loop.index) }}{% endif %}{% endfor %}</div>
 {% if sources %}<div class="section-card"><div class="card-head"><h2>Public sources (not delivery evidence)</h2></div>
-{% for s in sources %}<div class="claim"><q>{{ s.quote }}</q>
-<div class="meta">{% if s.url.startswith(("http://", "https://")) %}<a href="{{ s.url }}" rel="noopener noreferrer">{{ s.publisher }}</a>{% else %}<span>{{ s.publisher }}</span>{% endif %}
-<span>retrieved {{ s.retrieved_at[:10] }}</span><span class="badge neutral">{{ s.type | replace("_", " ") }}</span></div>
+{% for s in sources %}<div class="claim">{% if s.hidden %}<p class="muted">Withheld: names a protected client</p>{% else %}<q>{{ s.quote }}</q>
+<div class="meta">{% if (s.url or "").startswith(("http://", "https://")) %}<a href="{{ s.url }}" rel="noopener noreferrer">{{ s.publisher }}</a>{% else %}<span>{{ s.publisher }}</span>{% endif %}
+<span>retrieved {{ (s.retrieved_at or "")[:10] }}</span><span class="badge neutral">{{ (s.type or "") | replace("_", " ") }}</span></div>{% endif %}
 <form method="post" action="/review/{{ id }}/sources/remove" style="margin:0"><input type="hidden" name="i" value="{{ s.n }}"><input type="hidden" name="s" value="{{ sources_v }}"><button class="btn">Remove</button></form></div>{% endfor %}</div>{% endif %}
 {% for r in rows %}<form id="f{{ loop.index }}" method="post" action="/review/{{ id }}/edit"><input type="hidden" name="field" value="{{ r.path }}"><input type="hidden" name="v" value="{{ v }}"></form>{% endfor %}
 

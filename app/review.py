@@ -159,7 +159,8 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
     notes = list(case.needs_attention)
     # organisations come from extraction; no LLM call on page view
     from app.research import visible_claims  # here: research imports this module
-    sources = visible_claims([{**c, "n": i} for i, c in enumerate(r[10])], registry)[0]
+    shown = {c["n"]: c for c in visible_claims([{**c, "n": i} for i, c in enumerate(r[10])], registry)[0]}
+    sources = [shown.get(i) or {"n": i, "hidden": True} for i in range(len(r[10]))]  # a hidden one can still be removed
     unlisted = anonymise.unlisted([*case.organisations, case.client_mention.value or ""], registry) if r[5] else []
     return page(request, "review_detail.html", user, id=cid, rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
                 unlisted=unlisted, members=members, cands=cands, remerge=remerge,
@@ -322,8 +323,9 @@ def attach_sources(cid: int, research_id: int = Form(), n: list[int] = Form([]),
         if not row:
             raise HTTPException(404, "no such research")
         stored = row[0].get("claims", [])
-        picked = [stored[i] for i in dict.fromkeys(n) if 0 <= i < len(stored)]  # from the row, never the form
-        kept = visible_claims(picked, anonymise.load_clients(conn))[0]
+        picked = [{**stored[i], "n": i} for i in dict.fromkeys(n) if 0 <= i < len(stored)]  # from the row, never the form
+        # visible_claims only filters: the stored claim is copied verbatim and anonymised again at render
+        kept = [stored[c["n"]] for c in visible_claims(picked, anonymise.load_clients(conn))[0]]
         now = datetime.now(timezone.utc).isoformat()
         new = [{**{k: c.get(k) for k in SOURCE_KEYS}, "research_id": research_id, "attached_by": user.sub, "attached_at": now}
                for c in kept]

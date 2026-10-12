@@ -15,8 +15,8 @@
 <div class="section-card"><div class="card-head"><h2>What public sources say</h2></div>
 <p class="muted" style="font-size:13px">The quote is what the source says; the summary and type are the AI's reading of it. Rely on the quote.</p>
 {% for c in claims %}<div class="claim">{% if can_attach %}<label class="check"><input type="checkbox" name="n" value="{{ c.n }}"> Attach</label>{% endif %}<q>{{ c.quote }}</q>
-<div class="meta">{% if c.url.startswith(("http://", "https://")) %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.publisher }}</a>{% else %}<span>{{ c.publisher }}</span>{% endif %}
-<span>retrieved {{ c.retrieved_at[:10] }}</span><span class="badge neutral">{{ c.type | replace("_", " ") }}</span></div>
+<div class="meta">{% if (c.url or "").startswith(("http://", "https://")) %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.publisher }}</a>{% else %}<span>{{ c.publisher }}</span>{% endif %}
+<span>retrieved {{ (c.retrieved_at or "")[:10] }}</span><span class="badge neutral">{{ c.type | replace("_", " ") }}</span></div>
 <p>{{ c.statement }}</p></div>{% endfor %}
 {% if can_attach %}<button class="btn">Attach to the case as public sources</button>{% endif %}</div>
 {% if can_attach %}</form>{% endif %}

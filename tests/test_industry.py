@@ -268,7 +268,7 @@ def test_reviewer_attaches_chosen_claims_to_the_case(rows, approved):
     page = as_user("u1", RV).get(f"/review/{cid}").text
     assert "Public sources (not delivery evidence)" in page and Q2 in page and Q1 not in page
     assert 'action="/review/%d/sources"' % cid in as_user("u1", RV).get(f"/research/{rid}").text
-    assert "/sources" not in as_user("u1", G).get(f"/research/{rid}").text.replace("/sources/", "")  # a plain user cannot attach
+    assert f'action="/review/{cid}/sources"' not in as_user("u1", G).get(f"/research/{rid}").text  # a plain user cannot attach
 
 
 def test_attach_refuses_research_not_yours_not_done_or_from_another_case(rows, approved):
@@ -288,13 +288,15 @@ def test_attach_copies_from_the_row_not_the_form(rows, approved):
     assert item["quote"] == Q1 and item["url"] == "https://learn.microsoft.com/entra" and item["publisher"] == "learn.microsoft.com"
 
 
-def test_attach_skips_a_claim_naming_a_protected_client(rows, approved, reg):
+def test_attach_skips_a_blocked_claim_and_stores_the_source_text_verbatim(rows, approved, reg):
     cid = approved()
-    rid = rows([claim(f"{reg.replace('o', 'ö')} runs this daily"), claim(publisher=reg.lower() + ".com", url=f"https://{reg.lower()}.com/p"),
+    evasion = f"{reg.replace('o', 'ö')} runs this daily"
+    rid = rows([claim(evasion), claim(publisher=reg.lower() + ".com", url=f"https://{reg.lower()}.com/p"),
                 claim(Q2, "configuration")], case_id=cid)
     attach(cid, rid, [0, 1, 2])
     got = stored(cid)
-    assert [c["quote"] for c in got] == ["a retailer runs this daily", Q2] and reg not in json.dumps(got)
+    assert [c["quote"] for c in got] == [evasion, Q2] and reg not in json.dumps(got)  # stored as the source says; anonymised at render
+    assert "a retailer runs this daily" in gen(None, [cid]).text
 
 
 def test_attach_dedupes_and_caps_at_20(rows, approved):
@@ -379,3 +381,26 @@ def test_attach_does_not_reopen_an_approved_case(rows, approved):
     attach(cid, rows([claim()], case_id=cid), [0])
     with db.connect() as c:
         assert c.execute("select status, review_due, approved_by, data::text, search_text from cases where id=%s", (cid,)).fetchone() == before
+
+
+def _protect_attached_site(cid, reg):
+    with db.connect() as c:  # the source's site now belongs to a protected client: blocked() drops it at render
+        c.execute("update cases set public_sources = jsonb_build_array(public_sources->0 || jsonb_build_object('url', %s::text))",
+                  (f"https://{reg.lower()}.com/p",))
+
+
+def test_heading_stays_industry_when_every_attached_claim_is_dropped_at_render(rows, approved, reg):
+    cid = approved()
+    attach(cid, rows([claim(Q2, "configuration")], case_id=cid), [0])
+    _protect_attached_site(cid, reg)
+    md = gen(rows([claim()]), [cid]).text
+    assert "# Industry context (public sources)" in md and "Best practice" not in md and Q1 in md and Q2 not in md
+
+
+def test_review_page_lists_a_hidden_source_for_removal_without_showing_it(rows, approved, reg):
+    cid = approved()
+    attach(cid, rows([claim(Q2, "configuration")], case_id=cid), [0])
+    _protect_attached_site(cid, reg)
+    page = as_user("u1", RV).get(f"/review/{cid}").text
+    assert "Withheld: names a protected client" in page and Q2 not in page and reg.lower() not in page
+    assert 'name="i" value="0"' in page
