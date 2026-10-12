@@ -1160,3 +1160,23 @@ def test_merge_starts_without_diagrams_and_remerge_keeps_them(make, acme):
     _set_tech(b)
     assert c.post(f"/review/{new}/remerge", data={"v": ver(new)}, follow_redirects=False).status_code == 303
     assert [d["status"] for d in _data_and_doc(new)[0]["diagrams"]] == ["ready"]
+
+
+def test_detail_shows_diagrams_card(make, jobs):
+    cid = make()
+    page = client(R).get(f"/review/{cid}").text
+    assert 'enctype="multipart/form-data"' in page and 'accept="image/png,image/jpeg"' in page
+    assert "diagrams_checked" not in page
+    add_diagram(cid, caption="<b>Flow</b>")
+    page = client(R).get(f"/review/{cid}").text
+    assert "Processing: reload in a moment" in page and "&lt;b&gt;Flow&lt;/b&gt;" in page and "<b>Flow" not in page
+    did = entries(cid)[0]["id"]
+    with db.connect() as c:
+        c.execute("update cases set data = jsonb_set(jsonb_set(data, '{diagrams,0,status}', '\"ready\"'), "
+                  "'{diagrams,0,width}', '900') where id=%s", (cid,))
+    page = client(R).get(f"/review/{cid}").text
+    assert f'<img src="/review/{cid}/diagrams/{did}.png" alt="&lt;b&gt;Flow&lt;/b&gt;" width="480">' in page
+    assert 'name="diagrams_checked" required' in page and "no client name, logo, person" in page
+    set_diagram(cid, "rejected")
+    page = client(R).get(f"/review/{cid}").text
+    assert "Rejected:" in page and "diagrams_checked" not in page

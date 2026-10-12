@@ -163,7 +163,7 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
     sources = [shown.get(i) or {"n": i, "hidden": True} for i in range(len(r[10]))]  # a hidden one can still be removed
     unlisted = anonymise.unlisted([*case.organisations, case.client_mention.value or ""], registry) if r[5] else []
     return page(request, "review_detail.html", user, id=cid, rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
-                unlisted=unlisted, members=members, cands=cands, remerge=remerge,
+                unlisted=unlisted, diagrams=case.diagrams, members=members, cands=cands, remerge=remerge,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
                 external_id=r[3], source=r[4], merged=bool(members),
                 reviewable=r[5] and not any(m[6] for m in members), v=r[6], sources=sources, sources_v=r[11],
