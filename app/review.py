@@ -475,10 +475,12 @@ def do_merge(members, pick, user):
             raise HTTPException(400, "a choice is not one of the contracts")
         case = combine([(i, d, c) for i, d, c, _, _ in found], pick)
         check(case, {d: t for _, d, _, _, t in found})
+        sources = _add_sources([], [c for (m,) in conn.execute(
+            "select public_sources from cases where id = any(%s) order by id", (ids,)).fetchall() for c in m])[:MAX_SOURCES]
         new = conn.execute(
-            "insert into cases(document_id, member_count, basis, status, data, summary, search_text) "
-            "values (null, %s, 'engagement', 'extracted', %s, %s, %s) returning id",
-            (len(ids), Jsonb(case.model_dump()), case.summary, case.search_text())).fetchone()[0]
+            "insert into cases(document_id, member_count, basis, status, data, summary, search_text, public_sources) "
+            "values (null, %s, 'engagement', 'extracted', %s, %s, %s, %s) returning id",
+            (len(ids), Jsonb(case.model_dump()), case.summary, case.search_text(), Jsonb(sources))).fetchone()[0]
         conn.execute("update cases set merged_into = %s, merged_version = md5(data::text) where id = any(%s)", (new, ids))
     return RedirectResponse(f"/review/{new}", status_code=303)
 
