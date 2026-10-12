@@ -941,6 +941,28 @@ def test_merged_case_takes_sections_from_picked_member(make, acme):
 
 
 def test_merged_case_has_no_lessons_learned(make, acme):
-    new, _ = _merged(make)
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    for i, w in ((a, "From A"), (b, "From B")):  # stale values from before the case became an engagement
+        with db.connect() as c:
+            c.execute("update cases set data = jsonb_set(data, '{lessons_learned,value}', to_jsonb(%s::text)) where id=%s", (w, i))
+    members = [f"{i}:{ver(i)}" for i in (a, b)]
+    assert "lessons learned" not in client(R).post("/review/merge/preview", data={"members": members}).text
+    new = int(merge(client(R), [a, b]).headers["location"].rsplit("/", 1)[1])
     assert row(new)[1]["lessons_learned"]["value"] is None
     assert "lessons_learned" not in client(R).get(f"/review/{new}").text
+
+
+def test_quote_posted_with_written_is_ignored(make):
+    cid = make()
+    post(client(R), cid, field="implementation", value="Own words", quote=Q_TITLE, written="true")
+    item = row(cid)[1]["implementation"]
+    assert item["by_reviewer"] is True and item["source_quote"] == ""
+
+
+def test_approve_clears_lessons_learned_on_engagement(make):
+    cid = make(basis="engagement")
+    with db.connect() as c:
+        c.execute("update cases set data = jsonb_set(data, '{lessons_learned}', "
+                  "'{\"value\": \"Stale\", \"source_quote\": \"\", \"by_reviewer\": true}') where id=%s", (cid,))
+    assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}).status_code == 200
+    assert row(cid)[1]["lessons_learned"]["value"] is None

@@ -301,7 +301,8 @@ def combine(members, pick):
     """
     def stamped(item, doc_id):
         item = copy.deepcopy(item)
-        item.document_id = doc_id
+        if not getattr(item, "by_reviewer", False):  # reviewer text has no origin document (#198)
+            item.document_id = doc_id
         return item
 
     by_id = {cid: (doc, case) for cid, doc, case in members}

@@ -97,8 +97,8 @@ def check(case: ReferenceCase, text: str | dict[int, str]) -> None:
             item.document_id = next((d for d, t in text.items() if sourced(value, item.source_quote, t)), None)
         return text.get(item.document_id, "")  # unknown or unmatched id: nothing vouches, so unsourced
 
-    def mark(item, value, literal=False):
-        if getattr(item, "by_reviewer", False):  # a reviewer's own text has no quote to check (#198)
+    def mark(item, value, literal=False, own=False):
+        if own and item.by_reviewer:  # a reviewer's own text has no quote to check (#198)
             item.unsourced = False
             return
         item.unsourced = value not in (None, "") and not (
@@ -106,9 +106,10 @@ def check(case: ReferenceCase, text: str | dict[int, str]) -> None:
             and (not literal or quote_in(item.source_quote, str(value))))
 
     for s in (case.title, case.industry, case.region, case.engagement_type, case.challenge,
-              case.solution, case.implementation, case.configuration, case.lessons_learned,
-              case.duration_months, case.team_size, *case.capabilities):
+              case.solution, case.duration_months, case.team_size, *case.capabilities):
         mark(s, s.value)
+    for s in (case.implementation, case.configuration, case.lessons_learned):  # the only fields a reviewer may write
+        mark(s, s.value, own=True)
     for s in (case.client_mention, *case.tech_stack):
         mark(s, s.value, literal=True)
     for o in case.outcomes:

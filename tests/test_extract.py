@@ -418,3 +418,9 @@ def test_reextract_engagement_drops_reviewer_lessons(doc):
     with db.connect() as c:
         data = c.execute("select data from cases where document_id=%s", (did,)).fetchone()[0]
     assert data["lessons_learned"]["value"] is None and data["needs_attention"] == []
+
+
+def test_check_ignores_by_reviewer_on_other_fields():
+    c = ReferenceCase(title=Sourced[str](value="Made up", by_reviewer=True))
+    ex.check(c, "some document text")
+    assert c.title.unsourced is True
