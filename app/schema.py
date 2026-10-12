@@ -87,6 +87,16 @@ class Period(_Model):
     document_id: SkipJsonSchema[int | None] = None  # see Sourced
 
 
+class Diagram(_Model):
+    """A reviewer-uploaded image (#200); written by the diagram worker, never by the LLM."""
+    id: int
+    caption: str
+    status: Literal["pending", "ready", "rejected"]
+    reason: str = ""
+    width: int = 0
+    height: int = 0
+
+
 class ReferenceCase(_Model):
     title: Sourced[str]
     client_mention: Sourced[str] = Sourced[str]()  # raw name as written; client_id is resolved later
@@ -111,6 +121,7 @@ class ReferenceCase(_Model):
     organisations: list[str] = Field([], description="Every company, bank or other organisation named in the document, as written.")
     # reviewer notes set by extract.py only (hidden from the LLM, like `unsourced`)
     needs_attention: SkipJsonSchema[list[str]] = []
+    diagrams: SkipJsonSchema[list[Diagram]] = []
     basis: SkipJsonSchema[Literal["delivered", "engagement"]] = "delivered"
     basis_reason: SkipJsonSchema[str] = ""  # "executed contract" | "source marked executed"
 

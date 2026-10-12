@@ -207,3 +207,10 @@ def test_reviewer_text_does_not_vouch_for_summary_numbers():
     c.implementation = Sourced[str](value="Rolled out in 9 weeks", by_reviewer=True)
     c.summary = "Delivered in 9 weeks."
     assert not c.summary_sourced()
+
+
+def test_diagrams_hidden_from_llm_schema():
+    assert "diagrams" not in ReferenceCase.model_json_schema()["properties"]
+    assert "diagrams" not in json.dumps(llm_schema())
+    old = {"title": {"value": "T"}}  # data saved before #200 has no diagrams key
+    assert ReferenceCase.model_validate(old).diagrams == []
