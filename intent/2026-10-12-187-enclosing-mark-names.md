@@ -67,3 +67,5 @@ contain them.
   "Zorpale/Bank", "Zorpale_Bank" and "Zorpale.Bank". Should #187 also treat
   these as separators, or file them separately? If they're in, a short name
   could match more widely. For example, "Acme" would then match "acme.io".
+
+**Decided by the user, 2026-10-12:** only the trademark signs and enclosing marks are fixed. '·', '/', '_' and '.' between words do not become separators; those spellings need an alias.
