@@ -321,9 +321,13 @@ def diagram_png(cid: int, did: int, user: User = Depends(require("reviewer"))):
 
 
 @router.post("/review/{cid}/approve")
-def approve(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))):
+def approve(cid: int, v: str = Form(), diagrams_checked: bool = Form(False), user: User = Depends(require("reviewer"))):
     with db.connect() as conn:
         case, text = load(conn, cid, user, v)
+        if any(d.status == "pending" for d in case.diagrams):
+            raise HTTPException(409, "a diagram is still being checked; reload in a moment")
+        if any(d.status == "ready" for d in case.diagrams) and not diagrams_checked:
+            raise HTTPException(400, "confirm that you have checked every diagram")
         if isinstance(text, dict) and conn.execute(
                 "select count(*) from cases where merged_into = %s and (status = 'rejected' or basis <> 'engagement')", (cid,)).fetchone()[0]:
             raise HTTPException(409, "a member contract is no longer an engagement: un-merge")
@@ -615,6 +619,7 @@ def remerge(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))
         pick = {f: m[0] for f in MERGE_FIELDS for m in live if m[1] == getattr(merged, f).document_id}
         case = combine([(m[0], m[1], cases[m[0]]) for m in live], pick)
         check(case, {m[1]: m[5][:MAX_CHARS] for m in live})
+        case.diagrams = merged.diagrams  # the merged case's own; combine() starts empty
         save(conn, cid, case)
         conn.execute("update cases set status = 'extracted', approved_by = null, approved_at = null, "
                      "review_due = null, member_count = %s where id = %s", (len(live), cid))

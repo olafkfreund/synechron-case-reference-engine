@@ -1114,3 +1114,49 @@ def test_diagram_route_serves_only_ready_png_to_reviewers(make, jobs):
     assert r.headers["content-security-policy"] == "default-src 'none'; frame-ancestors 'none'"  # the guard adds framing
     assert client([USER]).get(url).status_code == 403
     assert client(R).get(f"/review/{cid + 1}/diagrams/{did}.png").status_code == 404
+
+
+def set_diagram(cid, status):
+    entry = {"id": 1, "caption": "c", "status": status, "reason": "", "width": 0, "height": 0}
+    with db.connect() as c:
+        c.execute("update cases set data = data || jsonb_build_object('diagrams', %s::jsonb) where id=%s",
+                  (json.dumps([entry]), cid))
+
+
+def test_approve_refused_while_diagram_pending(make):
+    cid = make()
+    set_diagram(cid, "pending")
+    r = client(R).post(f"/review/{cid}/approve", data={"v": ver(cid), "diagrams_checked": "on"})
+    assert r.status_code == 409 and row(cid)[0] == "extracted"
+
+
+def test_approve_with_diagrams_requires_checkbox(make):
+    cid = make()
+    set_diagram(cid, "ready")
+    assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}).status_code == 400
+    assert row(cid)[0] == "extracted"
+    r = client(R).post(f"/review/{cid}/approve", data={"v": ver(cid), "diagrams_checked": "on"}, follow_redirects=False)
+    assert r.status_code == 303 and row(cid)[0] == "approved"
+    other = make()
+    set_diagram(other, "rejected")  # a rejected diagram neither blocks nor needs the box
+    assert client(R).post(f"/review/{other}/approve", data={"v": ver(other)}, follow_redirects=False).status_code == 303
+
+
+def test_stale_version_cannot_approve_after_diagram_added(make, jobs):
+    cid = make()
+    v = ver(cid)  # the page the reviewer loaded, before the upload
+    assert add_diagram(cid).status_code == 303
+    assert client(R).post(f"/review/{cid}/approve", data={"v": v, "diagrams_checked": "on"}).status_code == 409
+    assert row(cid)[0] == "extracted"
+
+
+def test_merge_starts_without_diagrams_and_remerge_keeps_them(make, acme):
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    set_diagram(a, "ready")
+    c = client(R)
+    new = int(merge(c, [a, b]).headers["location"].rsplit("/", 1)[1])
+    assert _data_and_doc(new)[0]["diagrams"] == []
+    set_diagram(new, "ready")
+    _set_tech(b)
+    assert c.post(f"/review/{new}/remerge", data={"v": ver(new)}, follow_redirects=False).status_code == 303
+    assert [d["status"] for d in _data_and_doc(new)[0]["diagrams"]] == ["ready"]
