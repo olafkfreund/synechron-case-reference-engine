@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 190
 intent: intent/2026-10-12-190-merged-member-new-facts.md
 ---
