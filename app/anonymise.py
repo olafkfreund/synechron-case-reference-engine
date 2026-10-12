@@ -14,6 +14,7 @@ from app import db
 _SEP = r"[\s,\-‐‑–—]"
 _JOIN = _SEP + "*"
 _APOS = "'’‘ʼ′"
+_SIGNS = "™℠®"  # replaced before NFKC, which turns ™ into "TM" (#187)
 
 
 def load_clients(conn=None) -> list[dict]:
@@ -35,8 +36,11 @@ def _visible(s: str) -> str:
     return _no_format(unicodedata.normalize("NFKC", s))
 
 
-def fold(s: str) -> str:
-    """Case, accents and width folded ("Société" = "SOCIETE", "Straße" = "strasse", "İ" = "i")."""
+def fold(s: str, me: str = "") -> str:
+    """Case, accents and width folded ("Société" = "SOCIETE", "Straße" = "strasse", "İ" = "i"). Trademark signs become a
+    space, so "Zorpale™ Bank" and "Acme®Zorpale Bank" still match (#187). Enclosing marks become `me`: "" joins
+    "Z⃝orpale"; blocked(), has_name() and scrub() also try " " for a mark between two words, "A⃝Zorpale Bank"."""
+    s = "".join(" " if ch in _SIGNS else me if unicodedata.category(ch) == "Me" else ch for ch in s)  # Me: combining 0
     s = unicodedata.normalize("NFKD", _visible(s).casefold())
     return "".join(ch for ch in s if not unicodedata.combining(ch))
 
@@ -66,8 +70,8 @@ def _by_length(pairs):
 
 
 def has_name(text: str, names: list[str]) -> bool:
-    t = fold(text)
-    return any(_pattern(fold(n)).search(t) for n in names)
+    ts = (fold(text), fold(text, " "))  # both readings of an enclosing mark, as blocked() (#187)
+    return any(_pattern(fold(n)).search(t) for n in names for t in ts)
 
 
 def _replace_once(text: str, pairs) -> str:
@@ -115,9 +119,9 @@ def apply(text: str, clients) -> str:
 
 def blocked(text: str, clients) -> list[str]:
     """Non-referenceable names or aliases still present, matched on folded text (fails closed)."""
-    t = fold(text)
+    ts = (fold(text), fold(text, " "))  # shortcut: apply() only replaces the "" reading, so "A⃝Zorpale" is withheld
     names = [n for c in clients if not c["referenceable"] for n in _names(c)]
-    return sorted({n for n in names if _pattern(fold(n)).search(t)})
+    return sorted({n for n in names if any(_pattern(fold(n)).search(t) for t in ts)})
 
 
 def scrub(text: str, clients) -> str:
@@ -125,7 +129,7 @@ def scrub(text: str, clients) -> str:
 
     Returns folded text: case and accents do not matter to a search engine.
     """
-    t = fold(text)
+    t = fold(text, " ")  # a mark between words is a separator here; a mark inside a word was missed before #187 too
     for name, _ in _by_length([(n, None) for c in clients for n in _names(c)]):
         t = _pattern(fold(name)).sub(" ", t)
     return " ".join(t.split())
