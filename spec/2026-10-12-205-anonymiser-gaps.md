@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 205
 intent: intent/2026-10-12-205-anonymiser-gaps.md
 ---
