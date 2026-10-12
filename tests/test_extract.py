@@ -1,3 +1,4 @@
+import json
 import uuid
 
 import pytest
@@ -136,6 +137,17 @@ def test_reextraction_resets_approval_and_search_text_has_no_quotes(doc):
     with db.connect() as c:
         assert c.execute("select approved_by, approved_at, review_due from cases where document_id=%s",
                          (did,)).fetchone() == (None, None, None)
+
+
+def test_reextraction_keeps_diagrams(doc):
+    did, _ = doc
+    assert run(doc, case())[0]["diagrams"] == []  # a first extraction still has the key
+    entry = {"id": 7, "caption": "Flow", "status": "ready", "reason": "", "width": 10, "height": 5}
+    with db.connect() as c:
+        c.execute("update cases set data = data || jsonb_build_object('diagrams', %s::jsonb) where document_id=%s",
+                  (json.dumps([entry]), did))
+    data, _, _, status = run(doc, case())
+    assert data["diagrams"] == [entry] and status == "extracted"
 
 
 def test_unsourced_quote_cannot_launder_summary_number(doc):
