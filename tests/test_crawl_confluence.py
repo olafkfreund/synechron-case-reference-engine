@@ -462,8 +462,8 @@ def test_renamed_attachment_with_same_version_shows_new_title(cf):
     crawl.crawl_confluence(cf.sid)
     cf.atts["p1"][0]["title"] = "renamed.docx"
     offer_again(cf)
-    crawl.crawl_confluence(cf.sid)
+    counts = crawl.crawl_confluence(cf.sid)
     with db.connect() as c:
         title = c.execute("select title from documents where source_id=%s and external_id=%s", (cf.sid, "att:p1:a1")).fetchone()[0]
     assert title == "renamed.docx"
-    assert not any("/download/" in u for u in cf.calls)
+    assert not any("/download/" in u for u in cf.calls) and counts["skipped"] >= 2  # the page and the attachment
