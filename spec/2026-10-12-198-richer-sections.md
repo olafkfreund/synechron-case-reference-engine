@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 198
 intent: intent/2026-10-12-198-richer-sections.md
 ---
