@@ -889,3 +889,57 @@ def test_remerge_locks_members_before_the_merged_case(make, acme):
         holder.close()
     t.join(10)
     assert got == [303] and status_of(new) == "extracted"
+
+
+# ---- reviewer-written sections (#198) ----
+
+def test_reviewer_writes_section_and_approve_keeps_it(make):
+    cid = make()
+    assert post(client(R), cid, field="implementation", value="Phased rollout", written="true").status_code == 303
+    item = row(cid)[1]["implementation"]
+    assert item["by_reviewer"] is True and item["unsourced"] is False and item["source_quote"] == ""
+    assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}).status_code == 200
+    assert row(cid)[1]["implementation"]["value"] == "Phased rollout"
+
+
+def test_written_flag_refused_on_other_fields(make):
+    cid = make()
+    before = row(cid)[1]
+    for f in ("title", "capabilities.new", "summary"):
+        assert post(client(R), cid, field=f, value="x", quote=Q_TITLE, written="true").status_code == 400
+    assert post(client(R), cid, field="implementation", value="", written="true").status_code == 400
+    assert row(cid)[1] == before
+
+
+def test_save_without_written_returns_to_quote_check(make):
+    cid = make()
+    post(client(R), cid, field="configuration", value="Own words", written="true")
+    assert post(client(R), cid, field="configuration", value="Own words").status_code == 303
+    item = row(cid)[1]["configuration"]
+    assert item["by_reviewer"] is False and item["unsourced"] is True
+
+
+def test_engagement_lessons_learned_edit_refused(make):
+    cid = make(basis="engagement")
+    r = post(client(R), cid, field="lessons_learned", value="Start earlier", written="true")
+    assert r.status_code == 400 and row(cid)[1]["lessons_learned"]["value"] is None
+    assert 'value="lessons_learned' not in client(R).get(f"/review/{cid}").text
+
+
+def test_merged_case_takes_sections_from_picked_member(make, acme):
+    def with_impl(text, impl):
+        cid = eng(make, text, ["x"], [])
+        data = row(cid)[1]
+        data["implementation"] = {"value": impl, "source_quote": "", "unsourced": False, "document_id": None, "by_reviewer": True}
+        with db.connect() as c:
+            c.execute("update cases set data=%s where id=%s", (json.dumps(data), cid))
+        return cid
+    a, b = with_impl(TEXT_A, "From A"), with_impl(TEXT_B, "From B")
+    new = int(merge(client(R), [a, b], implementation=b).headers["location"].rsplit("/", 1)[1])
+    assert row(new)[1]["implementation"]["value"] == "From B"
+
+
+def test_merged_case_has_no_lessons_learned(make, acme):
+    new, _ = _merged(make)
+    assert row(new)[1]["lessons_learned"]["value"] is None
+    assert "lessons_learned" not in client(R).get(f"/review/{new}").text
