@@ -60,4 +60,4 @@ refreshed. The title is just stale.
    anyway rather than depending on how Confluence behaves. The staging crawl
    (#31) can confirm what Confluence actually does.
 
-**Decided by the user, 2026-10-12:** the recommendation stands: set the title in skip_unchanged() regardless of whether Confluence bumps the version on a rename; the staging crawl (#31) shows the real behaviour.
+**Recommendation (approving this intent accepts it):** set the title in skip_unchanged() regardless of whether Confluence bumps the version on a rename; the staging crawl (#31) shows the real behaviour.
