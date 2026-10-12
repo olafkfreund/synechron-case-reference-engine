@@ -67,3 +67,5 @@ be approved: an empty title blocks approval.
    choices as defaults?
 2. Do the same for a withdrawn (deleted) member, which shows a badge today
    but is otherwise left alone?
+
+**Decided by the user, 2026-10-12:** no automatic rebuild. The merged case page says a member changed (or was withdrawn) since the merge and offers a one-step re-merge; the reviewer's choices and edits stay until they use it.
