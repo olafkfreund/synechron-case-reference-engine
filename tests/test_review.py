@@ -778,3 +778,114 @@ def test_withdrawn_member_can_still_be_unmerged_but_not_edited(make, acme):
     assert f"/review/{new}/approve" not in page and ">Save<" not in page
     assert c.post(f"/review/{new}/unmerge", data={"v": ver(new)}, follow_redirects=False).status_code == 303
     assert status_of(new) == "rejected" and merged_of(a) is None
+
+
+# ---- a merged case and a re-extracted member (#190) ----
+
+def _set_tech(cid, text_add="We added Kafka."):
+    """What a re-extraction does to a member: new data, quoted from new document text."""
+    with db.connect() as c:
+        c.execute("""update cases set data = jsonb_set(data, '{tech_stack}',
+                     '[{"value": "Kafka", "source_quote": "Kafka", "unsourced": false}]') where id=%s""", (cid,))
+        c.execute("update documents set text = text || ' ' || %s where id=(select document_id from cases where id=%s)",
+                  (text_add, cid))
+
+
+def test_merge_records_member_versions(make, acme):
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    merge(client(R), [a, b])
+    with db.connect() as c:
+        rows = c.execute("select merged_version, md5(data::text) from cases where id = any(%s)", ([a, b],)).fetchall()
+    assert len(rows) == 2 and all(mv == md5 for mv, md5 in rows)
+
+
+def test_member_change_shows_on_merged_case_and_remerge_takes_new_facts(make, acme):
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    c = client(R)
+    new = int(merge(c, [a, b], industry=b).headers["location"].rsplit("/", 1)[1])
+    _, doc_b = _data_and_doc(new, b)
+    _set_tech(b)
+    page = c.get(f"/review/{new}").text
+    assert "changed since merge" in page and f'action="/review/{new}/remerge"' in page
+    assert c.post(f"/review/{new}/remerge", data={"v": ver(new)}, follow_redirects=False).status_code == 303
+    data, _ = _data_and_doc(new)
+    assert [x["value"] for x in data["tech_stack"]] == ["Kafka"]
+    assert data["industry"]["document_id"] == doc_b and status_of(new) == "extracted"
+    assert "changed since merge" not in c.get(f"/review/{new}").text
+
+
+def test_unchanged_merged_case_offers_no_remerge(make, acme):
+    new, b = _merged(make)
+    with db.connect() as x:
+        x.execute("update cases set data = data where id=%s", (b,))  # a rewrite with the same content
+    page = client(R).get(f"/review/{new}").text
+    assert "changed since merge" not in page and "/remerge" not in page
+    _set_tech(b)  # a real change does show: the check above is not vacuous
+    assert "changed since merge" in client(R).get(f"/review/{new}").text
+
+
+def test_remerge_drops_a_withdrawn_member(make, acme):
+    a, b, d = (eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], []), eng(make, TEXT_B, ["z"], []))
+    c = client(R)
+    new = int(merge(c, [a, b, d]).headers["location"].rsplit("/", 1)[1])
+    with db.connect() as x:
+        x.execute("update documents set deleted_at=now() where id=(select document_id from cases where id=%s)", (d,))
+    assert f'action="/review/{new}/remerge"' in c.get(f"/review/{new}").text
+    assert c.post(f"/review/{new}/remerge", data={"v": ver(new)}, follow_redirects=False).status_code == 303
+    with db.connect() as x:
+        assert x.execute("select member_count from cases where id=%s", (new,)).fetchone()[0] == 2
+    assert merged_of(d) is None and merged_of(a) == new
+    assert c.get(f"/review/{new}").status_code == 200
+
+
+def test_remerge_refusals(make, acme):
+    def post(cl, new, v=None):
+        return cl.post(f"/review/{new}/remerge", data={"v": v or ver(new)}).status_code
+
+    c = client(R)
+    new, b = _merged(make)
+    assert post(c, new, "stale") == 409
+    assert post(client([USER]), new) == 403
+    assert post(client([REV]), new) == 404
+    with db.connect() as x:  # another registered client
+        gid = x.execute("insert into clients(name, aliases, anonymised_label) values (%s, '{Globex}', 'a retailer') "
+                        "returning id", (f"Globex {uuid.uuid4().hex[:8]}",)).fetchone()[0]
+    try:
+        with db.connect() as x:
+            x.execute("""update cases set data = jsonb_set(data, '{client_mention,value}', '"Globex"') where id=%s""", (b,))
+        assert post(c, new) == 400
+    finally:
+        with db.connect() as x:
+            x.execute("delete from clients where id=%s", (gid,))
+    new, b = _merged(make)
+    with db.connect() as x:
+        x.execute("update cases set status='rejected' where id=%s", (b,))
+    assert post(c, new) == 409
+    new, b = _merged(make)
+    with db.connect() as x:
+        x.execute("update documents set deleted_at=now() where id=(select document_id from cases where id=%s)", (b,))
+    assert post(c, new) == 409  # fewer than 2 remain
+
+
+def test_remerge_locks_members_before_the_merged_case(make, acme):
+    """Same order as unmerge: ingest locks a member, then reopens M (#144)."""
+    import threading
+    from tests.test_ingest import _wait_for_lock_wait
+    c = client(R)
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    new = int(merge(c, [a, b]).headers["location"].rsplit("/", 1)[1])
+    v, got = ver(new), []
+    holder = db.connect()
+    try:
+        holder.execute("select 1 from cases where id=%s for update", (a,))
+        t = threading.Thread(target=lambda: got.append(c.post(f"/review/{new}/remerge", data={"v": v},
+                                                               follow_redirects=False).status_code))
+        t.start()
+        _wait_for_lock_wait(holder)
+        holder.execute("set local lock_timeout = '5s'")
+        holder.execute("select 1 from cases where id=%s for update", (new,))
+        holder.commit()
+    finally:
+        holder.close()
+    t.join(10)
+    assert got == [303] and status_of(new) == "extracted"
