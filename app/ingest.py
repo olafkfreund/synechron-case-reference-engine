@@ -134,10 +134,10 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
     return "updated" if row else "new"
 
 
-def skip_unchanged(source_id: int, external_id: str, source_version: str) -> bool:
-    """The checksum skip without the download: same source version, so un-withdraw and refresh the groups."""
+def skip_unchanged(source_id: int, external_id: str, source_version: str, title: str) -> bool:
+    """The checksum skip without the download: same source version, so un-withdraw, refresh the groups and the title."""
     with db.connect() as conn:
         return conn.execute(
-            "update documents set acl_groups=(select acl_groups from sources where id=%s for share), deleted_at=null "
+            "update documents set acl_groups=(select acl_groups from sources where id=%s for share), deleted_at=null, title=%s "
             "where source_id=%s and external_id=%s and source_version=%s returning id",
-            (source_id, source_id, external_id, source_version)).fetchone() is not None
+            (source_id, title, source_id, external_id, source_version)).fetchone() is not None

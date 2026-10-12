@@ -426,7 +426,7 @@ def crawl_confluence(source_id: int) -> dict:
                         try:
                             v = att.get("version") or {}
                             ver = f"{v['number']}:{v['when']}" if v.get("number") is not None and v.get("when") else None
-                            if ver and skip_unchanged(source_id, ext, ver):  # unchanged: no download (#46)
+                            if ver and skip_unchanged(source_id, ext, ver, title):  # unchanged: no download (#46)
                                 counts["skipped"] += 1
                                 done.add(ext)
                                 continue
