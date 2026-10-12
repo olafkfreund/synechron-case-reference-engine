@@ -127,6 +127,24 @@ Joining several contracts for the same client into one case.
 One new case that needs a new summary and a fresh approval. Capabilities and technologies are
 combined and outcomes are dropped.
 
+## Attach public sources
+
+**What it's for**
+
+Keeping the public best-practice statements you accept with the case, so every download of it can cite them.
+
+**Steps**
+
+1. On the search result, press **Research this (public sources)**.
+2. On the research result, tick the claims you accept.
+3. Press **Attach to the case as public sources**. A case holds at most 20.
+4. To take one off, open the case on the review page and press Remove on it under "Public sources (not delivery evidence)".
+
+**What you see**
+
+Every download of the case shows the attached sources under "Best practice and public sources", marked as
+statements by third parties, not our delivery. Attaching or removing does not change the case's approval.
+
 ## Re-review
 
 **What it's for**
