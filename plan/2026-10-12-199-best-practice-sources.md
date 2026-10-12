@@ -266,3 +266,16 @@ spec: spec/2026-10-12-199-best-practice-sources.md
 - Never print or commit the Brave key.
 - Research rows are private to `created_by`.
 - Coders never run `docker compose up` or `down`.
+
+## Deviations
+
+- **Rebased onto #197** (merged as PR #201), which moved the body of
+  `generate()` into a shared `build()`.
+  - Step 2's changes to `generate()` now live in `build()`: reading
+    `c.public_sources`, merging the attached sources with the research claims,
+    and choosing the heading. The preview (`/preview`) therefore shows the
+    attached sources too.
+  - `build()` also returns `claims`, so `generate()` can still log
+    `research_id` only when research claims were given.
+- **Review fix:** attached claims are stored verbatim. `visible_claims` only
+  filters them, as step 4.3 says, and render anonymises them.
