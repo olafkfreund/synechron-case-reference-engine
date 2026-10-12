@@ -60,7 +60,8 @@ def _loose(word: str) -> str:
 def _pattern(name: str) -> re.Pattern:
     words = [w for w in re.split(_SEP + "+", name) if w] or [name]  # "-" alone stays literal, never empty
     loose = _loose if re.search(r"\w", name) else str
-    join = r"\.?" + _JOIN if loose is _loose else _JOIN  # "St. James" = "St James"; the last word's dot stays text (#188)
+    # "St. James" = "St . James" = "St James" (#188, #205); grouped, as two adjacent * runs backtrack; the last word's dot stays text
+    join = _JOIN + r"(?:\." + _JOIN + ")?" if loose is _loose else _JOIN
     body = join.join(loose(re.escape(w)) for w in words)
     return re.compile(rf"(?<!\w){body}(?!\w)", re.I)
 
@@ -127,10 +128,17 @@ def blocked(text: str, clients) -> list[str]:
 def scrub(text: str, clients) -> str:
     """Remove every client name, referenceable or not, for outgoing web queries.
 
-    Returns folded text: case and accents do not matter to a search engine.
+    Returns folded text: case and accents do not matter to a search engine. An enclosing mark is read both ways (#205).
     """
-    t = fold(text, " ")  # a mark between words is a separator here; a mark inside a word was missed before #187 too
-    for name, _ in _by_length([(n, None) for c in clients for n in _names(c)]):
+    names = [n for c in clients for n in _names(c)]
+    text = _no_format(unicodedata.normalize("NFC", text))
+    for _ in range(3):  # mark as nothing: Z⃝orpale; repeat, as apply(), for a name re-formed by a removal (#205 review)
+        new = _replace_once(text, [(n, " ") for n in names])
+        if new == text:
+            break
+        text = new
+    t = fold(text, " ")  # mark as a space: A⃝Zorpale
+    for name, _ in _by_length([(n, None) for n in names]):
         t = _pattern(fold(name)).sub(" ", t)
     return " ".join(t.split())
 
