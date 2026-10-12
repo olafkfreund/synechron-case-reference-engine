@@ -56,7 +56,8 @@ def process(diagram_id: int) -> None:
             return
         try:
             png, w, h, reason = _decode(bytes(row[0]))
-        except Exception:  # whatever the decoder raised: reject, never leave the diagram pending forever
+        except Exception as e:  # whatever the decoder raised: reject, never leave the diagram pending forever
+            print(f"diagram {diagram_id} decoder error: {type(e).__name__}", flush=True)  # class only, as worker.py
             png, w, h, reason = None, 0, 0, UNREADABLE
         entries = data.get("diagrams", [])
         entry = next((d for d in entries if d["id"] == diagram_id), None)
