@@ -131,7 +131,12 @@ def scrub(text: str, clients) -> str:
     Returns folded text: case and accents do not matter to a search engine. An enclosing mark is read both ways (#205).
     """
     names = [n for c in clients for n in _names(c)]
-    text = _replace_once(_no_format(unicodedata.normalize("NFC", text)), [(n, " ") for n in names])  # mark as nothing: Z⃝orpale
+    text = _no_format(unicodedata.normalize("NFC", text))
+    for _ in range(3):  # mark as nothing: Z⃝orpale; repeat, as apply(), for a name re-formed by a removal (#205 review)
+        new = _replace_once(text, [(n, " ") for n in names])
+        if new == text:
+            break
+        text = new
     t = fold(text, " ")  # mark as a space: A⃝Zorpale
     for name, _ in _by_length([(n, None) for n in names]):
         t = _pattern(fold(name)).sub(" ", t)

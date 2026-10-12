@@ -446,3 +446,4 @@ def test_scrub_reads_a_mark_inside_a_word():
     assert an.scrub("Z\u20ddorpale Bank results", reg) == "results"
     out = an.scrub("Z\u20ddorpale Bank, St . James's Trust", reg)
     assert "zorpale" not in out and "james" not in out
+    assert "orpale" not in an.scrub("Z\u20ddorpale Acme Bank", reg + [C("Acme")])  # re-formed after Acme goes

@@ -83,3 +83,10 @@ implement this myself.
 ## Rollback
 
 Revert the merge commit. There is no schema or data change.
+
+## Deviations
+
+- Step 1, after review: `scrub()` pass 1 repeats `_replace_once` up to 3 rounds,
+  as `apply()` does. One pass leaked `Z⃝orpale Acme Bank`, because the name only
+  re-forms once "Acme" is removed, and pass 2 reads the mark as a space. Step 2
+  gained that input as a test.
