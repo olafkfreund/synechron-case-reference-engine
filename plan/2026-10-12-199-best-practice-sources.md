@@ -68,9 +68,9 @@ spec: spec/2026-10-12-199-best-practice-sources.md
    - Add `SOURCES_HEADING = "Best practice and public sources"` next to
      `INDUSTRY_HEADING` (`:40`).
    - Give `industry_section(claims, clients)` the keyword
-     `heading=INDUSTRY_HEADING`, and use it in the returned dict (`:69`).
-   - In `generate()`, add `c.public_sources` to the case query (`:378`) and
-     unpack it in the loop (`:388`). Collect `attached` across the cases in
+     `heading=INDUSTRY_HEADING`, and use it in the returned dict (`:68`).
+   - In `generate()`, add `c.public_sources` to the case query (`:375`) and
+     unpack it in the loop (`:385`). Collect `attached` across the cases in
      `ids` order. Then:
      ```python
      seen, merged = set(), []
@@ -81,9 +81,9 @@ spec: spec/2026-10-12-199-best-practice-sources.md
          if merged else None
      ```
      This replaces `industry = ... if research_id is not None else None`
-     (`:395`). The check `if not ids and not (industry and ...)` (`:396`)
+     (`:393`). The check `if not ids and not (industry and ...)` (`:396`)
      stays.
-   - Audit `research_id if industry else None` (`:404`): keep it, but log
+   - Audit `research_id if industry else None` (`:403`): keep it, but log
      the research id only when `research_id` was given. Use
      `research_id if (industry and claims) else None`, so attached-only
      outputs log no research.
@@ -106,7 +106,7 @@ spec: spec/2026-10-12-199-best-practice-sources.md
      The checkbox value is the stored index, not the position in the
      filtered list.
    - **Reviewer flag:** pass `can_attach`. It is true when `case` is set,
-     `"reviewer" in user.roles`, and the case is `REVIEWABLE` for the user
+     `"reviewer" in user.roles` (`User.roles`, `app/main.py:34`; `require` checks the same set at `:75`), and the case is `REVIEWABLE` for the user
      (`select 1 from cases c ... where c.id=%s and {REVIEWABLE}`). Also pass
      `sources_v`, the case's `md5(public_sources::text)`, from the same
      query.
@@ -121,8 +121,6 @@ spec: spec/2026-10-12-199-best-practice-sources.md
    Traps:
    - `visible_claims` drops claims, so indexes must come from the stored
      list.
-   - Check how `User` exposes roles in `app/main.py` before writing
-     `"reviewer" in ...`. Use the same test `require("reviewer")` uses.
 
 4. `app/review.py`, new routes after `reject` (`:261`):
    - **`POST /review/{cid}/sources`**, with
