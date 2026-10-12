@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 197
 spec: spec/2026-10-12-197-output-preview.md
 ---
