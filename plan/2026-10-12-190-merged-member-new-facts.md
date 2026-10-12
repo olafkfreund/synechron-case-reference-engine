@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 190
 spec: spec/2026-10-12-190-merged-member-new-facts.md
 ---
