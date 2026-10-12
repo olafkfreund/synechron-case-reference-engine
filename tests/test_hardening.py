@@ -289,6 +289,7 @@ def test_diagram_upload_over_cap_is_413_before_parsing(env):
     # under the diagram cap but over the form cap: the guard lets it through (the route answers, not the guard)
     assert c.post("/review/1/diagrams", content=b"x" * (BODY_CAP + 70_000)).status_code != 413
     assert c.post("/review/1/approve", content=b"x" * (BODY_CAP + 70_000)).status_code == 413
+    assert c.post("/review/1/diagrams/2/caption", content=b"x" * (BODY_CAP + 70_000)).status_code == 413  # only the upload path is raised
 
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"x" * 20
@@ -325,5 +326,5 @@ def test_diagram_route_headers(make):
     r = client([USER, DOCS]).get(f"/cases/{cid}/diagrams/{with_diagram(cid)}.png")
     assert r.content == PNG and r.headers["content-type"] == "image/png"
     assert r.headers["x-content-type-options"] == "nosniff" and r.headers["cache-control"] == "private, no-store"
-    assert r.headers["content-security-policy"] == "default-src 'none'; frame-ancestors 'none'"  # the guard adds framing
+    assert r.headers["content-security-policy"] == "frame-ancestors 'none'; default-src 'none'"  # the guard's framing rule comes first
     assert r.headers["content-disposition"] == "inline"

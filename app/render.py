@@ -459,10 +459,10 @@ def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: 
     with db.connect() as conn:
         ids, sections, industry, anonymised, claims = build(conn, case_ids, research_id, industry_context_ack, user, format)
         make, mime = OUTPUTS[format]
-        wanted = [d["id"] for sec in sections for d in sec["diagrams"]]
+        pairs = [(ids[n], d["id"]) for n, sec in enumerate(sections) for d in sec["diagrams"]]  # (case, diagram)
         images = {i: bytes(png) for i, png in conn.execute(
-            "select id, png from diagrams where id = any(%s) and case_id = any(%s) and png is not null",
-            (wanted, ids)).fetchall()} if wanted else {}
+            "select id, png from diagrams where (case_id, id) in (select * from unnest(%s::bigint[], %s::bigint[])) "
+            "and png is not null", ([c for c, _ in pairs], [d for _, d in pairs])).fetchall()} if pairs else {}
         try:
             body = make(sections, industry, images=images)  # before the audit row: a broken template must not log a generation
         except PdfError as e:

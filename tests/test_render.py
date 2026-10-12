@@ -49,7 +49,7 @@ def test_docx_content_and_leaks(approved, reg):
         assert bad not in t, bad
 
 
-def add_diagram(cid, caption="System overview", size=(40, 20)):
+def add_diagram(cid, caption="System overview", size=(40, 20), status="ready"):
     import json
     from PIL import Image
     buf = BytesIO()
@@ -57,10 +57,23 @@ def add_diagram(cid, caption="System overview", size=(40, 20)):
     with db.connect() as c:
         did = c.execute("insert into diagrams(case_id, png, created_by) values (%s,%s,'t') returning id",
                         (cid, buf.getvalue())).fetchone()[0]
-        entry = {"id": did, "caption": caption, "status": "ready", "reason": "", "width": size[0], "height": size[1]}
+        entry = {"id": did, "caption": caption, "status": status, "reason": "", "width": size[0], "height": size[1]}
         c.execute("update cases set data = data || jsonb_build_object('diagrams', coalesce(data->'diagrams', '[]') || %s::jsonb) "
                   "where id=%s", (json.dumps([entry]), cid))
     return did
+
+
+def test_only_ready_diagrams_reach_outputs(approved):
+    cid = approved(full())
+    add_diagram(cid, "Ready one")
+    add_diagram(cid, "Pending one", status="pending")  # all three have bytes, so only the status keeps them out
+    add_diagram(cid, "Rejected one", status="rejected")
+    out = {"md": gen([cid], "md").text, "preview": prev([cid]).text, "docx": doc_text(gen([cid], "docx").content)}
+    for name, text in out.items():
+        assert "Ready one" in text and "Pending one" not in text and "Rejected one" not in text, name
+    assert out["preview"].count("<figure>") == 1
+    xml = zipfile.ZipFile(BytesIO(gen([cid], "docx").content)).read("word/document.xml").decode()
+    assert xml.count("<w:drawing>") == 1
 
 
 def test_docx_embeds_diagram_with_caption(approved):

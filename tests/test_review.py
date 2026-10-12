@@ -1090,7 +1090,7 @@ def test_remove_diagram_deletes_unreferenced_bytes(make, jobs):
         assert c.execute("select count(*) from diagrams where id=%s", (did,)).fetchone()[0] == 0
 
 
-def test_web_task_never_imports_pil_for_upload(make, jobs, monkeypatch):
+def test_upload_never_calls_image_open(make, jobs, monkeypatch):
     from PIL import Image
     def boom(*a, **k):
         raise AssertionError("the web task decoded an upload")
@@ -1111,7 +1111,7 @@ def test_diagram_route_serves_only_ready_png_to_reviewers(make, jobs):
     r = client(R).get(url)
     assert r.status_code == 200 and r.content == PNG and r.headers["content-type"] == "image/png"
     assert r.headers["x-content-type-options"] == "nosniff" and r.headers["cache-control"] == "private, no-store"
-    assert r.headers["content-security-policy"] == "default-src 'none'; frame-ancestors 'none'"  # the guard adds framing
+    assert r.headers["content-security-policy"] == "frame-ancestors 'none'; default-src 'none'"  # the guard's framing rule comes first
     assert client([USER]).get(url).status_code == 403
     assert client(R).get(f"/review/{cid + 1}/diagrams/{did}.png").status_code == 404
 

@@ -357,3 +357,11 @@ These are carried over from the approved spec, checked against HEAD `e8644f0`
   `<figcaption>`. The case id is `ids[loop.index0]`, because `build()` returns
   `ids` and `sections` in the same order. Test:
   `test_preview_shows_ready_diagrams_from_the_user_route`.
+- **Step 12, the pptx reader:** python-pptx `add_picture` (`app/render.py`,
+  `_diagram_slide`) opens the PNG with PIL in the web task to read its size.
+  Those bytes were already re-encoded by the worker, and PIL reads only the
+  header there, so nothing is fully decoded in the web task.
+- **Review fixes:** the worker clears `im.info` before saving, so no ICC
+  profile is written; it applies the EXIF orientation first; any exception from
+  the decoder rejects the diagram; the guard's `frame-ancestors 'none'` comes
+  before a route's own policy; and the images are matched per `(case, diagram)`.

@@ -57,15 +57,41 @@ def version(cid):
 def test_png_and_jpeg_become_png_without_metadata(make):
     exif = Image.Exif()
     exif[0x013B] = "Some Owner"  # Artist
-    for raw in (encode("PNG"), encode("JPEG", exif=exif.tobytes()) + b"trailing"):
-        cid, gid = make(raw)
+    icc = b"\x00" * 128 + b"desc Some ICC Client Ltd"  # a profile whose description is client text
+    for fmt in ("PNG", "JPEG"):
+        cid, gid = make(encode(fmt, exif=exif.tobytes(), icc_profile=icc) + b"trailing")
         diagrams.process(gid)
         entry, stored, png = state(cid, gid)
         assert (entry["status"], entry["width"], entry["height"], entry["reason"]) == ("ready", 40, 20, "")
         assert stored is None
         im = Image.open(BytesIO(bytes(png)))
-        assert im.format == "PNG" and not im.getexif() and bytes(png).endswith(b"IEND\xaeB`\x82")
-        assert b"Some Owner" not in bytes(png)
+        assert im.format == "PNG" and not im.getexif() and "icc_profile" not in im.info
+        assert bytes(png).endswith(b"IEND\xaeB`\x82")
+        assert b"Some Owner" not in bytes(png) and b"Some ICC Client" not in bytes(png)
+
+
+def test_exif_orientation_is_applied(make):
+    exif = Image.Exif()
+    exif[0x0112] = 6  # rotate 90 degrees to display
+    cid, gid = make(encode("JPEG", (40, 20), exif=exif.tobytes()))
+    diagrams.process(gid)
+    entry, _, png = state(cid, gid)
+    assert (entry["width"], entry["height"]) == (20, 40) and Image.open(BytesIO(bytes(png))).size == (20, 40)
+
+
+def test_decoder_crash_rejects_the_diagram(make, monkeypatch):
+    cid, gid = make(encode("PNG"))
+    monkeypatch.setattr(diagrams, "_decode", lambda raw: (_ for _ in ()).throw(SyntaxError("boom")))
+    diagrams.process(gid)
+    entry, raw, png = state(cid, gid)
+    assert (entry["status"], entry["reason"]) == ("rejected", diagrams.UNREADABLE) and raw is None and png is None
+
+
+def test_case_gone_is_a_noop(make):
+    cid, gid = make(encode("PNG"))
+    with db.connect() as c:
+        c.execute("delete from cases where id=%s", (cid,))
+    diagrams.process(gid)  # no error
 
 
 def test_pixel_bomb_rejected_before_decode(make, monkeypatch):

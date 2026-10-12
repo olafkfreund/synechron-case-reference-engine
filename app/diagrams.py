@@ -18,7 +18,7 @@ UNREADABLE = "the image could not be read"
 
 def _decode(raw: bytes) -> tuple[bytes | None, int, int, str]:
     """(png, width, height, "") or (None, 0, 0, fixed reason). Never returns exception text."""
-    from PIL import Image  # not at module level: the web task must not load Pillow for an upload
+    from PIL import Image, ImageOps  # not at module level: the web task must not load Pillow for an upload
     Image.MAX_IMAGE_PIXELS = MAX_PIXELS
     try:
         im = Image.open(BytesIO(raw))
@@ -28,10 +28,12 @@ def _decode(raw: bytes) -> tuple[bytes | None, int, int, str]:
         if max(w, h) > MAX_SIDE or w * h > MAX_PIXELS:  # before load(): a bomb is never decoded
             return None, 0, 0, TOO_LARGE
         im.load()
+        im = ImageOps.exif_transpose(im)  # rotated photos come out upright; the orientation tag goes with the EXIF
         im = im.convert("RGBA" if "A" in im.getbands() or "transparency" in im.info else "RGB")
+        im.info = {}  # convert() keeps info, and the PNG writer would write icc_profile (client text can sit in it)
         out = BytesIO()
         im.save(out, "PNG")  # a fresh encode drops EXIF, text chunks, ICC and trailing data
-        return out.getvalue(), w, h, ""
+        return out.getvalue(), *im.size, ""
     except Image.DecompressionBombError:
         return None, 0, 0, TOO_LARGE
     except (Image.UnidentifiedImageError, OSError, ValueError):
@@ -45,11 +47,17 @@ def process(diagram_id: int) -> None:
         if not row:
             return
         case_id = row[0]
-        data = conn.execute("select data from cases where id=%s for update", (case_id,)).fetchone()[0]
+        locked = conn.execute("select data from cases where id=%s for update", (case_id,)).fetchone()
+        if not locked:
+            return
+        data = locked[0]
         row = conn.execute("select raw from diagrams where id=%s and case_id=%s for update", (diagram_id, case_id)).fetchone()
         if not row or row[0] is None:
             return
-        png, w, h, reason = _decode(bytes(row[0]))
+        try:
+            png, w, h, reason = _decode(bytes(row[0]))
+        except Exception:  # whatever the decoder raised: reject, never leave the diagram pending forever
+            png, w, h, reason = None, 0, 0, UNREADABLE
         entries = data.get("diagrams", [])
         entry = next((d for d in entries if d["id"] == diagram_id), None)
         if entry is None:  # removed while processing
