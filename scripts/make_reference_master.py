@@ -2,7 +2,9 @@
 a layout named "Reference case" whose placeholders are named exactly Title, Client, Summary,
 Challenge, Solution, Outcomes, Technology (unique idx values; other placeholders are removed from
 generated slides), and no slides of its own. Optionally a layout "Industry context" with Title,
-Summary, Statements; without it the industry slide falls back to "Reference case". Usage: make_reference_master.py <out.pptx>"""
+Summary, Statements; without it the industry slide falls back to "Reference case". A layout "Diagram" with
+Title, Picture, Caption is needed only when a chosen case has diagrams (one slide per diagram; the picture is
+placed inside the Picture box, aspect ratio kept). Usage: make_reference_master.py <out.pptx>"""
 import sys
 
 from pptx import Presentation
@@ -44,6 +46,11 @@ INDUSTRY = [("Title", .5, .3, 9, .8, 24, True, False, None, False),
             ("Statements", .5, 1.8, 9, 5.0, 11, False, False, None, True)]
 
 
+DIAGRAM = [("Title", .5, .3, 9, .8, 24, True, False, None, False),
+           ("Picture", .5, 1.2, 9, 5.0, 11, False, False, None, False),
+           ("Caption", .5, 6.3, 9, .5, 12, False, True, GREY, False)]
+
+
 def build(layout, name, placeholders, headings):
     layout.name = name
     tree = layout.shapes._spTree
@@ -66,6 +73,7 @@ def build(layout, name, placeholders, headings):
 prs = Presentation()
 build(prs.slide_layouts[5], "Reference case", PLACEHOLDERS, HEADINGS)
 build(prs.slide_layouts[6], "Industry context", INDUSTRY, [])  # optional in a marketing master
+build(prs.slide_layouts[7], "Diagram", DIAGRAM, [])  # needed only for cases with diagrams
 p = prs.core_properties
 p.title, p.author, p.last_modified_by = "Reference cases", "Reference Engine", "Reference Engine"
 p.comments = p.subject = p.keywords = p.category = ""

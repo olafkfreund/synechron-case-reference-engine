@@ -159,6 +159,10 @@ INDUSTRY_LAYOUT = "Industry context"
 INDUSTRY_PLACEHOLDERS = ("Title", "Summary", "Statements")
 
 
+DIAGRAM_LAYOUT = "Diagram"
+DIAGRAM_PLACEHOLDERS = ("Title", "Picture", "Caption")
+
+
 def _layout(prs, name: str, required) -> tuple | None:
     """(layout, idx -> placeholder name) after validation; None when the master has no such layout.
     Slide placeholders get generic names when cloned, so the layout's names are the source of truth:
@@ -191,6 +195,19 @@ def _fill(prs, layout, names, content: dict, required) -> None:
         raise ValueError(f"layout {layout.name!r} did not yield placeholders: {', '.join(sorted(set(required) - filled))}")
 
 
+def _diagram_slide(prs, layout, names, title: str, d: dict, png: bytes) -> None:
+    _fill(prs, layout, names, {"Title": [title], "Picture": [""], "Caption": [d["caption"]]}, DIAGRAM_PLACEHOLDERS)
+    slide = prs.slides[-1]
+    idx = next(i for i, n in names.items() if n == "Picture")
+    box = next(ph for ph in slide.placeholders if ph.placeholder_format.idx == idx)
+    left, top, w, h = box.left, box.top, box.width, box.height
+    box._element.getparent().remove(box._element)
+    # add_picture at the box, not insert_picture: a picture placeholder crops the image to fill it
+    scale = min(w / d["width"], h / d["height"])
+    pw, ph_ = int(d["width"] * scale), int(d["height"] * scale)
+    slide.shapes.add_picture(BytesIO(png), left + (w - pw) // 2, top + (h - ph_) // 2, width=pw, height=ph_)
+
+
 def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int, bytes] = {}) -> bytes:
     prs = Presentation(MASTER)
     if len(prs.slides):  # a master's sample slides (and their text) must never ship
@@ -198,6 +215,11 @@ def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int
     case_layout = _layout(prs, LAYOUT, PLACEHOLDERS)
     if case_layout is None:
         raise ValueError(f"{MASTER.name} has no slide layout named {LAYOUT!r}")
+    diagram_layout = None
+    if any(d["id"] in images for c in sections for d in c["diagrams"]):  # a master without it fails only now
+        diagram_layout = _layout(prs, DIAGRAM_LAYOUT, DIAGRAM_PLACEHOLDERS)
+        if diagram_layout is None:
+            raise ValueError(f"{MASTER.name} has no slide layout named {DIAGRAM_LAYOUT!r}")
     for c in sections:
         block = lambda h: next((b["text"] for b in c["blocks"] if b["heading"] == h), "")  # noqa: E731
         bullets = lambda h: next((l["bullets"] for l in c["lists"] if l["heading"] == h), [])  # noqa: E731
@@ -206,6 +228,9 @@ def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int
             "Challenge": [excerpt(block("Challenge"))], "Solution": [excerpt(block("Solution"))],
             "Outcomes": [c["note"]] if c["note"] else bullets("Outcomes")[:SLIDE_OUTCOMES], "Technology": [", ".join(bullets("Technology"))]},
             PLACEHOLDERS)
+        for d in c["diagrams"]:
+            if d["id"] in images:
+                _diagram_slide(prs, *diagram_layout, c["title"], d, images[d["id"]])
     if industry:
         if own := _layout(prs, INDUSTRY_LAYOUT, INDUSTRY_PLACEHOLDERS):
             _fill(prs, *own, {"Title": [industry["heading"]], "Summary": [industry["disclaimer"]],

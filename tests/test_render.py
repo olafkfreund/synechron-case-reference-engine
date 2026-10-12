@@ -58,8 +58,8 @@ def add_diagram(cid, caption="System overview", size=(40, 20)):
         did = c.execute("insert into diagrams(case_id, png, created_by) values (%s,%s,'t') returning id",
                         (cid, buf.getvalue())).fetchone()[0]
         entry = {"id": did, "caption": caption, "status": "ready", "reason": "", "width": size[0], "height": size[1]}
-        c.execute("update cases set data = data || jsonb_build_object('diagrams', %s::jsonb) where id=%s",
-                  (json.dumps([entry]), cid))
+        c.execute("update cases set data = data || jsonb_build_object('diagrams', coalesce(data->'diagrams', '[]') || %s::jsonb) "
+                  "where id=%s", (json.dumps([entry]), cid))
     return did
 
 
@@ -522,3 +522,31 @@ def test_new_section_naming_client_is_anonymised(approved, reg):
     link(cid, label_id)
     t = gen([cid]).text
     assert name not in t and "Rolled out at a UK retailer" in t
+
+
+def test_pptx_diagram_slide_per_diagram(approved):
+    cid = approved(full())
+    add_diagram(cid, "System overview", (400, 100))  # wider than the box ratio: fitted by width, not cropped
+    add_diagram(cid, "Second", (50, 100))
+    prs, out = slides(gen([cid], "pptx").content)
+    assert [set(s) for s in out] == [set(NAMES), {"Title", "Caption"}, {"Title", "Caption"}]
+    assert out[1]["Caption"] == ["System overview"] and out[1]["Title"] == ["Faster onboarding"]
+    pics = [[sh for sh in s.shapes if sh.shape_type == 13] for s in prs.slides]
+    assert [len(p) for p in pics] == [0, 1, 1]
+    wide, tall = pics[1][0], pics[2][0]
+    assert abs(wide.width / wide.height - 4) < .01 and abs(tall.width / tall.height - .5) < .01
+    assert wide.width <= 9 * 914400 and tall.height <= 5 * 914400
+
+
+def test_pptx_without_diagram_layout_fails_only_with_diagrams(tmp_path, monkeypatch):
+    prs = Presentation(render.MASTER)
+    next(l for l in prs.slide_layouts if l.name == "Diagram").name = "Other"
+    odd = tmp_path / "odd.pptx"
+    prs.save(odd)
+    monkeypatch.setattr(render, "MASTER", odd)
+    sec = lambda diagrams: dict(title="T", client="C", summary="S", note="", blocks=[], lists=[], diagrams=diagrams)  # noqa: E731
+    d = dict(id=1, caption="c", width=10, height=10)
+    render.to_pptx([sec([])])  # no diagrams: unaffected
+    render.to_pptx([sec([d])])  # a diagram with no image (rejected or missing) is skipped
+    with pytest.raises(ValueError, match="no slide layout named 'Diagram'"):
+        render.to_pptx([sec([d])], images={1: b"x"})
