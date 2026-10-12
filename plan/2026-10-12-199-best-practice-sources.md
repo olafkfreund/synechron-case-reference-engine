@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 199
 spec: spec/2026-10-12-199-best-practice-sources.md
 ---
