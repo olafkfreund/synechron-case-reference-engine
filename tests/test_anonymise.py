@@ -157,6 +157,19 @@ def test_punctuation_variants_of_a_name():
     assert an.blocked("U.S. arm", [C("Zorp Holdings", ["U.S."])]) == ["U.S."]
 
 
+def test_dot_after_a_word_in_text():
+    reg = [C("St James's Bank", label="a bank")]
+    assert an.apply("We helped St. James's Bank", reg) == "We helped a bank"
+    assert an.blocked("ST. JAMES'S BANK", reg) == ["St James's Bank"]
+    assert "james" not in an.scrub("core banking for St. James's Bank", reg)
+    assert an.blocked("Zorp. Co", [C("Zorp Co")]) == ["Zorp Co"]
+    assert an.apply("with Zorp Co. They", [C("Zorp Co", label="a firm")]) == "with a firm. They"
+    assert an.blocked("U.S. Bank", [C("US Bank")]) == []
+    assert an.blocked("us bank", [C("U.S. Bank")]) == []
+    for t in ("St. James's Bank", "ST. JAMES'S BANK", "St.James's Bank"):
+        assert an.blocked(an.apply(t, reg), reg) == []
+
+
 def test_dash_only_name_does_not_match_everything():
     assert an.blocked("plain text", [C("-", [], label="x")]) == []
 
