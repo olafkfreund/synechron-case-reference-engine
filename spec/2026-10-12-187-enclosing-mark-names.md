@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 187
 intent: intent/2026-10-12-187-enclosing-mark-names.md
 ---
