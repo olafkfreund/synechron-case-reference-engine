@@ -108,15 +108,17 @@ These are carried over from the approved spec, checked against HEAD `e8644f0`
      `MAGIC = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff")`, plus the three fixed
      reasons.
    - `process(diagram_id)`, in one connection:
-     - Read `case_id, raw` for update. When the row or `raw` is gone, return.
-     - Decode outside the lock if you like. Then:
-       `Image.MAX_IMAGE_PIXELS = MAX_PIXELS`, `im = Image.open(BytesIO(raw))`,
+     - Read `case_id` from `diagrams` without a lock. When the row is gone,
+       return.
+     - Lock the case row (`select data from cases where id=%s for update`),
+       then `select raw from diagrams where id=%s and case_id=%s for update`.
+       When the row or `raw` is gone, return.
+     - Decode. `Image.MAX_IMAGE_PIXELS = MAX_PIXELS`, `im = Image.open(BytesIO(raw))`,
        check `im.format in ("PNG", "JPEG")` and `im.size` before `im.load()`.
        Convert to RGB or RGBA and `save(buf, "PNG")`.
      - Map any `PIL.UnidentifiedImageError`, `Image.DecompressionBombError`,
        `OSError` or `ValueError` to a rejected reason. Never store the
        exception text.
-     - Lock the case row (`select data from cases where id=%s for update`).
      - Find the entry by id. When it's missing, delete the `diagrams` row and
        return.
      - Set the status, reason, width and height. Write
@@ -128,8 +130,10 @@ These are carried over from the approved spec, checked against HEAD `e8644f0`
      (call `process` directly, and build the images with Pillow in the test),
      plus `tests/test_worker.py` staying green.
    - Traps:
-     - Lock only the one `cases` row (lock order: source, then documents,
-       then cases).
+     - Lock order, for every path (worker and review routes): source, then
+       documents, then cases, then diagrams. The worker takes the case row
+       before the diagram row, so a reviewer removing a diagram while it is
+       processed cannot deadlock.
      - No model call.
      - Don't use `md5(data)` from Python. Let SQL write `data`, so
        `VERSION` changes.
