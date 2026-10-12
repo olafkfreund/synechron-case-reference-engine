@@ -204,6 +204,17 @@ def test_preview_shows_the_download_content(approved):
         assert want in page, want
 
 
+def test_preview_shows_ready_diagrams_from_the_user_route(approved):
+    a, b = approved(full()), approved(full())
+    did = add_diagram(b, "Flow <b>&</b>", (900, 100))
+    page = prev([a, b]).text
+    url = f"/cases/{b}/diagrams/{did}.png"
+    assert f'<img src="{url}" alt="Flow &lt;b&gt;&amp;&lt;/b&gt;" width="480">' in page
+    assert "<figcaption>Flow &lt;b&gt;&amp;&lt;/b&gt;</figcaption>" in page and page.count("<figure>") == 1
+    assert client(R).get(url).status_code == 200  # the same user can load the image
+    assert "<figure>" not in prev([a]).text
+
+
 def test_preview_is_not_logged(approved):
     cid = approved()
 

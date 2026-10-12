@@ -351,3 +351,9 @@ These are carried over from the approved spec, checked against HEAD `e8644f0`
   `scripts/make_reference_template.py` and `scripts/make_reference_master.py`
   already describe the `c.diagrams` loop and the "Diagram" layout (steps 11
   and 12). The PR asks for both to be added to the real templates (#15).
+- **Step 10, the preview part:** done after the rebase onto main with #197.
+  `templates/output_preview.html` shows each case's ready diagrams as a
+  `<figure>` with the user route's `<img>` (width capped at 480 px) and a
+  `<figcaption>`. The case id is `ids[loop.index0]`, because `build()` returns
+  `ids` and `sections` in the same order. Test:
+  `test_preview_shows_ready_diagrams_from_the_user_route`.
