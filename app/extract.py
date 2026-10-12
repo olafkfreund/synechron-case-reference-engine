@@ -160,7 +160,6 @@ def extract(document_id: int, basis: str = "delivered", basis_reason: str = "", 
         if flagged and row[3] is not True:
             return  # the source was unticked: no case, and no model call (#159)
         case = build(row[0], row[1], basis, basis_reason)
-        data = case.model_dump()
         # under the lock the admin's save takes, so an untick during the model call applies here (#159)
         if flagged and not conn.execute(
                 "select 1 from sources s join documents d on d.source_id = s.id where d.id = %s "
@@ -170,6 +169,20 @@ def extract(document_id: int, basis: str = "delivered", basis_reason: str = "", 
         if checksum and not conn.execute("select 1 from documents where id=%s and checksum=%s for share",
                                          (document_id, checksum)).fetchone():
             return
+        # a reviewer's own text survives a re-extraction (#198); the cases lock comes last in the lock order
+        old = conn.execute("select data from cases where document_id=%s for update", (document_id,)).fetchone()
+        if old:
+            for f, label in (("implementation", "Implementation approach"), ("configuration", "Configuration and integration"),
+                             ("lessons_learned", "Lessons learned")):
+                prev = Sourced[str].model_validate(old[0].get(f) or {})
+                if not (prev.by_reviewer and prev.value) or (f == "lessons_learned" and case.basis == "engagement"):
+                    continue
+                if getattr(case, f).value:
+                    case.needs_attention.append(f"{label}: the document now states this; your earlier text was replaced")
+                else:
+                    setattr(case, f, prev)
+                    case.needs_attention.append(f"{label}: your text from before the document changed was kept; check it still holds")
+        data = case.model_dump()
         conn.execute(
             "insert into cases(document_id, data, summary, search_text, basis, status) "
             "values (%s,%s,%s,%s,%s,'extracted') on conflict (document_id) do update set "

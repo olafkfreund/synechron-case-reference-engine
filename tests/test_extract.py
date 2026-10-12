@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+from psycopg.types.json import Jsonb
 
 from app import db, extract as ex
 from app.schema import Extraction, Item, ReferenceCase, Sourced
@@ -383,3 +384,37 @@ def test_check_leaves_reviewer_text_sourced():
     c = ReferenceCase(title=Sourced[str](), implementation=Sourced[str](value="Our own words", by_reviewer=True, unsourced=True))
     ex.check(c, {1: DOC})
     assert c.implementation.unsourced is False and c.implementation.document_id is None
+
+
+def reviewer_text(did, f="implementation"):
+    with db.connect() as c:
+        data = c.execute("select data from cases where document_id=%s", (did,)).fetchone()[0]
+        data[f] = {"value": "Our own words", "source_quote": "", "unsourced": False, "document_id": None, "by_reviewer": True}
+        c.execute("update cases set data=%s where document_id=%s", (Jsonb(data), did))
+
+
+def test_reextract_keeps_reviewer_written_section_with_note(doc):
+    run(doc, case())
+    reviewer_text(doc[0])
+    data, *_ = run(doc, case())
+    assert data["implementation"]["value"] == "Our own words" and data["implementation"]["by_reviewer"] is True
+    assert data["needs_attention"] == ["Implementation approach: your text from before the document changed was kept; check it still holds"]
+
+
+def test_reextract_quote_replaces_reviewer_text(doc):
+    run(doc, case())
+    reviewer_text(doc[0])
+    data, *_ = run(doc, case(("implementation", "Phased rollout", "The programme ran for 18 months")))
+    assert data["implementation"]["value"] == "Phased rollout" and data["implementation"]["by_reviewer"] is False
+    assert data["needs_attention"] == ["Implementation approach: the document now states this; your earlier text was replaced"]
+
+
+def test_reextract_engagement_drops_reviewer_lessons(doc):
+    did, reply = doc
+    run(doc, case())
+    reviewer_text(did, "lessons_learned")
+    reply["v"] = case()
+    ex.extract(did, "engagement", "executed contract")
+    with db.connect() as c:
+        data = c.execute("select data from cases where document_id=%s", (did,)).fetchone()[0]
+    assert data["lessons_learned"]["value"] is None and data["needs_attention"] == []
