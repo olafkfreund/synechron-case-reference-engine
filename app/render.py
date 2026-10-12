@@ -17,7 +17,7 @@ from pptx import Presentation
 
 from app import anonymise, db
 from app.main import User, require
-from app.review import VISIBLE, page
+from app.review import PNG_HEADERS, VISIBLE, page
 from app.schema import ReferenceCase
 
 router = APIRouter()
@@ -103,7 +103,8 @@ def section(case: ReferenceCase, client: str) -> dict:
         basis=case.basis, note=ENGAGEMENT_NOTE if engagement else "",
         details=[dict(label=a, value=str(b)) for a, b in details if b not in (None, "")],
         blocks=[dict(heading=a, text=b) for a, b in blocks if b],
-        lists=[dict(heading=a, bullets=[str(i) for i in b if i]) for a, b in lists if any(b)])
+        lists=[dict(heading=a, bullets=[str(i) for i in b if i]) for a, b in lists if any(b)],
+        diagrams=[dict(id=d.id, caption=d.caption, width=d.width, height=d.height) for d in case.diagrams if d.status == "ready"])
 
 
 def _walk(o, f):
@@ -134,7 +135,7 @@ def protect(sections: list[dict], clients) -> list[dict]:
     return out
 
 
-def to_docx(sections: list[dict], industry: dict | None = None) -> bytes:
+def to_docx(sections: list[dict], industry: dict | None = None, images: dict[int, bytes] = {}) -> bytes:
     tpl = DocxTemplate(TEMPLATE)
     tpl.render({"cases": sections, "industry": industry}, autoescape=True)  # autoescape: & and < must not break the XML
     props = tpl.docx.core_properties  # never ship the template's own metadata
@@ -186,7 +187,7 @@ def _fill(prs, layout, names, content: dict, required) -> None:
         raise ValueError(f"layout {layout.name!r} did not yield placeholders: {', '.join(sorted(set(required) - filled))}")
 
 
-def to_pptx(sections: list[dict], industry: dict | None = None) -> bytes:
+def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int, bytes] = {}) -> bytes:
     prs = Presentation(MASTER)
     if len(prs.slides):  # a master's sample slides (and their text) must never ship
         raise ValueError(f"{MASTER.name} must contain no slides, only layouts")
@@ -346,10 +347,10 @@ def to_markdown(sections: list[dict], industry: dict | None = None) -> str:
 OFFICE = "application/vnd.openxmlformats-officedocument."
 OUTPUTS = {"docx": (to_docx, OFFICE + "wordprocessingml.document"),
            "pptx": (to_pptx, OFFICE + "presentationml.presentation"),
-           "md": (lambda s, i: to_markdown(s, i).encode(), "text/markdown; charset=utf-8"),
+           "md": (lambda s, i, images={}: to_markdown(s, i).encode(), "text/markdown; charset=utf-8"),
            # one format value per source keeps the form a single field
-           "pdf_docx": (lambda s, i: to_pdf(to_docx(s, i), ".docx"), "application/pdf"),
-           "pdf_pptx": (lambda s, i: to_pdf(to_pptx(s, i), ".pptx"), "application/pdf")}
+           "pdf_docx": (lambda s, i, images={}: to_pdf(to_docx(s, i, images), ".docx"), "application/pdf"),
+           "pdf_pptx": (lambda s, i, images={}: to_pdf(to_pptx(s, i, images), ".pptx"), "application/pdf")}
 
 
 def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
@@ -421,8 +422,12 @@ def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: 
     with db.connect() as conn:
         ids, sections, industry, anonymised, claims = build(conn, case_ids, research_id, industry_context_ack, user, format)
         make, mime = OUTPUTS[format]
+        wanted = [d["id"] for sec in sections for d in sec["diagrams"]]
+        images = {i: bytes(png) for i, png in conn.execute(
+            "select id, png from diagrams where id = any(%s) and case_id = any(%s) and png is not null",
+            (wanted, ids)).fetchall()} if wanted else {}
         try:
-            body = make(sections, industry)  # before the audit row: a broken template must not log a generation
+            body = make(sections, industry, images=images)  # before the audit row: a broken template must not log a generation
         except PdfError as e:
             raise HTTPException(503, str(e)) from None
         conn.execute("insert into generations(user_id, format, case_ids, anonymised, industry_context_ack, research_id) "
@@ -430,3 +435,16 @@ def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: 
                                                     research_id if (industry and claims) else None))
     return Response(body, media_type=mime, headers={
         "Content-Disposition": f'attachment; filename="reference-cases.{format.split('_')[0]}"', "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/cases/{cid}/diagrams/{did}.png")
+def diagram_png(cid: int, did: int, user: User = Depends(require("user"))):
+    with db.connect() as conn:  # a ready diagram of a case /generate would also accept; raw bytes are never selected
+        row = conn.execute(
+            "select d.png from diagrams d join cases c on c.id = d.case_id where d.id = %s and c.id = %s "
+            f"and c.status = 'approved' and c.review_due > now() and {VISIBLE} and d.png is not null "
+            "and exists (select 1 from jsonb_array_elements(c.data->'diagrams') e "
+            "where (e->>'id')::bigint = d.id and e->>'status' = 'ready')", (did, cid, list(user.groups))).fetchone()
+    if not row:
+        raise HTTPException(404, "no such diagram")
+    return Response(bytes(row[0]), media_type="image/png", headers=PNG_HEADERS)
