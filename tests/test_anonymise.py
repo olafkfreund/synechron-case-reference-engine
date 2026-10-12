@@ -170,6 +170,15 @@ def test_dot_after_a_word_in_text():
         assert an.blocked(an.apply(t, reg), reg) == []
 
 
+@pytest.mark.parametrize("t,reg", [(t, [C("St James's Bank", label="a bank")])
+                                   for t in ("St . James's Bank", "ST . JAMES'S BANK", "St .James's Bank")]
+                         + [("St . James's Trust", [C("Zorpale Bank", ["St. James's Trust"], label="a bank")])])
+def test_space_before_a_dot_in_text(t, reg):
+    out = an.apply(t, reg)
+    assert "james" not in out.lower() and an.blocked(t, reg) and an.blocked(out, reg) == []
+    assert "james" not in an.scrub(t, reg)
+
+
 def test_dash_only_name_does_not_match_everything():
     assert an.blocked("plain text", [C("-", [], label="x")]) == []
 
@@ -430,3 +439,10 @@ def test_a_sign_or_mark_between_the_name_and_another_word(t):
     assert "zorpale" not in an.scrub(t, reg) and an.has_name(t, ["Zorpale Bank"])
     if "\u20dd" not in t:
         assert an.blocked(an.apply(t, reg), reg) == []
+
+
+def test_scrub_reads_a_mark_inside_a_word():
+    reg = [C("Zorpale Bank", ["St. James's Trust"], label="a bank")]
+    assert an.scrub("Z\u20ddorpale Bank results", reg) == "results"
+    out = an.scrub("Z\u20ddorpale Bank, St . James's Trust", reg)
+    assert "zorpale" not in out and "james" not in out
