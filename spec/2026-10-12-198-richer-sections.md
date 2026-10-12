@@ -21,6 +21,10 @@ Decided by the user, 2026-10-12:
    document change, or by a reviewer. Approved cases stay approved.
 4. A case on an engagement basis (contracted scope, not delivered) never has
    a Lessons learned section. That would claim a result, as Outcomes would.
+5. Client outputs do **not** mark reviewer-written sections. Approval is the
+   reviewer's attestation.
+6. PowerPoint stays unchanged until the marketing master arrives (#15). There
+   is no interim slide.
 
 ## Design
 
@@ -104,7 +108,7 @@ by_reviewer: SkipJsonSchema[bool] = False
   - Engagement cases get no Lessons learned row or checkbox: `edit()` returns
     400 for `lessons_learned` on an engagement, as it does for outcomes
     (#139).
-- **Outputs do not mark it** (open question 1). Approval is the reviewer's
+- **Outputs do not mark it** (decision 5). Approval is the reviewer's
   attestation, and the output already carries only approved content.
 - **Anonymisation is unchanged.** `protect()` walks every string in the
   sections (`_walk`), so the new text is anonymised and checked fail-closed
@@ -160,7 +164,7 @@ blocks = [("Challenge", ...), ("Solution", ...),
 - **PowerPoint is unchanged.** The "Reference case" layout has fixed
   placeholders (`PLACEHOLDERS`, `:27`) and no room. The slide stays a
   summary, and the Word file has the full text (as `SLIDE_TEXT` already says).
-  An extra slide waits for the marketing master (#15).
+  An extra slide waits for the marketing master (#15) (decision 6).
 - **PDF** is built from Word or PowerPoint, so it follows them.
 - **The preview (#197)** renders `section()`, so it shows the new blocks with
   no extra work.
@@ -184,7 +188,7 @@ checks the labels.
   "unsourced" means. An explicit flag is clearer.
 - **Marking reviewer-written text in client outputs** (for example "Reviewer
   note"). The bid document is a client deliverable, and approval already
-  covers it. Left as open question 1.
+  covers it (decision 5).
 - **Re-extracting every case now.** The user decided against it (decision 3).
 - **A second PowerPoint layout now.** The master comes from marketing (#15).
   Adding a layout to the placeholder master would be thrown away.
@@ -244,6 +248,4 @@ Then:
 
 ## Open questions
 
-1. Should outputs mark reviewer-written sections? The recommendation is no
-   (see Alternatives). If you want the marking, Word and Markdown could
-   instead add "Source: reviewer" under the heading.
+None. Decisions 5 and 6 settled the last ones (the user, 2026-10-12).
