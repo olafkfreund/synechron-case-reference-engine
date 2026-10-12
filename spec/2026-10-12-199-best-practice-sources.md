@@ -16,6 +16,13 @@ The user decided (2026-10-12):
   "Best practice and public sources", with the existing third-party
   disclaimer.
 - No new search per download.
+- **Heading** (decided 2026-10-12, "approve all with your recommendations"):
+  "Best practice and public sources" only when the output includes sources
+  attached to a case. An output built only from per-download research keeps
+  "Industry context (public sources)". Both are constants, so #23 can change
+  them.
+- **Approval** (decided 2026-10-12): a reviewer attaching or removing
+  sources does not reopen an approved case.
 
 ## Design
 
@@ -116,9 +123,14 @@ URL, date, disclaimer and omitted-claims note.
 - **Re-checked at render time:** `industry_section` already runs `apply()`
   and then `blocked()` per claim. A client protected after the attach drops
   that claim and counts it in the note.
-- **Heading:** `INDUSTRY_HEADING` (`:40`) becomes
-  `"Best practice and public sources"`. It stays one constant, which #23 can
-  change along with `PHRASES`. The disclaimer constant stays as it is.
+- **Heading:** `INDUSTRY_HEADING` (`:40`) stays
+  `"Industry context (public sources)"`. A new constant
+  `SOURCES_HEADING = "Best practice and public sources"` is used when at
+  least one attached source is in the combined list, even if some of them
+  are later dropped by `blocked()`. `industry_section` gains a keyword
+  `heading=INDUSTRY_HEADING`, and `generate` passes `SOURCES_HEADING` when
+  attached sources are present. #23 can change either constant, along with
+  `PHRASES`. The disclaimer constant stays as it is.
 - **The acknowledgement:** unchanged. It is needed only when an output has
   no case (`:357`). An output with a case and attached sources needs none,
   just as a case with `research_id` needs none today.
@@ -147,7 +159,9 @@ URL, date, disclaimer and omitted-claims note.
   - they appear in every download of the case under "Best practice and
     public sources", marked as third-party statements.
 - `docs/user-guide/bid-team.md` ("Download with industry context", `:103`):
-  the new heading, and the note that a case can already carry sources.
+  the note that a case can carry attached sources, which change the heading
+  to "Best practice and public sources"; research-only downloads keep
+  "Industry context (public sources)".
 - `test_user_guide` checks the button labels.
 
 ## Alternatives rejected
@@ -178,9 +192,6 @@ URL, date, disclaimer and omitted-claims note.
   `research_id`, `attached_by` and `attached_at`. A follow-up could store
   the source count or the md5 of the list on `generations` if the audit
   needs it.
-- **Heading change for industry-only outputs.** Today's "Industry context
-  (public sources)" heading changes for everyone. This overlaps with #23
-  (open question 1).
 - **Slides cut at 5** (`SLIDE_ITEMS`). With up to 20 attached sources, the
   PowerPoint slide shows only the first 5. Attached sources come first, so
   those win over per-download research.
@@ -208,6 +219,9 @@ New tests in `tests/test_industry.py`, using the existing `rows` and
   section dict carry the quote, the publisher, the URL and the new heading,
   with no `research_id` on the request.
 - `test_attached_and_download_research_are_merged_without_duplicates`.
+- `test_research_only_output_keeps_the_industry_heading`: an output with
+  `research_id` and no attached sources is headed "Industry context (public
+  sources)".
 - `test_client_protected_after_attach_is_dropped_at_render`: the omitted
   note shows.
 - `test_attached_sources_survive_reextraction_and_research_deletion`.
@@ -227,7 +241,4 @@ Also:
 
 ## Open questions
 
-1. Rename the heading for every output, including industry-only downloads
-   with no attached sources (proposed)? Or keep "Industry context (public
-   sources)" for those and use the new heading only when a case carries
-   attached sources? This overlaps with #23.
+None. The heading question was decided on 2026-10-12 (see Decisions).
