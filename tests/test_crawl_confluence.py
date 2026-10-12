@@ -454,3 +454,16 @@ def test_crawl_does_not_write_back_groups_changed_mid_crawl(cf, monkeypatch):
     _change_groups_after_first_ingest(monkeypatch, cf.sid)
     crawl.crawl_confluence(cf.sid)
     assert live(cf.sid) == {k: ["g-new"] for k in ("page:p1", "page:p2", "page:p3", "att:p1:a1")}
+
+
+def test_renamed_attachment_with_same_version_shows_new_title(cf):
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"spec bytes", number=1)
+    crawl.crawl_confluence(cf.sid)
+    cf.atts["p1"][0]["title"] = "renamed.docx"
+    offer_again(cf)
+    crawl.crawl_confluence(cf.sid)
+    with db.connect() as c:
+        title = c.execute("select title from documents where source_id=%s and external_id=%s", (cf.sid, "att:p1:a1")).fetchone()[0]
+    assert title == "renamed.docx"
+    assert not any("/download/" in u for u in cf.calls)
