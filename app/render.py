@@ -348,7 +348,7 @@ OUTPUTS = {"docx": (to_docx, OFFICE + "wordprocessingml.document"),
            "pdf_pptx": (lambda s, i: to_pdf(to_pptx(s, i), ".pptx"), "application/pdf")}
 
 
-def build(conn, case_ids, research_id, industry_context_ack, user):
+def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
     """The content of an output, shared by the download and the preview: (ids, sections, industry, anonymised)."""
     ids = list(dict.fromkeys(case_ids))
     if len(ids) > 3:
@@ -359,6 +359,8 @@ def build(conn, case_ids, research_id, industry_context_ack, user):
         if not industry_context_ack:
             raise HTTPException(400, "an output with no case needs the acknowledgement that it contains public "
                                      "third-party statements only, not delivery evidence")
+    if fmt is not None and fmt not in OUTPUTS:  # after the input checks, as on main
+        raise HTTPException(400, f"format must be one of {', '.join(OUTPUTS)}")
     claims = []
     if research_id is not None:  # only your own, finished research
         row = conn.execute("select results from research where id=%s and created_by=%s and status='done'",
@@ -404,10 +406,8 @@ def preview(request: Request, case_ids: list[int] = Form([]), research_id: int |
 @router.post("/generate")
 def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: int | None = Form(None),
              industry_context_ack: bool = Form(False), user: User = Depends(require("user"))):
-    if format not in OUTPUTS:
-        raise HTTPException(400, f"format must be one of {', '.join(OUTPUTS)}")
     with db.connect() as conn:
-        ids, sections, industry, anonymised = build(conn, case_ids, research_id, industry_context_ack, user)
+        ids, sections, industry, anonymised = build(conn, case_ids, research_id, industry_context_ack, user, format)
         make, mime = OUTPUTS[format]
         try:
             body = make(sections, industry)  # before the audit row: a broken template must not log a generation

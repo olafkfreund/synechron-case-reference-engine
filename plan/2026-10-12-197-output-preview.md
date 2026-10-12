@@ -41,8 +41,11 @@ spec: spec/2026-10-12-197-output-preview.md
      - `protect()` (a `Withheld` raises 409);
      - `industry_section()`;
      - the "no usable public statements" 400.
-   - The format check stays first in `generate()`, before `build()`, so
-     `gen([ok], "pdf")` still returns 400 without a database read.
+   - The format check sits inside `build()`, after the input checks (dedupe,
+     limit, no-case/research/ack) and before any query, as on main. `build()`
+     takes `fmt=None`; `generate()` passes `format`, `/preview` passes nothing.
+     **Deviation from the first draft** (which put the check first in
+     `generate()`): a bad request now opens a DB connection before its 400.
    - `generate()` then opens `db.connect()`, calls `build()`, renders, and
      inserts the audit row inside the same `with`, as today.
 

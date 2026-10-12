@@ -167,6 +167,8 @@ def test_preview_includes_industry_and_keeps_the_ack(rows, approved):
     assert r.status_code == 200 and Q1 in r.text and "learn.microsoft.com" in r.text
     assert f'name="research_id" value="{rid}"' in r.text
     assert prev().status_code == 400
+    esc = as_user("u1", G).post("/preview", data={"case_ids": [cid], "research_id": rows([claim("<b>x</b> in the quote")])})
+    assert "&lt;b&gt;x&lt;/b&gt; in the quote" in esc.text and "<b>x</b>" not in esc.text
     r = prev(ack=True)
     assert r.status_code == 200 and 'name="industry_context_ack"' in r.text
 

@@ -171,10 +171,9 @@ def test_preview_is_not_logged(approved):
 
 def test_preview_enforces_generate_rules(approved):
     ok = approved()
-    assert prev([approved(acl=("g-other",))]).status_code == 404
-    assert prev([approved(due="-1 day")]).status_code == 404
-    assert prev([ok, 999999999]).status_code == 404
-    assert prev([approved(status="extracted", due=None)]).status_code == 404
+    for bad in (prev([approved(acl=("g-other",))]), prev([approved(due="-1 day")]), prev([ok, 999999999]),
+                prev([approved(status="extracted", due=None)])):
+        assert bad.status_code == 404 and bad.json()["detail"] == "no such case"  # the route, not an unknown path
     assert prev([ok, ok, ok, ok]).status_code == 200  # duplicates collapse
     assert prev([ok, approved(), approved(), approved()]).status_code == 400
     assert client(R, origin=None).post("/preview", data={"case_ids": [ok], "format": "md"}).status_code == 403

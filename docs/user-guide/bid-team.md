@@ -66,7 +66,7 @@ Getting a case into a document for your bid.
 
 **Steps**
 
-1. Press **Preview** to see exactly what the download will contain. The preview page has the same download buttons.
+1. Press **Preview** to see the content the download will contain. The preview page has the same download buttons.
 2. On a result, press **Download Word** for a Word file.
 3. For another format, open **Other formats** and press one of **Download this case (PowerPoint)**,
    **Download this case (PDF)**, **Download this case (PDF slides)** or **Download this case (Markdown)**.
