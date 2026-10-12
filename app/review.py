@@ -1,5 +1,6 @@
 import hashlib
 import copy
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -279,6 +280,66 @@ def reject(cid: int, v: str = Form(), user: User = Depends(require("reviewer")))
         conn.execute("update cases set status='rejected', approved_by=null, approved_at=null, "
                      "review_due=null where id=%s", (cid,))
     return RedirectResponse("/review", status_code=303)
+
+
+# ---- public sources a reviewer attaches to a case (#199) ----
+
+MAX_SOURCES = 20
+SOURCE_KEYS = ("quote", "publisher", "url", "retrieved_at", "type")
+
+
+def _add_sources(old: list, new: list) -> list:
+    """old then new, deduplicated by (url, quote); the caller checks the cap."""
+    seen, out = set(), []
+    for c in [*old, *new]:
+        if (k := (c.get("url"), c.get("quote"))) not in seen:
+            seen.add(k)
+            out.append(c)
+    return out
+
+
+def _lock_sources(conn, cid, user, s):
+    r = conn.execute("select md5(c.public_sources::text), c.public_sources from cases c "
+                     "left join documents d on d.id = c.document_id "
+                     f"where c.id = %s and {REVIEWABLE} for update of c", (cid, list(user.groups))).fetchone()
+    if not r:
+        raise HTTPException(404, "no such case")
+    if r[0] != s:
+        raise HTTPException(409, "case changed; reload the page")
+    return r[1]
+
+
+@router.post("/review/{cid}/sources")
+def attach_sources(cid: int, research_id: int = Form(), n: list[int] = Form([]), s: str = Form(),
+                   user: User = Depends(require("reviewer"))):
+    from app.research import visible_claims  # here: research imports this module
+    with db.connect() as conn:
+        old = _lock_sources(conn, cid, user, s)
+        row = conn.execute("select results from research where id=%s and created_by=%s and status='done' and case_id=%s",
+                           (research_id, user.sub, cid)).fetchone()
+        if not row:
+            raise HTTPException(404, "no such research")
+        stored = row[0].get("claims", [])
+        picked = [stored[i] for i in dict.fromkeys(n) if 0 <= i < len(stored)]  # from the row, never the form
+        kept = visible_claims(picked, anonymise.load_clients(conn))[0]
+        now = datetime.now(timezone.utc).isoformat()
+        new = [{**{k: c.get(k) for k in SOURCE_KEYS}, "research_id": research_id, "attached_by": user.sub, "attached_at": now}
+               for c in kept]
+        merged = _add_sources(old, new)
+        if len(merged) > MAX_SOURCES:
+            raise HTTPException(400, f"at most {MAX_SOURCES} public sources per case")
+        conn.execute("update cases set public_sources=%s where id=%s", (Jsonb(merged), cid))
+    return RedirectResponse(f"/review/{cid}", status_code=303)
+
+
+@router.post("/review/{cid}/sources/remove")
+def remove_source(cid: int, i: int = Form(), s: str = Form(), user: User = Depends(require("reviewer"))):
+    with db.connect() as conn:
+        old = _lock_sources(conn, cid, user, s)
+        if not 0 <= i < len(old):
+            raise HTTPException(400, "no such source")
+        conn.execute("update cases set public_sources=%s where id=%s", (Jsonb(old[:i] + old[i + 1:]), cid))
+    return RedirectResponse(f"/review/{cid}", status_code=303)
 
 
 # ---- merging related engagements into one reference (#55) ----
