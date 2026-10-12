@@ -141,7 +141,7 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
     with db.connect() as conn:
         r = conn.execute(
             f"select c.data, c.status, d.title, d.external_id, s.name, {OPEN}, {VERSION}, c.member_count, c.basis, "
-            f"case when c.review_due > now() then c.review_due end "
+            f"case when c.review_due > now() then c.review_due end, c.public_sources, md5(c.public_sources::text) "
             f"from cases c left join documents d on d.id = c.document_id left join sources s on s.id = d.source_id "
             f"where c.id = %s and {REVIEWABLE}", (cid, list(user.groups))).fetchone()
         registry = anonymise.load_clients(conn)
@@ -158,12 +158,14 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
     case = ReferenceCase.model_validate(r[0])  # the document text is deliberately not shown
     notes = list(case.needs_attention)
     # organisations come from extraction; no LLM call on page view
+    from app.research import visible_claims  # here: research imports this module
+    sources = visible_claims([{**c, "n": i} for i, c in enumerate(r[10])], registry)[0]
     unlisted = anonymise.unlisted([*case.organisations, case.client_mention.value or ""], registry) if r[5] else []
     return page(request, "review_detail.html", user, id=cid, rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
                 unlisted=unlisted, members=members, cands=cands, remerge=remerge,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
                 external_id=r[3], source=r[4], merged=bool(members),
-                reviewable=r[5] and not any(m[6] for m in members), v=r[6],
+                reviewable=r[5] and not any(m[6] for m in members), v=r[6], sources=sources, sources_v=r[11],
                 due=r[9].strftime("%Y-%m-%d") if r[9] else None)  # in date by the database clock, as search judges it
 
 
