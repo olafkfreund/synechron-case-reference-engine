@@ -64,3 +64,5 @@ is still correct. The bug is a change made while it was out of scope.
   decide on a source version that changes with the content. I expect them to
   re-download, but I have not checked. Should this issue cover them, or only
   S3?
+
+**Decided by the user, 2026-10-12:** fix S3, and add one test each for SharePoint and Confluence showing they already download a withdrawn file again; fix those only if a test fails.
