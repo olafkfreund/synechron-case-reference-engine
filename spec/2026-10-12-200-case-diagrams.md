@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 200
 intent: intent/2026-10-12-200-case-diagrams.md
 ---
