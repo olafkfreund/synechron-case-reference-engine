@@ -344,6 +344,14 @@ MD = _env.from_string("""\
 {% endfor %}
 
 {% endfor %}
+{% if c.diagrams %}
+## Diagrams
+
+{% for d in c.diagrams %}
+- {{ d.caption | md }} (in the Word, PowerPoint and PDF versions)
+{% endfor %}
+
+{% endif %}
 {% if not loop.last %}
 ---
 

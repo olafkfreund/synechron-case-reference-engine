@@ -75,6 +75,26 @@ def test_docx_embeds_diagram_with_caption(approved):
     assert "<w:drawing>" not in zipfile.ZipFile(BytesIO(gen([approved(full())], "docx").content)).read("word/document.xml").decode()
 
 
+def test_markdown_lists_diagram_captions(approved):
+    cid = approved(full())
+    assert "## Diagrams" not in gen([cid], "md").text
+    add_diagram(cid, "# Big *flow*")
+    m = gen([cid], "md").text
+    assert "## Diagrams\n\n- \\# Big \\*flow\\* (in the Word, PowerPoint and PDF versions)\n" in m
+
+
+def test_caption_is_anonymised_and_withheld_fail_closed(approved, reg, monkeypatch):
+    name, label_id = reg("Zorp", "a UK retailer")
+    cid = approved(full())
+    link(cid, label_id)
+    add_diagram(cid, f"Flow at {name}")
+    m = gen([cid], "md").text
+    assert name not in m and "Flow at a UK retailer" in m
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)  # a missed replacement must withhold, not leak
+    r = gen([cid], "md")
+    assert r.status_code == 409 and r.json()["detail"] == render.WITHHELD and name not in r.text
+
+
 def engagement():
     return full().model_copy(update={"basis": "engagement", "basis_reason": "executed contract"})
 
