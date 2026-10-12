@@ -39,7 +39,7 @@ def _visible(s: str) -> str:
 def fold(s: str, me: str = "") -> str:
     """Case, accents and width folded ("Société" = "SOCIETE", "Straße" = "strasse", "İ" = "i"). Trademark signs become a
     space, so "Zorpale™ Bank" and "Acme®Zorpale Bank" still match (#187). Enclosing marks become `me`: "" joins
-    "Z⃝orpale"; blocked() and scrub() also try " " for a mark between two words, "A⃝Zorpale Bank"."""
+    "Z⃝orpale"; blocked(), has_name() and scrub() also try " " for a mark between two words, "A⃝Zorpale Bank"."""
     s = "".join(" " if ch in _SIGNS else me if unicodedata.category(ch) == "Me" else ch for ch in s)  # Me: combining 0
     s = unicodedata.normalize("NFKD", _visible(s).casefold())
     return "".join(ch for ch in s if not unicodedata.combining(ch))
@@ -70,8 +70,8 @@ def _by_length(pairs):
 
 
 def has_name(text: str, names: list[str]) -> bool:
-    t = fold(text)
-    return any(_pattern(fold(n)).search(t) for n in names)
+    ts = (fold(text), fold(text, " "))  # both readings of an enclosing mark, as blocked() (#187)
+    return any(_pattern(fold(n)).search(t) for n in names for t in ts)
 
 
 def _replace_once(text: str, pairs) -> str:

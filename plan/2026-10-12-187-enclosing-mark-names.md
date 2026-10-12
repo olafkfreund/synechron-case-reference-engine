@@ -113,8 +113,8 @@ catches those. "Acme™Zorpale Bank" already leaked on main.
   still matches because `_JOIN` is `sep*`. A trailing sign stays in the text: "Zorpale Bank™ won" becomes
   "a bank™ won", as on main. The tests were updated to expect this.
 - **Enclosing marks:** `fold(s, me="")` takes what a mark becomes.
-  - `apply()` and `has_name()` use "", so a mark inside a word is joined ("Z⃝orpale").
-  - `blocked()` matches both "" and " ", so a mark glued between two words is withheld (a refusal, as on
+  - `apply()` uses "", so a mark inside a word is joined ("Z⃝orpale").
+  - `blocked()` and `has_name()` (label validation in `app/clients.py`, re-review should-fix) match both "" and " ", so a mark glued between two words is withheld (a refusal, as on
     main), not leaked.
   - `scrub()` uses " ", the same as main for a mark inside a word.
   - Marked `shortcut:` in `blocked()`.

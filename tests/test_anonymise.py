@@ -427,6 +427,6 @@ def test_signs_outside_a_name_stay():
 def test_a_sign_or_mark_between_the_name_and_another_word(t):
     reg = [C("Zorpale Bank", label="a bank")]
     assert an.blocked(t, reg) == ["Zorpale Bank"]  # a mark glued to both words is withheld, not replaced
-    assert "zorpale" not in an.scrub(t, reg)
+    assert "zorpale" not in an.scrub(t, reg) and an.has_name(t, ["Zorpale Bank"])
     if "\u20dd" not in t:
         assert an.blocked(an.apply(t, reg), reg) == []
