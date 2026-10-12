@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 191
 intent: intent/2026-10-12-191-confluence-rename-title.md
 ---
