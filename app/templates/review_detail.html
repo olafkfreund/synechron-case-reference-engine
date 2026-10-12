@@ -56,9 +56,9 @@
 {% else %}<p class="muted">This case is not open for review.</p>
 {% if merged %}<form method="post" action="/review/{{ id }}/unmerge"><input type="hidden" name="v" value="{{ v }}">
 <button class="btn">Un-merge (the contracts go back to the queue)</button></form>{% endif %}{% endif %}
-{% if merged and remerge %}<div class="section-card"><p class="muted">A contract changed or was withdrawn since this merge. The facts below are from the merge.</p>
+{% if merged and remerge %}<div class="section-card"><p class="muted">A contract changed or was withdrawn since this merge. The facts below are from the merge. Re-merging replaces the edits on this merged case.</p>
 <form method="post" action="/review/{{ id }}/remerge" style="margin:0"><input type="hidden" name="v" value="{{ v }}">
-<button class="btn">Re-merge with the current contracts (replaces the edits on this merged case)</button></form></div>{% endif %}
+<button class="btn">Re-merge with the current contracts</button></form></div>{% endif %}
 {% if reviewable and cands %}<form method="post" action="/review/merge/preview" class="section-card"><input type="hidden" name="members" value="{{ id }}:{{ v }}">
 <div class="card-head"><h2>Merge with other contracts for the same client</h2></div>
 {% for c in cands %}<label class="check"><input type="checkbox" name="members" value="{{ c[0] }}:{{ c[4] }}"> {{ c[1] }} ({{ c[2] }}{% if c[3].start or c[3].end %}, {{ c[3].start or "?" }} to {{ c[3].end or "?" }}{% endif %})</label><br>{% endfor %}
