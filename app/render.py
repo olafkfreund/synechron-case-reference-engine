@@ -87,7 +87,10 @@ def section(case: ReferenceCase, client: str) -> dict:
                ("Engagement type", v(case.engagement_type)),
                ("Duration", f"{v(case.duration_months)} months" if v(case.duration_months) else None),
                ("Team size", v(case.team_size)), ("Period", period)]
-    blocks = [("Challenge", v(case.challenge)), ("Solution", v(case.solution))]
+    blocks = [("Challenge", v(case.challenge)), ("Solution", v(case.solution)),
+              ("Implementation approach", v(case.implementation)),
+              ("Configuration and integration", v(case.configuration)),
+              ("Lessons learned", None if case.basis == "engagement" else v(case.lessons_learned))]
     lists = [("Capabilities", [v(c) for c in case.capabilities]),
              ("Technology", [v(t) for t in case.tech_stack]),
              ("Outcomes", [(f"{o.metric}: {o.value}" if o.metric else o.value) for o in case.outcomes if not o.unsourced])]
