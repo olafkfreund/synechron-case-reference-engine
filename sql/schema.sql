@@ -89,6 +89,8 @@ alter table cases add constraint cases_merge_check check (
   and (merged_into is null or document_id is not null));
 create index if not exists cases_merged_into_idx on cases (merged_into);
 alter table cases add column if not exists retired_by text;  -- 'untick': rejected by the source flag (#160)
+alter table cases add column if not exists merged_version text;  -- md5(data) of a member when merged (#190)
+update cases set merged_version = md5(data::text) where merged_into is not null and merged_version is null;
 
 create table if not exists jobs (
   id bigserial primary key,
