@@ -91,6 +91,9 @@ create index if not exists cases_merged_into_idx on cases (merged_into);
 alter table cases add column if not exists retired_by text;  -- 'untick': rejected by the source flag (#160)
 alter table cases add column if not exists merged_version text;  -- md5(data) of a member when merged (#190)
 update cases set merged_version = md5(data::text) where merged_into is not null and merged_version is null;
+-- public claims a reviewer accepted for this case (#199): copied, so they outlive the research row;
+-- never in data or search_text (research text must not reach search)
+alter table cases add column if not exists public_sources jsonb not null default '[]';
 
 create table if not exists jobs (
   id bigserial primary key,
