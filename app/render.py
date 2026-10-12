@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 
-from docxtpl import DocxTemplate
+from docx.shared import Mm
+from docxtpl import DocxTemplate, InlineImage
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import Response
 from jinja2 import Environment
@@ -137,6 +138,9 @@ def protect(sections: list[dict], clients) -> list[dict]:
 
 def to_docx(sections: list[dict], industry: dict | None = None, images: dict[int, bytes] = {}) -> bytes:
     tpl = DocxTemplate(TEMPLATE)
+    # images are added after protect(): an InlineImage is not a string; one missing from `images` is skipped
+    sections = [{**s, "diagrams": [{**d, "image": InlineImage(tpl, BytesIO(images[d["id"]]), width=Mm(min(160, d["width"] * 25.4 / 96)))}
+                                   for d in s["diagrams"] if d["id"] in images]} for s in sections]
     tpl.render({"cases": sections, "industry": industry}, autoescape=True)  # autoescape: & and < must not break the XML
     props = tpl.docx.core_properties  # never ship the template's own metadata
     props.title, props.author, props.last_modified_by = "Reference cases", "Reference Engine", "Reference Engine"

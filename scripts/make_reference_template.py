@@ -1,6 +1,6 @@
 """Write the placeholder Word template. Marketing's real template replaces brand/reference.docx
 and must use the same context: cases[] with title, client, note (empty unless an engagement), summary, details[{label,value}],
-blocks[{heading,text}], lists[{heading,bullets[]}]; and industry (or None): heading, disclaimer,
+blocks[{heading,text}], lists[{heading,bullets[]}], diagrams[{image,caption}]; and industry (or None): heading, disclaimer,
 statements[{text}], note. Usage: make_reference_template.py <out.docx>"""
 import sys
 
@@ -30,6 +30,10 @@ d.add_heading("{{ l.heading }}", 2)
 d.add_paragraph("{%p for i in l.bullets %}")
 d.add_paragraph("{{ i }}", style="List Bullet")
 d.add_paragraph("{%p endfor %}")
+d.add_paragraph("{%p endfor %}")
+d.add_paragraph("{%p for d in c.diagrams %}")
+d.add_paragraph("{{ d.image }}")
+d.add_paragraph("{{ d.caption }}", style="Caption")
 d.add_paragraph("{%p endfor %}")
 d.add_paragraph("{%p endfor %}")
 d.add_paragraph("{%p if industry %}")

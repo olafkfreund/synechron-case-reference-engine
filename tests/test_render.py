@@ -49,6 +49,32 @@ def test_docx_content_and_leaks(approved, reg):
         assert bad not in t, bad
 
 
+def add_diagram(cid, caption="System overview", size=(40, 20)):
+    import json
+    from PIL import Image
+    buf = BytesIO()
+    Image.new("RGB", size, "blue").save(buf, "PNG")
+    with db.connect() as c:
+        did = c.execute("insert into diagrams(case_id, png, created_by) values (%s,%s,'t') returning id",
+                        (cid, buf.getvalue())).fetchone()[0]
+        entry = {"id": did, "caption": caption, "status": "ready", "reason": "", "width": size[0], "height": size[1]}
+        c.execute("update cases set data = data || jsonb_build_object('diagrams', %s::jsonb) where id=%s",
+                  (json.dumps([entry]), cid))
+    return did
+
+
+def test_docx_embeds_diagram_with_caption(approved):
+    cid = approved(full())
+    add_diagram(cid, "System overview", (2000, 1000))  # wider than 160 mm at 96 dpi: scaled down
+    r = gen([cid], "docx")
+    z = zipfile.ZipFile(BytesIO(r.content))
+    xml = z.read("word/document.xml").decode()
+    assert "<w:drawing>" in xml and [n for n in z.namelist() if n.startswith("word/media/") and n.endswith(".png")]
+    assert 'cx="5760000"' in xml  # 160 mm
+    assert "System overview" in doc_text(r.content) and "{{" not in xml
+    assert "<w:drawing>" not in zipfile.ZipFile(BytesIO(gen([approved(full())], "docx").content)).read("word/document.xml").decode()
+
+
 def engagement():
     return full().model_copy(update={"basis": "engagement", "basis_reason": "executed contract"})
 
