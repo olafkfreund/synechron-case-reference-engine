@@ -59,3 +59,5 @@ refreshed. The title is just stale.
    `skip_unchanged()` is one column in one statement, so I recommend doing it
    anyway rather than depending on how Confluence behaves. The staging crawl
    (#31) can confirm what Confluence actually does.
+
+**Decided by the user, 2026-10-12:** the recommendation stands: set the title in skip_unchanged() regardless of whether Confluence bumps the version on a rename; the staging crawl (#31) shows the real behaviour.
