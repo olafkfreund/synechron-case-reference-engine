@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 205
 author: olafkfreund
 ---
@@ -59,3 +59,5 @@ I probed `app/anonymise.py` on main (702c455) with a made-up protected client,
   after that word (my recommendation), or after any word of any name? Allowing
   it everywhere would make "Zorpale . Bank" match "Zorpale Bank". That is
   harmless for a leak check but widens the match more than this issue needs.
+
+**Decided by the user, 2026-10-12:** only where the name itself has a dot after that word.
