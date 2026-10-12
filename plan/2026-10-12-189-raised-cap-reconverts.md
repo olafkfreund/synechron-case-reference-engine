@@ -94,6 +94,16 @@ slack.
   2. Delete the object from the bucket, so the listing is empty.
   3. Crawl again and expect `counts["empty_listing"] is True`.
 
+**Deviation:** narrowing the filters until nothing is listed leaves `seen`
+empty, so the sweep never runs. The first, second and third tests add a small
+`keep.txt` / `keep.docx` file so the listing is not empty.
+
+**Deviation:** the empty-listing test withdraws the document with a direct
+SQL update, because narrowing `include_ext` can't leave every document
+withdrawn.
+
+**Deviation:** the widened-`include_ext` test uses `txt`, not `pdf`.
+
 **Verify:** run `bash $SCRATCH/check.sh ../refs-engine-189 "tests/test_ingest.py"`. The three expected-failure tests must fail on main.
 
 **Traps:**
@@ -189,4 +199,11 @@ came back with new text stay correct after a revert.
 
 ## Deviations
 
-None yet.
+Step 1 (see the three notes above).
+
+Step 2: `test_acl_change_and_reappearing_key_apply_without_redownload` asserted
+a withdrawn key that reappears is not downloaded. Decision 1 now downloads it,
+so it was renamed `..._without_reconversion` and asserts `skipped == 1`, no
+`new` and no `updated` (the checksum branch keeps the text).
+
+Step 3: both tests pass on unchanged crawler code.
