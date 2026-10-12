@@ -38,6 +38,7 @@ class Withheld(Exception):
 
 COMPANY = "Synechron"
 INDUSTRY_HEADING = "Industry context (public sources)"
+SOURCES_HEADING = "Best practice and public sources"
 INDUSTRY_DISCLAIMER = f"These are public statements by third parties, not {COMPANY} delivery evidence."
 # fixed wording per claim type: the AI's own statement is never presented as fact
 PHRASES = {"out_of_the_box": "Supported out of the box", "configuration": "Available through configuration",
@@ -45,7 +46,7 @@ PHRASES = {"out_of_the_box": "Supported out of the box", "configuration": "Avail
 SLIDE_ITEMS = 5
 
 
-def industry_section(claims: list[dict], clients) -> dict | None:
+def industry_section(claims: list[dict], clients, heading=INDUSTRY_HEADING) -> dict | None:
     """Verbatim quotes with their source, from research claims only. apply() then blocked() PER CLAIM:
     one that still names a protected client is dropped (and counted), not the whole document."""
     items, omitted = [], 0
@@ -65,7 +66,7 @@ def industry_section(claims: list[dict], clients) -> dict | None:
         return None
     note = (f"{omitted} public statement{'s' if omitted != 1 else ''} omitted: "
             f"{'they' if omitted != 1 else 'it'} named a protected client") if omitted else ""
-    return {"heading": INDUSTRY_HEADING, "disclaimer": INDUSTRY_DISCLAIMER, "statements": items, "note": note}
+    return {"heading": heading, "disclaimer": INDUSTRY_DISCLAIMER, "statements": items, "note": note}
 
 
 SLIDE_QUOTE = 140
@@ -352,7 +353,7 @@ OUTPUTS = {"docx": (to_docx, OFFICE + "wordprocessingml.document"),
 
 
 def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
-    """The content of an output, shared by the download and the preview: (ids, sections, industry, anonymised)."""
+    """The content of an output, shared by the download and the preview: (ids, sections, industry, anonymised, claims)."""
     ids = list(dict.fromkeys(case_ids))
     if len(ids) > 3:
         raise HTTPException(400, "choose up to 3 cases")
@@ -373,7 +374,7 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
         claims = row[0].get("claims", [])
     # same restrictions as search: approved, in date, and the user can open the source document
     rows = conn.execute(
-        "select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null "
+        "select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null, c.public_sources "
         "from cases c left join clients cl on cl.id = c.client_id "
         f"where c.id = any(%s) and c.status = 'approved' and c.review_due > now() and {VISIBLE}",
         (ids, list(user.groups))).fetchall()
@@ -381,9 +382,10 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
     if len(by_id) != len(ids):
         raise HTTPException(404, "no such case")
     clients = anonymise.load_clients(conn)
-    sections, anonymised = [], False
+    sections, anonymised, attached = [], False, []
     for i in ids:
-        _, data, name, label, referenceable, linked = by_id[i]
+        _, data, name, label, referenceable, linked, public_sources = by_id[i]
+        attached += public_sources
         shown = anonymise.shown(name, label, referenceable, linked)
         anonymised |= not (linked and referenceable) or anonymise.apply(shown, clients) != shown
         sections.append(section(ReferenceCase.model_validate(data), shown))
@@ -391,17 +393,22 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
         sections = protect(sections, clients)
     except Withheld as e:
         raise HTTPException(409, str(e)) from None
-    industry = industry_section(claims, clients) if research_id is not None else None
+    seen, merged = set(), []
+    for c in attached + claims:  # attached first: they win the slide's 5 places
+        if (k := (c.get("url"), c.get("quote"))) not in seen:
+            seen.add(k); merged.append(c)
+    industry = industry_section(merged, clients, heading=SOURCES_HEADING if attached else INDUSTRY_HEADING) \
+        if merged else None
     if not ids and not (industry and industry["statements"]):
         raise HTTPException(400, "the research has no usable public statements")
-    return ids, sections, industry, anonymised
+    return ids, sections, industry, anonymised, claims
 
 
 @router.post("/preview")
 def preview(request: Request, case_ids: list[int] = Form([]), research_id: int | None = Form(None),
             industry_context_ack: bool = Form(False), user: User = Depends(require("user"))):
     with db.connect() as conn:  # same content and errors as /generate; nothing is logged
-        ids, sections, industry, _ = build(conn, case_ids, research_id, industry_context_ack, user)
+        ids, sections, industry, _, _ = build(conn, case_ids, research_id, industry_context_ack, user)
     return page(request, "output_preview.html", user, cases=sections, industry=industry, ids=ids,
                 research_id=research_id, ack=industry_context_ack)
 
@@ -410,7 +417,7 @@ def preview(request: Request, case_ids: list[int] = Form([]), research_id: int |
 def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: int | None = Form(None),
              industry_context_ack: bool = Form(False), user: User = Depends(require("user"))):
     with db.connect() as conn:
-        ids, sections, industry, anonymised = build(conn, case_ids, research_id, industry_context_ack, user, format)
+        ids, sections, industry, anonymised, claims = build(conn, case_ids, research_id, industry_context_ack, user, format)
         make, mime = OUTPUTS[format]
         try:
             body = make(sections, industry)  # before the audit row: a broken template must not log a generation
@@ -418,6 +425,6 @@ def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: 
             raise HTTPException(503, str(e)) from None
         conn.execute("insert into generations(user_id, format, case_ids, anonymised, industry_context_ack, research_id) "
                      "values (%s,%s,%s,%s,%s,%s)", (user.sub, format, ids, anonymised, industry_context_ack and not ids,
-                                                    research_id if industry else None))
+                                                    research_id if (industry and claims) else None))
     return Response(body, media_type=mime, headers={
         "Content-Disposition": f'attachment; filename="reference-cases.{format.split('_')[0]}"', "X-Content-Type-Options": "nosniff"})
