@@ -10,14 +10,14 @@ from io import BytesIO
 from pathlib import Path
 
 from docxtpl import DocxTemplate
-from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import Response
 from jinja2 import Environment
 from pptx import Presentation
 
 from app import anonymise, db
 from app.main import User, require
-from app.review import VISIBLE
+from app.review import VISIBLE, page
 from app.schema import ReferenceCase
 
 router = APIRouter()
@@ -348,9 +348,8 @@ OUTPUTS = {"docx": (to_docx, OFFICE + "wordprocessingml.document"),
            "pdf_pptx": (lambda s, i: to_pdf(to_pptx(s, i), ".pptx"), "application/pdf")}
 
 
-@router.post("/generate")
-def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: int | None = Form(None),
-             industry_context_ack: bool = Form(False), user: User = Depends(require("user"))):
+def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
+    """The content of an output, shared by the download and the preview: (ids, sections, industry, anonymised)."""
     ids = list(dict.fromkeys(case_ids))
     if len(ids) > 3:
         raise HTTPException(400, "choose up to 3 cases")
@@ -360,39 +359,55 @@ def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: 
         if not industry_context_ack:
             raise HTTPException(400, "an output with no case needs the acknowledgement that it contains public "
                                      "third-party statements only, not delivery evidence")
-    if format not in OUTPUTS:
+    if fmt is not None and fmt not in OUTPUTS:  # after the input checks, as on main
         raise HTTPException(400, f"format must be one of {', '.join(OUTPUTS)}")
+    claims = []
+    if research_id is not None:  # only your own, finished research
+        row = conn.execute("select results from research where id=%s and created_by=%s and status='done'",
+                           (research_id, user.sub)).fetchone()
+        if not row:
+            raise HTTPException(404, "no such research")
+        claims = row[0].get("claims", [])
+    # same restrictions as search: approved, in date, and the user can open the source document
+    rows = conn.execute(
+        "select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null "
+        "from cases c left join clients cl on cl.id = c.client_id "
+        f"where c.id = any(%s) and c.status = 'approved' and c.review_due > now() and {VISIBLE}",
+        (ids, list(user.groups))).fetchall()
+    by_id = {r[0]: r for r in rows}
+    if len(by_id) != len(ids):
+        raise HTTPException(404, "no such case")
+    clients = anonymise.load_clients(conn)
+    sections, anonymised = [], False
+    for i in ids:
+        _, data, name, label, referenceable, linked = by_id[i]
+        shown = anonymise.shown(name, label, referenceable, linked)
+        anonymised |= not (linked and referenceable) or anonymise.apply(shown, clients) != shown
+        sections.append(section(ReferenceCase.model_validate(data), shown))
+    try:
+        sections = protect(sections, clients)
+    except Withheld as e:
+        raise HTTPException(409, str(e)) from None
+    industry = industry_section(claims, clients) if research_id is not None else None
+    if not ids and not (industry and industry["statements"]):
+        raise HTTPException(400, "the research has no usable public statements")
+    return ids, sections, industry, anonymised
+
+
+@router.post("/preview")
+def preview(request: Request, case_ids: list[int] = Form([]), research_id: int | None = Form(None),
+            industry_context_ack: bool = Form(False), user: User = Depends(require("user"))):
+    with db.connect() as conn:  # same content and errors as /generate; nothing is logged
+        ids, sections, industry, _ = build(conn, case_ids, research_id, industry_context_ack, user)
+    return page(request, "output_preview.html", user, cases=sections, industry=industry, ids=ids,
+                research_id=research_id, ack=industry_context_ack)
+
+
+@router.post("/generate")
+def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: int | None = Form(None),
+             industry_context_ack: bool = Form(False), user: User = Depends(require("user"))):
     with db.connect() as conn:
-        claims = []
-        if research_id is not None:  # only your own, finished research
-            row = conn.execute("select results from research where id=%s and created_by=%s and status='done'",
-                               (research_id, user.sub)).fetchone()
-            if not row:
-                raise HTTPException(404, "no such research")
-            claims = row[0].get("claims", [])
-        # same restrictions as search: approved, in date, and the user can open the source document
-        rows = conn.execute(
-            "select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null "
-            "from cases c left join clients cl on cl.id = c.client_id "
-            f"where c.id = any(%s) and c.status = 'approved' and c.review_due > now() and {VISIBLE}",
-            (ids, list(user.groups))).fetchall()
-        by_id = {r[0]: r for r in rows}
-        if len(by_id) != len(ids):
-            raise HTTPException(404, "no such case")
-        clients = anonymise.load_clients(conn)
-        sections, anonymised = [], False
-        for i in ids:
-            _, data, name, label, referenceable, linked = by_id[i]
-            shown = anonymise.shown(name, label, referenceable, linked)
-            anonymised |= not (linked and referenceable) or anonymise.apply(shown, clients) != shown
-            sections.append(section(ReferenceCase.model_validate(data), shown))
-        try:
-            sections = protect(sections, clients)
-        except Withheld as e:
-            raise HTTPException(409, str(e)) from None
-        industry = industry_section(claims, clients) if research_id is not None else None
-        if not ids and not (industry and industry["statements"]):
-            raise HTTPException(400, "the research has no usable public statements")
+        ids, sections, industry, anonymised = build(conn, case_ids, research_id, industry_context_ack, user, format)
         make, mime = OUTPUTS[format]
         try:
             body = make(sections, industry)  # before the audit row: a broken template must not log a generation

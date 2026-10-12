@@ -1,3 +1,5 @@
+import html
+import re
 import zipfile
 from io import BytesIO
 
@@ -15,6 +17,10 @@ R = ["g-user", DOCS]
 
 def gen(ids, fmt="md", groups=R, **kw):
     return client(groups).post("/generate", data={"case_ids": ids, "format": fmt}, **kw)
+
+
+def prev(ids, groups=R, **kw):
+    return client(groups).post("/preview", data={"case_ids": ids, "format": "md"}, **kw)  # format is ignored
 
 
 def doc_text(content):
@@ -138,6 +144,52 @@ def test_post_without_origin_refused(approved):
     cid = approved()
     r = client(R, origin=None).post("/generate", data={"case_ids": [cid], "format": "md"})
     assert r.status_code == 403
+
+
+def test_preview_shows_the_download_content(approved):
+    cid = approved(full())
+    r = prev([cid])
+    assert r.status_code == 200
+    page = " ".join(html.unescape(re.sub(r"<[^>]+>", "", r.text)).split())
+    lines = [ln for ln in gen([cid]).text.splitlines() if ln.strip() and ln.strip() != "---"]
+    assert len(lines) > 8
+    for ln in lines:
+        want = " ".join(re.sub(r"^[#\s-]+|[*\\]", "", ln).split())
+        assert want in page, want
+
+
+def test_preview_is_not_logged(approved):
+    cid = approved()
+
+    def count():
+        with db.connect() as conn:
+            return conn.execute("select count(*) from generations").fetchone()[0]
+    before = count()
+    assert prev([cid]).status_code == 200 and count() == before
+    assert gen([cid]).status_code == 200 and count() == before + 1
+
+
+def test_preview_enforces_generate_rules(approved):
+    ok = approved()
+    for bad in (prev([approved(acl=("g-other",))]), prev([approved(due="-1 day")]), prev([ok, 999999999]),
+                prev([approved(status="extracted", due=None)])):
+        assert bad.status_code == 404 and bad.json()["detail"] == "no such case"  # the route, not an unknown path
+    assert prev([ok, ok, ok, ok]).status_code == 200  # duplicates collapse
+    assert prev([ok, approved(), approved(), approved()]).status_code == 400
+    assert client(R, origin=None).post("/preview", data={"case_ids": [ok], "format": "md"}).status_code == 403
+
+
+def test_preview_escapes_values(approved):
+    t = prev([approved(full(title="<script>x</script>"))]).text
+    assert "&lt;script&gt;" in t and "<script>x" not in t
+
+
+def test_preview_withholds_a_protected_client(approved, reg, monkeypatch):
+    name, _ = reg("Zorp", "a UK retailer")
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)  # force apply() to miss: the fail-closed path
+    bad = approved(full().model_copy(update={"challenge": Sourced[str](value=f"Built for {name}", source_quote="q")}))
+    r = prev([bad])
+    assert r.status_code == 409 and name not in r.text
 
 
 def test_docx_metadata_is_neutral(approved):

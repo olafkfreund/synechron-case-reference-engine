@@ -26,6 +26,7 @@
 {% if case_id %}<label class="check"><input type="checkbox" name="case_ids" value="{{ case_id }}" checked> Include the reference case this research started from</label>{% endif %}
 <label class="check"><input type="checkbox" name="industry_context_ack"> I understand the industry context section contains public statements by third parties, not our delivery evidence (required when no case is included).</label>
 <div class="row"><label for="dl-format">Format</label><select id="dl-format" name="format" style="max-width:200px"><option value="docx">Word</option><option value="pptx">PowerPoint</option><option value="pdf_docx">PDF</option><option value="pdf_pptx">PDF slides</option><option value="md">Markdown</option></select>
+<button class="btn" formaction="/preview">Preview</button>
 <button class="btn primary">Download</button></div></form>
 {% endif %}
 <div class="section-card"><div class="card-head"><h2>Sources</h2></div>

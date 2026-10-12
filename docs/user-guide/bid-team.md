@@ -66,11 +66,12 @@ Getting a case into a document for your bid.
 
 **Steps**
 
-1. On a result, press **Download Word** for a Word file.
-2. For another format, open **Other formats** and press one of **Download this case (PowerPoint)**,
+1. Press **Preview** to see the content the download will contain. The preview page has the same download buttons.
+2. On a result, press **Download Word** for a Word file.
+3. For another format, open **Other formats** and press one of **Download this case (PowerPoint)**,
    **Download this case (PDF)**, **Download this case (PDF slides)** or **Download this case (Markdown)**.
-3. With several results, **Download all (Word)** gets them in one file. Its **Other formats** work the same way, for
-   example **Download all (PDF)**.
+4. With several results, **Preview all** shows them together and **Download all (Word)** gets them in one file. Its
+   **Other formats** work the same way, for example **Download all (PDF)**.
 
 **What you see**
 
@@ -111,7 +112,8 @@ Adding an "Industry context" section to a download.
 1. On the research result, find "Download with an "Industry context" section".
 2. Choose a **Format**.
 3. Tick "I understand the industry context section contains public statements by third parties, not our delivery evidence (required when no case is included)."
-4. Press **Download**.
+4. Press **Preview** to check it first.
+5. Press **Download**.
 
 **What you see**
 
