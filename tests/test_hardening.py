@@ -260,6 +260,7 @@ def test_print_calls_are_the_known_content_free_ones():
         "app/revoke_sessions.py": ['print("usage: python -m app.revoke_sessions <sub> [<sub> ...]", file=sys.stderr)',
                                    'print(f"revoked sessions of {sub}", flush=True)'],
         "app/migrate.py": ['print("schema applied", flush=True)'],
+        "app/diagrams.py": ['print(f"diagram {diagram_id} decoder error: {type(e).__name__}", flush=True)  # class only, as worker.py'],
     }
     found = {}
     for path in (ROOT / "app").rglob("*.py"):
