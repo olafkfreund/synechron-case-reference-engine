@@ -188,3 +188,13 @@ create table if not exists session_cutoffs (
 -- for share, as every other write: an unlocked read could write back groups a concurrent save replaced
 update documents d set acl_groups = s.acl_groups from (select id, acl_groups from sources for share) s
   where d.source_id = s.id and d.acl_groups is distinct from s.acl_groups;
+
+-- reviewer-uploaded case diagrams (#200): raw until the worker re-encodes it, then png
+create table if not exists diagrams (
+  id bigserial primary key,
+  case_id bigint not null references cases(id) on delete cascade,
+  raw bytea,
+  png bytea,
+  created_by text not null,
+  created_at timestamptz not null default now()
+);

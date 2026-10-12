@@ -2,8 +2,8 @@ import hashlib
 import copy
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
+from fastapi.responses import RedirectResponse, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
@@ -11,10 +11,10 @@ from psycopg.errors import ForeignKeyViolation
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
-from app import anonymise, db
+from app import anonymise, db, diagrams
 from app.extract import MAX_CHARS, check
 from app.main import User, require
-from app.schema import Outcome, Period, ReferenceCase, Sourced, _norm
+from app.schema import Diagram, Outcome, Period, ReferenceCase, Sourced, _norm
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")  # autoescape on
@@ -163,7 +163,7 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
     sources = [shown.get(i) or {"n": i, "hidden": True} for i in range(len(r[10]))]  # a hidden one can still be removed
     unlisted = anonymise.unlisted([*case.organisations, case.client_mention.value or ""], registry) if r[5] else []
     return page(request, "review_detail.html", user, id=cid, rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
-                unlisted=unlisted, members=members, cands=cands, remerge=remerge,
+                unlisted=unlisted, diagrams=case.diagrams, members=members, cands=cands, remerge=remerge,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
                 external_id=r[3], source=r[4], merged=bool(members),
                 reviewable=r[5] and not any(m[6] for m in members), v=r[6], sources=sources, sources_v=r[11],
@@ -240,10 +240,94 @@ def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: 
     return RedirectResponse(f"/review/{cid}", status_code=303)
 
 
+def _caption(conn, caption):
+    caption = caption.strip()
+    if not 1 <= len(caption) <= diagrams.MAX_CAPTION:
+        raise HTTPException(400, f"a caption is 1 to {diagrams.MAX_CAPTION} characters")
+    if anonymise.blocked(caption, anonymise.load_clients(conn)):
+        raise HTTPException(400, "the caption names a protected client")  # never which one
+    return caption
+
+
+def _reopen(conn, cid):  # any diagram change: unreviewed edits never go live (#143)
+    conn.execute("update cases set status='extracted', approved_by=null, approved_at=null, review_due=null "
+                 "where id=%s and status='approved' and review_due > now()", (cid,))
+
+
+# lock order everywhere: the case row (load) before any diagrams row
+@router.post("/review/{cid}/diagrams")
+def add_diagram(cid: int, file: UploadFile, caption: str = Form(), v: str = Form(),
+                user: User = Depends(require("reviewer"))):
+    with db.connect() as conn:
+        case, _ = load(conn, cid, user, v)
+        caption = _caption(conn, caption)
+        raw = file.file.read(diagrams.MAX_BYTES + 1)  # the decoding is the worker's job
+        if len(raw) > diagrams.MAX_BYTES:
+            raise HTTPException(413, "the image is larger than 5 MB")
+        if not raw.startswith(diagrams.MAGIC):
+            raise HTTPException(400, "only PNG and JPEG images are accepted")
+        if len(case.diagrams) >= diagrams.MAX_PER_CASE:
+            raise HTTPException(400, f"a case has at most {diagrams.MAX_PER_CASE} diagrams")
+        did = conn.execute("insert into diagrams(case_id, raw, created_by) values (%s, %s, %s) returning id",
+                           (cid, raw, user.sub)).fetchone()[0]
+        case.diagrams.append(Diagram(id=did, caption=caption, status="pending"))
+        save(conn, cid, case)
+        conn.execute("insert into jobs(kind, payload) values ('diagram', jsonb_build_object('diagram_id', %s::bigint))", (did,))
+        _reopen(conn, cid)
+    return RedirectResponse(f"/review/{cid}", status_code=303)
+
+
+@router.post("/review/{cid}/diagrams/{did}/caption")
+def caption_diagram(cid: int, did: int, caption: str = Form(), v: str = Form(), user: User = Depends(require("reviewer"))):
+    with db.connect() as conn:
+        case, _ = load(conn, cid, user, v)
+        caption = _caption(conn, caption)
+        entry = next((d for d in case.diagrams if d.id == did), None)
+        if entry is None:
+            raise HTTPException(404, "no such diagram")
+        entry.caption = caption
+        save(conn, cid, case)
+        _reopen(conn, cid)
+    return RedirectResponse(f"/review/{cid}", status_code=303)
+
+
+@router.post("/review/{cid}/diagrams/{did}/remove")
+def remove_diagram(cid: int, did: int, v: str = Form(), user: User = Depends(require("reviewer"))):
+    with db.connect() as conn:
+        case, _ = load(conn, cid, user, v)
+        if not any(d.id == did for d in case.diagrams):
+            raise HTTPException(404, "no such diagram")
+        case.diagrams = [d for d in case.diagrams if d.id != did]
+        save(conn, cid, case)
+        conn.execute("delete from diagrams where id=%s and case_id=%s", (did, cid))
+        _reopen(conn, cid)
+    return RedirectResponse(f"/review/{cid}", status_code=303)
+
+
+PNG_HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'",
+               "Cache-Control": "private, no-store", "Content-Disposition": "inline"}
+
+
+@router.get("/review/{cid}/diagrams/{did}.png")
+def diagram_png(cid: int, did: int, user: User = Depends(require("reviewer"))):
+    with db.connect() as conn:  # a ready entry of this case only; raw bytes are never selected
+        row = conn.execute(
+            f"select d.png from diagrams d join cases c on c.id = d.case_id where d.id = %s and c.id = %s "
+            f"and {REVIEWABLE} and d.png is not null and exists (select 1 from jsonb_array_elements(c.data->'diagrams') e "
+            f"where (e->>'id')::bigint = d.id and e->>'status' = 'ready')", (did, cid, list(user.groups))).fetchone()
+    if not row:
+        raise HTTPException(404, "no such diagram")
+    return Response(bytes(row[0]), media_type="image/png", headers=PNG_HEADERS)
+
+
 @router.post("/review/{cid}/approve")
-def approve(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))):
+def approve(cid: int, v: str = Form(), diagrams_checked: bool = Form(False), user: User = Depends(require("reviewer"))):
     with db.connect() as conn:
         case, text = load(conn, cid, user, v)
+        if any(d.status == "pending" for d in case.diagrams):
+            raise HTTPException(409, "a diagram is still being checked; reload in a moment")
+        if any(d.status == "ready" for d in case.diagrams) and not diagrams_checked:
+            raise HTTPException(400, "confirm that you have checked every diagram")
         if isinstance(text, dict) and conn.execute(
                 "select count(*) from cases where merged_into = %s and (status = 'rejected' or basis <> 'engagement')", (cid,)).fetchone()[0]:
             raise HTTPException(409, "a member contract is no longer an engagement: un-merge")
@@ -535,6 +619,7 @@ def remerge(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))
         pick = {f: m[0] for f in MERGE_FIELDS for m in live if m[1] == getattr(merged, f).document_id}
         case = combine([(m[0], m[1], cases[m[0]]) for m in live], pick)
         check(case, {m[1]: m[5][:MAX_CHARS] for m in live})
+        case.diagrams = merged.diagrams  # the merged case's own; combine() starts empty
         save(conn, cid, case)
         conn.execute("update cases set status = 'extracted', approved_by = null, approved_at = null, "
                      "review_due = null, member_count = %s where id = %s", (len(live), cid))

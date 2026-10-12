@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 
-from docxtpl import DocxTemplate
+from docx.shared import Mm
+from docxtpl import DocxTemplate, InlineImage
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import Response
 from jinja2 import Environment
@@ -17,7 +18,7 @@ from pptx import Presentation
 
 from app import anonymise, db
 from app.main import User, require
-from app.review import VISIBLE, page
+from app.review import PNG_HEADERS, VISIBLE, page
 from app.schema import ReferenceCase
 
 router = APIRouter()
@@ -103,7 +104,8 @@ def section(case: ReferenceCase, client: str) -> dict:
         basis=case.basis, note=ENGAGEMENT_NOTE if engagement else "",
         details=[dict(label=a, value=str(b)) for a, b in details if b not in (None, "")],
         blocks=[dict(heading=a, text=b) for a, b in blocks if b],
-        lists=[dict(heading=a, bullets=[str(i) for i in b if i]) for a, b in lists if any(b)])
+        lists=[dict(heading=a, bullets=[str(i) for i in b if i]) for a, b in lists if any(b)],
+        diagrams=[dict(id=d.id, caption=d.caption, width=d.width, height=d.height) for d in case.diagrams if d.status == "ready"])
 
 
 def _walk(o, f):
@@ -134,8 +136,11 @@ def protect(sections: list[dict], clients) -> list[dict]:
     return out
 
 
-def to_docx(sections: list[dict], industry: dict | None = None) -> bytes:
+def to_docx(sections: list[dict], industry: dict | None = None, images: dict[int, bytes] = {}) -> bytes:
     tpl = DocxTemplate(TEMPLATE)
+    # images are added after protect(): an InlineImage is not a string; one missing from `images` is skipped
+    sections = [{**s, "diagrams": [{**d, "image": InlineImage(tpl, BytesIO(images[d["id"]]), width=Mm(min(160, d["width"] * 25.4 / 96)))}
+                                   for d in s["diagrams"] if d["id"] in images]} for s in sections]
     tpl.render({"cases": sections, "industry": industry}, autoescape=True)  # autoescape: & and < must not break the XML
     props = tpl.docx.core_properties  # never ship the template's own metadata
     props.title, props.author, props.last_modified_by = "Reference cases", "Reference Engine", "Reference Engine"
@@ -152,6 +157,10 @@ def excerpt(s: str, limit: int = SLIDE_TEXT) -> str:
 
 INDUSTRY_LAYOUT = "Industry context"
 INDUSTRY_PLACEHOLDERS = ("Title", "Summary", "Statements")
+
+
+DIAGRAM_LAYOUT = "Diagram"
+DIAGRAM_PLACEHOLDERS = ("Title", "Picture", "Caption")
 
 
 def _layout(prs, name: str, required) -> tuple | None:
@@ -186,13 +195,31 @@ def _fill(prs, layout, names, content: dict, required) -> None:
         raise ValueError(f"layout {layout.name!r} did not yield placeholders: {', '.join(sorted(set(required) - filled))}")
 
 
-def to_pptx(sections: list[dict], industry: dict | None = None) -> bytes:
+def _diagram_slide(prs, layout, names, title: str, d: dict, png: bytes) -> None:
+    _fill(prs, layout, names, {"Title": [title], "Picture": [""], "Caption": [d["caption"]]}, DIAGRAM_PLACEHOLDERS)
+    slide = prs.slides[-1]
+    idx = next(i for i, n in names.items() if n == "Picture")
+    box = next(ph for ph in slide.placeholders if ph.placeholder_format.idx == idx)
+    left, top, w, h = box.left, box.top, box.width, box.height
+    box._element.getparent().remove(box._element)
+    # add_picture at the box, not insert_picture: a picture placeholder crops the image to fill it
+    scale = min(w / d["width"], h / d["height"])
+    pw, ph_ = int(d["width"] * scale), int(d["height"] * scale)
+    slide.shapes.add_picture(BytesIO(png), left + (w - pw) // 2, top + (h - ph_) // 2, width=pw, height=ph_)
+
+
+def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int, bytes] = {}) -> bytes:
     prs = Presentation(MASTER)
     if len(prs.slides):  # a master's sample slides (and their text) must never ship
         raise ValueError(f"{MASTER.name} must contain no slides, only layouts")
     case_layout = _layout(prs, LAYOUT, PLACEHOLDERS)
     if case_layout is None:
         raise ValueError(f"{MASTER.name} has no slide layout named {LAYOUT!r}")
+    diagram_layout = None
+    if any(d["id"] in images for c in sections for d in c["diagrams"]):  # a master without it fails only now
+        diagram_layout = _layout(prs, DIAGRAM_LAYOUT, DIAGRAM_PLACEHOLDERS)
+        if diagram_layout is None:
+            raise ValueError(f"{MASTER.name} has no slide layout named {DIAGRAM_LAYOUT!r}")
     for c in sections:
         block = lambda h: next((b["text"] for b in c["blocks"] if b["heading"] == h), "")  # noqa: E731
         bullets = lambda h: next((l["bullets"] for l in c["lists"] if l["heading"] == h), [])  # noqa: E731
@@ -201,6 +228,9 @@ def to_pptx(sections: list[dict], industry: dict | None = None) -> bytes:
             "Challenge": [excerpt(block("Challenge"))], "Solution": [excerpt(block("Solution"))],
             "Outcomes": [c["note"]] if c["note"] else bullets("Outcomes")[:SLIDE_OUTCOMES], "Technology": [", ".join(bullets("Technology"))]},
             PLACEHOLDERS)
+        for d in c["diagrams"]:
+            if d["id"] in images:
+                _diagram_slide(prs, *diagram_layout, c["title"], d, images[d["id"]])
     if industry:
         if own := _layout(prs, INDUSTRY_LAYOUT, INDUSTRY_PLACEHOLDERS):
             _fill(prs, *own, {"Title": [industry["heading"]], "Summary": [industry["disclaimer"]],
@@ -314,6 +344,14 @@ MD = _env.from_string("""\
 {% endfor %}
 
 {% endfor %}
+{% if c.diagrams %}
+## Diagrams
+
+{% for d in c.diagrams %}
+- {{ d.caption | md }} (in the Word, PowerPoint and PDF versions)
+{% endfor %}
+
+{% endif %}
 {% if not loop.last %}
 ---
 
@@ -346,10 +384,10 @@ def to_markdown(sections: list[dict], industry: dict | None = None) -> str:
 OFFICE = "application/vnd.openxmlformats-officedocument."
 OUTPUTS = {"docx": (to_docx, OFFICE + "wordprocessingml.document"),
            "pptx": (to_pptx, OFFICE + "presentationml.presentation"),
-           "md": (lambda s, i: to_markdown(s, i).encode(), "text/markdown; charset=utf-8"),
+           "md": (lambda s, i, images={}: to_markdown(s, i).encode(), "text/markdown; charset=utf-8"),
            # one format value per source keeps the form a single field
-           "pdf_docx": (lambda s, i: to_pdf(to_docx(s, i), ".docx"), "application/pdf"),
-           "pdf_pptx": (lambda s, i: to_pdf(to_pptx(s, i), ".pptx"), "application/pdf")}
+           "pdf_docx": (lambda s, i, images={}: to_pdf(to_docx(s, i, images), ".docx"), "application/pdf"),
+           "pdf_pptx": (lambda s, i, images={}: to_pdf(to_pptx(s, i, images), ".pptx"), "application/pdf")}
 
 
 def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
@@ -421,8 +459,12 @@ def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: 
     with db.connect() as conn:
         ids, sections, industry, anonymised, claims = build(conn, case_ids, research_id, industry_context_ack, user, format)
         make, mime = OUTPUTS[format]
+        pairs = [(ids[n], d["id"]) for n, sec in enumerate(sections) for d in sec["diagrams"]]  # (case, diagram)
+        images = {i: bytes(png) for i, png in conn.execute(
+            "select id, png from diagrams where (case_id, id) in (select * from unnest(%s::bigint[], %s::bigint[])) "
+            "and png is not null", ([c for c, _ in pairs], [d for _, d in pairs])).fetchall()} if pairs else {}
         try:
-            body = make(sections, industry)  # before the audit row: a broken template must not log a generation
+            body = make(sections, industry, images=images)  # before the audit row: a broken template must not log a generation
         except PdfError as e:
             raise HTTPException(503, str(e)) from None
         conn.execute("insert into generations(user_id, format, case_ids, anonymised, industry_context_ack, research_id) "
@@ -430,3 +472,16 @@ def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: 
                                                     research_id if (industry and claims) else None))
     return Response(body, media_type=mime, headers={
         "Content-Disposition": f'attachment; filename="reference-cases.{format.split('_')[0]}"', "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/cases/{cid}/diagrams/{did}.png")
+def diagram_png(cid: int, did: int, user: User = Depends(require("user"))):
+    with db.connect() as conn:  # a ready diagram of a case /generate would also accept; raw bytes are never selected
+        row = conn.execute(
+            "select d.png from diagrams d join cases c on c.id = d.case_id where d.id = %s and c.id = %s "
+            f"and c.status = 'approved' and c.review_due > now() and {VISIBLE} and d.png is not null "
+            "and exists (select 1 from jsonb_array_elements(c.data->'diagrams') e "
+            "where (e->>'id')::bigint = d.id and e->>'status' = 'ready')", (did, cid, list(user.groups))).fetchone()
+    if not row:
+        raise HTTPException(404, "no such diagram")
+    return Response(bytes(row[0]), media_type="image/png", headers=PNG_HEADERS)

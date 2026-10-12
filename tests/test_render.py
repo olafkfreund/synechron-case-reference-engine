@@ -49,6 +49,65 @@ def test_docx_content_and_leaks(approved, reg):
         assert bad not in t, bad
 
 
+def add_diagram(cid, caption="System overview", size=(40, 20), status="ready"):
+    import json
+    from PIL import Image
+    buf = BytesIO()
+    Image.new("RGB", size, "blue").save(buf, "PNG")
+    with db.connect() as c:
+        did = c.execute("insert into diagrams(case_id, png, created_by) values (%s,%s,'t') returning id",
+                        (cid, buf.getvalue())).fetchone()[0]
+        entry = {"id": did, "caption": caption, "status": status, "reason": "", "width": size[0], "height": size[1]}
+        c.execute("update cases set data = data || jsonb_build_object('diagrams', coalesce(data->'diagrams', '[]') || %s::jsonb) "
+                  "where id=%s", (json.dumps([entry]), cid))
+    return did
+
+
+def test_only_ready_diagrams_reach_outputs(approved):
+    cid = approved(full())
+    add_diagram(cid, "Ready one")
+    add_diagram(cid, "Pending one", status="pending")  # all three have bytes, so only the status keeps them out
+    add_diagram(cid, "Rejected one", status="rejected")
+    out = {"md": gen([cid], "md").text, "preview": prev([cid]).text, "docx": doc_text(gen([cid], "docx").content)}
+    for name, text in out.items():
+        assert "Ready one" in text and "Pending one" not in text and "Rejected one" not in text, name
+    assert out["preview"].count("<figure>") == 1
+    xml = zipfile.ZipFile(BytesIO(gen([cid], "docx").content)).read("word/document.xml").decode()
+    assert xml.count("<w:drawing>") == 1
+
+
+def test_docx_embeds_diagram_with_caption(approved):
+    cid = approved(full())
+    add_diagram(cid, "System overview", (2000, 1000))  # wider than 160 mm at 96 dpi: scaled down
+    r = gen([cid], "docx")
+    z = zipfile.ZipFile(BytesIO(r.content))
+    xml = z.read("word/document.xml").decode()
+    assert "<w:drawing>" in xml and [n for n in z.namelist() if n.startswith("word/media/") and n.endswith(".png")]
+    assert 'cx="5760000"' in xml  # 160 mm
+    assert "System overview" in doc_text(r.content) and "{{" not in xml
+    assert "<w:drawing>" not in zipfile.ZipFile(BytesIO(gen([approved(full())], "docx").content)).read("word/document.xml").decode()
+
+
+def test_markdown_lists_diagram_captions(approved):
+    cid = approved(full())
+    assert "## Diagrams" not in gen([cid], "md").text
+    add_diagram(cid, "# Big *flow*")
+    m = gen([cid], "md").text
+    assert "## Diagrams\n\n- \\# Big \\*flow\\* (in the Word, PowerPoint and PDF versions)\n" in m
+
+
+def test_caption_is_anonymised_and_withheld_fail_closed(approved, reg, monkeypatch):
+    name, label_id = reg("Zorp", "a UK retailer")
+    cid = approved(full())
+    link(cid, label_id)
+    add_diagram(cid, f"Flow at {name}")
+    m = gen([cid], "md").text
+    assert name not in m and "Flow at a UK retailer" in m
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)  # a missed replacement must withhold, not leak
+    r = gen([cid], "md")
+    assert r.status_code == 409 and r.json()["detail"] == render.WITHHELD and name not in r.text
+
+
 def engagement():
     return full().model_copy(update={"basis": "engagement", "basis_reason": "executed contract"})
 
@@ -156,6 +215,17 @@ def test_preview_shows_the_download_content(approved):
     for ln in lines:
         want = " ".join(re.sub(r"^[#\s-]+|[*\\]", "", ln).split())
         assert want in page, want
+
+
+def test_preview_shows_ready_diagrams_from_the_user_route(approved):
+    a, b = approved(full()), approved(full())
+    did = add_diagram(b, "Flow <b>&</b>", (900, 100))
+    page = prev([a, b]).text
+    url = f"/cases/{b}/diagrams/{did}.png"
+    assert f'<img src="{url}" alt="Flow &lt;b&gt;&amp;&lt;/b&gt;" width="480">' in page
+    assert "<figcaption>Flow &lt;b&gt;&amp;&lt;/b&gt;</figcaption>" in page and page.count("<figure>") == 1
+    assert client(R).get(url).status_code == 200  # the same user can load the image
+    assert "<figure>" not in prev([a]).text
 
 
 def test_preview_is_not_logged(approved):
@@ -496,3 +566,31 @@ def test_new_section_naming_client_is_anonymised(approved, reg):
     link(cid, label_id)
     t = gen([cid]).text
     assert name not in t and "Rolled out at a UK retailer" in t
+
+
+def test_pptx_diagram_slide_per_diagram(approved):
+    cid = approved(full())
+    add_diagram(cid, "System overview", (400, 100))  # wider than the box ratio: fitted by width, not cropped
+    add_diagram(cid, "Second", (50, 100))
+    prs, out = slides(gen([cid], "pptx").content)
+    assert [set(s) for s in out] == [set(NAMES), {"Title", "Caption"}, {"Title", "Caption"}]
+    assert out[1]["Caption"] == ["System overview"] and out[1]["Title"] == ["Faster onboarding"]
+    pics = [[sh for sh in s.shapes if sh.shape_type == 13] for s in prs.slides]
+    assert [len(p) for p in pics] == [0, 1, 1]
+    wide, tall = pics[1][0], pics[2][0]
+    assert abs(wide.width / wide.height - 4) < .01 and abs(tall.width / tall.height - .5) < .01
+    assert wide.width <= 9 * 914400 and tall.height <= 5 * 914400
+
+
+def test_pptx_without_diagram_layout_fails_only_with_diagrams(tmp_path, monkeypatch):
+    prs = Presentation(render.MASTER)
+    next(l for l in prs.slide_layouts if l.name == "Diagram").name = "Other"
+    odd = tmp_path / "odd.pptx"
+    prs.save(odd)
+    monkeypatch.setattr(render, "MASTER", odd)
+    sec = lambda diagrams: dict(title="T", client="C", summary="S", note="", blocks=[], lists=[], diagrams=diagrams)  # noqa: E731
+    d = dict(id=1, caption="c", width=10, height=10)
+    render.to_pptx([sec([])])  # no diagrams: unaffected
+    render.to_pptx([sec([d])])  # a diagram with no image (rejected or missing) is skipped
+    with pytest.raises(ValueError, match="no slide layout named 'Diagram'"):
+        render.to_pptx([sec([d])], images={1: b"x"})

@@ -13,7 +13,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from app import db, extract, ingest as ing, llm, search as sr, worker
 from app.main import BODY_CAP, User
-from tests.test_auth import ADMIN, REV, client, env  # noqa: F401
+from tests.test_auth import ADMIN, REV, USER, client, env  # noqa: F401
 from tests.test_review import DOCS, R, make  # noqa: F401
 from tests.test_search import approved, data  # noqa: F401
 
@@ -260,6 +260,7 @@ def test_print_calls_are_the_known_content_free_ones():
         "app/revoke_sessions.py": ['print("usage: python -m app.revoke_sessions <sub> [<sub> ...]", file=sys.stderr)',
                                    'print(f"revoked sessions of {sub}", flush=True)'],
         "app/migrate.py": ['print("schema applied", flush=True)'],
+        "app/diagrams.py": ['print(f"diagram {diagram_id} decoder error: {type(e).__name__}", flush=True)  # class only, as worker.py'],
     }
     found = {}
     for path in (ROOT / "app").rglob("*.py"):
@@ -280,3 +281,51 @@ def test_every_response_refuses_framing(env):
     for r in rs:
         assert r.headers["x-frame-options"] == "DENY"
         assert r.headers["content-security-policy"] == "frame-ancestors 'none'"
+
+
+def test_diagram_upload_over_cap_is_413_before_parsing(env):
+    from app import diagrams
+    c = client([REV])
+    assert c.post("/review/1/diagrams", content=b"x" * (diagrams.MAX_BYTES + 70_000)).status_code == 413
+    # under the diagram cap but over the form cap: the guard lets it through (the route answers, not the guard)
+    assert c.post("/review/1/diagrams", content=b"x" * (BODY_CAP + 70_000)).status_code != 413
+    assert c.post("/review/1/approve", content=b"x" * (BODY_CAP + 70_000)).status_code == 413
+    assert c.post("/review/1/diagrams/2/caption", content=b"x" * (BODY_CAP + 70_000)).status_code == 413  # only the upload path is raised
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"x" * 20
+
+
+def with_diagram(cid, status="ready", png=PNG):
+    entry = {"id": 0, "caption": "Flow", "status": status, "reason": "", "width": 10, "height": 5}
+    with db.connect() as c:
+        entry["id"] = c.execute("insert into diagrams(case_id, png, created_by) values (%s,%s,'t') returning id",
+                                (cid, png)).fetchone()[0]
+        c.execute("update cases set data = data || jsonb_build_object('diagrams', %s::jsonb) where id=%s",
+                  (json.dumps([entry]), cid))
+    return entry["id"]
+
+
+def test_diagram_route_404_for_case_user_cannot_see_foreign_id_and_pending(make):
+    cid, other = make("approved", "60 days"), make("approved", "60 days")
+    did = with_diagram(cid)
+    user = client([USER, DOCS])
+    assert user.get(f"/cases/{cid}/diagrams/{did}.png").status_code == 200
+    assert user.get(f"/cases/{other}/diagrams/{did}.png").status_code == 404  # an id of another case
+    assert client([USER]).get(f"/cases/{cid}/diagrams/{did}.png").status_code == 404  # no access to the document
+    assert client().get(f"/cases/{cid}/diagrams/{did}.png").status_code == 401
+    pending = with_diagram(make("approved", "60 days"), "pending")
+    unapproved, expired = make(), make("approved", "-1 day")
+    assert [user.get(f"/cases/{c}/diagrams/{with_diagram(c)}.png").status_code for c in (unapproved, expired)] == [404, 404]
+    with db.connect() as c:
+        pcid = c.execute("select case_id from diagrams where id=%s", (pending,)).fetchone()[0]
+    assert user.get(f"/cases/{pcid}/diagrams/{pending}.png").status_code == 404
+
+
+def test_diagram_route_headers(make):
+    cid = make("approved", "60 days")
+    r = client([USER, DOCS]).get(f"/cases/{cid}/diagrams/{with_diagram(cid)}.png")
+    assert r.content == PNG and r.headers["content-type"] == "image/png"
+    assert r.headers["x-content-type-options"] == "nosniff" and r.headers["cache-control"] == "private, no-store"
+    assert r.headers["content-security-policy"] == "frame-ancestors 'none'; default-src 'none'"  # the guard's framing rule comes first
+    assert r.headers["content-disposition"] == "inline"
