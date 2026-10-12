@@ -228,3 +228,11 @@ The plan has 7 steps that edit files, across 5 files: `tests/test_review.py`,
 `sql/schema.sql`, `app/review.py`, `app/templates/review_detail.html` and
 `docs/user-guide/reviewers.md`. That is over the threshold, so it goes to the
 `coder` agent.
+
+## Deviation (full suite, 2026-10-12)
+
+Step 5's button label was **Re-merge with the current contracts (replaces the edits on this merged case)**, and
+the reviewer guide names it **Re-merge with the current contracts**. `tests/test_user_guide.py` checks that bold
+labels in the guide exist in the templates, so the full suite failed. The button is now
+**Re-merge with the current contracts**, and the warning moved into the note above it: "Re-merging replaces the
+edits on this merged case."
