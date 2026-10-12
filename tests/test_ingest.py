@@ -300,6 +300,95 @@ def test_crawl_s3_type_narrowed_withdraws(env):
     assert rows == {"in/a.docx": False, "in/b.pdf": True}
 
 
+FUTURE = "2999-01-01T00:00:00+00:00"  # every stored key is now older than the cursor slack
+
+
+def withdrawn_then_changed(s3, sid, monkeypatch):
+    """in/a.txt ingested, then changed while over the cap (so withdrawn), then the cap raised and the cursor moved on."""
+    monkeypatch.setenv("S3_MAX_BYTES", "10")
+    with db.connect() as c:
+        c.execute("""update sources set config = config || '{"include_ext": ["txt"]}' where id=%s""", (sid,))
+    s3.put_object(Bucket="src", Key="in/keep.txt", Body=b"keep")  # a non-empty listing, so the sweep runs
+    s3.put_object(Bucket="src", Key="in/a.txt", Body=b"old text")
+    assert crawl.crawl_s3(sid)["new"] == 2
+    s3.put_object(Bucket="src", Key="in/a.txt", Body=b"brand new longer text")
+    assert crawl.crawl_s3(sid)["deleted"] == 1
+    set_cursor(sid, FUTURE)
+    monkeypatch.setenv("S3_MAX_BYTES", "1000")
+
+
+def doc_state(sid, key):
+    with db.connect() as c:
+        return c.execute("select deleted_at is null, text from documents where source_id=%s and external_id=%s",
+                         (sid, key)).fetchone()
+
+
+def test_raised_cap_reconverts_a_file_changed_while_too_large(env, monkeypatch):
+    s3, sid = env
+    withdrawn_then_changed(s3, sid, monkeypatch)
+    assert crawl.crawl_s3(sid)["updated"] == 1
+    live, text = doc_state(sid, "in/a.txt")
+    assert live and "brand new" in text
+
+
+def test_widened_include_ext_reconverts_a_file_changed_while_excluded(env):
+    s3, sid = env
+    with db.connect() as c:
+        c.execute("""update sources set config = config || '{"include_ext": ["txt", "docx"]}' where id=%s""", (sid,))
+    s3.put_object(Bucket="src", Key="in/b.txt", Body=b"old")
+    s3.put_object(Bucket="src", Key="in/keep.docx", Body=b"keep")  # a non-empty listing, so the sweep runs
+    assert crawl.crawl_s3(sid)["new"] == 2
+    with db.connect() as c:
+        c.execute("""update sources set config = config || '{"include_ext": ["docx"]}' where id=%s""", (sid,))
+    s3.put_object(Bucket="src", Key="in/b.txt", Body=b"changed")
+    assert crawl.crawl_s3(sid)["deleted"] == 1
+    set_cursor(sid, FUTURE)
+    with db.connect() as c:
+        c.execute("""update sources set config = config || '{"include_ext": ["txt", "docx"]}' where id=%s""", (sid,))
+    assert crawl.crawl_s3(sid)["updated"] == 1
+    live, text = doc_state(sid, "in/b.txt")
+    assert live and text == "changed"
+
+
+def test_withdrawn_key_that_fails_on_return_stays_withdrawn(env, monkeypatch):
+    s3, sid = env
+    withdrawn_then_changed(s3, sid, monkeypatch)
+    def boom(*a, **k):
+        raise ValueError("down")
+    monkeypatch.setattr(crawl, "ingest", boom)
+    assert crawl.crawl_s3(sid)["failed"] == 1
+    live, _ = doc_state(sid, "in/a.txt")
+    assert not live
+    with db.connect() as c:
+        assert c.execute("select last_counts->'retry_ids' from sources where id=%s", (sid,)).fetchone()[0] == ["in/a.txt"]
+
+
+def test_unchanged_live_key_still_skips_the_download(env, monkeypatch):
+    s3, sid = env
+    s3.put_object(Bucket="src", Key="in/a.docx", Body=b"aaa")
+    assert crawl.crawl_s3(sid)["new"] == 1
+    set_cursor(sid, FUTURE)
+    fetched, real = [], crawl.boto3.client
+    def client(*a, **k):
+        c = real(*a, **k)
+        get = c.get_object
+        c.get_object = lambda **kw: (fetched.append(kw["Key"]), get(**kw))[1]
+        return c
+    monkeypatch.setattr(crawl.boto3, "client", client)
+    crawl.crawl_s3(sid)
+    assert fetched == []
+
+
+def test_empty_listing_with_only_withdrawn_documents_is_not_a_mass_delete(env):
+    s3, sid = env
+    s3.put_object(Bucket="src", Key="in/a.docx", Body=b"aaa")
+    assert crawl.crawl_s3(sid)["new"] == 1
+    with db.connect() as c:
+        c.execute("update documents set deleted_at=now() where source_id=%s", (sid,))
+    s3.delete_object(Bucket="src", Key="in/a.docx")
+    assert crawl.crawl_s3(sid)["empty_listing"] is True
+
+
 def test_real_docling_conversion():
     buf = io.BytesIO()
     d = Document()
@@ -367,7 +456,7 @@ def test_failed_new_version_is_retried_past_the_cursor(env, monkeypatch):
     assert r["updated"] == 0 and r["skipped"] == 0
 
 
-def test_acl_change_and_reappearing_key_apply_without_redownload(env):
+def test_acl_change_and_reappearing_key_apply_without_reconversion(env):
     s3, sid = env
     s3.put_object(Bucket="src", Key="in/a.docx", Body=b"aaa")
     s3.put_object(Bucket="src", Key="in/b.docx", Body=b"bbb")
@@ -378,7 +467,8 @@ def test_acl_change_and_reappearing_key_apply_without_redownload(env):
     with db.connect() as c:
         c.execute("update sources set acl_groups='{g9}' where id=%s", (sid,))
     set_cursor(sid, "2999-01-01T00:00:00+00:00")
-    assert crawl.crawl_s3(sid)["skipped"] == 0  # nothing re-downloaded
+    r = crawl.crawl_s3(sid)  # the withdrawn key is downloaded again (#189); same bytes, so the checksum skips it
+    assert (r["skipped"], r["new"], r["updated"]) == (1, 0, 0)
     with db.connect() as c:
         rows = c.execute("select acl_groups, deleted_at is null from documents where source_id=%s", (sid,)).fetchall()
     assert rows == [(["g9"], True), (["g9"], True)]

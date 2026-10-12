@@ -116,6 +116,21 @@ def first_run(sp):
     return crawl.crawl_sharepoint(sp.sid)
 
 
+def test_sharepoint_withdrawn_file_returns_with_new_text(sp, monkeypatch):
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "15")
+    first_run(sp)
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([f("f1", size=20)], delta=f"{ROOT}?token=d2"))
+    assert crawl.crawl_sharepoint(sp.sid)["skipped_too_large"] == 1
+    assert docs(sp.sid)["f1"][0] is True
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "1000")
+    sp.files["f1"] = b"brand new text"
+    sp.delta[f"{ROOT}?token=d2"] = (200, page([f("f1", size=20)], delta=f"{ROOT}?token=d3"))
+    assert crawl.crawl_sharepoint(sp.sid)["updated"] == 1
+    assert docs(sp.sid)["f1"][0] is False
+    with db.connect() as c:
+        assert c.execute("select text from documents where source_id=%s and external_id='f1'", (sp.sid,)).fetchone()[0] == "brand new text"
+
+
 def test_full_crawl_follows_pages_and_stores_delta_link(sp):
     counts = first_run(sp)
     assert counts["new"] == 2 and counts["failed"] == 0
