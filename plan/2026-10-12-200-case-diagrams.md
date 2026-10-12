@@ -331,3 +331,18 @@ These are carried over from the approved spec, checked against HEAD `e8644f0`
 - Then `drop table diagrams` if wanted.
 - Queued `diagram` jobs fail as an "unknown job kind" on the old worker,
   which is harmless.
+
+## Deviations
+
+- **Step 6, `app/main.py` (the security-header middleware):** the middleware
+  overwrote every response's `Content-Security-Policy` with
+  `frame-ancestors 'none'`. That dropped the diagram route's
+  `default-src 'none'`.
+  - The middleware now keeps a route's own policy and appends
+    `frame-ancestors 'none'` to it.
+  - Responses without their own policy are unchanged.
+  - The diagram PNG sends `default-src 'none'; frame-ancestors 'none'`.
+    `test_diagram_route_headers` in step 10 expects that string.
+- **Step 6, the cap of 5 diagrams:** rejected entries count toward it,
+  because the plan says "fewer than 5 entries". A reviewer removes a
+  rejected entry to free its slot.

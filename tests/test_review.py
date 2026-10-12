@@ -997,3 +997,120 @@ def test_remerge_and_unmerge_keep_source_lists(make, acme):  # #199
     assert _sources(new) == [_src(9)]
     client(R).post(f"/review/{new}/unmerge", data={"v": ver(new)}, follow_redirects=False)
     assert _sources(new) == [_src(9)]
+
+
+# --- diagrams (#200) ---
+PNG = b"\x89PNG\r\n\x1a\n" + b"x" * 20  # the web task checks magic bytes only; the worker decodes
+
+
+@pytest.fixture
+def jobs():
+    with db.connect() as c:
+        c.execute("delete from jobs where kind='diagram'")
+    yield
+    with db.connect() as c:
+        c.execute("delete from jobs where kind='diagram'")
+
+
+def add_diagram(cid, data=PNG, caption="Architecture", name="a.png", v=None, rev=None):
+    return (rev or client(R)).post(f"/review/{cid}/diagrams", data={"caption": caption, "v": v or ver(cid)},
+                                   files={"file": (name, data)}, follow_redirects=False)
+
+
+def entries(cid):
+    with db.connect() as c:
+        return c.execute("select data->'diagrams' from cases where id=%s", (cid,)).fetchone()[0]
+
+
+def test_upload_diagram_queues_job_and_shows_processing(make, jobs):
+    cid = make()
+    assert add_diagram(cid).status_code == 303
+    (e,) = entries(cid)
+    assert (e["caption"], e["status"]) == ("Architecture", "pending")
+    with db.connect() as c:
+        raw, = c.execute("select raw from diagrams where id=%s and case_id=%s", (e["id"], cid)).fetchone()
+        assert bytes(raw) == PNG
+        assert c.execute("select payload from jobs where kind='diagram'").fetchall() == [({"diagram_id": e["id"]},)]
+
+
+def test_upload_diagram_refuses_svg_gif_wrong_magic_oversize_and_sixth(make, jobs):
+    cid = make()
+    svg, gif = b"<svg xmlns='http://www.w3.org/2000/svg'/>", b"GIF89a" + b"x" * 20
+    assert [add_diagram(cid, d).status_code for d in (svg, gif, b"", b"x" * 20)] == [400] * 4
+    assert add_diagram(cid, PNG + b"x" * (5 * 1024 * 1024)).status_code == 413
+    assert add_diagram(cid, caption="  ").status_code == 400
+    assert add_diagram(cid, caption="x" * 201).status_code == 400
+    assert entries(cid) == []
+    for _ in range(5):
+        assert add_diagram(cid).status_code == 303
+    assert add_diagram(cid).status_code == 400 and len(entries(cid)) == 5
+    with db.connect() as c:
+        assert c.execute("select count(*) from jobs where kind='diagram'").fetchone()[0] == 5
+
+
+def test_upload_diagram_refuses_caption_naming_protected_client(make, acme, jobs):
+    cid = make()
+    with db.connect() as c:
+        name = c.execute("select name from clients where id=%s", (acme,)).fetchone()[0]
+    r = add_diagram(cid, caption=f"Flow at {name}")
+    assert r.status_code == 400 and name not in r.text and entries(cid) == []
+    assert add_diagram(cid, caption="Flow").status_code == 303
+    r = client(R).post(f"/review/{cid}/diagrams/{entries(cid)[0]['id']}/caption", data={"caption": name, "v": ver(cid)})
+    assert r.status_code == 400 and name not in r.text and entries(cid)[0]["caption"] == "Flow"
+
+
+def test_diagram_change_reopens_approved_case(make, jobs):
+    cid = make("approved", "10 days")
+    assert add_diagram(cid).status_code == 303 and row(cid)[0] == "extracted" and not row(cid)[5]
+    did = entries(cid)[0]["id"]
+    for status, path, data in (("caption", "caption", {"caption": "New"}), ("remove", "remove", {})):
+        with db.connect() as c:
+            c.execute("update cases set status='approved', review_due=now() + interval '10 days' where id=%s", (cid,))
+        r = client(R).post(f"/review/{cid}/diagrams/{did}/{path}", data={**data, "v": ver(cid)}, follow_redirects=False)
+        assert r.status_code == 303 and row(cid)[0] == "extracted", status
+
+
+def test_diagram_change_with_stale_version_is_409(make, jobs):
+    cid = make()
+    v = ver(cid)
+    assert add_diagram(cid, v=v).status_code == 303
+    assert add_diagram(cid, v=v).status_code == 409 and len(entries(cid)) == 1
+    did = entries(cid)[0]["id"]
+    assert client(R).post(f"/review/{cid}/diagrams/{did}/remove", data={"v": v}).status_code == 409
+
+
+def test_remove_diagram_deletes_unreferenced_bytes(make, jobs):
+    cid = make()
+    add_diagram(cid)
+    did = entries(cid)[0]["id"]
+    assert client(R).post(f"/review/{cid}/diagrams/{did + 1}/remove", data={"v": ver(cid)}).status_code == 404
+    assert client(R).post(f"/review/{cid}/diagrams/{did}/remove", data={"v": ver(cid)}, follow_redirects=False).status_code == 303
+    assert entries(cid) == []
+    with db.connect() as c:
+        assert c.execute("select count(*) from diagrams where id=%s", (did,)).fetchone()[0] == 0
+
+
+def test_web_task_never_imports_pil_for_upload(make, jobs, monkeypatch):
+    from PIL import Image
+    def boom(*a, **k):
+        raise AssertionError("the web task decoded an upload")
+    monkeypatch.setattr(Image, "open", boom)
+    cid = make()
+    assert add_diagram(cid).status_code == 303 and len(entries(cid)) == 1
+
+
+def test_diagram_route_serves_only_ready_png_to_reviewers(make, jobs):
+    cid = make()
+    add_diagram(cid)
+    did = entries(cid)[0]["id"]
+    url = f"/review/{cid}/diagrams/{did}.png"
+    assert client(R).get(url).status_code == 404  # pending: raw is never served
+    with db.connect() as c:
+        c.execute("update diagrams set png=%s, raw=null where id=%s", (PNG, did))
+        c.execute("update cases set data = jsonb_set(data, '{diagrams,0,status}', '\"ready\"') where id=%s", (cid,))
+    r = client(R).get(url)
+    assert r.status_code == 200 and r.content == PNG and r.headers["content-type"] == "image/png"
+    assert r.headers["x-content-type-options"] == "nosniff" and r.headers["cache-control"] == "private, no-store"
+    assert r.headers["content-security-policy"] == "default-src 'none'; frame-ancestors 'none'"  # the guard adds framing
+    assert client([USER]).get(url).status_code == 403
+    assert client(R).get(f"/review/{cid + 1}/diagrams/{did}.png").status_code == 404

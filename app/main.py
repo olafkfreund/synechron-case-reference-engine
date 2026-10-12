@@ -143,7 +143,10 @@ def create_app() -> FastAPI:
                     response = JSONResponse({"detail": f"body missing a length or larger than {cap} bytes"}, status_code=413)
         if response is None:
             response = await call_next(request)
+        csp = response.headers.get("content-security-policy")  # a route's own policy (diagram PNGs) keeps its directives
         response.headers.update(NO_FRAME)  # one exit: a new refusal cannot skip it
+        if csp:
+            response.headers["Content-Security-Policy"] = f"{csp}; {NO_FRAME['Content-Security-Policy']}"
         return response
 
     @app.exception_handler(401)
