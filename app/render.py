@@ -10,14 +10,14 @@ from io import BytesIO
 from pathlib import Path
 
 from docxtpl import DocxTemplate
-from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import Response
 from jinja2 import Environment
 from pptx import Presentation
 
 from app import anonymise, db
 from app.main import User, require
-from app.review import VISIBLE
+from app.review import VISIBLE, page
 from app.schema import ReferenceCase
 
 router = APIRouter()
@@ -390,6 +390,15 @@ def build(conn, case_ids, research_id, industry_context_ack, user):
     if not ids and not (industry and industry["statements"]):
         raise HTTPException(400, "the research has no usable public statements")
     return ids, sections, industry, anonymised
+
+
+@router.post("/preview")
+def preview(request: Request, case_ids: list[int] = Form([]), research_id: int | None = Form(None),
+            industry_context_ack: bool = Form(False), user: User = Depends(require("user"))):
+    with db.connect() as conn:  # same content and errors as /generate; nothing is logged
+        ids, sections, industry, _ = build(conn, case_ids, research_id, industry_context_ack, user)
+    return page(request, "output_preview.html", user, cases=sections, industry=industry, ids=ids,
+                research_id=research_id, ack=industry_context_ack)
 
 
 @router.post("/generate")
