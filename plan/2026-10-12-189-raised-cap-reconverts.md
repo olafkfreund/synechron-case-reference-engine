@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 189
 spec: spec/2026-10-12-189-raised-cap-reconverts.md
 ---
