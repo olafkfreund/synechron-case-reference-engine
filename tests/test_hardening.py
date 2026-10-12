@@ -280,3 +280,12 @@ def test_every_response_refuses_framing(env):
     for r in rs:
         assert r.headers["x-frame-options"] == "DENY"
         assert r.headers["content-security-policy"] == "frame-ancestors 'none'"
+
+
+def test_diagram_upload_over_cap_is_413_before_parsing(env):
+    from app import diagrams
+    c = client([REV])
+    assert c.post("/review/1/diagrams", content=b"x" * (diagrams.MAX_BYTES + 70_000)).status_code == 413
+    # under the diagram cap but over the form cap: the guard lets it through (the route answers, not the guard)
+    assert c.post("/review/1/diagrams", content=b"x" * (BODY_CAP + 70_000)).status_code != 413
+    assert c.post("/review/1/approve", content=b"x" * (BODY_CAP + 70_000)).status_code == 413

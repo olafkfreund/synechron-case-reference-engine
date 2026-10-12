@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import db
+from app import db, diagrams
 
 ROLES = ("user", "reviewer", "admin")  # each implies the ones before it
 SESSION_MAX_AGE = 8 * 3600
@@ -135,7 +135,9 @@ def create_app() -> FastAPI:
                 response = JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
             else:
                 # size before parsing: FastAPI spools a multipart body before auth runs
-                cap = upload_cap() if request.url.path == "/admin/upload" else BODY_CAP
+                path = request.url.path
+                cap = (upload_cap() if path == "/admin/upload"
+                       else diagrams.MAX_BYTES if re.fullmatch(r"/review/\d+/diagrams", path) else BODY_CAP)
                 length = request.headers.get("content-length")
                 if length is None or not length.isdigit() or int(length) > cap + 64 * 1024:
                     response = JSONResponse({"detail": f"body missing a length or larger than {cap} bytes"}, status_code=413)
