@@ -29,8 +29,10 @@ def crawl_s3(source_id: int) -> dict:
             return {"status": "running"}
         config, cursor, last = lock.execute(
             "select config, cursor, last_counts from sources where id=%s", (source_id,)).fetchone()
-        known = {r[0] for r in lock.execute(
-            "select external_id from documents where source_id=%s", (source_id,))}
+        rows = lock.execute("select external_id, deleted_at is null from documents where source_id=%s",
+                            (source_id,)).fetchall()
+        known = {k for k, live in rows if live}  # only live keys may be skipped on the cursor (#189)
+        any_docs = bool(rows)
         since = datetime.fromisoformat(cursor) - CURSOR_SLACK if cursor else None
         prev_retry = set((last or {}).get("retry_ids", []))  # last run's failures: never skipped on the cursor (#121)
         s3 = boto3.client("s3")
@@ -39,7 +41,7 @@ def crawl_s3(source_id: int) -> dict:
         cap = int(os.environ.get("S3_MAX_BYTES", 50 * 1024 * 1024))
         counts = {"new": 0, "updated": 0, "skipped": 0, "deleted": 0, "failed": 0,
                   "skipped_type": 0, "skipped_too_large": 0}
-        failed, retry = [], []
+        failed, retry, stuck = [], [], set()
         for page in s3.get_paginator("list_objects_v2").paginate(
                 Bucket=config["bucket"], Prefix=config.get("prefix", "")):
             for obj in page.get("Contents", []):
@@ -63,22 +65,25 @@ def crawl_s3(source_id: int) -> dict:
                     counts[ingest(source_id, key, key.rsplit("/", 1)[-1], body)] += 1
                 except Exception as e:  # noqa: BLE001 - one bad file must not stop the crawl
                     counts["failed"] += 1
+                    if key not in known:
+                        stuck.add(key)  # a withdrawn document stays withdrawn until it converts (#189)
                     retry.append(key)  # every one, uncapped: failed_keys below is display only
                     if len(failed) < MAX_FAILED_KEYS:
                         failed.append({"key": key, "error": type(e).__name__})  # no message: may quote the file
 
         with db.connect() as conn:
-            if seen or not known:
+            live = [k for k in seen if k not in stuck]
+            if seen or not any_docs:
                 counts["deleted"] = conn.execute(
                     "select count(*) from documents where source_id=%s and deleted_at is null "
-                    "and not (external_id = any(%s))", (source_id, seen)).fetchone()[0]
+                    "and not (external_id = any(%s))", (source_id, live)).fetchone()[0]
                 # one pass over the full listing: the source's current ACL (read here, under for share)
-                # applies to every document, and a reappeared key is live again even if it was not re-downloaded
+                # applies to every document; a live key that did not change was not re-downloaded, a withdrawn one was (#189)
                 conn.execute(
                     "update documents d set acl_groups=s.acl_groups, deleted_at = case when external_id = any(%s) "
                     "then null else coalesce(deleted_at, now()) end "
                     "from (select acl_groups from sources where id=%s for share) s where d.source_id=%s",
-                    (seen, source_id, source_id))
+                    (live, source_id, source_id))
             else:
                 # an empty listing with live documents is a prefix or permission mistake, not a mass delete
                 counts["empty_listing"] = True

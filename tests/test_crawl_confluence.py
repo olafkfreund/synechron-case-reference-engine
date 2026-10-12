@@ -238,6 +238,25 @@ def test_confluence_attachment_grown_past_cap_is_withdrawn(cf):
     assert DL not in cf.calls
 
 
+def test_confluence_withdrawn_attachment_returns_with_new_text(cf, monkeypatch):
+    monkeypatch.setenv("CONFLUENCE_MAX_BYTES", "15")
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"spec bytes", number=1)
+    crawl.crawl_confluence(cf.sid)
+    cf.atts["p1"][0]["extensions"]["fileSize"] = 20
+    offer_again(cf)
+    crawl.crawl_confluence(cf.sid)
+    assert "att:p1:a1" not in live(cf.sid)
+    monkeypatch.setenv("CONFLUENCE_MAX_BYTES", "1000")
+    cf.atts["p1"][0]["version"] = {"when": "2026-03-01T00:00:00.000Z", "number": 2}
+    cf.files[DL] = b"brand new text"
+    offer_again(cf, "2026-03-01T00:00:00.000Z")
+    crawl.crawl_confluence(cf.sid)
+    assert "att:p1:a1" in live(cf.sid)
+    with db.connect() as c:
+        assert c.execute("select text from documents where source_id=%s and external_id='att:p1:a1'", (cf.sid,)).fetchone()[0] == "brand new text"
+
+
 def test_changed_attachment_is_downloaded_and_version_stored(cf):
     cf.page("p1")
     cf.attach("p1", "a1", "spec.docx", b"spec bytes", number=1)
