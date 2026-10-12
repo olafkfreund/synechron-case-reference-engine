@@ -10,12 +10,16 @@
 {% if omitted %}<div class="note">{{ omitted }} statement(s) not shown: they named a protected client.</div>{% endif %}
 <p class="muted" style="font-size:13px">Public sources only. This is industry context, not our own delivery.</p>
 {% if claims %}
+{% if can_attach %}<form method="post" action="/review/{{ case_id }}/sources">
+<input type="hidden" name="research_id" value="{{ research_id }}"><input type="hidden" name="s" value="{{ sources_v }}">{% endif %}
 <div class="section-card"><div class="card-head"><h2>What public sources say</h2></div>
 <p class="muted" style="font-size:13px">The quote is what the source says; the summary and type are the AI's reading of it. Rely on the quote.</p>
-{% for c in claims %}<div class="claim"><q>{{ c.quote }}</q>
+{% for c in claims %}<div class="claim">{% if can_attach %}<label class="check"><input type="checkbox" name="n" value="{{ c.n }}"> Attach</label>{% endif %}<q>{{ c.quote }}</q>
 <div class="meta">{% if c.url.startswith(("http://", "https://")) %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.publisher }}</a>{% else %}<span>{{ c.publisher }}</span>{% endif %}
 <span>retrieved {{ c.retrieved_at[:10] }}</span><span class="badge neutral">{{ c.type | replace("_", " ") }}</span></div>
-<p>{{ c.statement }}</p></div>{% endfor %}</div>
+<p>{{ c.statement }}</p></div>{% endfor %}
+{% if can_attach %}<button class="btn">Attach to the case as public sources</button>{% endif %}</div>
+{% if can_attach %}</form>{% endif %}
 <div class="section-card"><div class="card-head"><h2>Comparison</h2></div>
 <div class="table-box"><table><thead><tr><th>Who</th><th>What they say</th></tr></thead><tbody>
 {% if ours %}<tr><td><b>Our approach</b></td><td>{{ ours }}</td></tr>{% endif %}
