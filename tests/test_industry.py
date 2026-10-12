@@ -157,6 +157,20 @@ def test_script_in_a_quote_is_escaped_everywhere(rows, approved):
     assert "<script>" not in slide_xml and "&lt;script&gt;" in slide_xml  # text, never markup
 
 
+def test_preview_includes_industry_and_keeps_the_ack(rows, approved):
+    rid, cid = rows([claim()]), approved()
+
+    def prev(ids=(), ack=False):  # format is posted too, as the research form does
+        form = {"format": "docx", "case_ids": list(ids), "research_id": rid, **({"industry_context_ack": "on"} if ack else {})}
+        return as_user("u1", G).post("/preview", data=form)
+    r = prev([cid])
+    assert r.status_code == 200 and Q1 in r.text and "learn.microsoft.com" in r.text
+    assert f'name="research_id" value="{rid}"' in r.text
+    assert prev().status_code == 400
+    r = prev(ack=True)
+    assert r.status_code == 200 and 'name="industry_context_ack"' in r.text
+
+
 def test_research_page_offers_the_download(rows, approved):
     rid = rows([claim()])
     t = as_user("u1", G).get(f"/research/{rid}").text
