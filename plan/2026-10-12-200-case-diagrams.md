@@ -346,3 +346,8 @@ These are carried over from the approved spec, checked against HEAD `e8644f0`
 - **Step 6, the cap of 5 diagrams:** rejected entries count toward it,
   because the plan says "fewer than 5 entries". A reviewer removes a
   rejected entry to free its slot.
+- **Step 14, the note in the template docs:** the repo has no page that
+  describes marketing's templates. The docstrings of
+  `scripts/make_reference_template.py` and `scripts/make_reference_master.py`
+  already describe the `c.diagrams` loop and the "Diagram" layout (steps 11
+  and 12). The PR asks for both to be added to the real templates (#15).

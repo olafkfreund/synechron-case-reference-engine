@@ -73,6 +73,25 @@ Fixing lists such as capabilities, technologies and outcomes.
 
 The list shows the change after the page reloads. A blank item is refused.
 
+## Add diagrams
+
+**What it's for**
+
+Adding a picture, such as an architecture diagram, to a case. A case can have up to 5. Nothing is
+taken from the documents: you upload each one yourself.
+
+**Steps**
+
+1. On a case page, find the **Diagrams** section. Choose a PNG or JPEG file of up to 5 MB, type a caption, and press **Add diagram**.
+2. The diagram shows "Processing: reload in a moment". Reload the page until it shows the picture. If it shows "Rejected", the reason is given and the picture is not used.
+3. To change a caption, edit it and press **Save caption**. To drop a diagram, press **Remove**.
+4. Look at every picture. Before **Approve (unsourced fields are emptied)** you must tick **I have checked every diagram: no client name, logo, person or identifying detail**.
+
+**What you see**
+
+Ready diagrams are added to the Word, PowerPoint and PDF outputs, and their captions are listed in the Markdown.
+Approval waits while a diagram is still processing. Adding, changing or removing a diagram takes an approved case back to review, so you must approve it again.
+
 ## Decide: approve or reject
 
 **What it's for**
