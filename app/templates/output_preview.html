@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="narrow">
+<div class="page-head"><div><h1>Preview</h1></div></div>
+<div class="note">This is the content of the download; the layout comes from the Word and PowerPoint templates.</div>
+{% for c in cases %}
+<article class="section-card">
+<h2>{{ c.title }} <span class="muted">{{ c.client }}</span></h2>
+{% if c.note %}<div class="note">{{ c.note }}</div>{% endif %}
+<p>{{ c.summary }}</p>
+<ul>{% for x in c.details %}<li><b>{{ x.label }}:</b> {{ x.value }}</li>{% endfor %}</ul>
+{% for b in c.blocks %}<h3>{{ b.heading }}</h3><p>{{ b.text }}</p>{% endfor %}
+{% for l in c.lists %}<h3>{{ l.heading }}</h3><ul>{% for i in l.bullets %}<li>{{ i }}</li>{% endfor %}</ul>{% endfor %}
+</article>
+{% endfor %}
+{% if industry %}
+<div class="section-card">
+<h2>{{ industry.heading }}</h2>
+<p><em>{{ industry.disclaimer }}</em></p>
+<ul>{% for i in industry["statements"] %}<li>{{ i.phrase }}: &ldquo;{{ i.quote }}&rdquo; &mdash; {{ i.publisher }}, {{ i.url }}, retrieved {{ i.date }}</li>{% endfor %}</ul>
+{% if industry.note %}<p>{{ industry.note }}</p>{% endif %}
+</div>
+{% endif %}
+<form method="post" action="/generate" class="section-card generate">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}
+{% if research_id %}<input type="hidden" name="research_id" value="{{ research_id }}">{% endif %}
+{% if ack %}<input type="hidden" name="industry_context_ack" value="on">{% endif %}
+<div class="action-row"><a class="btn" href="/">Back to search</a>
+<button class="btn primary" name="format" value="docx">Download Word</button>
+<button class="btn dark" name="format" value="pptx">Download (PowerPoint)</button>
+<button class="btn dark" name="format" value="pdf_docx">Download (PDF)</button>
+<button class="btn dark" name="format" value="pdf_pptx">Download (PDF slides)</button>
+<button class="btn dark" name="format" value="md">Download (Markdown)</button></div></form>
+</div>
+{% endblock %}
