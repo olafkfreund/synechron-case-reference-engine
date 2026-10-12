@@ -14,6 +14,7 @@ from app import db
 _SEP = r"[\s,\-‐‑–—]"
 _JOIN = _SEP + "*"
 _APOS = "'’‘ʼ′"
+_SIGNS = "™℠®"  # dropped before NFKC, which turns ™ into "TM" (#187)
 
 
 def load_clients(conn=None) -> list[dict]:
@@ -36,7 +37,9 @@ def _visible(s: str) -> str:
 
 
 def fold(s: str) -> str:
-    """Case, accents and width folded ("Société" = "SOCIETE", "Straße" = "strasse", "İ" = "i")."""
+    """Case, accents and width folded ("Société" = "SOCIETE", "Straße" = "strasse", "İ" = "i"); trademark signs and
+    enclosing marks dropped ("Zorpale™ Bank" = "Zorpale Bank") (#187)."""
+    s = "".join(ch for ch in s if ch not in _SIGNS and unicodedata.category(ch) != "Me")  # Me has combining class 0
     s = unicodedata.normalize("NFKD", _visible(s).casefold())
     return "".join(ch for ch in s if not unicodedata.combining(ch))
 
