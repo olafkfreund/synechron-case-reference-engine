@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 199
 intent: intent/2026-10-12-199-best-practice-sources.md
 ---
