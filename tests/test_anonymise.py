@@ -404,3 +404,19 @@ def test_apply_then_blocked_is_empty():
     assert an.apply("Zorp\u0301 won", reg) == "a bank won"  # the trailing mark goes with the name
     two = [C("Zorp Bank", label="a bank"), C("Bank Ltd", label="a firm")]
     assert an.blocked(an.apply("Zorp Bank Ltd", two), two) == []  # a label re-forms a name a longer hit hid
+
+
+@pytest.mark.parametrize("t", ["Zorpale\u2122 Bank", "Zorpale\u00ae Bank", "Zorpale Bank\u2122", "Zorpale Bank\u2120",
+                               "ZorpaleBank\u2122", "Z\u20ddorpale Bank", "Zorpale\u20dd Bank", "Zorpale\u20e3 Bank",
+                               "Zorpale\u0488 Bank"])
+def test_trademark_signs_and_enclosing_marks_in_a_name(t):
+    reg = [C("Zorpale Bank", label="a bank")]
+    assert an.blocked(t, reg) == ["Zorpale Bank"]
+    out = an.apply(f"{t} won", reg)
+    assert out == "a bank won" and an.blocked(out, reg) == []  # a trailing sign goes with the name
+
+
+def test_signs_outside_a_name_stay():
+    reg = [C("Zorpale Bank", label="a bank")]
+    assert an.apply("Acme\u2122 Cloud and Zorpale Bank\u00ae win", reg) == "Acme\u2122 Cloud and a bank win"
+    assert an.apply("Zorpale/Bank", reg) == "Zorpale/Bank" and an.blocked("Zorpale/Bank", reg) == []  # decided: not a separator
