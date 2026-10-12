@@ -102,3 +102,20 @@ The full suite must pass: 653 tests before this change, plus 10 new ones.
 Revert the merge commit. The change is pure Python, with no schema, data or
 infra change. Matching goes back to treating the signs and marks as part of
 the word, so the nine spellings leak again until someone adds an alias.
+
+## Deviation (review, 2026-10-12)
+
+The Opus review found that dropping ® or an enclosing mark to "" glued the name to the next word, so
+"Acme®Zorpale Bank", "Zorpale Bank®Holdings", "A⃝Zorpale Bank" and "Zorpale Bank⃝x" got past `blocked()`. Main
+catches those. "Acme™Zorpale Bank" already leaked on main.
+
+- **Trademark signs fold to a space, not "".** All three of those spellings now match, and "ZorpaleBank™"
+  still matches because `_JOIN` is `sep*`. A trailing sign stays in the text: "Zorpale Bank™ won" becomes
+  "a bank™ won", as on main. The tests were updated to expect this.
+- **Enclosing marks:** `fold(s, me="")` takes what a mark becomes.
+  - `apply()` and `has_name()` use "", so a mark inside a word is joined ("Z⃝orpale").
+  - `blocked()` matches both "" and " ", so a mark glued between two words is withheld (a refusal, as on
+    main), not leaked.
+  - `scrub()` uses " ", the same as main for a mark inside a word.
+  - Marked `shortcut:` in `blocked()`.
+- **New test:** `test_a_sign_or_mark_between_the_name_and_another_word`, with 5 cases.

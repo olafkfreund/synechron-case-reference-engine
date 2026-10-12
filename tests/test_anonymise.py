@@ -413,10 +413,20 @@ def test_trademark_signs_and_enclosing_marks_in_a_name(t):
     reg = [C("Zorpale Bank", label="a bank")]
     assert an.blocked(t, reg) == ["Zorpale Bank"]
     out = an.apply(f"{t} won", reg)
-    assert out == "a bank won" and an.blocked(out, reg) == []  # a trailing sign goes with the name
+    assert out.startswith("a bank") and out.endswith(" won") and an.blocked(out, reg) == [], out
 
 
 def test_signs_outside_a_name_stay():
     reg = [C("Zorpale Bank", label="a bank")]
-    assert an.apply("Acme\u2122 Cloud and Zorpale Bank\u00ae win", reg) == "Acme\u2122 Cloud and a bank win"
+    assert an.apply("Acme\u2122 Cloud and Zorpale Bank\u00ae win", reg) == "Acme\u2122 Cloud and a bank\u00ae win"
     assert an.apply("Zorpale/Bank", reg) == "Zorpale/Bank" and an.blocked("Zorpale/Bank", reg) == []  # decided: not a separator
+
+
+@pytest.mark.parametrize("t", ["Acme\u00aeZorpale Bank", "Zorpale Bank\u00aeHoldings", "Acme\u2122Zorpale Bank",
+                               "A\u20ddZorpale Bank", "Zorpale Bank\u20ddx"])
+def test_a_sign_or_mark_between_the_name_and_another_word(t):
+    reg = [C("Zorpale Bank", label="a bank")]
+    assert an.blocked(t, reg) == ["Zorpale Bank"]  # a mark glued to both words is withheld, not replaced
+    assert "zorpale" not in an.scrub(t, reg)
+    if "\u20dd" not in t:
+        assert an.blocked(an.apply(t, reg), reg) == []
