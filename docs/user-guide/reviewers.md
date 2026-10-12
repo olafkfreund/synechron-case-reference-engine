@@ -118,6 +118,8 @@ Joining several contracts for the same client into one case.
 3. On **Merge contracts**, look at **Differing fields** and choose which contract each value comes from.
 4. Press **Merge**.
 5. To undo, open the merged case and press **Un-merge (the contracts go back to the queue)**.
+6. If a contract changes or is withdrawn after the merge, the merged case shows it. Press **Re-merge with the current contracts** to rebuild the
+   case from the current versions. Your field choices are kept, your edits are not, and the case needs a new summary and approval.
 
 **What you see**
 
