@@ -119,3 +119,6 @@ Adding an "Industry context" section to a download.
 
 A file with the industry context section. You must tick the acknowledgement when no case is included,
 because public statements must never be shown as our delivery.
+
+A case can carry public sources that a reviewer attached. Its downloads then use the heading "Best practice and
+public sources" and list those first. Downloads with research only keep "Industry context (public sources)".

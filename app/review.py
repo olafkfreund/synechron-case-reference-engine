@@ -1,5 +1,6 @@
 import hashlib
 import copy
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -140,7 +141,7 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
     with db.connect() as conn:
         r = conn.execute(
             f"select c.data, c.status, d.title, d.external_id, s.name, {OPEN}, {VERSION}, c.member_count, c.basis, "
-            f"case when c.review_due > now() then c.review_due end "
+            f"case when c.review_due > now() then c.review_due end, c.public_sources, md5(c.public_sources::text) "
             f"from cases c left join documents d on d.id = c.document_id left join sources s on s.id = d.source_id "
             f"where c.id = %s and {REVIEWABLE}", (cid, list(user.groups))).fetchone()
         registry = anonymise.load_clients(conn)
@@ -157,12 +158,15 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
     case = ReferenceCase.model_validate(r[0])  # the document text is deliberately not shown
     notes = list(case.needs_attention)
     # organisations come from extraction; no LLM call on page view
+    from app.research import visible_claims  # here: research imports this module
+    shown = {c["n"]: c for c in visible_claims([{**c, "n": i} for i, c in enumerate(r[10])], registry)[0]}
+    sources = [shown.get(i) or {"n": i, "hidden": True} for i in range(len(r[10]))]  # a hidden one can still be removed
     unlisted = anonymise.unlisted([*case.organisations, case.client_mention.value or ""], registry) if r[5] else []
     return page(request, "review_detail.html", user, id=cid, rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
                 unlisted=unlisted, members=members, cands=cands, remerge=remerge,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
                 external_id=r[3], source=r[4], merged=bool(members),
-                reviewable=r[5] and not any(m[6] for m in members), v=r[6],
+                reviewable=r[5] and not any(m[6] for m in members), v=r[6], sources=sources, sources_v=r[11],
                 due=r[9].strftime("%Y-%m-%d") if r[9] else None)  # in date by the database clock, as search judges it
 
 
@@ -279,6 +283,67 @@ def reject(cid: int, v: str = Form(), user: User = Depends(require("reviewer")))
         conn.execute("update cases set status='rejected', approved_by=null, approved_at=null, "
                      "review_due=null where id=%s", (cid,))
     return RedirectResponse("/review", status_code=303)
+
+
+# ---- public sources a reviewer attaches to a case (#199) ----
+
+MAX_SOURCES = 20
+SOURCE_KEYS = ("quote", "publisher", "url", "retrieved_at", "type")
+
+
+def _add_sources(old: list, new: list) -> list:
+    """old then new, deduplicated by (url, quote); the caller checks the cap."""
+    seen, out = set(), []
+    for c in [*old, *new]:
+        if (k := (c.get("url"), c.get("quote"))) not in seen:
+            seen.add(k)
+            out.append(c)
+    return out
+
+
+def _lock_sources(conn, cid, user, s):
+    r = conn.execute("select md5(c.public_sources::text), c.public_sources from cases c "
+                     "left join documents d on d.id = c.document_id "
+                     f"where c.id = %s and {REVIEWABLE} for update of c", (cid, list(user.groups))).fetchone()
+    if not r:
+        raise HTTPException(404, "no such case")
+    if r[0] != s:
+        raise HTTPException(409, "case changed; reload the page")
+    return r[1]
+
+
+@router.post("/review/{cid}/sources")
+def attach_sources(cid: int, research_id: int = Form(), n: list[int] = Form([]), s: str = Form(),
+                   user: User = Depends(require("reviewer"))):
+    from app.research import visible_claims  # here: research imports this module
+    with db.connect() as conn:
+        old = _lock_sources(conn, cid, user, s)
+        row = conn.execute("select results from research where id=%s and created_by=%s and status='done' and case_id=%s",
+                           (research_id, user.sub, cid)).fetchone()
+        if not row:
+            raise HTTPException(404, "no such research")
+        stored = row[0].get("claims", [])
+        picked = [{**stored[i], "n": i} for i in dict.fromkeys(n) if 0 <= i < len(stored)]  # from the row, never the form
+        # visible_claims only filters: the stored claim is copied verbatim and anonymised again at render
+        kept = [stored[c["n"]] for c in visible_claims(picked, anonymise.load_clients(conn))[0]]
+        now = datetime.now(timezone.utc).isoformat()
+        new = [{**{k: c.get(k) for k in SOURCE_KEYS}, "research_id": research_id, "attached_by": user.sub, "attached_at": now}
+               for c in kept]
+        merged = _add_sources(old, new)
+        if len(merged) > MAX_SOURCES:
+            raise HTTPException(400, f"at most {MAX_SOURCES} public sources per case")
+        conn.execute("update cases set public_sources=%s where id=%s", (Jsonb(merged), cid))
+    return RedirectResponse(f"/review/{cid}", status_code=303)
+
+
+@router.post("/review/{cid}/sources/remove")
+def remove_source(cid: int, i: int = Form(), s: str = Form(), user: User = Depends(require("reviewer"))):
+    with db.connect() as conn:
+        old = _lock_sources(conn, cid, user, s)
+        if not 0 <= i < len(old):
+            raise HTTPException(400, "no such source")
+        conn.execute("update cases set public_sources=%s where id=%s", (Jsonb(old[:i] + old[i + 1:]), cid))
+    return RedirectResponse(f"/review/{cid}", status_code=303)
 
 
 # ---- merging related engagements into one reference (#55) ----
@@ -412,10 +477,12 @@ def do_merge(members, pick, user):
             raise HTTPException(400, "a choice is not one of the contracts")
         case = combine([(i, d, c) for i, d, c, _, _ in found], pick)
         check(case, {d: t for _, d, _, _, t in found})
+        sources = _add_sources([], [c for (m,) in conn.execute(
+            "select public_sources from cases where id = any(%s) order by id", (ids,)).fetchall() for c in m])[:MAX_SOURCES]
         new = conn.execute(
-            "insert into cases(document_id, member_count, basis, status, data, summary, search_text) "
-            "values (null, %s, 'engagement', 'extracted', %s, %s, %s) returning id",
-            (len(ids), Jsonb(case.model_dump()), case.summary, case.search_text())).fetchone()[0]
+            "insert into cases(document_id, member_count, basis, status, data, summary, search_text, public_sources) "
+            "values (null, %s, 'engagement', 'extracted', %s, %s, %s, %s) returning id",
+            (len(ids), Jsonb(case.model_dump()), case.summary, case.search_text(), Jsonb(sources))).fetchone()[0]
         conn.execute("update cases set merged_into = %s, merged_version = md5(data::text) where id = any(%s)", (new, ids))
     return RedirectResponse(f"/review/{new}", status_code=303)
 

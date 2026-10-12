@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict
 from app import anonymise, db, ingest
 from app.llm import complete_json
 from app.main import User, require
-from app.review import VISIBLE, page
+from app.review import REVIEWABLE, VISIBLE, page
 from app.schema import ReferenceCase, numbers, quote_in
 from app.search import clean
 
@@ -190,7 +190,13 @@ def research_view(rid: int, request: Request, user: User = Depends(require("user
         text = "; ".join(x for x in [case.solution.value if not case.solution.unsourced else None,
                                       ", ".join(t.value for t in case.tech_stack if t.value and not t.unsourced)] if x)
         ours = clean(text, clients, "[withheld]") if text else None
-    claims, omitted = visible_claims(row[3].get("claims", []), clients)
+    claims, omitted = visible_claims([{**c, "n": i} for i, c in enumerate(row[3].get("claims", []))], clients)
+    sources_v = None  # md5 of the case's attached list; set only for a reviewer who may open the case
+    if case and "reviewer" in user.roles:
+        with db.connect() as conn:
+            r = conn.execute("select md5(c.public_sources::text) from cases c left join documents d on d.id = c.document_id "
+                             f"where c.id = %s and {REVIEWABLE}", (row[4], list(user.groups))).fetchone()
+        sources_v = r[0] if r else None
     groups: dict[str, list] = {}
     for c in claims:
         groups.setdefault(c["publisher"], []).append(c)
@@ -199,7 +205,8 @@ def research_view(rid: int, request: Request, user: User = Depends(require("user
     query = "[withheld]" if anonymise.blocked(row[0], clients) else row[0]  # a client protected after it was sent
     return page(request, "research_view.html", user, query=query, status=row[1], error=row[2], ours=ours,
                 pages=pages, skipped=skipped, omitted=omitted, claims=claims, groups=groups,
-                note=row[3].get("note"), case_id=row[4] if case else None, research_id=rid)
+                note=row[3].get("note"), case_id=row[4] if case else None, research_id=rid,
+                can_attach=sources_v is not None, sources_v=sources_v)
 
 
 # --- the worker job ---------------------------------------------------------------------------------

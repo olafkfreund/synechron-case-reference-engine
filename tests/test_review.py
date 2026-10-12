@@ -966,3 +966,34 @@ def test_approve_clears_lessons_learned_on_engagement(make):
                   "'{\"value\": \"Stale\", \"source_quote\": \"\", \"by_reviewer\": true}') where id=%s", (cid,))
     assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}).status_code == 200
     assert row(cid)[1]["lessons_learned"]["value"] is None
+
+
+def _sources(cid, items=None):
+    with db.connect() as c:
+        if items is not None:
+            c.execute("update cases set public_sources=%s where id=%s", (json.dumps(items), cid))
+        return c.execute("select public_sources from cases where id=%s", (cid,)).fetchone()[0]
+
+
+def _src(i):
+    return {"quote": f"q{i}", "url": f"https://example.org/{i}", "publisher": "example.org", "type": "vendor_claim"}
+
+
+def test_merge_unions_member_sources(make, acme):  # #199
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    _sources(a, [_src(1), _src(2)])
+    _sources(b, [_src(2), *[_src(i) for i in range(3, 25)]])
+    new = int(merge(client(R), [a, b]).headers["location"].rsplit("/", 1)[1])
+    got = _sources(new)
+    assert [c["quote"] for c in got] == [f"q{i}" for i in range(1, 21)]  # deduplicated, capped at 20, no failure
+
+
+def test_remerge_and_unmerge_keep_source_lists(make, acme):  # #199
+    new, b = _merged(make)
+    _sources(new, [_src(9)])
+    with db.connect() as c:
+        c.execute("update cases set data = jsonb_set(data, '{summary}', to_jsonb('x'::text)) where id=%s", (b,))
+    client(R).post(f"/review/{new}/remerge", data={"v": ver(new)}, follow_redirects=False)
+    assert _sources(new) == [_src(9)]
+    client(R).post(f"/review/{new}/unmerge", data={"v": ver(new)}, follow_redirects=False)
+    assert _sources(new) == [_src(9)]
