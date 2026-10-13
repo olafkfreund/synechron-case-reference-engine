@@ -248,7 +248,8 @@ def test_failed_validation_writes_nothing(env, tmp_path, monkeypatch, capsys, mu
 
 def test_completeness_mix(env):
     assert seed.main() == 0
-    want = {i: (9, 9) for i in (0, 1, 2, 3, 5, 6, 7, 8)} | {4: (6, 9), 10: (8, 9), 11: (8, 9)}
+    # no demo case has a diagram until #246 draws real ones: a missing diagram beats a chain of boxes
+    want = {i: (8, 9) for i in (0, 1, 2, 3, 5, 6, 7, 8)} | {4: (6, 9), 10: (8, 9), 11: (8, 9)}
     with db.connect() as c:
         rows = {r[0]: ReferenceCase.model_validate(r[1]) for r in c.execute(
             "select d.title, c.data from cases c join documents d on d.id=c.document_id join sources s on s.id=d.source_id "

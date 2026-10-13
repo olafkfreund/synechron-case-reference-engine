@@ -366,8 +366,7 @@
      "Contoso"
     ]
    },
-   "status": "approved",
-   "diagram": true
+   "status": "approved"
   },
   {
    "source": "Demo: Bid library",
@@ -635,8 +634,7 @@
      "Northwind"
     ]
    },
-   "status": "approved",
-   "diagram": true
+   "status": "approved"
   },
   {
    "source": "Demo: Delivery archive",
@@ -904,8 +902,7 @@
      "Woodgrove"
     ]
    },
-   "status": "approved",
-   "diagram": true
+   "status": "approved"
   },
   {
    "source": "Demo: Delivery archive",
@@ -1177,8 +1174,7 @@
      "Tailspin"
     ]
    },
-   "status": "approved",
-   "diagram": true
+   "status": "approved"
   },
   {
    "source": "Demo: Bid library",
@@ -1669,8 +1665,7 @@
      "Adventure Works"
     ]
    },
-   "status": "approved",
-   "diagram": true
+   "status": "approved"
   },
   {
    "source": "Demo: Bid library",
@@ -1924,8 +1919,7 @@
      "Wide World Importers"
     ]
    },
-   "status": "approved",
-   "diagram": true
+   "status": "approved"
   },
   {
    "source": "Demo: Delivery archive",
@@ -2185,8 +2179,7 @@
      "Proseware"
     ]
    },
-   "status": "approved",
-   "diagram": true
+   "status": "approved"
   },
   {
    "source": "Demo: Bid library",
@@ -2447,8 +2440,7 @@
      "Alpine Ski House"
     ]
    },
-   "status": "approved",
-   "diagram": true
+   "status": "approved"
   },
   {
    "source": "Demo: Bid library",
@@ -2691,7 +2683,6 @@
     ]
    },
    "status": "extracted",
-   "diagram": true,
    "expect_flag": true
   },
   {
@@ -2943,8 +2934,7 @@
      "Northwind"
     ]
    },
-   "status": "extracted",
-   "document_image": true
+   "status": "extracted"
   },
   {
    "source": "Demo: Delivery archive",
@@ -3190,8 +3180,7 @@
      "Litware"
     ]
    },
-   "status": "extracted",
-   "document_image": true
+   "status": "extracted"
   },
   {
    "source": "Demo: Delivery archive",
