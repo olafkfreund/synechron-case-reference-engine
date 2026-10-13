@@ -409,3 +409,37 @@ def test_review_page_lists_a_hidden_source_for_removal_without_showing_it(rows, 
     page = as_user("u1", RV).get(f"/review/{cid}").text
     assert "Withheld: names a protected client" in page and Q2 not in page and reg.lower() not in page
     assert 'name="i" value="0"' in page
+
+
+# ---- grouped layout (#214): groups, citations, sources, titles ----
+
+def section(claims, pages=()):
+    return render.industry_section(claims, render.anonymise.load_clients(), pages=pages)
+
+
+def test_section_groups_by_page_and_numbers_sources(env):
+    db.init()
+    a = {**claim(), "title": "Entra overview"}
+    b = {**claim(Q2, "configuration", "docs.vendor.io", "https://docs.vendor.io/x"), "title": "Vendor docs"}
+    s = section([a, b, {**claim("Second quote from the first page"), "title": "Entra overview"}])
+    assert [g["title"] for g in s["groups"]] == ["Entra overview", "Vendor docs"]
+    assert [q["n"] for q in s["groups"][0]["quotes"]] == [1, 1] and s["groups"][1]["quotes"][0]["n"] == 2
+    assert s["groups"][0]["lead"] == "learn.microsoft.com states:"
+    assert [(x["n"], x["url"]) for x in s["sources"]] == [(1, "https://learn.microsoft.com/entra"), (2, "https://docs.vendor.io/x")]
+    assert not any("http" in x["text"] for x in s["statements"][:-1]) and "https://docs.vendor.io/x" in s["statements"][-1]["text"]
+
+
+def test_section_title_falls_back_to_the_page_then_the_host(env):
+    db.init()
+    pages = [{"url": "https://learn.microsoft.com/entra", "title": "From the page"}]
+    assert section([claim()], pages)["groups"][0]["title"] == "From the page"
+    assert section([claim()])["groups"][0]["title"] == "learn.microsoft.com"
+
+
+def test_a_title_naming_a_protected_client_never_reaches_the_section(reg, monkeypatch):
+    name = reg
+    s = section([{**claim(), "title": f"{name} case study"}])
+    assert name not in json.dumps(s) and s["groups"][0]["title"] == "a retailer case study"
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)  # apply() misses it: blocked() must still drop the claim
+    s = section([{**claim(), "title": f"{name} case study"}, claim(Q2, url="https://x.example/y")])
+    assert name not in json.dumps(s) and "omitted" in s["note"] and len(s["groups"]) == 1
