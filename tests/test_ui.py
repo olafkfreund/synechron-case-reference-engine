@@ -26,7 +26,7 @@ def test_static_is_public(env):
 def test_landing_has_css_no_script_and_the_roles_tabs(env, role):
     r = client(GROUPS[role]).get("/")
     assert r.status_code == 200
-    assert "/static/portal.css" in r.text and "<script" not in r.text
+    assert "/static/portal.css" in r.text and r.text.count("<script") == 1 and "/static/theme.js" in r.text
     nav = re.search(r'<nav class="site-nav".*?</nav>', r.text, re.S).group(0)
     assert re.findall(r">([^<]+)</a>", nav) == TABS[role]
 
@@ -58,7 +58,7 @@ class Scan(HTMLParser):
         a = dict(a)
         # inline handlers and javascript: links count as scripts
         self.scripts += sum(k.startswith("on") for k in a) + str(a.get("href", "")).strip().lower().startswith("javascript:")
-        if tag == "script":
+        if tag == "script" and not str(a.get("src", "")).startswith("/static/theme.js"):  # the theme toggle's own file
             self.scripts += 1
         elif tag == "label":
             self.label_depth += 1
@@ -263,3 +263,14 @@ def test_theme_contrast():
         assert ratio(t["input-border"], t["surface"]) >= 3, name  # a field's edge is a UI component
         assert ratio(t["header-text"], t["header"]) >= 4.5 and ratio(t["header-tag"], t["header"]) >= 4.5, name
         assert ratio(t["header-text"], t["header-hover"]) >= 4.5, name
+
+
+def test_theme_toggle_on_every_page(make, approved, monkeypatch):  # noqa: F811
+    out = pages(make, approved, monkeypatch)
+    from app.review import templates  # no route renders a page without a user today, so render one directly
+    out["logged out"] = type("R", (), {"text": templates.get_template("message.html").render(user=None, message="x", back="/", css_version="v")})
+    for name, r in out.items():
+        head = r.text.split("</head>")[0]
+        assert re.search(r'<script src="/static/theme\.js\?v=\w+"></script>', head) and "defer" not in head.split("theme.js")[1][:40], name
+        assert re.search(r'<button[^>]*class="btn theme-toggle"[^>]*aria-pressed="false"[^>]*aria-label="Dark theme"', r.text), name
+        assert "onclick" not in r.text, name

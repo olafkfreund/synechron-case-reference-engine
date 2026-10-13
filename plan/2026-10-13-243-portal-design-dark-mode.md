@@ -271,3 +271,9 @@ ignored.
   - The image frame is `main img`.
   - The contrast test also covers header text and `accent-hover`.
   - All the plan's status pairs pass AA unchanged; the lowest is 5.66:1.
+- Step 3:
+  - No route renders HTML without a user, so the logged-out case is tested by
+    rendering `message.html` with `user=None`.
+  - Two existing tests that count `<script` now allow `theme.js`.
+  - Negative controls pass for both step 2 tests: a literal `#fff` fails the
+    lint, and a dark muted colour at 2.23:1 fails the contrast test.
