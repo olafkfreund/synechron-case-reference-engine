@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 246
 author: olafkfreund
 ---
@@ -125,3 +125,14 @@ What a sales slide needs is a **solution architecture**:
 4. **Placeholder diagrams now.** Should I stop seeding the chain-of-boxes
    placeholders today, so they leave the demo before this ships? It's a
    one-line change to `demo/cases.json` plus a demo refresh.
+
+## Decisions (user, 2026-10-13: "approved all, recommendations as proposed")
+
+1. **Renderer:** our own SVG lane layout plus native python-pptx shapes. No
+   Graphviz.
+2. **First draft:** the model proposes it from the sourced points, and the
+   reviewer edits it.
+3. **Document diagrams:** "Use" for source-document diagrams stays, next to
+   the generated diagram.
+4. **Placeholders:** the chain-of-boxes placeholders stop being seeded now,
+   ahead of this work.
