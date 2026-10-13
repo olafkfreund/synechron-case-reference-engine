@@ -177,6 +177,17 @@ Branch `feat/235-library-in-bids`, worktree `../refs-engine-235`. Two PRs.
 12. **By hand in the demo (the session):** save a library item, search with a
     matching bid text, include it, and download Word.
 
+## Deviations
+
+- Step 2: filter values match as whole phrases.
+- Step 6:
+  - `SUGGEST_CANDIDATES` is 150, not 300, to keep suggestions under budget
+    (63 ms against 137-150 ms at 300).
+  - A whole-word pre-screen on the stored text runs first, so an item whose
+    only match would come from a label that `apply()` inserts is missed.
+    That's rare, and noted in the code.
+  - Topic chips use the first-seen casing.
+
 ## Tests
 
 ```bash

@@ -5,13 +5,21 @@
 <form method="get" action="/library" class="section-card">
 <div class="row filters"><div class="field"><label for="lib-q">Search the library</label>
 <input type="search" id="lib-q" name="q" value="{{ q }}" maxlength="200" placeholder="Topic or words in a quote, e.g. CMDB"></div>
-<button class="btn primary">Search</button>{% if q %} <a class="btn" href="/library">Clear</a>{% endif %}</div></form>
+<div class="field"><label for="lib-kind">Type</label><select id="lib-kind" name="kind"><option value="">All</option>
+<option value="brief"{% if kind == "brief" %} selected{% endif %}>Briefs</option><option value="quotes"{% if kind == "quotes" %} selected{% endif %}>Quotes</option></select></div>
+<label class="check"><input type="checkbox" name="due" value="1"{% if due %} checked{% endif %}> Needs re-check</label>
+{% if topic %}<input type="hidden" name="topic" value="{{ topic }}">{% endif %}
+<button class="btn primary">Search</button>{% if q or topic or kind or due %} <a class="btn" href="/library">Clear</a>{% endif %}</div>
+{% if topics %}<div class="row" aria-label="Topics">{% for t, n in topics %}<a class="badge{{ '' if t.lower() == topic.lower() else ' neutral' }}" href="/library?{{ {'q': q, 'topic': t, 'kind': kind, 'due': due or ''} | urlencode }}">{{ t }} ({{ n }})</a> {% endfor %}</div>{% endif %}</form>
+<form method="post" action="/research" class="section-card"><div class="row"><div class="field"><label for="lib-research">Research a new topic</label>
+<input type="text" id="lib-research" name="question" maxlength="1000" required value="{{ q }}" placeholder="e.g. How do banks run KYC onboarding on AWS?"></div>
+<button class="btn">Research this</button></div></form>
 {% if items %}<div class="section-card"><div class="card-head"><h2>{% if q %}Results for &ldquo;{{ q }}&rdquo;{% else %}Saved items{% endif %}</h2><span class="muted">{{ items | length }}</span></div>
 {% for i in items %}<div class="other-row">
 <a href="/library/{{ i.id }}"><b>{{ i.topic }}</b></a>
 <span class="badge neutral">{{ "Brief" if i.kind == "brief" else "Quotes" }}</span>
 {% if i.stale %}<span class="badge">re-check</span>{% endif %}
-<span class="muted" style="margin-left:auto">{{ i.sources }} source{{ "" if i.sources == 1 else "s" }} &middot; {{ "today" if i.age == 0 else (i.age ~ " day" ~ ("" if i.age == 1 else "s") ~ " old") }}</span>
+<span class="muted" style="margin-left:auto">saved by {{ i.by }} &middot; {{ i.sources }} source{{ "" if i.sources == 1 else "s" }} &middot; {{ "today" if i.age == 0 else (i.age ~ " day" ~ ("" if i.age == 1 else "s") ~ " old") }}</span>
 </div>{% endfor %}</div>
 {% elif q %}<div class="empty-state">{{ icon("search") }}<p><b>Nothing matches &ldquo;{{ q }}&rdquo;</b></p><p>Try another word, or <a href="/library">see everything saved</a>.</p></div>
 {% else %}<div class="empty-state">{{ icon("database") }}<p><b>Nothing saved yet</b></p>

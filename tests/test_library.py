@@ -266,3 +266,98 @@ def test_a_markdown_quote_shows_as_plain_text_in_the_library(reg, lib):
     _, lid = save(c, rid)
     v = as_user("u2").get(f"/library/{lid}").text
     assert "Entra supports passwordless sign in out of the box" in v and "](" not in v and "**" not in v
+
+
+# --- #235: suggestions, browse by topic, saved-by ---
+
+def put(topic, quote, kind="quotes", by="u1", name="Ann", **extra):
+    body = {"quotes": [{"quote": quote, "publisher": "v.example", "url": "https://v.example/0"}]}
+    if kind == "brief":
+        body["brief"] = {"title": topic, "takeaways": [f"{quote} [1]."], "themes": []}
+    with db.connect() as conn:
+        return conn.execute("insert into library_items(topic, kind, query, body, created_by, created_by_name) values (%s,%s,'q',%s,%s,%s) returning id",
+                            (topic, kind, json.dumps(body), by, name)).fetchone()[0]
+
+
+def rword(prefix):  # letters only: the keyword rule drops digits
+    import random
+    import string
+    return prefix + "".join(random.choices(string.ascii_lowercase, k=8))
+
+
+def test_suggest_needs_two_words_ignores_the_stoplist_and_caps_at_five(reg, lib, monkeypatch):
+    import app.library as L
+    calls = []
+    monkeypatch.setattr("app.llm.complete_json", lambda *a, **k: calls.append(a))
+    w1, w2, w3 = rword("zyxa"), rword("zyxb"), rword("zyxz")
+    both = put("t", f"{w1} and {w2} together")
+    one = put("t", f"{w1} alone")
+    stop = put("t", "which would within these things")
+    got = [i["id"] for i in L.suggest(f"we need {w1} and {w2} and {w3} which would within", {}, [])]
+    assert both in got and one not in got and stop not in got      # whole words only count; stoplist words never match
+    assert [i["id"] for i in L.suggest(w1, {}, [])].count(one) == 1  # one keyword is enough when there are 2 or fewer
+    for _ in range(7):
+        put("t", f"{w1} {w2} more")
+    assert len(L.suggest(f"{w1} {w2}", {}, [])) == L.SUGGEST_MAX
+    assert not calls                                               # no model was called
+
+
+def test_suggest_never_sees_text_hidden_after_saving(reg, lib):
+    import app.library as L
+    word = rword("Wibble")
+    w2 = rword("zyxc")
+    bid = f"{word.lower()} {w2} {rword('zyxq')}"  # three keywords, so two must match
+    lid = put("t", f"{word} and {w2} run it")
+    assert lid in [i["id"] for i in L.suggest(bid, {}, [])]
+    with db.connect() as conn:
+        cid = conn.execute("insert into clients(name, anonymised_label) values (%s,'a retailer') returning id", (word,)).fetchone()[0]
+        clients = anonymise.load_clients(conn)
+    try:
+        assert lid not in [i["id"] for i in L.suggest(bid, {}, clients)]
+    finally:
+        with db.connect() as conn:
+            conn.execute("delete from clients where id=%s", (cid,))
+
+
+def test_search_post_shows_the_card_the_get_does_not_and_the_bid_stays_out_of_urls_and_logs(reg, lib, caplog):
+    w1, w2 = rword("zyxd"), rword("zyxe")
+    lid = put(f"{w1} topic", f"{w2} is here")
+    c = as_user("u1")
+    r = c.post("/search", data={"bid_text": f"{w1} {w2}"}, follow_redirects=False)
+    assert r.status_code == 200 and "From the library" in r.text and f"/library/{lid}" in r.text
+    assert w1 not in str(r.url) and f"{w1}" not in "".join(m for m in caplog.messages)
+    assert "From the library" not in c.get("/search").text
+
+
+def test_chips_filters_and_saved_by(reg, lib):
+    a = put("Cloud Migration", "alpha one", name="Ann")
+    b = put("cloud migration", "beta two", kind="brief", name="")
+    other = put("Kafka", "gamma three")
+    with db.connect() as conn:
+        conn.execute("update library_items set checked_at = now() - interval '400 days' where id=%s", (other,))
+    c = as_user("u1")
+    t = c.get("/library").text
+    assert "cloud migration (2)" in t and "Kafka (1)" in t and "saved by Ann" in t and "saved by a colleague" in t
+    t = c.get("/library?topic=cloud+migration").text
+    assert f"/library/{a}" in t and f"/library/{b}" in t and f"/library/{other}" not in t
+    assert f"/library/{b}" not in c.get("/library?kind=quotes").text
+    t = c.get("/library?due=1").text
+    assert f"/library/{other}" in t and f"/library/{a}" not in t
+    assert "saved by Ann" in c.get(f"/library/{a}").text and "saved by a colleague" in c.get(f"/library/{b}").text
+
+
+def test_suggest_is_fast_on_300_items(reg, lib):
+    import random
+    import time
+
+    import app.library as L
+    rnd = random.Random(7)
+    pool = [rword("w")[:6] + "xyz" for _ in range(3000)]  # a vocabulary of 3000 words
+    for i in range(300):
+        put(f"topic {i}", " ".join(rnd.choices(pool, k=60)), kind="brief" if i % 2 else "quotes")
+    bid = " ".join(rnd.choices(pool, k=150))
+    t0 = time.perf_counter()
+    L.suggest(bid, {"industry": "Banking"}, [])
+    took = time.perf_counter() - t0
+    print(f"suggest() with 300 saved items: {took * 1000:.0f} ms")
+    assert took < 0.15

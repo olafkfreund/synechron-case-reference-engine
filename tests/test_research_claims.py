@@ -362,3 +362,9 @@ def test_a_markdown_quote_is_sourced_against_the_raw_page_and_stored_verbatim(mo
     reply(monkeypatch, claim(quote=raw))
     claims, _ = rs.extract_claims("passwordless", page)
     assert [c["quote"] for c in claims] == [raw]  # kept: sourced on the raw text, stored as written
+
+
+def test_library_topic_is_prefilled_with_the_scrubbed_query(reg):
+    c = as_user("u1")
+    rid = done_row(c, "some quote text")
+    assert 'name="topic" form="pick" value="' in c.get(f"/research/{rid}").text

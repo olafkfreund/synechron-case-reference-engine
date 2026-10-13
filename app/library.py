@@ -19,8 +19,10 @@ router = APIRouter()
 STALE_DAYS = 365
 LIST_LIMIT = 200
 WITHHELD = "[withheld]"
+COLLEAGUE = "a colleague"  # rows saved before created_by_name existed
+TOPIC_CHIPS = 20
 SUGGEST_MAX = 5
-SUGGEST_CANDIDATES = 300
+SUGGEST_CANDIDATES = 150  # 300 took 137-150 ms on the timing test, too close to the 150 ms budget
 SUGGEST_KEYWORDS = 30
 SUGGEST_STOP = frozenset("""about above after again also among because been before being between both build could does doing done each
 either else ever every from have having here into just like made make many more most much must only other over same should since some
@@ -52,7 +54,7 @@ def _manage(row, user):
 def _item(conn, lid):
     row = conn.execute(
         "select topic, kind, query, body, created_by, floor(extract(epoch from now() - created_at) / 86400)::int, "
-        f"floor(extract(epoch from now() - checked_at) / 86400)::int, checked_at < now() - interval '{STALE_DAYS} days' "
+        f"floor(extract(epoch from now() - checked_at) / 86400)::int, checked_at < now() - interval '{STALE_DAYS} days', created_by_name "
         "from library_items where id=%s", (lid,)).fetchone()
     if not row:
         raise HTTPException(404, "no such library item")
@@ -110,7 +112,7 @@ def suggest(bid_text: str, filters: dict, clients) -> list[dict]:
     if not kws:
         return []
     need = 1 if len(kws) <= 2 else 2
-    pats = [re.compile(r"\b" + re.escape(k) + r"\b") for k in kws]
+    found = re.compile(r"\b(?:" + "|".join(re.escape(k) for k in sorted(kws, key=len, reverse=True)) + r")\b").findall  # one pass per item
     with db.connect() as conn:
         rows = conn.execute(
             "select id, topic, kind, body, floor(extract(epoch from now() - created_at) / 86400)::int, "
@@ -118,9 +120,13 @@ def suggest(bid_text: str, filters: dict, clients) -> list[dict]:
             (SUGGEST_CANDIDATES,)).fetchall()
     hits = []
     for lid, topic, kind, body, age, stale in rows:
+        # cheap pre-screen on the stored text: apply() only removes or relabels, so it cannot add a hit (a label word is the rare miss)
+        raw = "\n".join((topic, *_strings({k: v for k, v in body.items() if k != "rechecks"}))).lower()
+        if len(set(found(raw))) < need:
+            continue
         shown = WITHHELD if anonymise.blocked(topic, clients) else anonymise.apply(topic, clients)
         text = _visible_text(kind, shown, body, clients)
-        score = sum(1 for p in pats if p.search(text))
+        score = len(set(found(text)))
         if score >= need:
             hits.append((score, {"id": lid, "topic": shown, "kind": kind, "sources": len(body["quotes"]), "age": age, "stale": stale}))
     hits.sort(key=lambda h: -h[0])  # stable: newest first among equal scores
@@ -128,31 +134,39 @@ def suggest(bid_text: str, filters: dict, clients) -> list[dict]:
 
 
 @router.get("/library")
-def index(request: Request, q: str = Query("", max_length=200), user: User = Depends(require("user"))):
+def index(request: Request, q: str = Query("", max_length=200), topic: str = Query("", max_length=200),
+          kind: str = Query("", max_length=10), due: int = Query(0, ge=0, le=1), user: User = Depends(require("user"))):
     q = q.strip()
     with db.connect() as conn:
         clients = anonymise.load_clients(conn)
         # a search naming a protected client finds nothing: it must not confirm that a name is in the library
         rows = [] if q and anonymise.blocked(q, clients) else conn.execute(
             "select id, topic, kind, body, floor(extract(epoch from now() - created_at) / 86400)::int, "
-            f"checked_at < now() - interval '{STALE_DAYS} days' from library_items "
+            f"checked_at < now() - interval '{STALE_DAYS} days', created_by_name from library_items "
             # candidates: the topic and the string values of the body (not its keys, not the re-check map)
             "where %s = '' or lower(topic) like lower(%s) or jsonb_path_query_array(body - 'rechecks', "
             "'strict $.** ? (@.type() == \"string\")')::text ilike %s order by id desc limit 1000",
             (q, _like(q), _like(q))).fetchall()
-    items = []
-    for lid, topic, kind, body, age, stale in rows:
-        shown = WITHHELD if anonymise.blocked(topic, clients) else anonymise.apply(topic, clients)
-        if q and q.lower() not in _visible_text(kind, shown, body, clients):  # a hit only on what is visible now
+    items, counts = [], {}
+    for lid, t, k, body, age, stale, name in rows:
+        shown = WITHHELD if anonymise.blocked(t, clients) else anonymise.apply(t, clients)
+        if q and q.lower() not in _visible_text(k, shown, body, clients):  # a hit only on what is visible now
             continue
-        items.append({"id": lid, "topic": shown, "kind": kind, "sources": len(body["quotes"]), "age": age, "stale": stale})
-    return page(request, "library.html", user, items=items[:LIST_LIMIT], q=q)
+        if shown != WITHHELD:  # chips come from the shown topic, never the stored one
+            label, n = counts.get(shown.lower(), (shown, 0))
+            counts[shown.lower()] = (label, n + 1)
+        if (topic and shown.lower() != topic.lower()) or (kind and k != kind) or (due and not stale):
+            continue
+        items.append({"id": lid, "topic": shown, "kind": k, "sources": len(body["quotes"]), "age": age, "stale": stale,
+                      "by": name or COLLEAGUE})
+    topics = [(label, n) for label, n in sorted(counts.values(), key=lambda x: -x[1])[:TOPIC_CHIPS]]
+    return page(request, "library.html", user, items=items[:LIST_LIMIT], q=q, topic=topic, kind=kind, due=due, topics=topics)
 
 
 @router.get("/library/{lid}")
 def view(lid: int, request: Request, user: User = Depends(require("user"))):
     with db.connect() as conn:
-        topic, kind, query, body, creator, age, checked_age, stale = _item(conn, lid)
+        topic, kind, query, body, creator, age, checked_age, stale, saved_by = _item(conn, lid)
         clients = anonymise.load_clients(conn)
         rid = body.get("rechecks", {}).get(user.sub)
         again = conn.execute("select status, results from research where id=%s and created_by=%s", (rid, user.sub)).fetchone() if rid else None
@@ -179,7 +193,7 @@ def view(lid: int, request: Request, user: User = Depends(require("user"))):
             attach_cases = [(f"{c}:{v}", clean(t or "", clients, WITHHELD) or f"Case {c}") for c, t, v in reviewable_cases(conn, user)]
     return page(request, "library_item.html", user, lid=lid, topic=shown, kind=kind, age=age, checked_age=checked_age, stale=stale,
                 claims=claims, omitted=omitted, sec=sec, can_recheck=bool(query), again=again[0] if again else None,
-                found=found, found_yes=sum(found.values()) if found else 0, can_manage=creator == user.sub or "admin" in user.roles, attach_cases=attach_cases)
+                found=found, found_yes=sum(found.values()) if found else 0, can_manage=creator == user.sub or "admin" in user.roles, attach_cases=attach_cases, saved_by=saved_by or COLLEAGUE)
 
 
 @router.post("/library/{lid}/export")
