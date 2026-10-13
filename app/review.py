@@ -15,7 +15,7 @@ from app import anonymise, db, diagrams
 from app.extract import MAX_CHARS, check
 from app.main import User, require
 from app.schema import POINT_FIELDS, Diagram, Outcome, Period, Prose, ReferenceCase, Sourced, _norm
-from app.writeup import check_prose, quotes_of
+from app.writeup import PRICE_FLAG, check_prose, quotes_of
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")  # autoescape on
@@ -397,6 +397,8 @@ def approve(cid: int, v: str = Form(), diagrams_checked: bool = Form(False), use
         case, text = load(conn, cid, user, v)
         if any(d.status == "pending" for d in case.diagrams):
             raise HTTPException(409, "a diagram is still being checked; reload in a moment")
+        if any(PRICE_FLAG in p.flags for p in case.prose.values()):
+            raise HTTPException(400, "remove the price or payment term from the write-up")  # whoever wrote it
         if any(p.flags and not p.by_reviewer for p in case.prose.values()):
             raise HTTPException(400, "fix or confirm the flagged write-up")  # editing it counts as confirming
         if any(d.status == "ready" for d in case.diagrams) and not diagrams_checked:
@@ -547,11 +549,15 @@ def combine(members, pick):
     points = {}
     for _, doc, case in members:
         for f, ps in case.points.items():
-            have = {_norm(p.value or "") for p in points.setdefault(f, [])}
+            items = points.setdefault(f, [])
+            seen = {_norm(i.value or ""): n for n, i in enumerate(items)}
             for p in ps:
-                if _norm(p.value or "") not in have:
-                    have.add(_norm(p.value or ""))
-                    points[f].append(stamped(p, doc))
+                k = _norm(p.value or "")
+                if k not in seen:
+                    seen[k] = len(items)
+                    items.append(stamped(p, doc))
+                elif items[seen[k]].unsourced and not p.unsourced:
+                    items[seen[k]] = stamped(p, doc)  # the sourced copy and its origin, as for the lists (#140)
     uniq = lambda xs: list(dict.fromkeys(x for x in xs if x))
     notes = [f"merged from {len(members)} contracts: write a summary", "merged: write the case-study text for each section",
              *uniq(n for _, _, c in members for n in c.needs_attention)]

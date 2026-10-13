@@ -1245,4 +1245,31 @@ def test_merge_unions_points_and_leaves_prose_empty(make, acme):
     new = int(merge(client(R), [a, b]).headers["location"].rsplit("/", 1)[1])
     data, _ = _data_and_doc(new)
     assert [p["value"] for p in data["points"]["solution"]] == ["Cut onboarding", "Shared", "Moved payments"]
+    docs = {cid: _data_and_doc(new, cid)[1] for cid in (a, b)}
+    assert [p["document_id"] for p in data["points"]["solution"]] == [docs[a], docs[a], docs[b]]
+    # the same point, unsourced in the first member and sourced in the second: the sourced copy and its origin win
+    with db.connect() as c:
+        for cid, unsourced in ((a, True), (b, False)):
+            d = c.execute("select data from cases where id=%s", (cid,)).fetchone()[0]
+            d["points"] = {"solution": [{"value": "Shared", "source_quote": "q", "unsourced": unsourced}]}
+            c.execute("update cases set data=%s where id=%s", (json.dumps(d), cid))
+    from app.review import combine
+    from app.schema import ReferenceCase
+    got = combine([(cid, docs[cid], ReferenceCase.model_validate(row(cid)[1])) for cid in (a, b)], {})
+    assert [(p.unsourced, p.document_id) for p in got.points["solution"]] == [(False, docs[b])]
     assert data["prose"] == {} and "merged: write the case-study text for each section" in data["needs_attention"]
+
+
+def test_reviewer_text_still_flagged_for_a_number_can_be_approved(make):
+    cid = prosed(make)
+    edit_prose(cid, "solution", "It took 99 days.")
+    assert row(cid)[1]["prose"]["solution"]["flags"] == ["number 99 is in no quote"]
+    assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}, follow_redirects=False).status_code == 303
+
+
+def test_a_price_in_the_write_up_blocks_approval_even_for_the_reviewer(make):
+    cid = prosed(make)
+    edit_prose(cid, "solution", "Onboarding cost £1,200 per day.")
+    assert row(cid)[1]["prose"]["solution"]["by_reviewer"] is True
+    r = client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)})
+    assert r.status_code == 400 and "price" in r.text and row(cid)[0] == "extracted"

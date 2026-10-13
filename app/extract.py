@@ -194,7 +194,8 @@ def build(full_text: str, data_class: str, basis: str = "delivered", basis_reaso
         case.lessons_learned = Sourced[str]()  # nor lessons (#198)
         if n := strip_commercial(case):
             notes.append(f"{n} item(s) with prices, rates or payment terms removed")
-    writeup.write(case, data_class)  # after strip_commercial, so a price never reaches the model
+    # engagements had prices stripped above, so none reaches the model; a delivered case's prose is caught by the price flag
+    writeup.write(case, data_class)
     notes += case.needs_attention
     if n := sum(vague_metric(o) for o in case.outcomes):
         notes.append(f"{n} outcome(s) with no clear metric")
@@ -245,6 +246,7 @@ def extract(document_id: int, basis: str = "delivered", basis_reason: str = "", 
                          ("configuration", "Configuration and integration")):
             prev = Prose.model_validate((old[0].get("prose") or {}).get(f) or {}) if old else Prose()
             if prev.by_reviewer and prev.text:  # the reviewer's write-up wins over a new model one
+                prev.flags = writeup.check_prose(prev.text, writeup.quotes_of(case, f), case.quotes())  # against the new quotes
                 case.prose[f] = prev
                 case.needs_attention.append(f"{label}: your write-up from before the document changed was kept; check it still holds")
         data = case.model_dump()

@@ -650,6 +650,15 @@ client. Run the full suite, then PR 4.
     blanked).
   - Phase B ships as is. #222's completeness check makes thin cases visible
     and blocks their approval.
+- Phase B review fixes:
+  - The write-up summary passes `check_prose`; if anything is flagged, the
+    earlier summary is kept.
+  - The price flag blocks approval even for reviewer text.
+  - `check_prose` matches whole words and never joins a term across a
+    sentence end. The single-word sentence-start skip is a known limit.
+  - Points sit inside `<points>` tags, and stray tags are removed.
+  - A merge prefers sourced copies.
+  - Kept reviewer prose has its flags recomputed.
 
 ## Tests
 

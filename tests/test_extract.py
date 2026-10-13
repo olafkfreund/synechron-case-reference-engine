@@ -618,3 +618,10 @@ def test_reextract_drops_model_prose_but_keeps_reviewer_prose_when_nothing_new(d
     reviewer_prose(doc[0], "challenge")
     data, *_ = run(doc, case())
     assert list(data["prose"]) == ["challenge"] and data["prose"]["challenge"]["by_reviewer"] is True
+
+
+def test_reextract_recomputes_the_flags_of_kept_reviewer_prose(doc):
+    run(doc, case())
+    reviewer_prose(doc[0], "solution", "It took 99 days.")  # stored with no flags
+    data, *_ = run(doc, case(("solution", "Faster onboarding", Q)))
+    assert data["prose"]["solution"]["by_reviewer"] is True and data["prose"]["solution"]["flags"] == ["number 99 is in no quote"]
