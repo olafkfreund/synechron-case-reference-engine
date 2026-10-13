@@ -3,8 +3,6 @@
 An item copies its quotes and brief text, so it does not depend on the research row. Its text is never part of
 cases.search_text: the library has its own search. Every view and download runs apply() and blocked() again.
 """
-import json
-
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, Response
 from psycopg.types.json import Jsonb
@@ -22,6 +20,23 @@ WITHHELD = "[withheld]"
 
 def _like(q: str) -> str:
     return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def _strings(o):
+    if isinstance(o, str):
+        yield o
+    elif isinstance(o, dict):
+        for v in o.values():
+            yield from _strings(v)
+    elif isinstance(o, list):
+        for v in o:
+            yield from _strings(v)
+
+
+def _manage(row, user):
+    """Re-check and delete belong to the creator or an admin: the stored query is the creator's wording."""
+    if row[4] != user.sub and "admin" not in user.roles:
+        raise HTTPException(404, "no such library item")  # never confirm it exists
 
 
 def _item(conn, lid):
@@ -55,11 +70,26 @@ def save(research_id: int | None = Form(None), brief_id: int | None = Form(None)
             rid = conn.execute("select research_id from briefs where id=%s", (brief_id,)).fetchone()[0]
             kind, body = "brief", {"quotes": quotes, "brief": {k: b[k] for k in ("title", "takeaways", "themes")}}
         query = (conn.execute("select query from research where id=%s", (rid,)).fetchone() or [""])[0] if rid else ""
-        if anonymise.blocked(json.dumps([t, query, body], ensure_ascii=False), clients):  # topic, quotes, brief text, URLs
+        if any(anonymise.blocked(x, clients) for x in (t, query, *_strings(body))):  # each field alone: a join could hide a name
             raise HTTPException(400, "the item names a protected client; it cannot be saved")
         lid = conn.execute("insert into library_items(topic, kind, query, body, created_by) values (%s,%s,%s,%s,%s) returning id",
                            (t, kind, query, Jsonb(body), user.sub)).fetchone()[0]
     return RedirectResponse(f"/library/{lid}", status_code=303)
+
+
+def _visible_text(kind, topic, body, clients) -> str:
+    """What a reader sees of an item now (lower case): the topic, quotes and brief text after apply() and blocked()."""
+    parts = [topic]
+    if kind == "quotes":
+        parts += [x for c in research.visible_claims(body["quotes"], clients)[0] for x in (c.get("quote"), c.get("title"), c.get("publisher"))]
+    else:
+        try:
+            sec = render.brief_section(body["brief"], body["quotes"], clients)
+        except render.Withheld:
+            sec = {}
+        parts += [sec.get("title"), *sec.get("takeaways", []), *(x for t in sec.get("themes", []) for x in (t["heading"], t["text"])),
+                  *(a["quote"] for a in sec.get("appendix", []))]
+    return "\n".join(str(x) for x in parts if x).lower()
 
 
 @router.get("/library")
@@ -69,14 +99,19 @@ def index(request: Request, q: str = Query("", max_length=200), user: User = Dep
         clients = anonymise.load_clients(conn)
         # a search naming a protected client finds nothing: it must not confirm that a name is in the library
         rows = [] if q and anonymise.blocked(q, clients) else conn.execute(
-            "select id, topic, kind, jsonb_array_length(body->'quotes'), "
-            "floor(extract(epoch from now() - created_at) / 86400)::int, "
+            "select id, topic, kind, body, floor(extract(epoch from now() - created_at) / 86400)::int, "
             f"checked_at < now() - interval '{STALE_DAYS} days' from library_items "
-            "where %s = '' or lower(topic) like lower(%s) or body::text ilike %s order by id desc limit %s",
-            (q, _like(q), _like(q), LIST_LIMIT)).fetchall()
-    items = [{"id": r[0], "topic": WITHHELD if anonymise.blocked(r[1], clients) else anonymise.apply(r[1], clients),
-              "kind": r[2], "sources": r[3], "age": r[4], "stale": r[5]} for r in rows]
-    return page(request, "library.html", user, items=items, q=q)
+            # candidates: the topic and the string values of the body (not its keys, not the re-check map)
+            "where %s = '' or lower(topic) like lower(%s) or jsonb_path_query_array(body - 'rechecks', "
+            "'strict $.** ? (@.type() == \"string\")')::text ilike %s order by id desc limit 1000",
+            (q, _like(q), _like(q))).fetchall()
+    items = []
+    for lid, topic, kind, body, age, stale in rows:
+        shown = WITHHELD if anonymise.blocked(topic, clients) else anonymise.apply(topic, clients)
+        if q and q.lower() not in _visible_text(kind, shown, body, clients):  # a hit only on what is visible now
+            continue
+        items.append({"id": lid, "topic": shown, "kind": kind, "sources": len(body["quotes"]), "age": age, "stale": stale})
+    return page(request, "library.html", user, items=items[:LIST_LIMIT], q=q)
 
 
 @router.get("/library/{lid}")
@@ -94,15 +129,18 @@ def view(lid: int, request: Request, user: User = Depends(require("user"))):
             sec = render.brief_section(body["brief"], body["quotes"], clients)
         except render.Withheld:
             sec = {"note": "This brief is withheld: it names a protected client."}
-    found = None
+    found = None  # quote number (1-based, as shown) -> still on its page?
     if again and again[0] == "done":  # by URL and the quote text, on the freshly fetched pages
         pages = again[1].get("pages", [])
-        found = [any(p.get("url") == c.get("url") and quote_in(p.get("markdown", ""), c.get("quote", "")) for p in pages)
-                 for c in claims]
+        on_page = lambda c: any(p.get("url") == c.get("url") and quote_in(p.get("markdown", ""), c.get("quote", "")) for p in pages)  # noqa: E731
+        if kind == "quotes":
+            found = {i: on_page(c) for i, c in enumerate(claims, 1)}
+        else:
+            found = {s["n"]: on_page(body["quotes"][s["n"] - 1]) for s in sec.get("sources", [])}
     shown = WITHHELD if anonymise.blocked(topic, clients) else anonymise.apply(topic, clients)
     return page(request, "library_item.html", user, lid=lid, topic=shown, kind=kind, age=age, checked_age=checked_age, stale=stale,
                 claims=claims, omitted=omitted, sec=sec, can_recheck=bool(query), again=again[0] if again else None,
-                found=found, can_delete=creator == user.sub or "admin" in user.roles)
+                found=found, found_yes=sum(found.values()) if found else 0, can_manage=creator == user.sub or "admin" in user.roles)
 
 
 @router.post("/library/{lid}/export")
@@ -140,7 +178,9 @@ def download(lid: int, format: str = Form(), user: User = Depends(require("user"
 def recheck(lid: int, user: User = Depends(require("user"))):
     """Run the stored query again as the user's own research. Nothing in the item changes until they choose to."""
     with db.connect() as conn:
-        query = _item(conn, lid)[2]
+        item = _item(conn, lid)
+        _manage(item, user)
+        query = item[2]
         try:
             q = research.finalize(query, anonymise.load_clients(conn)) if query else ""  # a client may be protected since
         except ValueError as e:
@@ -158,7 +198,7 @@ def recheck(lid: int, user: User = Depends(require("user"))):
 @router.post("/library/{lid}/checked")
 def checked(lid: int, user: User = Depends(require("user"))):
     with db.connect() as conn:
-        _item(conn, lid)
+        _manage(_item(conn, lid), user)
         conn.execute("update library_items set checked_at = now() where id=%s", (lid,))
     return RedirectResponse(f"/library/{lid}", status_code=303)
 
@@ -166,8 +206,6 @@ def checked(lid: int, user: User = Depends(require("user"))):
 @router.post("/library/{lid}/delete")
 def delete(lid: int, user: User = Depends(require("user"))):
     with db.connect() as conn:
-        creator = _item(conn, lid)[4]
-        if creator != user.sub and "admin" not in user.roles:
-            raise HTTPException(404, "no such library item")  # never confirm it exists
+        _manage(_item(conn, lid), user)
         conn.execute("delete from library_items where id=%s", (lid,))
     return RedirectResponse("/library", status_code=303)

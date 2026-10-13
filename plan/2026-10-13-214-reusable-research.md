@@ -524,6 +524,16 @@ must exist on `main`.
   - `finalize()` lowercases topics.
   - Any user may mark an item re-checked.
   - The re-check test completes the research row by hand.
+- Phase 4 review fixes:
+  - Re-check, mark re-checked and delete are limited to the creator or an
+    admin, so the saver's query isn't exposed.
+  - Search matches only the topic and visible text, never the `rechecks`
+    map, and drops a hit whose match is hidden now.
+  - Re-checking a brief reports its quotes.
+  - The save check runs per field.
+  - Delete is not audited: there's no generic admin log.
+  - A brief whose client is protected later drops and counts the sentence
+    (as `industry_section` does) instead of returning 409.
 
 ## Tests
 
