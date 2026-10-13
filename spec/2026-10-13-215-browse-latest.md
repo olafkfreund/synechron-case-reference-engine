@@ -91,12 +91,18 @@ shown raw, as the review list already shows `d.title`.
 **Query.**
 - One query: documents left-joined to their case, with a lateral pick of the
   newest `extract` job for the document, joined to `sources` for the name.
-- Ordered by `d.created_at desc, d.id desc`, 50 per page, offset paging (as
+- Ordered by `d.updated_at desc, d.id desc`, 50 per page, offset paging (as
   above).
-- `documents.created_at` is when a document first arrived. A new version
-  updates the row in place, so a re-crawled document doesn't jump to the
-  top. That's acceptable for "what arrived". It is noted in the template's
-  help text.
+- **"Latest" means last updated (decision, 2026-10-13).** `documents` gets
+  `updated_at timestamptz not null default now()`, added in `sql/schema.sql`
+  with `alter table ... add column if not exists`, so existing rows take the
+  migration time. The ingest upsert (`app/ingest.py`, the
+  `on conflict ... do update set`) sets `updated_at = now()`, so a new or
+  changed version moves the document to the top. The checksum skip
+  (`skip_unchanged`, which re-crawls an unchanged file) does not touch it.
+  The list shows "Updated <date>", plus "first seen <date>" when the two
+  differ. An index on `documents (updated_at desc, id desc)` keeps the page
+  query fast.
 
 **One status per row**, decided in Python from what the query already returns
 (`kind`, the case's `status` and `retired_by`, the merge link, and the newest
