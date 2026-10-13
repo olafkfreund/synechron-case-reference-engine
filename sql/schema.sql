@@ -216,6 +216,14 @@ create table if not exists session_cutoffs (
   valid_after timestamptz not null
 );
 
+-- identity moved from the ID token's per-application `sub` to `oid` (#249): which old key became which
+create table if not exists user_keys (
+  old_sub text primary key,
+  oid text not null,
+  migrated_at timestamptz not null default now()
+);
+create index if not exists user_keys_oid_idx on user_keys (oid);
+
 -- documents carry a copy of their source's groups; repair any copy a crawl wrote back before #58
 -- (idempotent; re-run the migration once old worker tasks have stopped after a deploy)
 -- for share, as every other write: an unlocked read could write back groups a concurrent save replaced
