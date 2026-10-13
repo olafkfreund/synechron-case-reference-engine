@@ -488,6 +488,32 @@ must exist on `main`.
   - A malformed URL falls back to the publisher.
   - New tests: the fallback "Sources" box, a page title through `build()`,
     and numbering after a dropped claim.
+- Step 13:
+  - The quotes are anonymised before they are sent, and go inside
+    `<quotes>` tags.
+  - The title and theme headings are also checked with `check_prose`,
+    against all the picked quotes.
+  - `quote_texts()` gives step 14 the same texts the model saw.
+  - No 'running' status: `briefs.status` allows queued, done and failed.
+- Step 15:
+  - Briefs number sources per quote, matching the `[n]` the model cites,
+    unlike phase 2's per-page numbering. Numbers stay put when a quote is
+    dropped.
+  - `brand/brief.docx` is a second generated template.
+  - The disclaimer reuses `INDUSTRY_DISCLAIMER`.
+  - At render, a sentence or quote naming a protected client is dropped and
+    counted, and a final `blocked()` withholds the download (409).
+- Phase 3 review fixes:
+  - The shared `check_prose` now checks a capitalised sentence-start word
+    unless it is in `COMMON_STARTS` (about 130 words), matched as a whole
+    word ignoring case. Titles and headings (`heading=True`) keep the old
+    first-word skip. This also changes #212's write-up check.
+  - `sentences()` handles closing marks, glued sentences, e.g./i.e. and
+    `[1, 2]`.
+  - `save()` caps every field (400 over the cap).
+  - Quotes are cleaned of `<quotes>` tags and whitespace for both the model
+    and `save()`.
+  - The user's title becomes the brief title, and is still checked.
 
 ## Tests
 

@@ -2,7 +2,9 @@
 and must use the same context: cases[] with title, client, note (empty unless an engagement), summary, details[{label,value}],
 blocks[{heading,text}], lists[{heading,bullets[]}], diagrams[{image,caption}]; and industry (or None): heading, disclaimer,
 groups[{title, lead, quotes[{quote, n}]}], sources[{n, title, publisher, url, date}], note
-(statements[{text}] is the flat fallback). Usage: make_reference_template.py <out.docx>"""
+(statements[{text}] is the flat fallback). The optional second path gets the brief template (brand/brief.docx): brief with title, disclaimer,
+takeaways[str], themes[{heading, text}], sources[{n, title, publisher, url, date}], appendix[{n, quote}], note.
+Usage: make_reference_template.py <out.docx> [<brief.docx>]"""
 import sys
 
 from docx import Document
@@ -58,3 +60,34 @@ d.add_paragraph("{{ industry.note }}")
 d.add_paragraph("{%p endif %}")
 d.add_paragraph("{%p endif %}")
 d.save(sys.argv[1])
+
+if len(sys.argv) > 2:
+    b = Document()
+    run = b.sections[0].header.paragraphs[0].add_run("DRAFT TEMPLATE – replace with the marketing template")
+    run.bold, run.font.size, run.font.color.rgb = True, Pt(20), RGBColor(0xC0, 0, 0)
+    b.add_heading("{{ brief.title }}", 1)
+    b.add_paragraph().add_run("{{ brief.disclaimer }}").italic = True
+    b.add_paragraph("{%p if brief.takeaways %}")
+    b.add_heading("Key takeaways", 2)
+    b.add_paragraph("{%p for t in brief.takeaways %}")
+    b.add_paragraph("{{ t }}", style="List Bullet")
+    b.add_paragraph("{%p endfor %}")
+    b.add_paragraph("{%p endif %}")
+    b.add_paragraph("{%p for t in brief.themes %}")
+    b.add_heading("{{ t.heading }}", 2)
+    b.add_paragraph("{{ t.text }}")
+    b.add_paragraph("{%p endfor %}")
+    b.add_paragraph("{%p if brief.sources %}")
+    b.add_heading("Sources", 2)
+    b.add_paragraph("{%p for s in brief.sources %}")
+    b.add_paragraph("[{{ s.n }}] {{ s.title }}, {{ s.publisher }}, {{ s.url }}, retrieved {{ s.date }}")
+    b.add_paragraph("{%p endfor %}")
+    b.add_heading("Quotes", 2)
+    b.add_paragraph("{%p for q in brief.appendix %}")
+    b.add_paragraph("\u201c{{ q.quote }}\u201d [{{ q.n }}]")
+    b.add_paragraph("{%p endfor %}")
+    b.add_paragraph("{%p endif %}")
+    b.add_paragraph("{%p if brief.note %}")
+    b.add_paragraph("{{ brief.note }}")
+    b.add_paragraph("{%p endif %}")
+    b.save(sys.argv[2])

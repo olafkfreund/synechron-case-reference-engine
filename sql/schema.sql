@@ -125,6 +125,19 @@ alter table research add column if not exists results jsonb not null default '{}
 alter table research add column if not exists case_id bigint references cases(id) on delete set null;
 create index if not exists research_query_idx on research (query, retrieved_at);
 
+-- a cited brief written from picked research quotes (#214): the quotes are copied, so it outlives the research row
+create table if not exists briefs (
+  id bigserial primary key,
+  research_id bigint references research(id) on delete set null,
+  created_by text not null,
+  title text not null,
+  quotes jsonb not null,
+  body jsonb not null default '{}',
+  status text not null default 'queued' check (status in ('queued','done','failed')),
+  error text,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists generations (
   id bigserial primary key,
   user_id text not null,
