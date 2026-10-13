@@ -633,6 +633,13 @@ client. Run the full suite, then PR 4.
   - Accepted: a merged case has no points until phase B (M1). The
     3-characters-per-token estimate leaves about 14% slack for dense
     numeric text.
+- B2: `check_prose(text, section_quotes, case_quotes)`:
+  - Numbers must appear in the section's own quotes.
+  - Names may appear in any sourced quote of the case. A product named under
+    Solution is often only quoted under technology.
+  - At a sentence start only the first word of a capitalised run is
+    skipped, so "The Snowflake team" still checks Snowflake.
+  - Month and weekday names, and bare digits, are not treated as names.
 
 ## Tests
 
