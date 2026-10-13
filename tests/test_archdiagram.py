@@ -1,23 +1,37 @@
-import pytest
+import io
+import json
+from pathlib import Path
+from xml.etree import ElementTree
 
-from app.archdiagram import H, W, layout, measure, wrap
+import pytest
+from PIL import Image
+from pptx import Presentation
+from pptx.util import Inches
+
+from app.archdiagram import H, W, layout, measure, seg_hits_rect, to_mermaid, to_png, to_pptx_shapes, to_svg, wrap
 from app.schema import Architecture
 
 ZONES = ["channels", "experience", "integration", "core", "data", "external", "platform"]
 KINDS = ["user", "app", "service", "queue", "store", "external", "platform"]
+FIX = Path(__file__).parent / "fixtures" / "arch"
+SAMPLES = {p.stem: Architecture.model_validate_json(p.read_text()) for p in sorted(FIX.glob("*.json"))}
 
 
-def arch(zones, n_flows=0, role="Handles the payment rail and settles every batch overnight, retried", name="Payments hub"):
-    """One component per entry in `zones`, flows chained and then spread across the diagram."""
+def arch(zones, n_flows=0, role="Handles the payment rail and settles every batch overnight, retried", name="Payments hub", **kw):
+    """One component per entry in `zones`; flows spread across the diagram, platform ones included."""
     comps = [{"id": f"c{i}", "name": f"{name} {i}", "role": role, "zone": z, "kind": KINDS[i % 7]} for i, z in enumerate(zones)]
     modes = ["api", "event", "batch", "file", "ui", "data"]
-    flows = [{"src": f"c{i % len(zones)}", "dst": f"c{(i * 5 + 3) % len(zones)}", "label": f"label {i}", "mode": modes[i % 6]}
+    flows = [{"src": f"c{i % len(zones)}", "dst": f"c{(i * 5 + 3) % len(zones)}", "label": f"label number {i}", "mode": modes[i % 6]}
              for i in range(n_flows) if i % len(zones) != (i * 5 + 3) % len(zones)]
     return Architecture.model_validate({"components": comps, "flows": flows,
-                                        "callouts": [{"text": "Cut onboarding from 12 days to 2", "outcome": 0}]})
+                                        "callouts": [{"text": "Cut onboarding from 12 days to 2", "outcome": 0}], **kw})
 
 
 FULL = ["channels", "channels", "experience", "integration", "integration", "core", "core", "core", "data", "data", "external", "platform"]
+LONG = arch(["channels", "core", "core", "data", "platform", "platform"], 6, name="Core banking ledger and posting engine",
+            role="x" * 5 + " Handles the payment rail and settles every batch overnight",
+            title="A very long architecture title about payments modernisation across the bank",
+            )
 CASES = {
     "full": arch(FULL, 14),
     "one-zone": arch(["core"] * 12, 14),
@@ -25,21 +39,32 @@ CASES = {
     "platform-only": arch(["platform"] * 12, 6),
     "six-columns": arch(["channels", "experience", "integration", "core", "data", "external"] * 2, 14),
     "tiny": arch(["core"]),
+    "long-text": LONG,
+    **{f"sample-{k}": v for k, v in SAMPLES.items()},
 }
+FOOTER = "Source: Demo reference case with a rather long case name · reviewed 2026-01-01 and signed off by the delivery lead"
 
 
 def cards(sc):
     return [b for b in sc.boxes if b.style.startswith("card-")]
 
 
+def pills(sc):
+    return [b for b in sc.boxes if b.style.startswith(("pill-", "marker-"))]
+
+
+def test_sample_sizes():
+    assert {k: (len(a.components), len(a.flows)) for k, a in SAMPLES.items()} == {"small": (5, 5), "typical": (9, 10), "max": (12, 14)}
+
+
 def test_same_input_same_scene():
-    assert layout(CASES["full"], "Source: Demo · reviewed 2026-01-01") == layout(CASES["full"], "Source: Demo · reviewed 2026-01-01")
+    assert layout(CASES["full"], FOOTER) == layout(CASES["full"], FOOTER)
 
 
 @pytest.mark.parametrize("name", CASES)
 def test_cards_do_not_overlap_and_everything_is_inside_the_canvas(name):
-    sc = layout(CASES[name], "Source: Demo")
-    assert len(cards(sc)) == len(CASES[name].components)  # 12 components and 14 flows still fit
+    sc = layout(CASES[name], FOOTER)
+    assert len(cards(sc)) == len(CASES[name].components)
     cs = cards(sc)
     for n, a in enumerate(cs):
         for b in cs[n + 1:]:
@@ -53,32 +78,79 @@ def test_cards_do_not_overlap_and_everything_is_inside_the_canvas(name):
 
 
 @pytest.mark.parametrize("name", CASES)
-def test_text_stays_inside_its_card_and_pills_clear_the_cards(name):
-    sc = layout(CASES[name])
+def test_nothing_is_truncated_and_text_stays_inside_its_card(name):
+    sc = layout(CASES[name], FOOTER)
+    assert not [t.text for t in sc.texts if "…" in t.text]
     for c in cards(sc):
         for t in sc.texts:
-            if c.x + 40 <= t.x <= c.x + c.w and c.y <= t.y <= c.y + c.h and t.style in ("name", "role"):
+            if c.x + 40 <= t.x <= c.x + c.w and c.y <= t.y <= c.y + c.h and t.style in ("name", "role", "role-sm", "chip", "note"):
                 assert t.x + measure(t.text, t.style) <= c.x + c.w - 4, t
-    for p in (b for b in sc.boxes if b.style.startswith("pill-")):
-        for c in cards(sc):
-            assert p.x + p.w <= c.x or c.x + c.w <= p.x or p.y + p.h <= c.y or c.y + c.h <= p.y, (p, c.ref)
+                assert t.y + 14 <= c.y + c.h, t  # the card grew to fit
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_every_flow_label_is_visible(name):
+    sc = layout(CASES[name], FOOTER)
+    seen = " ".join(" ".join(t.text.split()) for t in sc.texts)
+    for f in CASES[name].flows:
+        assert f.label in seen, f.label  # a pill, a keyed marker, or a note on a platform chip
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_no_line_crosses_a_card_it_does_not_connect(name):
+    sc = layout(CASES[name], FOOTER)
+    by = {b.ref: (b.x, b.y, b.w, b.h) for b in cards(sc)}
+    for ln in sc.lines:
+        if not ln.refs[0]:
+            continue
+        for a, b in zip(ln.points, ln.points[1:]):
+            for ref, r in by.items():
+                if ref not in ln.refs:
+                    assert not seg_hits_rect(a, b, r), (ln.refs, ref)
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_pills_overlap_neither_each_other_nor_cards(name):
+    sc = layout(CASES[name], FOOTER)
+    ps, cs = pills(sc), cards(sc)
+    box = lambda b: (b.x, b.y, b.w, b.h)
+    hit = lambda a, b: not (a.x + a.w <= b.x or b.x + b.w <= a.x or a.y + a.h <= b.y or b.y + b.h <= a.y)
+    for n, a in enumerate(ps):
+        assert not any(hit(a, c) for c in cs), a
+        assert not any(hit(a, b) for b in ps[n + 1:]), a
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_zones_hug_their_cards_and_platform_lines_stay_in_the_band(name):
+    sc = layout(CASES[name], FOOTER)
+    cs = cards(sc)
+    for z in sc.zones:
+        if z.ref == "platform":
+            continue
+        inside = [c for c in cs if z.x <= c.x and c.x + c.w <= z.x + z.w and z.y <= c.y and c.y + c.h <= z.y + z.h]
+        assert sum(c.w * c.h for c in inside) / (z.w * z.h) >= 0.4, z.ref
+    band = next((z for z in sc.zones if z.ref == "platform"), None)
+    plat = {c.ref for c in cs if band and band.x <= c.x and c.y >= band.y and c.y + c.h <= band.y + band.h}
+    for ln in sc.lines:
+        if plat & set(ln.refs):
+            assert band and all(band.x <= x <= band.x + band.w and band.y <= y <= band.y + band.h for x, y in ln.points), ln.refs
 
 
 def test_empty_zones_collapse_and_widths_follow_the_zones_in_use():
     two = layout(arch(["channels", "core"]))
     five = layout(arch(["channels", "experience", "integration", "core", "data"]))
     assert len(two.zones) == 2 and len(five.zones) == 5
-    assert two.zones[0].w > five.zones[0].w or cards(two)[0].w >= cards(five)[0].w
-    assert cards(two)[0].w == 230 and all(z.style == "zone" for z in two.zones)
+    assert min(c.w for c in cards(two)) >= 260 > min(c.w for c in cards(five))
     assert not any(t.text == "PLATFORM" for t in two.texts)
 
 
-def test_text_wraps_to_two_lines_with_an_ellipsis():
-    lines = wrap("one two three four five six seven eight nine ten eleven twelve", "role", 120, 2)
-    assert len(lines) == 2 and lines[1].endswith("…") and all(measure(x, "role") <= 120 for x in lines)
-    assert wrap("short", "role", 120, 2) == ["short"]
+def test_text_wraps_without_cutting():
+    lines = wrap("one two three four five six seven eight nine ten eleven twelve", "role", 120)
+    assert len(lines) > 2 and " ".join(lines) == "one two three four five six seven eight nine ten eleven twelve"
+    assert all(measure(x, "role") <= 120 for x in lines)
+    assert wrap("short", "role", 120) == ["short"]
     sc = layout(arch(["core"], name="Core banking ledger and posting engine"))
-    assert sum(t.style == "name" for t in sc.texts) == 2 and sum(t.style == "role" for t in sc.texts) == 1
+    assert sum(t.style == "name" for t in sc.texts) == 2 and 1 <= sum(t.style == "role" for t in sc.texts) <= 3
 
 
 def test_barycentre_puts_connected_cards_level():
@@ -91,25 +163,6 @@ def test_barycentre_puts_connected_cards_level():
 
 
 # --- renderers ---------------------------------------------------------------------------------
-import io
-import json
-from pathlib import Path
-from xml.etree import ElementTree
-
-from PIL import Image
-from pptx import Presentation
-from pptx.util import Inches
-
-from app.archdiagram import to_mermaid, to_png, to_pptx_shapes, to_svg
-
-FIX = Path(__file__).parent / "fixtures" / "arch"
-SAMPLES = {p.stem: Architecture.model_validate_json(p.read_text()) for p in sorted(FIX.glob("*.json"))}
-
-
-def test_sample_sizes():
-    assert {k: (len(a.components), len(a.flows)) for k, a in SAMPLES.items()} == {"small": (5, 5), "typical": (9, 10), "max": (12, 14)}
-
-
 def test_svg_parses_and_is_inert():
     a = Architecture.model_validate({"title": "Pay <&> \"go\"", "components": [{"id": "a", "name": "A<script>", "zone": "core", "kind": "app"}]})
     svg = to_svg(layout(a, "Source: x & y"), a.title)
@@ -140,7 +193,10 @@ def test_pptx_shapes_one_freeform_per_flow_and_text_reads_back(name):
     to_pptx_shapes(slide, sc, Inches(.4), Inches(.3), Inches(9), Inches(5))
     shapes = list(slide.shapes)
     assert sum(s.name.startswith("arch:card-") for s in shapes) == len(a.components)
-    assert sum(s.name.startswith("arch:flow-") for s in shapes) == len(a.flows) + len({f.mode for f in a.flows})  # plus the legend samples
+    plat = {c.id for c in a.components if c.zone == "platform"}
+    drawn = [f for f in a.flows if (f.src in plat) == (f.dst in plat)]  # a flow to a platform chip is a note, not a line
+    assert sum(s.name.startswith("arch:flow-") for s in shapes) == len(drawn) + len({f.mode for f in drawn})  # plus the legend samples
+    assert {s.name for s in shapes if s.name.startswith("arch:icon-")} >= {f"arch:icon-{c.kind}" for c in a.components}
     assert sum(s.name.startswith(("arch:zone", "arch:card-")) for s in shapes) >= len(a.components) + len(sc.zones)
     text = " ".join(s.text_frame.text for s in shapes if s.has_text_frame)
     assert all(c.name.split()[0] in text for c in a.components) and a.title.split()[0] in text
@@ -154,3 +210,11 @@ def test_mermaid_snapshot_and_escaping():
         "flows": [{"src": "a b", "dst": "c", "label": "a|b", "mode": "batch"}]})
     m = to_mermaid(a)
     assert "#34;hi#34; #91;x#93;" in m and "C#124;D#60;E#62;" in m and 'n_a_b -.->|"a#124;b"| n_c' in m
+
+
+def test_every_kind_has_an_icon_in_svg_and_png():
+    a = arch(["channels", "experience", "integration", "core", "data", "external", "platform"])
+    sc = layout(a)
+    assert {sh.kind for sh in sc.shapes} == set(KINDS)
+    svg = to_svg(sc)
+    assert "<ellipse" in svg and "<polygon" in svg and "<polyline" in svg

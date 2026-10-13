@@ -290,3 +290,14 @@ code ignores it. The demo can be re-seeded.
     connectors, because routes bend up to 5 times.
   - `scripts/arch_sample.py` and the fixtures under `tests/fixtures/arch/`
     are added for visual review.
+- Visual fixes after review of the A4 pictures:
+  - no truncation anywhere
+  - zones sized to their content
+  - an 8 px grid router (bend penalty, cards as obstacles), with 1.5 px lines
+    and rounded corners
+  - platform components as compact chips with "Used by" notes
+  - shape glyphs in all renderers
+  - the plan's type sizes
+  - pills on the longest segment, with 2-line or keyed-marker fallbacks
+  - `layout()` is cached
+  - the Scene gains `shapes`, `Line.refs` and `Box.ref`

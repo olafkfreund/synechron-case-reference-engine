@@ -1,9 +1,13 @@
-"""Lane layout for the solution architecture diagram (#246).
+"""Layout and renderers for the solution architecture diagram (#246).
 
-layout() turns an Architecture into a Scene: boxes, lines and text on a 1600x900 canvas, with style
-keys instead of colours. The renderers (SVG, PNG, pptx shapes, Mermaid) read the Scene.
-Text is measured with the vendored IBM Plex Sans (brand/fonts), so the Scene is the same on every machine.
+layout() turns an Architecture into a Scene: boxes, lines, icon shapes and text on a 1600x900 canvas, with
+style keys instead of colours. Text is measured with the vendored IBM Plex Sans (brand/fonts), so the Scene is
+the same on every machine, and text is wrapped, never cut: no "…" anywhere.
+Flows are routed on an 8 px grid around the cards (shortest path, few bends, parallel flows on their own track).
 """
+import heapq
+import math
+import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from math import ceil
@@ -17,14 +21,17 @@ W, H = 1600, 900
 FONTS = Path(__file__).resolve().parent.parent / "brand" / "fonts"
 WEIGHTS = {400: "Regular", 500: "Medium", 600: "SemiBold"}
 # style key -> (size px, weight)
-TEXT = {"title": (24, 600), "name": (15, 600), "role": (12, 400), "zone": (12, 600), "label": (11, 500),
-        "callout": (13, 500), "legend": (11, 400), "footer": (11, 400), "glyph": (12, 600), "badge": (12, 600)}
-GLYPH = {"user": "U", "app": "A", "service": "S", "queue": "Q", "store": "D", "external": "E", "platform": "P"}
+TEXT = {"title": (26, 600), "name": (15, 600), "role": (12, 400), "role-sm": (11, 400), "zone": (12, 600),
+        "label": (11, 500), "callout": (13, 500), "legend": (11, 400), "footer": (11, 400), "badge": (12, 600),
+        "chip": (13, 600), "note": (11, 400), "marker": (10, 600)}
+LINE_H = {"title": 32, "name": 18, "role": 15, "role-sm": 14, "chip": 16, "note": 14, "callout": 17, "footer": 14, "label": 14}
+LETTER = {"zone": 1.2}  # letter-spacing in px
 ZONES = ["channels", "experience", "integration", "core", "data", "external"]  # left to right; platform is the bottom band
 
-M, HEAD, FOOT_Y = 24, 118, 868
-CARD_H, ROW_GAP, SUB_GAP, PAD, LABEL_H = 78, 22, 12, 10, 28
-BAND_GAP, PILL_H = 30, 18
+M = 24
+SPAN = W - 2 * M
+CARD_MIN_H, ROW_GAP, SUB_GAP, PAD, LABEL_H = 78, 22, 16, 14, 28
+GMIN, GMAX, BAND_GAP, PILL_H, GRID = 80, 150, 30, 18, 8
 
 
 @dataclass
@@ -34,7 +41,7 @@ class Box:
     w: float
     h: float
     style: str
-    ref: str = ""  # component id for cards
+    ref: str = ""  # component id for cards, zone name for zones
 
 
 @dataclass
@@ -42,6 +49,7 @@ class Line:
     points: list[tuple[float, float]]
     style: str
     arrow: bool = False
+    refs: tuple[str, str] = ("", "")  # (src, dst) component ids
 
 
 @dataclass
@@ -54,15 +62,28 @@ class Text:
 
 
 @dataclass
+class Shape:
+    """A piece of a kind icon, in canvas coordinates. fill/stroke: None, "w" (white) or "bg" (the icon square's colour)."""
+    op: str  # e (ellipse x,y,w,h) | r (rect x,y,w,h) | p (polygon or polyline points)
+    geom: list
+    fill: str | None
+    stroke: str | None
+    kind: str
+    closed: bool = True
+
+
+@dataclass
 class Scene:
     width: int = W
     height: int = H
     zones: list[Box] = field(default_factory=list)  # drawn first
     lines: list[Line] = field(default_factory=list)  # then the connectors, under the cards
     boxes: list[Box] = field(default_factory=list)
+    shapes: list[Shape] = field(default_factory=list)
     texts: list[Text] = field(default_factory=list)
 
 
+# --- text ------------------------------------------------------------------------------------
 @lru_cache(maxsize=None)
 def _font(style: str):
     size, weight = TEXT[style]
@@ -70,22 +91,14 @@ def _font(style: str):
 
 
 def measure(text: str, style: str) -> float:
-    return _font(style).getlength(text)
+    return _font(style).getlength(text) + LETTER.get(style, 0) * len(text)
 
 
-def fit(text: str, style: str, width: float) -> str:
-    """Cut to one line of at most `width`, ending in an ellipsis when something was cut."""
-    if measure(text, style) <= width:
-        return text
-    while text and measure(text + "…", style) > width:
-        text = text[:-1]
-    return text.rstrip() + "…"
-
-
-def wrap(text: str, style: str, width: float, max_lines: int) -> list[str]:
+def wrap(text: str, style: str, width: float) -> list[str]:
+    """Greedy word wrap. A word wider than the line is broken. Never cuts or abbreviates."""
     lines, cur = [], ""
     for word in text.split():
-        while measure(word, style) > width and len(word) > 1:  # a word wider than the line is broken
+        while measure(word, style) > width and len(word) > 1:
             n = len(word)
             while n > 1 and measure(word[:n], style) > width:
                 n -= 1
@@ -99,13 +112,43 @@ def wrap(text: str, style: str, width: float, max_lines: int) -> list[str]:
         else:
             lines.append(cur)
             cur = word
-    if cur:
-        lines.append(cur)
-    if len(lines) > max_lines:
-        lines = lines[:max_lines - 1] + [fit(" ".join(lines[max_lines - 1:]), style, width)]
-    return lines
+    return [*lines, cur] if cur else lines
 
 
+# --- icons (24x24, white on the kind colour) ----------------------------------------------------
+def _arc(cx, cy, rx, ry, a0, a1, n=10):
+    return [(cx + rx * math.cos(a0 + (a1 - a0) * i / n), cy + ry * math.sin(a0 + (a1 - a0) * i / n)) for i in range(n + 1)]
+
+
+def _gear():
+    pts = []
+    for t in range(8):
+        a = t * math.pi / 4
+        for r, d in ((7, -.28), (9.6, -.17), (9.6, .17), (7, .28)):
+            pts.append((12 + r * math.cos(a + d), 12 + r * math.sin(a + d)))
+    return pts
+
+
+ICONS = {  # kind -> [(op, geom, fill, stroke, closed)]
+    "store": [("e", (6, 4, 12, 5), None, "w", True), ("p", [(6, 6.5), (6, 17)], None, "w", False), ("p", [(18, 6.5), (18, 17)], None, "w", False),
+              ("p", _arc(12, 11, 6, 2.5, 0, math.pi), None, "w", False), ("p", _arc(12, 16.5, 6, 2.5, 0, math.pi), None, "w", False)],
+    "queue": [("r", (4, 5, 16, 3.4), "w", None, True), ("r", (4, 10.3, 16, 3.4), "w", None, True), ("r", (4, 15.6, 16, 3.4), "w", None, True)],
+    "user": [("e", (8.5, 3.5, 7, 7), "w", None, True), ("p", _arc(12, 20, 7.5, 8, math.pi, 2 * math.pi), "w", None, True)],
+    "external": [("e", (3, 10, 9, 8), "w", None, True), ("e", (7, 5, 10, 10), "w", None, True), ("e", (12, 9, 9, 9), "w", None, True),
+                 ("r", (7, 13, 10, 5), "w", None, True)],
+    "service": [("p", _gear(), "w", None, True), ("e", (8.5, 8.5, 7, 7), "bg", None, True)],
+    "app": [("r", (4, 5, 16, 14), None, "w", True), ("r", (4, 5, 16, 4.5), "w", None, True)],
+    "platform": [("p", [(12, 3 + d), (21, 7 + d), (12, 11 + d), (3, 7 + d)], "bg", "w", True) for d in (8, 4, 0)],
+}
+
+
+def _icon(sc: Scene, x: float, y: float, kind: str):
+    for op, g, fill, stroke, closed in ICONS[kind]:
+        geom = [(x + a, y + b) for a, b in g] if op == "p" else [x + g[0], y + g[1], g[2], g[3]]
+        sc.shapes.append(Shape(op, geom, fill, stroke, kind, closed))
+
+
+# --- ordering ----------------------------------------------------------------------------------
 def _order(arch: Architecture) -> dict[str, list[str]]:
     """Component ids per zone, ordered by barycentre of their neighbours' ranks (2 sweeps)."""
     order = {z: [c.id for c in arch.components if c.zone == z] for z in [*ZONES, "platform"]}
@@ -123,252 +166,418 @@ def _order(arch: Architecture) -> dict[str, list[str]]:
     return order
 
 
-def _pill(sc: Scene, cx: float, cy: float, label: str, mode: str, maxw: float):
-    if not label:
-        return
-    if maxw < 48:  # no room between the cards: the mode colour and the legend still say what it is
-        return
-    text = fit(label, "label", maxw - 12)
-    w = measure(text, "label") + 12
-    x = min(max(cx - w / 2, 4), W - 4 - w)
-    sc.boxes.append(Box(x, cy - PILL_H / 2, w, PILL_H, f"pill-{mode}"))
-    sc.texts.append(Text(x + w / 2, cy - 7, text, "label", "middle"))
+# --- router ------------------------------------------------------------------------------------
+STEPS = ((1, 0), (0, 1), (-1, 0), (0, -1))  # right, down, left, up
+
+
+class _Grid:
+    """Orthogonal shortest paths on an 8 px grid around the obstacles. Used edges cost more, so parallel flows take their own track."""
+
+    def __init__(self, obstacles, soft, bounds):
+        self.bx0, self.by0 = math.ceil(bounds[0] / GRID), math.ceil(bounds[1] / GRID)
+        self.bx1, self.by1 = int(bounds[2] // GRID), int(bounds[3] // GRID)
+        self.blocked = set()
+        for x0, y0, x1, y1 in obstacles:  # nodes strictly inside the rectangle grown by 3 px
+            for ix in range(int((x0 - 3) // GRID) + 1, math.ceil((x1 + 3) / GRID)):
+                for iy in range(int((y0 - 3) // GRID) + 1, math.ceil((y1 + 3) / GRID)):
+                    self.blocked.add((ix, iy))
+        self.soft = self._nodes(soft)
+        self.used: set = set()
+        self.cross: set = set()
+
+    @staticmethod
+    def _nodes(rects):
+        return {(ix, iy) for x0, y0, x1, y1 in rects
+                for ix in range(math.ceil(x0 / GRID), int(x1 // GRID) + 1) for iy in range(math.ceil(y0 / GRID), int(y1 // GRID) + 1)}
+
+    def route(self, start, sdir, end, edir, box=None, avoid=()):
+        """start/end: grid nodes; sdir the outward direction at the start, edir the inward one at the end (0 right, 1 down, 2 left, 3 up).
+        `box` limits the path to a rectangle in px, `avoid` lists rectangles in px it must stay out of. Returns the nodes or None."""
+        x0, y0, x1, y1 = self.bx0, self.by0, self.bx1, self.by1
+        if box:
+            x0, y0, x1, y1 = max(x0, math.ceil(box[0] / GRID)), max(y0, math.ceil(box[1] / GRID)), min(x1, int(box[2] // GRID)), min(y1, int(box[3] // GRID))
+        bad = self._nodes(avoid)
+        back = (edir + 2) % 4
+        heap = [(0, 0, 0, start[0], start[1], sdir)]
+        best = {(start[0], start[1], sdir): 0}
+        prev: dict = {}
+        tick = 0
+        while heap:
+            _, c, _, ix, iy, d = heapq.heappop(heap)
+            if c > best.get((ix, iy, d), 1e18):
+                continue
+            if (ix, iy) == end and d != back:
+                path, key = [(ix, iy)], (ix, iy, d)
+                while key in prev:
+                    key = prev[key]
+                    path.append(key[:2])
+                return path[::-1]
+            for nd in (d, (d + 1) % 4, (d + 3) % 4):
+                nx, ny = ix + STEPS[nd][0], iy + STEPS[nd][1]
+                if not (x0 <= nx <= x1 and y0 <= ny <= y1) or (nx, ny) in self.blocked or (nx, ny) in bad:
+                    continue
+                edge = (min(ix, nx), min(iy, ny), nd % 2)
+                nc = c + 1 + (6 if nd != d else 0) + (2 if (nx, ny) in self.soft else 0) + (20 if edge in self.used else 0) \
+                    + (4 if (nx, ny, 1 - nd % 2) in self.cross else 0)
+                if nc < best.get((nx, ny, nd), 1e18):
+                    best[(nx, ny, nd)] = nc
+                    prev[(nx, ny, nd)] = (ix, iy, d)
+                    tick += 1
+                    heapq.heappush(heap, (nc + abs(end[0] - nx) + abs(end[1] - ny), nc, tick, nx, ny, nd))
+        return None
+
+    def mark(self, nodes):
+        for (ax, ay), (bx, by) in zip(nodes, nodes[1:]):
+            o = 0 if ay == by else 1
+            self.used.add((min(ax, bx), min(ay, by), o))
+            self.cross.update({(ax, ay, o), (bx, by, o)})
+
+
+def _simplify(pts):
+    out = [pts[0]]
+    for p in pts[1:]:
+        if p != out[-1]:
+            out.append(p)
+    i = 1
+    while i < len(out) - 1:
+        a, b, c = out[i - 1], out[i], out[i + 1]
+        if a[0] == b[0] == c[0] or a[1] == b[1] == c[1]:
+            del out[i]
+        else:
+            i += 1
+    return out
+
+
+def seg_hits_rect(a, b, r, margin=0.5) -> bool:
+    """An axis-aligned segment passes through the inside of rect r=(x, y, w, h) shrunk by `margin`."""
+    x0, y0, x1, y1 = r[0] + margin, r[1] + margin, r[0] + r[2] - margin, r[1] + r[3] - margin
+    if a[0] == b[0]:
+        return x0 < a[0] < x1 and min(a[1], b[1]) < y1 and max(a[1], b[1]) > y0
+    return y0 < a[1] < y1 and min(a[0], b[0]) < x1 and max(a[0], b[0]) > x0
+
+
+def _rects_hit(a, b, pad=0) -> bool:
+    return not (a[0] + a[2] + pad <= b[0] or b[0] + b[2] + pad <= a[0] or a[1] + a[3] + pad <= b[1] or b[1] + b[3] + pad <= a[1])
+
+
+# --- layout ------------------------------------------------------------------------------------
+def _chips(arch, comp, plat):
+    """Platform components as compact chips, packed in rows. Returns (placed, band height, self-flow lane height)."""
+    plat_set = set(plat)
+    notes: dict[str, list[str]] = {i: [] for i in plat}
+    for f in arch.flows:
+        for p, o in ((f.src, f.dst), (f.dst, f.src)):
+            if p in plat_set and o not in plat_set:
+                notes[p].append(f"Used by {comp[o].name}" + (f": {f.label}" if f.label else ""))
+    n_self = sum(f.src in plat_set and f.dst in plat_set for f in arch.flows)
+    items = []
+    for i in plat:
+        c = comp[i]
+        name = wrap(c.name, "chip", 210)
+        rest = [ln for t in ([c.role] if c.role else []) + notes[i] for ln in wrap(t, "note", 210)]
+        tw = max([measure(x, "chip") for x in name] + [measure(x, "note") for x in rest])
+        items.append((i, 52 + tw, 10 + 16 * len(name) + 14 * len(rest) + 10, name, rest))
+    rows, cur, cw = [], [], 0.0
+    for it in items:
+        if cur and cw + it[1] + 14 > SPAN - 2 * PAD:
+            rows.append(cur)
+            cur, cw = [], 0.0
+        cur.append(it)
+        cw += it[1] + 14
+    if cur:
+        rows.append(cur)
+    placed, y = [], LABEL_H
+    for row in rows:
+        x = M + (SPAN - (sum(it[1] for it in row) + 14 * (len(row) - 1))) / 2
+        rh = max(44, max(it[2] for it in row))
+        for i, w, h, name, rest in row:
+            placed.append((i, x, y, w, rh, name, rest))
+            x += w + 14
+        y += rh + 36  # room for a label pill between the rows
+    lane = 8 * min(n_self, 4) + 12 if n_self else 0
+    return placed, y - 36 + lane + PAD, lane
+
+
+def _config(comp, order, cols, rsize, w, subs, limits):
+    rstyle = "role" if rsize == 12 else "role-sm"
+    lines = {i: (wrap(comp[i].name, "name", w - 52), wrap(comp[i].role, rstyle, w - 52)) for z in cols for i in order[z]}
+    if limits and any(len(n) > 2 or len(r) > 3 for n, r in lines.values()):
+        return None
+    hc = max([CARD_MIN_H] + [10 + 18 * len(n) + LINE_H[rstyle] * len(r) + 10 for n, r in lines.values()])
+    rows = {z: ceil(len(order[z]) / subs[z]) for z in cols}
+    zh = {z: LABEL_H + rows[z] * hc + (rows[z] - 1) * ROW_GAP + PAD for z in cols}
+    colw = {z: subs[z] * w + (subs[z] - 1) * SUB_GAP + 2 * PAD for z in cols}
+    k = len(cols)
+    return dict(w=w, rstyle=rstyle, hc=hc, subs=subs, rows=rows, zh=zh, colw=colw, lines=lines, band_h=max(zh.values(), default=0),
+                G=min(GMAX, max(0, (SPAN - sum(colw.values())) / (k - 1))) if k > 1 else 0)
+
+
+def _plan(comp, order, cols, avail, plat_h, res_top, gap):
+    """Card width, role size and sub-columns: the widest cards first, the role font last, sub-columns only when a zone is too tall."""
+    k = len(cols)
+    cands = [(12, w, True) for w in range(300, 229, -10)] + [(11, w, True) for w in range(300, 229, -10)] + \
+            [(11, w, False) for w in range(229, 129, -10)]
+    for rsize, w, limits in cands:
+        subs = {z: 1 for z in cols}
+        while (cfg := _config(comp, order, cols, rsize, w, subs, limits)):
+            if k > 1 and sum(cfg["colw"].values()) + (k - 1) * GMIN > SPAN or sum(cfg["colw"].values()) > SPAN:
+                break
+            if res_top + cfg["band_h"] + gap + plat_h <= avail:
+                return cfg
+            tall = [z for z in cols if cfg["rows"][z] > 1]
+            if not tall:
+                break
+            subs[max(tall, key=lambda z: cfg["zh"][z])] += 1
+    return None
 
 
 def layout(arch: Architecture, footer: str = "") -> Scene:
+    return _cached(arch.model_dump_json(), footer)
+
+
+def _key_rows(labels):
+    out, kx, ky = [], M, 0
+    for n, label, mode in labels:
+        wd = 24 + measure(label, "label") + 24
+        if kx + wd > W - M and kx > M:
+            kx, ky = M, ky + 20
+        out.append((n, label, mode, kx, ky))
+        kx += wd
+    return out, (ky + 26 if out else 0)
+
+
+@lru_cache(maxsize=64)
+def _cached(js: str, footer: str) -> Scene:
+    arch = Architecture.model_validate_json(js)
+    reserve: list = []
+    for _ in range(3):
+        sc, markers = _build(arch, footer, reserve)
+        if _key_rows(markers)[1] <= _key_rows(reserve)[1]:
+            return sc
+        reserve = markers
+    return sc
+
+
+def _build(arch: Architecture, footer: str, reserve: list) -> tuple[Scene, list]:
     sc = Scene()
     comp = {c.id: c for c in arch.components}
     order = _order(arch)
     cols = [z for z in ZONES if order[z]]
     plat = order["platform"]
+    plat_set = set(plat)
     k = len(cols)
+    cidx = {i: n for n, z in enumerate(cols) for i in order[z]}
+    flows = list(arch.flows)
+    drawn = [f for f in flows if not ((f.src in plat_set) ^ (f.dst in plat_set))]  # a flow to a platform chip is a note on the chip
 
-    # header: title left, numbered outcome callouts top-right
-    sc.texts.append(Text(M, 30, fit(arch.title, "title", 1060 - M), "title"))
-    for n, co in enumerate(arch.callouts[:3]):
-        y = 12 + n * 36
-        sc.boxes.append(Box(1116, y, 460, 32, "callout"))
-        sc.boxes.append(Box(1124, y + 5, 22, 22, "badge"))
-        sc.texts.append(Text(1135, y + 9, str(co.outcome + 1), "badge", "middle"))
-        sc.texts.append(Text(1156, y + 8, fit(co.text, "callout", 410), "callout"))
+    # header: wrapped title left, numbered outcome callouts top-right
+    title = wrap(arch.title, "title", 1060 - M)
+    head = 24 + 32 * len(title) + 6
+    for n, ln in enumerate(title):
+        sc.texts.append(Text(M, 20 + 32 * n, ln, "title"))
+    y = 12
+    for co in arch.callouts[:3]:
+        lines = wrap(co.text, "callout", 410)
+        h = 14 + 17 * len(lines)
+        sc.boxes.append(Box(1116, y, 460, h, "callout"))
+        sc.boxes.append(Box(1124, y + (h - 22) / 2, 22, 22, "badge"))
+        sc.texts.append(Text(1135, y + (h - 22) / 2 + 4, str(co.outcome + 1), "badge", "middle"))
+        for n, ln in enumerate(lines):
+            sc.texts.append(Text(1156, y + 7 + 17 * n, ln, "callout"))
+        y += h + 4
+    head = max(head, y + 8)
 
-    # lanes above the zones for flows that skip a column (greedy interval colouring)
-    cidx = {c.id: cols.index(c.zone) for c in arch.components if c.zone in cols}
-    spans = sorted(((min(cidx[f.src], cidx[f.dst]), max(cidx[f.src], cidx[f.dst]), n) for n, f in enumerate(arch.flows)
-                    if f.src in cidx and f.dst in cidx and abs(cidx[f.src] - cidx[f.dst]) >= 2))
-    lane_ends: list[int] = []
-    lane_of: dict[int, int] = {}
-    for a, b, n in spans:
-        for ln, end in enumerate(lane_ends):
-            if end < a:
-                lane_ends[ln] = b
-                break
+    # footer and legend
+    lx = W - M
+    legend = []
+    for m in reversed(sorted({f.mode for f in drawn})):
+        lx -= measure(m, "legend")
+        legend.append(Text(lx, 0, m, "legend"))
+        lx -= 44
+        legend.append(Line([(lx, 7), (lx + 36, 7)], f"flow-{m}", True))
+        lx -= 18
+    foot = wrap(footer, "footer", lx - M - 16) if footer else []
+    foot_top = H - 12 - 14 * max(1, len(foot))
+    for it in legend:
+        if isinstance(it, Text):
+            it.y = foot_top
         else:
-            ln = len(lane_ends)
-            lane_ends.append(b)
-        lane_of[n] = ln
-    chan = 10 * len(lane_ends) + 10 if lane_ends else 0
-    main_top = HEAD + chan
+            it.points = [(a, b + foot_top) for a, b in it.points]
+        (sc.texts if isinstance(it, Text) else sc.lines).append(it)
+    for n, ln in enumerate(foot):
+        sc.texts.append(Text(M, foot_top + 14 * n, ln, "footer"))
+    key_h = _key_rows(reserve)[1]
+    bottom = foot_top - 10 - key_h
 
-    # vertical budget: platform band at the bottom, zones above it
-    content_bottom = FOOT_Y - 18
-    band_h = band_y = rows_p = per_row = 0
-    w_card = 230
-    main_bottom = content_bottom
-    if plat:
-        per_row = max(1, int((W - 2 * M + 14) // (w_card + 14)))
-        rows_p = ceil(len(plat) / per_row)
-        band_h = LABEL_H + rows_p * (CARD_H + ROW_GAP) - ROW_GAP + PAD
-        band_y = content_bottom - band_h
-        main_bottom = band_y - BAND_GAP
-    avail = main_bottom - main_top - LABEL_H - PAD
-    cap = max(1, int((avail + ROW_GAP) // (CARD_H + ROW_GAP)))
-    subs = {z: ceil(len(order[z]) / cap) for z in cols}
-    rows = {z: ceil(len(order[z]) / subs[z]) for z in cols}
-
-    # card width and gutter from the zones in use
-    span = W - 2 * M
-    G = 0.0
-    for w_card in range(230, 129, -10):
-        colw = {z: subs[z] * w_card + (subs[z] - 1) * SUB_GAP + 2 * PAD for z in cols}
-        G = min(160, (span - sum(colw.values())) / (k - 1)) if k > 1 else 0
-        if k < 2 or G >= 96:
-            break
-    else:
-        G = max(G, 0)
-    if plat:
-        per_row = max(1, int((span + 14) // (w_card + 14)))
-        rows_p = ceil(len(plat) / per_row)
-        band_h = LABEL_H + rows_p * (CARD_H + ROW_GAP) - ROW_GAP + PAD
-        band_y = content_bottom - band_h
-    total = sum(colw.values()) + G * max(k - 1, 0)
-    x = M + (span - total) / 2
-    zbox: dict[str, Box] = {}
+    # platform chips first (their height is needed), then the zones
+    chips, plat_h, _ = _chips(arch, comp, plat) if plat else ([], 0, 0)
+    nlong = sum(1 for f in drawn if f.src in cidx and f.dst in cidx and abs(cidx[f.src] - cidx[f.dst]) >= 2)
+    res_top = 8 * ceil(nlong / 2) + 12 if nlong else 0
+    gap = max(BAND_GAP, res_top) if plat else res_top
+    cfg = _plan(comp, order, cols, bottom - head, plat_h, res_top, gap)
+    if cfg is None:  # nothing fits: the smallest cards, in as many sub-columns as the height needs
+        subs = {z: max(1, ceil(len(order[z]) / 3)) for z in cols}
+        cfg = _config(comp, order, cols, 11, 130, subs, False) or _config(comp, order, cols, 11, 130, {z: 1 for z in cols}, False)
+    w, hc, G, rstyle = cfg["w"], cfg["hc"], cfg["G"], cfg["rstyle"]
+    y0 = head + max(0, (bottom - head - (res_top + cfg["band_h"] + gap + plat_h)) / 2)
+    band_y = y0 + res_top
+    plat_y = band_y + cfg["band_h"] + gap
+    x = M + (SPAN - (sum(cfg["colw"].values()) + G * max(k - 1, 0))) / 2
     card: dict[str, Box] = {}
     sub_of: dict[str, tuple[int, int]] = {}
     for z in cols:
-        zb = Box(x, main_top, colw[z], main_bottom - main_top, "zone")
-        zbox[z] = zb
-        sc.zones.append(zb)
-        sc.texts.append(Text(x + PAD, main_top + 8, z.upper(), "zone"))
-        stack = rows[z] * CARD_H + (rows[z] - 1) * ROW_GAP
-        y0 = main_top + LABEL_H + (avail - stack) / 2
+        zy = band_y + (cfg["band_h"] - cfg["zh"][z]) / 2
+        sc.zones.append(Box(x, zy, cfg["colw"][z], cfg["zh"][z], "zone", z))
+        sc.texts.append(Text(x + PAD, zy + 8, z.upper(), "zone"))
         for n, i in enumerate(order[z]):
-            s, r = divmod(n, rows[z])
-            card[i] = Box(x + PAD + s * (w_card + SUB_GAP), y0 + r * (CARD_H + ROW_GAP), w_card, CARD_H, f"card-{comp[i].kind}", i)
+            s, r = divmod(n, cfg["rows"][z])
+            card[i] = Box(x + PAD + s * (w + SUB_GAP), zy + LABEL_H + r * (hc + ROW_GAP), w, hc, f"card-{comp[i].kind}", i)
             sub_of[i] = (s, r)
-        x += colw[z] + G
+        x += cfg["colw"][z] + G
+    pbox = None
     if plat:
-        zb = Box(M, band_y, span, band_h, "zone")
-        zbox["platform"] = zb
-        sc.zones.append(zb)
-        sc.texts.append(Text(M + PAD, band_y + 8, "PLATFORM", "zone"))
-        for n, i in enumerate(plat):
-            r, c = divmod(n, per_row)
-            nrow = min(per_row, len(plat) - r * per_row)
-            x0 = M + (span - (nrow * (w_card + 14) - 14)) / 2
-            card[i] = Box(x0 + c * (w_card + 14), band_y + LABEL_H + r * (CARD_H + ROW_GAP), w_card, CARD_H, "card-platform", i)
-            sub_of[i] = (0, r)
+        pbox = Box(M, plat_y, SPAN, plat_h, "zone", "platform")
+        sc.zones.append(pbox)
+        sc.texts.append(Text(M + PAD, plat_y + 8, "PLATFORM", "zone"))
+        for i, cx, cy, cw, ch, name, rest in chips:
+            card[i] = Box(cx, plat_y + cy, cw, ch, "card-platform", i)
+            sub_of[i] = (0, 0)
     for i, b in card.items():
         sc.boxes.append(b)
-        c = comp[i]
-        sc.boxes.append(Box(b.x + 10, b.y + 10, 24, 24, f"glyph-{c.kind}"))
-        sc.texts.append(Text(b.x + 22, b.y + 15, GLYPH[c.kind], "glyph", "middle"))
-        tw = b.w - 52
-        name = wrap(c.name, "name", tw, 2)
-        for n, ln in enumerate(name):
-            sc.texts.append(Text(b.x + 42, b.y + 10 + 18 * n, ln, "name"))
-        for n, ln in enumerate(wrap(c.role, "role", tw, 3 - len(name))):
-            sc.texts.append(Text(b.x + 42, b.y + 10 + 18 * len(name) + 15 * n, ln, "role"))
+        sc.boxes.append(Box(b.x + 10, b.y + 10, 24, 24, f"glyph-{comp[i].kind}"))
+        _icon(sc, b.x + 10, b.y + 10, comp[i].kind)
+    for z in cols:
+        for i in order[z]:
+            b, (name, role) = card[i], cfg["lines"][i]
+            sc.texts += [Text(b.x + 42, b.y + 10 + 18 * n, ln, "name") for n, ln in enumerate(name)]
+            sc.texts += [Text(b.x + 42, b.y + 10 + 18 * len(name) + LINE_H[rstyle] * n, ln, rstyle) for n, ln in enumerate(role)]
+    for i, cx, cy, cw, ch, name, rest in chips:
+        b = card[i]
+        sc.texts += [Text(b.x + 42, b.y + 10 + 16 * n, ln, "chip") for n, ln in enumerate(name)]
+        sc.texts += [Text(b.x + 42, b.y + 10 + 16 * len(name) + 14 * n, ln, "note") for n, ln in enumerate(rest)]
 
-    # --- flows -------------------------------------------------------------------------------
-    def zone_of(i):
-        return comp[i].zone
-
-    def kind_of(f):
-        a, b = zone_of(f.src), zone_of(f.dst)
-        if a == "platform" or b == "platform":
-            return "platform-" + ("self" if a == b else "col")
-        if a == b:
-            return "same"
-        return "adj" if abs(cidx[f.src] - cidx[f.dst]) == 1 else "long"
-
-    flows = [f for f in arch.flows if f.src in card and f.dst in card]
-    # which side of each card every flow leaves/enters, then spread the ports along the side
-    side: dict[tuple[int, str], str] = {}  # (flow no, "s"|"d") -> r|l|t|b
-    for n, f in enumerate(flows):
-        kd, s, d = kind_of(f), card[f.src], card[f.dst]
-        if kd in ("adj", "long"):
-            right = cidx[f.dst] > cidx[f.src]
-            side[n, "s"], side[n, "d"] = ("r", "l") if right else ("l", "r")
-        elif kd == "same":
+    # --- flows: sides, ports, routes ---------------------------------------------------------------
+    side: dict[tuple[int, str], str] = {}
+    for n, f in enumerate(drawn):
+        s, d = card[f.src], card[f.dst]
+        if f.src in plat_set:  # between platform chips
+            side[n, "s"], side[n, "d"] = ("b", "b") if abs(s.y - d.y) < 1 else (("b", "t") if d.y > s.y else ("t", "b"))
+        elif comp[f.src].zone == comp[f.dst].zone:
             (ss, rs), (sd, rd) = sub_of[f.src], sub_of[f.dst]
+            last = cfg["subs"][comp[f.src].zone] - 1
             if ss == sd and abs(rs - rd) == 1:
                 side[n, "s"], side[n, "d"] = ("b", "t") if rd > rs else ("t", "b")
+            elif ss == sd:  # around the column's outer side
+                side[n, "s"] = side[n, "d"] = "l" if ss == 0 and last > 0 else "r"
             else:
-                side[n, "s"] = side[n, "d"] = "r"
-        elif kd == "platform-col":
-            for e, i in (("s", f.src), ("d", f.dst)):
-                if zone_of(i) == "platform":
-                    side[n, e] = "t"
-                else:
-                    side[n, e] = "r" if cidx[i] < k - 1 else "l"
-        else:  # inside the platform band
-            if abs(s.y - d.y) < 1:
-                side[n, "s"], side[n, "d"] = ("r", "l") if d.x > s.x else ("l", "r")
-            else:
-                side[n, "s"], side[n, "d"] = ("b", "t") if d.y > s.y else ("t", "b")
-    ports: dict[tuple[int, str], tuple[float, float]] = {}
+                side[n, "s"], side[n, "d"] = ("r", "l") if sd > ss else ("l", "r")
+        else:
+            side[n, "s"], side[n, "d"] = ("r", "l") if cidx[f.dst] > cidx[f.src] else ("l", "r")
     users: dict[tuple[str, str], list[tuple[float, int, str]]] = {}
     for (n, e), sd in side.items():
-        i = flows[n].src if e == "s" else flows[n].dst
-        o = card[flows[n].dst if e == "s" else flows[n].src]
+        f = drawn[n]
+        i, o = (f.src, card[f.dst]) if e == "s" else (f.dst, card[f.src])
         users.setdefault((i, sd), []).append(((o.y + o.h / 2) if sd in "rl" else (o.x + o.w / 2), n, e))
+    ports: dict[tuple[int, str], tuple[float, float]] = {}
     for (i, sd), lst in users.items():
         b = card[i]
-        for p, (_, n, e) in enumerate(sorted(lst)):
-            t = (p + 1) / (len(lst) + 1)
-            ports[n, e] = {"r": (b.x + b.w, b.y + b.h * t), "l": (b.x, b.y + b.h * t),
-                           "t": (b.x + b.w * t, b.y), "b": (b.x + b.w * t, b.y + b.h)}[sd]
+        lo, hi = (b.y, b.y + b.h) if sd in "rl" else (b.x, b.x + b.w)
+        slots = list(range(math.ceil((lo + 10) / GRID) * GRID, int(hi - 10) + 1, GRID)) or [round((lo + hi) / 2 / GRID) * GRID]
+        lst.sort()
+        for p, (_, n, e) in enumerate(lst):
+            q = min(len(slots) - 1, round((p + 1) * (len(slots) + 1) / (len(lst) + 1)) - 1) if len(lst) <= len(slots) else p % len(slots)
+            v = slots[max(0, q)]
+            ports[n, e] = {"r": (b.x + b.w, v), "l": (b.x, v), "t": (v, b.y), "b": (v, b.y + b.h)}[sd]
 
-    slot: dict[object, int] = {}
+    grid = _Grid([(b.x, b.y, b.x + b.w, b.y + b.h) for b in card.values()], [(z.x, z.y, z.x + z.w, z.y + z.h) for z in sc.zones],
+                 (M + 4, head, W - M - 4, bottom))
+    band = (pbox.x, pbox.y, pbox.x + pbox.w, pbox.y + pbox.h) if pbox else None
+    DIRS = {"r": 0, "b": 1, "l": 2, "t": 3}
 
-    def nxt(key):
-        slot[key] = slot.get(key, -1) + 1
-        return slot[key]
+    def stub(p, sd):
+        x, y = p
+        return {"r": (math.ceil((x + 4) / GRID), round(y / GRID)), "l": (math.floor((x - 4) / GRID), round(y / GRID)),
+                "b": (round(x / GRID), math.ceil((y + 4) / GRID)), "t": (round(x / GRID), math.floor((y - 4) / GRID))}[sd]
 
-    def gutter_x(c: int, right: bool) -> tuple[float, float]:
-        """Left and right edge of the gutter on one side of column c (the margin at the ends)."""
-        zb = zbox[cols[c]]
-        return (zb.x + zb.w, zb.x + zb.w + (G if c < k - 1 else M)) if right else (zb.x - (G if c > 0 else M), zb.x)
-
-    for n, f in enumerate(flows):
-        kd = kind_of(f)
+    def dist(n):
         (sx, sy), (dx, dy) = ports[n, "s"], ports[n, "d"]
-        sd, dd = side[n, "s"], side[n, "d"]
-        style = f"flow-{f.mode}"
-        pill = None  # (cx, cy, maxw)
+        return abs(sx - dx) + abs(sy - dy)
 
-        def vx(c, right):  # a vertical run in a gutter, offset 10 per flow
-            a, b = gutter_x(c, right)
-            j = nxt((c, right)) % 5
-            return (a + 12 + 10 * j) if right else (b - 12 - 10 * j)
-
-        if kd == "adj":
-            xv = vx(cidx[f.src], sd == "r")
-            pts = [(sx, sy), (xv, sy), (xv, dy), (dx, dy)]
-            pill = ((xv + dx) / 2, dy, abs(dx - xv) - 6)
-        elif kd == "long":
-            ly = HEAD + 6 + 10 * lane_of[n]
-            xs, xd = vx(cidx[f.src], sd == "r"), vx(cidx[f.dst], dd == "r")
-            pts = [(sx, sy), (xs, sy), (xs, ly), (xd, ly), (xd, dy), (dx, dy)]
-            pill = ((xd + dx) / 2, dy, abs(dx - xd) - 6)
-        elif kd == "same":
-            if sd in "tb":
-                pts = [(sx, sy), (sx, dy)]
-                gap_mid = (sy + dy) / 2
-                pill = (sx + 6 + 40, gap_mid, 80)
-            else:
-                zb = zbox[zone_of(f.src)]
-                xr = zb.x + zb.w - 6 - 4 * (nxt(("loop", zone_of(f.src))) % 3)
-                pts = [(sx, sy), (xr, sy), (xr, dy), (dx, dy)]
-                pill = (zb.x + zb.w + 4 + 40, (sy + dy) / 2, max(G, M) - 8)
-        elif kd == "platform-col":
-            ly = band_y - BAND_GAP / 2
-            src_col = zone_of(f.src) != "platform"
-            ci, e = (f.src, sd) if src_col else (f.dst, dd)
-            c = cidx[ci]
-            xg = vx(c, e == "r")
-            if src_col:
-                pts = [(sx, sy), (xg, sy), (xg, ly), (dx, ly), (dx, dy)]
-            else:
-                pts = [(sx, sy), (sx, ly), (xg, ly), (xg, dy), (dx, dy)]
-            pill = ((xg + (dx if src_col else sx)) / 2, ly, abs(xg - (dx if src_col else sx)) - 6)
+    routes: dict[int, list] = {}
+    for n in sorted(range(len(drawn)), key=lambda n: (dist(n), n)):
+        f, sd, dd = drawn[n], side[n, "s"], side[n, "d"]
+        sp, dp = ports[n, "s"], ports[n, "d"]
+        a, b = stub(sp, sd), stub(dp, dd)
+        into = (DIRS[dd] + 2) % 4
+        path = grid.route(a, DIRS[sd], b, into, box=band) if f.src in plat_set else grid.route(a, DIRS[sd], b, into, avoid=[band] if band else ())
+        if path is None:  # no clear path: a plain elbow
+            pts = [sp, (a[0] * GRID, a[1] * GRID), (a[0] * GRID, b[1] * GRID), (b[0] * GRID, b[1] * GRID), dp]
         else:
-            if sd in "rl":
-                pts = [(sx, sy), (dx, dy)]
-                between = any(min(sx, dx) < b.x < max(sx, dx) and b.y < sy < b.y + b.h for i, b in card.items() if i not in (f.src, f.dst))
-                pill = ((sx + dx) / 2, sy, -1 if between else abs(dx - sx) - 6)
-            else:
-                ym = (sy + dy) / 2
-                pts = [(sx, sy), (sx, ym), (dx, ym), (dx, dy)]
-                pill = ((sx + dx) / 2, ym, abs(dx - sx) - 6)
-        sc.lines.append(Line(pts, style, True))
-        if pill:
-            _pill(sc, pill[0], pill[1], f.label, f.mode, pill[2])
+            grid.mark(path)
+            pts = [sp, *[(ix * GRID, iy * GRID) for ix, iy in path], dp]
+        routes[n] = _simplify(pts)
+    for n, f in enumerate(drawn):
+        sc.lines.append(Line(routes[n], f"flow-{f.mode}", True, (f.src, f.dst)))
 
-    # footer and legend
-    modes = sorted({f.mode for f in flows})
-    lx = W - M
-    for m in reversed(modes):
-        tw = measure(m, "legend")
-        lx -= tw
-        sc.texts.append(Text(lx, FOOT_Y, m, "legend"))
-        lx -= 44
-        sc.lines.append(Line([(lx, FOOT_Y + 7), (lx + 36, FOOT_Y + 7)], f"flow-{m}", True))
-        lx -= 18
-    sc.texts.append(Text(M, FOOT_Y, fit(footer, "footer", lx - M - 16), "footer"))
-    return sc
+    # --- labels: a pill on the best straight stretch of each route, else a numbered marker keyed along the bottom
+    cardr = [(b.x, b.y, b.w, b.h) for b in card.values()]
+    placed: list[tuple] = []
+    markers: list[tuple[int, str, str]] = []
+    allsegs = [(a, b, n) for n, pts in routes.items() for a, b in zip(pts, pts[1:])]
+
+    def place(n, w, h, need_long, pad=2):
+        segs = sorted(zip(routes[n], routes[n][1:]), key=lambda s: -(abs(s[0][0] - s[1][0]) + abs(s[0][1] - s[1][1])))
+        ok = []
+        for a, b in segs:
+            ln = abs(a[0] - b[0]) + abs(a[1] - b[1])
+            if need_long and ln < w + 8:
+                continue
+            for t in (.5, .4, .6, .3, .7, .2, .8, .1, .9):
+                cx, cy = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+                r = (cx - w / 2, cy - h / 2, w, h)
+                if not (M <= r[0] and r[0] + w <= W - M and head - 6 <= r[1] and r[1] + h <= foot_top - key_h - 4):
+                    continue
+                if any(_rects_hit(r, c, pad) for c in cardr) or any(_rects_hit(r, p, pad) for p in placed):
+                    continue
+                ok.append((sum(1 for p, q, m in allsegs if m != n and seg_hits_rect(p, q, r, 0)), -ln, r))
+        return min(ok, key=lambda o: o[:2])[2] if ok else None
+
+    for n, f in enumerate(drawn):
+        if not f.label:
+            continue
+        one = measure(f.label, "label") + 14
+        two = wrap(f.label, "label", max(60, one / 2 + 12))
+        tries = [([f.label], one, PILL_H)]
+        if len(two) == 2:
+            tries.append((two, max(measure(x, "label") for x in two) + 14, 32))
+        r = lines = None
+        for need_long in (True, False):
+            for lines, w, h in tries:
+                r = place(n, w, h, need_long)
+                if r:
+                    break
+            if r:
+                break
+        if r:
+            placed.append(r)
+            sc.boxes.append(Box(*r, f"pill-{f.mode}"))
+            sc.texts += [Text(r[0] + r[2] / 2, r[1] + (r[3] - 14 * len(lines)) / 2 + 14 * j + 1, ln, "label", "middle") for j, ln in enumerate(lines)]
+            continue
+        r = place(n, 18, 18, False) or place(n, 14, 14, False, 1) or place(n, 12, 12, False, 0)
+        if r is None:  # no clear spot: sit on the middle of the longest stretch
+            a, b = max(zip(routes[n], routes[n][1:]), key=lambda s: abs(s[0][0] - s[1][0]) + abs(s[0][1] - s[1][1]))
+            r = ((a[0] + b[0]) / 2 - 9, (a[1] + b[1]) / 2 - 9, 18, 18)
+        placed.append(r)
+        markers.append((len(markers) + 1, f.label, f.mode))
+        sc.boxes.append(Box(*r, f"marker-{f.mode}"))
+        sc.texts.append(Text(r[0] + r[2] / 2, r[1] + r[3] / 2 - 5, str(len(markers)), "marker", "middle"))
+    rows, kh = _key_rows(markers)
+    for n, label, mode, kx, ky in rows:
+        kyy = foot_top - 10 - kh + ky + 3
+        sc.boxes.append(Box(kx, kyy, 18, 18, f"marker-{mode}"))
+        sc.texts.append(Text(kx + 9, kyy + 4, str(n), "marker", "middle"))
+        sc.texts.append(Text(kx + 24, kyy + 2, label, "label"))
+    return sc, markers
 
 
 # --- renderers -------------------------------------------------------------------------------
@@ -378,22 +587,24 @@ KIND = {"user": "#3D4652", "app": "#0B6A6A", "service": "#1F5F8B", "queue": "#8A
         "external": "#7A6F5F", "platform": "#3D4652"}
 MODE = {"api": "#0B6A6A", "event": "#8A5A00", "batch": "#5B4B8A", "file": "#7A6F5F", "ui": "#1F5F8B", "data": "#1E6B3A"}
 DASH = {"event": (3, 4), "batch": (9, 5), "file": (9, 5)}
-TEXT_COLOUR = {"role": MUTED, "zone": MUTED, "legend": MUTED, "footer": MUTED, "glyph": WHITE, "badge": WHITE}
+TEXT_COLOUR = {"role": MUTED, "role-sm": MUTED, "zone": MUTED, "legend": MUTED, "footer": MUTED, "note": MUTED, "badge": WHITE, "marker": WHITE}
+LINE_W = 1.5
 
 
 def box_paint(style: str) -> tuple[str, str, int]:
     """(fill, stroke, corner radius) for a box style key."""
     kind, _, sub = style.partition("-")
     return {"zone": (GROUND, BORDER, 12), "card": (WHITE, KIND.get(sub, INK), 8), "glyph": (KIND.get(sub, INK),) * 2 + (5,),
-            "pill": (WHITE, MODE.get(sub, INK), 9), "callout": ("#E3F0F0", ACCENT, 8), "badge": (ACCENT, ACCENT, 11)}[kind]
+            "pill": (WHITE, MODE.get(sub, INK), 9), "callout": ("#E3F0F0", ACCENT, 8), "badge": (ACCENT, ACCENT, 11),
+            "marker": (MODE.get(sub, INK), MODE.get(sub, INK), 9)}[kind]
 
 
-def _arrow(pts: list[tuple[float, float]]) -> list[tuple[float, float]]:
+def _arrow(pts):
     (x1, y1), (x2, y2) = pts[-2], pts[-1]
-    d = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** .5 or 1
+    d = math.dist(pts[-2], pts[-1]) or 1
     ux, uy = (x2 - x1) / d, (y2 - y1) / d
-    bx, by = x2 - ux * 10, y2 - uy * 10
-    return [(x2, y2), (bx - uy * 5, by + ux * 5), (bx + uy * 5, by - ux * 5)]
+    bx, by = x2 - ux * 9, y2 - uy * 9
+    return [(x2, y2), (bx - uy * 4.5, by + ux * 4.5), (bx + uy * 4.5, by - ux * 4.5)]
 
 
 def _clean(pts):
@@ -404,9 +615,29 @@ def _clean(pts):
     return out
 
 
+def _round(pts, r=6, n=6):
+    """The polyline with its corners rounded (radius r), as a denser polyline."""
+    out = [pts[0]]
+    for a, b, c in zip(pts, pts[1:], pts[2:]):
+        la, lc = math.dist(a, b), math.dist(b, c)
+        rr = min(r, la / 2, lc / 2)
+        p1 = (b[0] + (a[0] - b[0]) / la * rr, b[1] + (a[1] - b[1]) / la * rr)
+        p2 = (b[0] + (c[0] - b[0]) / lc * rr, b[1] + (c[1] - b[1]) / lc * rr)
+        for i in range(n + 1):
+            t = i / n
+            out.append(tuple((1 - t) ** 2 * p1[j] + 2 * t * (1 - t) * b[j] + t * t * p2[j] for j in (0, 1)))
+    out.append(pts[-1])
+    return out
+
+
+def _tok(tok, kind):
+    return {"w": WHITE, "bg": KIND.get(kind, INK)}.get(tok)
+
+
 def to_svg(sc: Scene, title: str = "Solution architecture") -> str:
-    from xml.sax.saxutils import escape, quoteattr
+    from xml.sax.saxutils import escape
     f = lambda v: f"{v:.1f}".rstrip("0").rstrip(".")
+    pp = lambda pts: " ".join(f"{f(x)},{f(y)}" for x, y in pts)
     o = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {sc.width} {sc.height}" role="img" '
          f'font-family="IBM Plex Sans, system-ui, sans-serif"><title>{escape(title)}</title>'
          f'<rect width="{sc.width}" height="{sc.height}" fill="{WHITE}"/>']
@@ -421,18 +652,30 @@ def to_svg(sc: Scene, title: str = "Solution architecture") -> str:
         pts = _clean(ln.points)
         if len(pts) < 2:
             continue
-        col = MODE[ln.style.split("-", 1)[1]]
-        dash = DASH.get(ln.style.split("-", 1)[1])
-        o.append(f'<polyline points="{" ".join(f"{f(x)},{f(y)}" for x, y in pts)}" fill="none" stroke="{col}" stroke-width="2"'
+        mode = ln.style.split("-", 1)[1]
+        dash = DASH.get(mode)
+        o.append(f'<polyline points="{pp(_round(pts))}" fill="none" stroke="{MODE[mode]}" stroke-width="{LINE_W}" stroke-linejoin="round"'
                  + (f' stroke-dasharray="{dash[0]} {dash[1]}"' if dash else "") + "/>")
         if ln.arrow:
-            o.append(f'<polygon points="{" ".join(f"{f(x)},{f(y)}" for x, y in _arrow(pts))}" fill="{col}"/>')
+            o.append(f'<polygon points="{pp(_arrow(pts))}" fill="{MODE[mode]}"/>')
     for b in sc.boxes:
         box(b)
+    for s in sc.shapes:
+        fill, stroke = _tok(s.fill, s.kind), _tok(s.stroke, s.kind)
+        paint = f'fill="{fill or "none"}"' + (f' stroke="{stroke}" stroke-width="1.6" stroke-linejoin="round"' if stroke else "")
+        if s.op == "e":
+            x, y, w, h = s.geom
+            o.append(f'<ellipse cx="{f(x + w / 2)}" cy="{f(y + h / 2)}" rx="{f(w / 2)}" ry="{f(h / 2)}" {paint}/>')
+        elif s.op == "r":
+            x, y, w, h = s.geom
+            o.append(f'<rect x="{f(x)}" y="{f(y)}" width="{f(w)}" height="{f(h)}" rx="1" {paint}/>')
+        else:
+            o.append(f'<{"polygon" if s.closed else "polyline"} points="{pp(s.geom)}" {paint}/>')
     for t in sc.texts:
         size, weight = TEXT[t.style]
         o.append(f'<text x="{f(t.x)}" y="{f(t.y)}" font-size="{size}" font-weight="{weight}" fill="{TEXT_COLOUR.get(t.style, INK)}" '
-                 f'dominant-baseline="hanging"' + (' text-anchor="middle"' if t.anchor == "middle" else "") + f">{escape(t.text)}</text>")
+                 f'dominant-baseline="hanging"' + (f' letter-spacing="{LETTER[t.style]}"' if t.style in LETTER else "")
+                 + (' text-anchor="middle"' if t.anchor == "middle" else "") + f">{escape(t.text)}</text>")
     o.append("</svg>")
     return "".join(o)
 
@@ -456,52 +699,92 @@ def to_png(sc: Scene, scale: int = 2) -> bytes:
             continue
         mode = ln.style.split("-", 1)[1]
         dash = DASH.get(mode)
-        for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
-            if not dash:
-                d.line(S([(x1, y1), (x2, y2)]), MODE[mode], 2 * scale)
-                continue
-            n = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** .5
-            at = 0.0
-            while at < n:
-                e = min(at + dash[0], n)
-                d.line(S([(x1 + (x2 - x1) * at / n, y1 + (y2 - y1) * at / n), (x1 + (x2 - x1) * e / n, y1 + (y2 - y1) * e / n)]), MODE[mode], 2 * scale)
-                at += dash[0] + dash[1]
+        dense = _round(pts)
+        if not dash:
+            d.line(S(dense), MODE[mode], int(LINE_W * scale), joint="curve")
+        else:  # dashes walked along the rounded polyline
+            at, on = 0.0, True
+            for (x1, y1), (x2, y2) in zip(dense, dense[1:]):
+                n = math.dist((x1, y1), (x2, y2))
+                pos = 0.0
+                while pos < n:
+                    seg = min(dash[0 if on else 1] - at, n - pos)
+                    if on:
+                        d.line(S([(x1 + (x2 - x1) * pos / n, y1 + (y2 - y1) * pos / n), (x1 + (x2 - x1) * (pos + seg) / n, y1 + (y2 - y1) * (pos + seg) / n)]),
+                               MODE[mode], int(LINE_W * scale))
+                    pos += seg
+                    at += seg
+                    if at >= dash[0 if on else 1] - 1e-9:
+                        on, at = not on, 0.0
         if ln.arrow:
             d.polygon(S(_arrow(pts)), MODE[mode])
     for b in sc.boxes:
         box(b)
+    for s in sc.shapes:
+        fill, stroke = _tok(s.fill, s.kind), _tok(s.stroke, s.kind)
+        lw = int(1.6 * scale)
+        if s.op in "er":
+            x, y, ww, hh = s.geom
+            (d.ellipse if s.op == "e" else d.rectangle)([x * scale, y * scale, (x + ww) * scale, (y + hh) * scale], fill, stroke, lw)
+        elif s.closed:
+            d.polygon(S(s.geom), fill, stroke)
+            if stroke:
+                d.line(S([*s.geom, s.geom[0]]), stroke, lw, joint="curve")
+        else:
+            d.line(S(s.geom), stroke, lw, joint="curve")
     for t in sc.texts:
         size, weight = TEXT[t.style]
         font = ImageFont.truetype(str(FONTS / f"IBMPlexSans-{WEIGHTS[weight]}.ttf"), size * scale)
-        d.text((t.x * scale, t.y * scale), t.text, TEXT_COLOUR.get(t.style, INK), font, anchor="ma" if t.anchor == "middle" else "la")
+        col = TEXT_COLOUR.get(t.style, INK)
+        if t.style in LETTER:
+            x = t.x * scale
+            for ch in t.text:
+                d.text((x, t.y * scale), ch, col, font, anchor="la")
+                x += font.getlength(ch) + LETTER[t.style] * scale
+        else:
+            d.text((t.x * scale, t.y * scale), t.text, col, font, anchor="ma" if t.anchor == "middle" else "la")
     out = io.BytesIO()
     im.save(out, "PNG")
     return out.getvalue()
 
 
 def to_pptx_shapes(slide, sc: Scene, left: int, top: int, width: int, height: int) -> None:
-    """Native shapes: rounded rectangles, one freeform polyline per flow (arrow at the end) and text boxes."""
+    """Native shapes: rounded rectangles, one freeform polyline per flow (arrow at the end), icon shapes and text boxes."""
     from lxml import etree
     from pptx.dml.color import RGBColor
+    from pptx.enum.dml import MSO_LINE
     from pptx.enum.shapes import MSO_SHAPE
     from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
-    from pptx.enum.dml import MSO_LINE
     from pptx.util import Emu, Pt
 
     s = min(width / sc.width, height / sc.height)
     X, Y = (lambda v: int(left + v * s)), (lambda v: int(top + v * s))
     rgb = lambda h: RGBColor.from_string(h.lstrip("#"))
 
+    def style(sh, fill, stroke, lw, name):
+        if fill:
+            sh.fill.solid()
+            sh.fill.fore_color.rgb = rgb(fill)
+        else:
+            sh.fill.background()
+        if stroke:
+            sh.line.color.rgb = rgb(stroke)
+            sh.line.width = Emu(int(lw * s))
+        else:
+            sh.line.fill.background()
+        sh.shadow.inherit = False
+        sh.name = name
+
     def box(b: Box):
         fill, stroke, r = box_paint(b.style)
         sh = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, X(b.x), Y(b.y), int(b.w * s), int(b.h * s))
         sh.adjustments[0] = min(.5, r / min(b.w, b.h))
-        sh.fill.solid()
-        sh.fill.fore_color.rgb = rgb(fill)
-        sh.line.color.rgb = rgb(stroke)
-        sh.line.width = Emu(int(1.5 * s))
-        sh.shadow.inherit = False
-        sh.name = f"arch:{b.style}:{b.ref}" if b.ref else f"arch:{b.style}"
+        style(sh, fill, stroke, 1.5, f"arch:{b.style}:{b.ref}" if b.ref else f"arch:{b.style}")
+
+    def poly(pts, closed):
+        fb = slide.shapes.build_freeform(X(pts[0][0]), Y(pts[0][1]))
+        fb.add_line_segments([(X(x), Y(y)) for x, y in pts[1:]], close=closed)
+        return fb.convert_to_shape()
 
     for b in sc.zones:
         box(b)
@@ -510,26 +793,26 @@ def to_pptx_shapes(slide, sc: Scene, left: int, top: int, width: int, height: in
         if len(pts) < 2:
             continue
         mode = ln.style.split("-", 1)[1]
-        fb = slide.shapes.build_freeform(X(pts[0][0]), Y(pts[0][1]))
-        fb.add_line_segments([(X(x), Y(y)) for x, y in pts[1:]], close=False)
-        sh = fb.convert_to_shape()
-        sh.fill.background()
-        sh.line.color.rgb = rgb(MODE[mode])
-        sh.line.width = Emu(int(2 * s))
+        sh = poly(_round(pts), False)
+        style(sh, None, MODE[mode], LINE_W, f"arch:{ln.style}")
         if mode in DASH:
             sh.line.dash_style = MSO_LINE.DASH if DASH[mode][0] > 3 else MSO_LINE.ROUND_DOT
         if ln.arrow:
-            ln_el = sh.line._get_or_add_ln()
-            etree.SubElement(ln_el, "{http://schemas.openxmlformats.org/drawingml/2006/main}tailEnd", type="triangle")
-        sh.shadow.inherit = False
-        sh.name = f"arch:{ln.style}"
+            etree.SubElement(sh.line._get_or_add_ln(), "{http://schemas.openxmlformats.org/drawingml/2006/main}tailEnd", type="triangle")
     for b in sc.boxes:
         box(b)
+    for sp in sc.shapes:
+        fill, stroke = _tok(sp.fill, sp.kind), _tok(sp.stroke, sp.kind)
+        if sp.op in "er":
+            x, y, w, h = sp.geom
+            sh = slide.shapes.add_shape(MSO_SHAPE.OVAL if sp.op == "e" else MSO_SHAPE.RECTANGLE, X(x), Y(y), int(w * s), int(h * s))
+        else:
+            sh = poly(sp.geom, sp.closed)
+        style(sh, fill if (sp.closed or sp.op != "p") else None, stroke, 1.6, f"arch:icon-{sp.kind}")
     for t in sc.texts:
         size, weight = TEXT[t.style]
-        w = int(max(measure(t.text, t.style), 10) * s) + 8
-        x = X(t.x) - (w // 2 if t.anchor == "middle" else 0)
-        tb = slide.shapes.add_textbox(x, Y(t.y), w, int(size * 1.4 * s))
+        w = int((max(measure(t.text, t.style), 10) + 6) * s)
+        tb = slide.shapes.add_textbox(X(t.x) - (w // 2 if t.anchor == "middle" else 0), Y(t.y), w, int(size * 1.4 * s))
         tf = tb.text_frame
         tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
         tf.word_wrap = False
@@ -542,11 +825,12 @@ def to_pptx_shapes(slide, sc: Scene, left: int, top: int, width: int, height: in
         r.font.size = Pt(size * s / 12700)
         r.font.bold = weight >= 600
         r.font.color.rgb = rgb(TEXT_COLOUR.get(t.style, INK))
+        if t.style in LETTER:
+            r._r.get_or_add_rPr().set("spc", str(int(LETTER[t.style] * s / 12700 * 100)))
         tb.name = f"arch:text:{t.style}"
 
 
 def to_mermaid(arch: Architecture) -> str:
-    import re
     esc = lambda s: re.sub(r'["\[\]|<>]', lambda m: f"#{ord(m.group())};", s)
     nid = lambda i: "n_" + re.sub(r"\W", "_", i)
     out = ["flowchart LR"]
