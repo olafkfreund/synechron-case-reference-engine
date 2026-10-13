@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import uuid
 
@@ -244,6 +246,58 @@ def test_view_puts_actions_first_and_has_no_type_label(reg):
     t = c.get(f"/research/{rid}").text
     assert t.index("Use these sources") < t.index("What public sources say")
     assert "vendor claim" not in t and "AI reading:" in t and 'form="pick"' in t
+
+
+def test_reviewer_view_has_attach_inside_the_pick_form(approved, reg, echo):
+    cid = approved(case_with())
+    c = as_user("u1", ["g-rev", DOCS])
+    loc = sent(c, cid)
+    finish(loc, [{**BASE, "quote": "q q q q", "url": "https://v.example/x", "publisher": "v.example"}])
+    t = c.get(loc).text
+    form = t[t.index('<form id="pick"'):]
+    form = form[:form.index("</form>")]
+    assert f'formaction="/review/{cid}/sources"' in form and 'name="s"' in form and 'name="research_id"' in form
+
+
+def test_export_unknown_format_and_unfinished_research(reg):
+    c = as_user("u1")
+    rid = done_row(c, "a quote")
+    assert c.post(f"/research/{rid}/export", data={"format": "xlsx", "n": [0]}).status_code == 400
+    queued = sent(c, None).rsplit("/", 1)[1]  # still queued
+    assert c.post(f"/research/{queued}/export", data={"format": "md", "n": [0]}).status_code == 404
+
+
+def test_export_ignores_out_of_range_and_duplicate_indices(reg):
+    c = as_user("u1")
+    rid = done_row(c, "only quote")
+    r = c.post(f"/research/{rid}/export", data={"format": "md", "n": [0, 0, 5, -1]})
+    assert r.status_code == 200 and r.text.count("only quote") == 1
+    assert c.post(f"/research/{rid}/export", data={"format": "md", "n": [5, -1]}).status_code == 400
+
+
+@pytest.mark.parametrize("quote", [" =SUM(1)", "\n=SUM(1)", "\uff1dSUM(1)", "+1", "@x"])
+def test_export_csv_prefixes_hidden_formulas(reg, quote):
+    c = as_user("u1")
+    rid = done_row(c, quote)
+    r = c.post(f"/research/{rid}/export", data={"format": "csv", "n": [0]})
+    cell = list(csv.reader(io.StringIO(r.text)))[1][0]
+    assert cell == "'" + quote
+
+
+def test_export_anonymises_or_drops_a_protected_title(reg):
+    c = as_user("u1")
+    loc = sent(c, None)
+    finish(loc, [{**BASE, "quote": "fine quote", "url": "https://v.example/a", "publisher": "v.example", "title": f"{reg} case study"}])
+    rid = loc.rsplit("/", 1)[1]
+    r = c.post(f"/research/{rid}/export", data={"format": "csv", "n": [0]})
+    assert reg.lower() not in r.text.lower()
+
+
+def test_export_markdown_keeps_each_item_on_one_line(reg):
+    c = as_user("u1")
+    rid = done_row(c, "line one\n\n2. injected")
+    r = c.post(f"/research/{rid}/export", data={"format": "md", "n": [0]})
+    assert "line one 2. injected" in r.text and "\n2. injected" not in r.text
 
 
 def test_search_page_has_research_button(approved, monkeypatch):

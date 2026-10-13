@@ -469,6 +469,12 @@ must exist on `main`.
   count column. `attach_sources` keeps its own loader until step 22 removes
   its `case_id` condition. `test_view_is_private_and_escapes_claims` now
   asserts the "vendor claim" label is gone, as step 1 removed it.
+- Step 3: the tests are in `tests/test_research_claims.py`, which holds the
+  `sent`/`finish` helpers. The Export buttons sit in a row outside the action
+  card and use `form="pick"`. Review fixes: `visible_claims` also applies
+  `apply()` and `blocked()` to `title`; `_csv_safe` looks past leading
+  whitespace and covers LF and full-width `＝ ＋ － ＠`; `_export_md` collapses
+  whitespace in every field.
 
 ## Tests
 

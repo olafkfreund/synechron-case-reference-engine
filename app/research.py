@@ -172,8 +172,9 @@ def visible_claims(claims, clients) -> tuple[list[dict], int]:
     out = []
     for c in claims:
         c = {**c, "quote": anonymise.apply(str(c.get("quote") or ""), clients),
-             "statement": anonymise.apply(str(c.get("statement") or ""), clients)}
-        if not anonymise.blocked("\n".join(str(c.get(k, "")) for k in ("quote", "statement", "publisher", "url")), clients):
+             "statement": anonymise.apply(str(c.get("statement") or ""), clients),
+             "title": anonymise.apply(str(c.get("title") or ""), clients)}
+        if not anonymise.blocked("\n".join(str(c.get(k, "")) for k in ("quote", "statement", "title", "publisher", "url")), clients):
             out.append(c)
     return out, len(claims) - len(out)
 
@@ -226,12 +227,14 @@ def picked_claims(conn, rid, n, user) -> list[dict]:
 
 def _csv_safe(v) -> str:
     v = str(v or "")
-    return "'" + v if v[:1] in ("=", "+", "-", "@", "\t", "\r") else v  # a spreadsheet would run it as a formula
+    # a spreadsheet would run it as a formula, also after leading spaces or in full-width form
+    return "'" + v if v.lstrip()[:1] in ("=", "+", "-", "@", "\t", "\r", "\n", "\uff1d", "\uff0b", "\uff0d", "\uff20") else v
 
 
 def _export_md(claims) -> str:
-    quotes = "\n".join(f"{i}. \u201c{' '.join(c['quote'].split())}\u201d [{i}]" for i, c in enumerate(claims, 1))
-    sources = "\n".join(f"{i}. {c.get('publisher', '')}, {c.get('url', '')}, retrieved {(c.get('retrieved_at') or '')[:10]}"
+    one = lambda v: " ".join(str(v or "").split())  # noqa: E731  a newline would break the list
+    quotes = "\n".join(f"{i}. \u201c{one(c['quote'])}\u201d [{i}]" for i, c in enumerate(claims, 1))
+    sources = "\n".join(f"{i}. {one(c.get('publisher'))}, {one(c.get('url'))}, retrieved {one((c.get('retrieved_at') or '')[:10])}"
                         for i, c in enumerate(claims, 1))
     return f"## Quotes\n\n{quotes}\n\n## Sources\n\n{sources}\n"
 
