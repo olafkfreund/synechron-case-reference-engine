@@ -376,6 +376,7 @@ def crawl_confluence(source_id: int) -> dict:
     that is gone, trashed, restricted or cannot be verified. A failure withdraws the item and is retried
     by page id on the next run. external_id: `page:{id}` and `att:{page_id}:{attachment_id}`: the
     parent page id lives in the key (no schema change), which is how the re-check finds it.
+    Attachments skipped as too large are remembered with their size and their page is crawled again once the cap admits them (#206).
     """
     with db.connect(autocommit=True) as lock:
         if not lock.execute("select pg_try_advisory_lock(2, %s)", (source_id,)).fetchone()[0]:
@@ -391,7 +392,7 @@ def crawl_confluence(source_id: int) -> dict:
         exts = {"docx", "pptx", "pdf"}
         counts = {"new": 0, "updated": 0, "skipped": 0, "failed": 0, "skipped_restricted": 0, "skipped_type": 0,
                   "skipped_too_large": 0, "withdrawn_on_recheck": 0}
-        failed, retry, done, cache, visited = [], [], set(), {}, set()
+        failed, retry, done, cache, visited, too_large = [], [], set(), {}, set(), {}
 
         def restricted(cid):  # one lookup per content id per crawl
             if cid not in cache:
@@ -446,6 +447,7 @@ def crawl_confluence(source_id: int) -> dict:
                             continue
                         if att.get("extensions", {}).get("fileSize", 0) > cap:
                             counts["skipped_too_large"] += 1
+                            too_large[ext] = att.get("extensions", {}).get("fileSize", 0)
                             withdraw(ext)
                             continue
                         try:
@@ -458,6 +460,7 @@ def crawl_confluence(source_id: int) -> dict:
                             data = c.get(base + att["_links"]["download"]).content
                             if len(data) > cap:
                                 counts["skipped_too_large"] += 1
+                                too_large[ext] = len(data)
                                 withdraw(ext)
                                 continue
                             counts[ingest(source_id, ext, title, data, source_version=ver)] += 1
@@ -511,6 +514,26 @@ def crawl_confluence(source_id: int) -> dict:
                 else:
                     retry.append(pid)
 
+        # last run's too-large attachments: CQL will not offer them again; re-crawl pages the cap now admits (#206)
+        again = []
+        for ext, size in (last or {}).get("too_large", {}).items():
+            pid = ext.split(":")[1]
+            if pid in visited:
+                continue
+            if size > cap:
+                too_large[ext] = size
+            elif pid not in again:
+                again.append(pid)
+        for pid in again:
+            try:
+                do_page(c.get(f"{c.api}/content/{pid}?expand=body.storage,version,ancestors,space").json())
+            except Exception as e:  # noqa: BLE001 (#129)
+                if getattr(e, "status", None) == 404:
+                    withdraw(f"page:{pid}")
+                    withdraw(f"att:{pid}:", prefix=True)
+                else:
+                    retry.append(pid)
+
         live = [r[0] for r in lock.execute(
             "select external_id from documents where source_id=%s and deleted_at is null", (source_id,))]
         for ext in live:
@@ -532,5 +555,6 @@ def crawl_confluence(source_id: int) -> dict:
                      "from (select acl_groups from sources where id=%s for share) s "
                      "where d.source_id=%s and d.acl_groups is distinct from s.acl_groups", (source_id, source_id))
         lock.execute("update sources set cursor=%s, last_run_at=now(), last_counts=%s where id=%s",
-                     (newest.isoformat() if newest else None, Jsonb({**counts, "failed_keys": failed, "retry_ids": retry}), source_id))
+                     (newest.isoformat() if newest else None,
+                      Jsonb({**counts, "failed_keys": failed, "retry_ids": retry, "too_large": too_large}), source_id))
     return counts
