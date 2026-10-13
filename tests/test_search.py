@@ -387,3 +387,10 @@ def test_bid_results_top_and_others_carry_the_score(approved, monkeypatch):
     assert all(x["score"] == (1, 9) for x in top + others)
     text = client(GUEST).post("/search", data={"bid_text": "onboarding"}).text
     assert text.count("Partial · 1/9") >= 2
+
+
+def test_placeholder_metric_outcome_is_value_only(approved, monkeypatch):
+    a = approved(data().model_copy(update={"outcomes": [Outcome(metric="metric", value="cut by half", source_quote="q")]}))
+    picks_reply(monkeypatch, sr.Pick(case_id=a, reason="fits", tailored=""))
+    top, _, _ = sr.results(ME, "onboarding", {})
+    assert top[0]["outcomes"] == ["cut by half"]

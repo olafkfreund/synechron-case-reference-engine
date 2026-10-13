@@ -6,7 +6,7 @@ from app.completeness import checklist, score
 from app.llm import complete_json
 from app.main import User, require
 from app.review import VISIBLE, page
-from app.schema import ReferenceCase, numbers
+from app.schema import ReferenceCase, numbers, vague_metric
 
 router = APIRouter()
 MAX_BID_CHARS = 4000
@@ -186,7 +186,7 @@ def results(user: User, bid_text: str, filters: dict, kind: str = ""):
     by_id = {c["id"]: c for c in cands}
 
     top = [view(by_id[p["id"]], clients, reason=p["reason"], tailored=p["tailored"],
-                outcomes=[clean((f"{o.metric}: {o.value}" if o.metric else o.value), clients, "[withheld]")
+                outcomes=[clean((f"{o.metric}: {o.value}" if not vague_metric(o) else o.value), clients, "[withheld]")
                           for o in by_id[p["id"]]["case"].outcomes if not o.unsourced]) for p in picks]
     others = [view(c, clients, summary=clean(c["case"].summary, clients)) for c in cands if c["id"] not in chosen]
     return top, others, notes
