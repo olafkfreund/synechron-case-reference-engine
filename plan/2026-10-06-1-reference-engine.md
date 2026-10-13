@@ -687,16 +687,12 @@ access yet):
     - The section "Industry context (public sources)" opens with the
       disclaimer "These are public statements by third parties, not
       Synechron delivery evidence."
-      - Each item is a fixed phrase from the approved wording ("Supported out
-        of the box", "Available through configuration", "Common industry
-        practice", "Vendor statement"), then the VERBATIM quote, then
-        publisher, URL and date. Links are inline rather than footnoted.
-      - The phrase comes from an AI-chosen type, so it never appears without
-        its quote in any format, slides included: a reader can always check
-        it.
+      - Each item is the source's host, then `states:`, then the VERBATIM quote,
+        URL and date (#23: neutral wording replaced the AI-typed phrases, which
+        could overstate the quote). The claim type only filters claims. Links are
+        inline rather than footnoted. The quote stays next to its source in
+        every format, slides included: a reader can always check it.
       - The AI's own statement and page markdown never reach an output.
-      - We kept the approved type phrases instead of the reviewer's neutral
-        "X states:". The lead flagged this to the user.
     - Anonymisation applies to the quote only. Publisher and URL are never
       rewritten, since that would forge the citation. A claim that still
       matches `blocked()` (including a protected client's own site as the
