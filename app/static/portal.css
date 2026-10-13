@@ -341,3 +341,5 @@ main img{background:var(--paper);padding:8px;border-radius:var(--r-control);max-
 .zoom{display:block;width:fit-content;max-width:100%;cursor:zoom-in;border-radius:var(--r-control)}
 .zoom:hover,.zoom:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 .zoom-hint{display:inline-block;margin-top:4px}
+.paper{background:var(--paper);padding:8px;border-radius:var(--r-control)}
+.paper svg{width:100%;height:auto;display:block}

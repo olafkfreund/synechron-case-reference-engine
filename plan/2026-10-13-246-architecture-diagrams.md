@@ -301,3 +301,15 @@ code ignores it. The demo can be re-seeded.
   - pills on the longest segment, with 2-line or keyed-marker fallbacks
   - `layout()` is cached
   - the Scene gains `shapes`, `Line.refs` and `Box.ref`
+- Scale-to-fit (capped at 1.6) and zone alignment:
+  - Wide diagrams are limited by width, so some vertical space stays on a
+    16:9 canvas.
+  - The test for how much of a zone its cards cover drops from 40% to 15%,
+    because zones are now all as tall as the tallest one.
+- A5:
+  - A blocked architecture is omitted from that output with a note. It
+    doesn't withhold the whole output.
+  - The case-study template's old "Architecture" heading over document
+    diagrams is now "Diagrams", under the new Architecture block.
+  - Mermaid escaping also covers backticks and newlines.
+  - `.paper svg` CSS is added.

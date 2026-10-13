@@ -84,8 +84,8 @@ def test_nothing_is_truncated_and_text_stays_inside_its_card(name):
     for c in cards(sc):
         for t in sc.texts:
             if c.x + 40 <= t.x <= c.x + c.w and c.y <= t.y <= c.y + c.h and t.style in ("name", "role", "role-sm", "chip", "note"):
-                assert t.x + measure(t.text, t.style) <= c.x + c.w - 4, t
-                assert t.y + 14 <= c.y + c.h, t  # the card grew to fit
+                assert t.x + measure(t.text, t.style) * t.k <= c.x + c.w - 4, t
+                assert t.y + 14 * t.k <= c.y + c.h, t  # the card grew to fit
 
 
 @pytest.mark.parametrize("name", CASES)
@@ -128,7 +128,7 @@ def test_zones_hug_their_cards_and_platform_lines_stay_in_the_band(name):
         if z.ref == "platform":
             continue
         inside = [c for c in cs if z.x <= c.x and c.x + c.w <= z.x + z.w and z.y <= c.y and c.y + c.h <= z.y + z.h]
-        assert sum(c.w * c.h for c in inside) / (z.w * z.h) >= 0.4, z.ref
+        assert sum(c.w * c.h for c in inside) / (z.w * z.h) >= 0.15, z.ref  # zones share the tallest zone's height
     band = next((z for z in sc.zones if z.ref == "platform"), None)
     plat = {c.ref for c in cs if band and band.x <= c.x and c.y >= band.y and c.y + c.h <= band.y + band.h}
     for ln in sc.lines:
@@ -140,7 +140,7 @@ def test_empty_zones_collapse_and_widths_follow_the_zones_in_use():
     two = layout(arch(["channels", "core"]))
     five = layout(arch(["channels", "experience", "integration", "core", "data"]))
     assert len(two.zones) == 2 and len(five.zones) == 5
-    assert min(c.w for c in cards(two)) >= 260 > min(c.w for c in cards(five))
+    assert min(c.w / two.scale for c in cards(two)) >= 260 > min(c.w / five.scale for c in cards(five))
     assert not any(t.text == "PLATFORM" for t in two.texts)
 
 
@@ -218,3 +218,17 @@ def test_every_kind_has_an_icon_in_svg_and_png():
     assert {sh.kind for sh in sc.shapes} == set(KINDS)
     svg = to_svg(sc)
     assert "<ellipse" in svg and "<polygon" in svg and "<polyline" in svg
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_body_is_scaled_to_fill_the_area_and_zones_are_aligned(name):
+    sc = layout(CASES[name], FOOTER)
+    ax0, ay0, ax1, ay1 = sc.area
+    parts = [*sc.zones, *(b for b in sc.boxes if b.style.startswith(("card-", "pill-", "marker-")) and b.y < ay1)]
+    x0, y0 = min(b.x for b in parts), min(b.y for b in parts)
+    x1, y1 = max(b.x + b.w for b in parts), max(b.y + b.h for b in parts)
+    assert ax0 - 1 <= x0 and x1 <= ax1 + 1 and ay0 - 1 <= y0 and y1 <= ay1 + 1
+    if sc.scale < 1.6 - 1e-6:  # not held back by the cap: the limiting side is nearly full
+        assert max((x1 - x0) / (ax1 - ax0), (y1 - y0) / (ay1 - ay0)) >= 0.75
+    cols = [z for z in sc.zones if z.ref != "platform"]
+    assert len({(round(z.y, 1), round(z.h, 1)) for z in cols}) <= 1

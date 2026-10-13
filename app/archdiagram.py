@@ -42,6 +42,7 @@ class Box:
     h: float
     style: str
     ref: str = ""  # component id for cards, zone name for zones
+    k: float = 1.0  # scale-to-fit factor for stroke widths and corner radii
 
 
 @dataclass
@@ -50,6 +51,7 @@ class Line:
     style: str
     arrow: bool = False
     refs: tuple[str, str] = ("", "")  # (src, dst) component ids
+    k: float = 1.0
 
 
 @dataclass
@@ -59,6 +61,7 @@ class Text:
     text: str
     style: str
     anchor: str = "start"  # start | middle
+    k: float = 1.0  # font size factor
 
 
 @dataclass
@@ -70,6 +73,7 @@ class Shape:
     stroke: str | None
     kind: str
     closed: bool = True
+    k: float = 1.0
 
 
 @dataclass
@@ -81,6 +85,8 @@ class Scene:
     boxes: list[Box] = field(default_factory=list)
     shapes: list[Shape] = field(default_factory=list)
     texts: list[Text] = field(default_factory=list)
+    area: tuple = (M, 0, W - M, H)  # where the diagram body was fitted
+    scale: float = 1.0  # how far the body was scaled to fill it
 
 
 # --- text ------------------------------------------------------------------------------------
@@ -358,6 +364,33 @@ def _cached(js: str, footer: str) -> Scene:
     return sc
 
 
+def _fit_body(sc: Scene, i0: tuple, area: tuple, cap: float = 1.6) -> None:
+    """Scale the diagram body (zones, flows, cards, icons, their text) uniformly to fill `area`, centred; the header and footer keep their size."""
+    z, ln, bx, sh, tx = i0
+    zones, lines, boxes, shapes, texts = sc.zones[z:], sc.lines[ln:], sc.boxes[bx:], sc.shapes[sh:], sc.texts[tx:]
+    xs = [b.x for b in zones + boxes] + [b.x + b.w for b in zones + boxes] + [p[0] for l in lines for p in l.points]
+    ys = [b.y for b in zones + boxes] + [b.y + b.h for b in zones + boxes] + [p[1] for l in lines for p in l.points]
+    if not xs:
+        return
+    bx0, by0, bx1, by1 = min(xs), min(ys), max(xs), max(ys)
+    s = min(cap, (area[2] - area[0]) / (bx1 - bx0), (area[3] - area[1]) / (by1 - by0))
+    ox = area[0] + ((area[2] - area[0]) - (bx1 - bx0) * s) / 2 - bx0 * s
+    oy = area[1] + ((area[3] - area[1]) - (by1 - by0) * s) / 2 - by0 * s
+    tr = lambda x, y: (x * s + ox, y * s + oy)
+    for b in zones + boxes:
+        b.x, b.y = tr(b.x, b.y)
+        b.w, b.h, b.k = b.w * s, b.h * s, s
+    for l in lines:
+        l.points, l.k = [tr(*p) for p in l.points], s
+    for sp in shapes:
+        sp.k = s
+        sp.geom = [tr(*p) for p in sp.geom] if sp.op == "p" else [*tr(sp.geom[0], sp.geom[1]), sp.geom[2] * s, sp.geom[3] * s]
+    for t in texts:
+        t.x, t.y = tr(t.x, t.y)
+        t.k = s
+    sc.area, sc.scale = area, s
+
+
 def _build(arch: Architecture, footer: str, reserve: list) -> tuple[Scene, list]:
     sc = Scene()
     comp = {c.id: c for c in arch.components}
@@ -409,6 +442,7 @@ def _build(arch: Architecture, footer: str, reserve: list) -> tuple[Scene, list]
     key_h = _key_rows(reserve)[1]
     bottom = foot_top - 10 - key_h
 
+    body0 = (len(sc.zones), len(sc.lines), len(sc.boxes), len(sc.shapes), len(sc.texts))
     # platform chips first (their height is needed), then the zones
     chips, plat_h, _ = _chips(arch, comp, plat) if plat else ([], 0, 0)
     nlong = sum(1 for f in drawn if f.src in cidx and f.dst in cidx and abs(cidx[f.src] - cidx[f.dst]) >= 2)
@@ -426,8 +460,8 @@ def _build(arch: Architecture, footer: str, reserve: list) -> tuple[Scene, list]
     card: dict[str, Box] = {}
     sub_of: dict[str, tuple[int, int]] = {}
     for z in cols:
-        zy = band_y + (cfg["band_h"] - cfg["zh"][z]) / 2
-        sc.zones.append(Box(x, zy, cfg["colw"][z], cfg["zh"][z], "zone", z))
+        zy = band_y  # every column zone has the tallest zone's height; cards sit at the top
+        sc.zones.append(Box(x, zy, cfg["colw"][z], cfg["band_h"], "zone", z))
         sc.texts.append(Text(x + PAD, zy + 8, z.upper(), "zone"))
         for n, i in enumerate(order[z]):
             s, r = divmod(n, cfg["rows"][z])
@@ -571,6 +605,7 @@ def _build(arch: Architecture, footer: str, reserve: list) -> tuple[Scene, list]
         markers.append((len(markers) + 1, f.label, f.mode))
         sc.boxes.append(Box(*r, f"marker-{f.mode}"))
         sc.texts.append(Text(r[0] + r[2] / 2, r[1] + r[3] / 2 - 5, str(len(markers)), "marker", "middle"))
+    _fit_body(sc, body0, (M, head, W - M, bottom))
     rows, kh = _key_rows(markers)
     for n, label, mode, kx, ky in rows:
         kyy = foot_top - 10 - kh + ky + 3
@@ -599,12 +634,12 @@ def box_paint(style: str) -> tuple[str, str, int]:
             "marker": (MODE.get(sub, INK), MODE.get(sub, INK), 9)}[kind]
 
 
-def _arrow(pts):
+def _arrow(pts, k=1.0):
     (x1, y1), (x2, y2) = pts[-2], pts[-1]
     d = math.dist(pts[-2], pts[-1]) or 1
     ux, uy = (x2 - x1) / d, (y2 - y1) / d
-    bx, by = x2 - ux * 9, y2 - uy * 9
-    return [(x2, y2), (bx - uy * 4.5, by + ux * 4.5), (bx + uy * 4.5, by - ux * 4.5)]
+    bx, by = x2 - ux * 9 * k, y2 - uy * 9 * k
+    return [(x2, y2), (bx - uy * 4.5 * k, by + ux * 4.5 * k), (bx + uy * 4.5 * k, by - ux * 4.5 * k)]
 
 
 def _clean(pts):
@@ -644,7 +679,7 @@ def to_svg(sc: Scene, title: str = "Solution architecture") -> str:
 
     def box(b: Box):
         fill, stroke, r = box_paint(b.style)
-        o.append(f'<rect x="{f(b.x)}" y="{f(b.y)}" width="{f(b.w)}" height="{f(b.h)}" rx="{r}" fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>')
+        o.append(f'<rect x="{f(b.x)}" y="{f(b.y)}" width="{f(b.w)}" height="{f(b.h)}" rx="{f(r * b.k)}" fill="{fill}" stroke="{stroke}" stroke-width="{f(1.5 * b.k)}"/>')
 
     for b in sc.zones:
         box(b)
@@ -654,15 +689,15 @@ def to_svg(sc: Scene, title: str = "Solution architecture") -> str:
             continue
         mode = ln.style.split("-", 1)[1]
         dash = DASH.get(mode)
-        o.append(f'<polyline points="{pp(_round(pts))}" fill="none" stroke="{MODE[mode]}" stroke-width="{LINE_W}" stroke-linejoin="round"'
-                 + (f' stroke-dasharray="{dash[0]} {dash[1]}"' if dash else "") + "/>")
+        o.append(f'<polyline points="{pp(_round(pts, 6 * ln.k))}" fill="none" stroke="{MODE[mode]}" stroke-width="{f(LINE_W * ln.k)}" stroke-linejoin="round"'
+                 + (f' stroke-dasharray="{f(dash[0] * ln.k)} {f(dash[1] * ln.k)}"' if dash else "") + "/>")
         if ln.arrow:
-            o.append(f'<polygon points="{pp(_arrow(pts))}" fill="{MODE[mode]}"/>')
+            o.append(f'<polygon points="{pp(_arrow(pts, ln.k))}" fill="{MODE[mode]}"/>')
     for b in sc.boxes:
         box(b)
     for s in sc.shapes:
         fill, stroke = _tok(s.fill, s.kind), _tok(s.stroke, s.kind)
-        paint = f'fill="{fill or "none"}"' + (f' stroke="{stroke}" stroke-width="1.6" stroke-linejoin="round"' if stroke else "")
+        paint = f'fill="{fill or "none"}"' + (f' stroke="{stroke}" stroke-width="{f(1.6 * s.k)}" stroke-linejoin="round"' if stroke else "")
         if s.op == "e":
             x, y, w, h = s.geom
             o.append(f'<ellipse cx="{f(x + w / 2)}" cy="{f(y + h / 2)}" rx="{f(w / 2)}" ry="{f(h / 2)}" {paint}/>')
@@ -673,8 +708,8 @@ def to_svg(sc: Scene, title: str = "Solution architecture") -> str:
             o.append(f'<{"polygon" if s.closed else "polyline"} points="{pp(s.geom)}" {paint}/>')
     for t in sc.texts:
         size, weight = TEXT[t.style]
-        o.append(f'<text x="{f(t.x)}" y="{f(t.y)}" font-size="{size}" font-weight="{weight}" fill="{TEXT_COLOUR.get(t.style, INK)}" '
-                 f'dominant-baseline="hanging"' + (f' letter-spacing="{LETTER[t.style]}"' if t.style in LETTER else "")
+        o.append(f'<text x="{f(t.x)}" y="{f(t.y)}" font-size="{f(size * t.k)}" font-weight="{weight}" fill="{TEXT_COLOUR.get(t.style, INK)}" '
+                 f'dominant-baseline="hanging"' + (f' letter-spacing="{f(LETTER[t.style] * t.k)}"' if t.style in LETTER else "")
                  + (' text-anchor="middle"' if t.anchor == "middle" else "") + f">{escape(t.text)}</text>")
     o.append("</svg>")
     return "".join(o)
@@ -689,7 +724,7 @@ def to_png(sc: Scene, scale: int = 2) -> bytes:
 
     def box(b: Box):
         fill, stroke, r = box_paint(b.style)
-        d.rounded_rectangle([b.x * scale, b.y * scale, (b.x + b.w) * scale, (b.y + b.h) * scale], r * scale, fill, stroke, int(1.5 * scale))
+        d.rounded_rectangle([b.x * scale, b.y * scale, (b.x + b.w) * scale, (b.y + b.h) * scale], r * b.k * scale, fill, stroke, max(1, int(1.5 * b.k * scale)))
 
     for b in sc.zones:
         box(b)
@@ -699,30 +734,30 @@ def to_png(sc: Scene, scale: int = 2) -> bytes:
             continue
         mode = ln.style.split("-", 1)[1]
         dash = DASH.get(mode)
-        dense = _round(pts)
+        dense = _round(pts, 6 * ln.k)
         if not dash:
-            d.line(S(dense), MODE[mode], int(LINE_W * scale), joint="curve")
+            d.line(S(dense), MODE[mode], max(1, int(LINE_W * ln.k * scale)), joint="curve")
         else:  # dashes walked along the rounded polyline
             at, on = 0.0, True
             for (x1, y1), (x2, y2) in zip(dense, dense[1:]):
                 n = math.dist((x1, y1), (x2, y2))
                 pos = 0.0
                 while pos < n:
-                    seg = min(dash[0 if on else 1] - at, n - pos)
+                    seg = min(dash[0 if on else 1] * ln.k - at, n - pos)
                     if on:
                         d.line(S([(x1 + (x2 - x1) * pos / n, y1 + (y2 - y1) * pos / n), (x1 + (x2 - x1) * (pos + seg) / n, y1 + (y2 - y1) * (pos + seg) / n)]),
-                               MODE[mode], int(LINE_W * scale))
+                               MODE[mode], max(1, int(LINE_W * ln.k * scale)))
                     pos += seg
                     at += seg
-                    if at >= dash[0 if on else 1] - 1e-9:
+                    if at >= dash[0 if on else 1] * ln.k - 1e-9:
                         on, at = not on, 0.0
         if ln.arrow:
-            d.polygon(S(_arrow(pts)), MODE[mode])
+            d.polygon(S(_arrow(pts, ln.k)), MODE[mode])
     for b in sc.boxes:
         box(b)
     for s in sc.shapes:
         fill, stroke = _tok(s.fill, s.kind), _tok(s.stroke, s.kind)
-        lw = int(1.6 * scale)
+        lw = max(1, int(1.6 * s.k * scale))
         if s.op in "er":
             x, y, ww, hh = s.geom
             (d.ellipse if s.op == "e" else d.rectangle)([x * scale, y * scale, (x + ww) * scale, (y + hh) * scale], fill, stroke, lw)
@@ -734,13 +769,13 @@ def to_png(sc: Scene, scale: int = 2) -> bytes:
             d.line(S(s.geom), stroke, lw, joint="curve")
     for t in sc.texts:
         size, weight = TEXT[t.style]
-        font = ImageFont.truetype(str(FONTS / f"IBMPlexSans-{WEIGHTS[weight]}.ttf"), size * scale)
+        font = ImageFont.truetype(str(FONTS / f"IBMPlexSans-{WEIGHTS[weight]}.ttf"), max(1, round(size * t.k * scale)))
         col = TEXT_COLOUR.get(t.style, INK)
         if t.style in LETTER:
             x = t.x * scale
             for ch in t.text:
                 d.text((x, t.y * scale), ch, col, font, anchor="la")
-                x += font.getlength(ch) + LETTER[t.style] * scale
+                x += font.getlength(ch) + LETTER[t.style] * t.k * scale
         else:
             d.text((t.x * scale, t.y * scale), t.text, col, font, anchor="ma" if t.anchor == "middle" else "la")
     out = io.BytesIO()
@@ -761,7 +796,7 @@ def to_pptx_shapes(slide, sc: Scene, left: int, top: int, width: int, height: in
     X, Y = (lambda v: int(left + v * s)), (lambda v: int(top + v * s))
     rgb = lambda h: RGBColor.from_string(h.lstrip("#"))
 
-    def style(sh, fill, stroke, lw, name):
+    def style(sh, fill, stroke, lw, name):  # lw in canvas px, already scaled by the caller
         if fill:
             sh.fill.solid()
             sh.fill.fore_color.rgb = rgb(fill)
@@ -779,7 +814,7 @@ def to_pptx_shapes(slide, sc: Scene, left: int, top: int, width: int, height: in
         fill, stroke, r = box_paint(b.style)
         sh = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, X(b.x), Y(b.y), int(b.w * s), int(b.h * s))
         sh.adjustments[0] = min(.5, r / min(b.w, b.h))
-        style(sh, fill, stroke, 1.5, f"arch:{b.style}:{b.ref}" if b.ref else f"arch:{b.style}")
+        style(sh, fill, stroke, 1.5 * b.k, f"arch:{b.style}:{b.ref}" if b.ref else f"arch:{b.style}")
 
     def poly(pts, closed):
         fb = slide.shapes.build_freeform(X(pts[0][0]), Y(pts[0][1]))
@@ -793,8 +828,8 @@ def to_pptx_shapes(slide, sc: Scene, left: int, top: int, width: int, height: in
         if len(pts) < 2:
             continue
         mode = ln.style.split("-", 1)[1]
-        sh = poly(_round(pts), False)
-        style(sh, None, MODE[mode], LINE_W, f"arch:{ln.style}")
+        sh = poly(_round(pts, 6 * ln.k), False)
+        style(sh, None, MODE[mode], LINE_W * ln.k, f"arch:{ln.style}")
         if mode in DASH:
             sh.line.dash_style = MSO_LINE.DASH if DASH[mode][0] > 3 else MSO_LINE.ROUND_DOT
         if ln.arrow:
@@ -808,11 +843,11 @@ def to_pptx_shapes(slide, sc: Scene, left: int, top: int, width: int, height: in
             sh = slide.shapes.add_shape(MSO_SHAPE.OVAL if sp.op == "e" else MSO_SHAPE.RECTANGLE, X(x), Y(y), int(w * s), int(h * s))
         else:
             sh = poly(sp.geom, sp.closed)
-        style(sh, fill if (sp.closed or sp.op != "p") else None, stroke, 1.6, f"arch:icon-{sp.kind}")
+        style(sh, fill if (sp.closed or sp.op != "p") else None, stroke, 1.6 * sp.k, f"arch:icon-{sp.kind}")
     for t in sc.texts:
         size, weight = TEXT[t.style]
-        w = int((max(measure(t.text, t.style), 10) + 6) * s)
-        tb = slide.shapes.add_textbox(X(t.x) - (w // 2 if t.anchor == "middle" else 0), Y(t.y), w, int(size * 1.4 * s))
+        w = int((max(measure(t.text, t.style) * t.k, 10) + 6) * s)
+        tb = slide.shapes.add_textbox(X(t.x) - (w // 2 if t.anchor == "middle" else 0), Y(t.y), w, int(size * t.k * 1.4 * s))
         tf = tb.text_frame
         tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
         tf.word_wrap = False
@@ -822,16 +857,16 @@ def to_pptx_shapes(slide, sc: Scene, left: int, top: int, width: int, height: in
         r = p.add_run()
         r.text = t.text
         r.font.name = "IBM Plex Sans"
-        r.font.size = Pt(size * s / 12700)
+        r.font.size = Pt(size * t.k * s / 12700)
         r.font.bold = weight >= 600
         r.font.color.rgb = rgb(TEXT_COLOUR.get(t.style, INK))
         if t.style in LETTER:
-            r._r.get_or_add_rPr().set("spc", str(int(LETTER[t.style] * s / 12700 * 100)))
+            r._r.get_or_add_rPr().set("spc", str(int(LETTER[t.style] * t.k * s / 12700 * 100)))
         tb.name = f"arch:text:{t.style}"
 
 
 def to_mermaid(arch: Architecture) -> str:
-    esc = lambda s: re.sub(r'["\[\]|<>]', lambda m: f"#{ord(m.group())};", s)
+    esc = lambda s: re.sub(r'["\[\]|<>`]', lambda m: f"#{ord(m.group())};", " ".join(s.split()))  # no fence breaker, no line break
     nid = lambda i: "n_" + re.sub(r"\W", "_", i)
     out = ["flowchart LR"]
     for z in [*ZONES, "platform"]:

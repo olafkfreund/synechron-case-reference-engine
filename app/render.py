@@ -9,12 +9,15 @@ from docxtpl import DocxTemplate, InlineImage, RichText
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import Response
 from jinja2 import Environment
+from markupsafe import Markup
+from pydantic import ValidationError
 from pptx import Presentation
 
 from app import anonymise, db, office
+from app.archdiagram import layout, to_mermaid, to_pptx_shapes, to_png, to_svg
 from app.main import User, require, wants_html
 from app.review import PNG_HEADERS, VISIBLE, page
-from app.schema import ReferenceCase, fence, plain, vague_metric
+from app.schema import Architecture, ReferenceCase, fence, plain, vague_metric
 
 router = APIRouter()
 TEMPLATE = Path(__file__).resolve().parent.parent / "brand" / "reference.docx"
@@ -213,7 +216,31 @@ def section(case: ReferenceCase, client: str) -> dict:
         details=[dict(label=a, value=str(b)) for a, b in details if b not in (None, "")],
         blocks=[dict(heading=a, text=t, paragraphs=ps) for a, (t, ps) in blocks if t],
         lists=[dict(heading=a, bullets=[str(i) for i in b if i]) for a, b in lists if any(b)],
-        diagrams=[dict(id=d.id, caption=d.caption, width=d.width, height=d.height) for d in case.diagrams if d.status == "ready"])
+        diagrams=[dict(id=d.id, caption=d.caption, width=d.width, height=d.height) for d in case.diagrams if d.status == "ready"],
+        architecture=architecture_dict(case))
+
+
+def architecture_dict(case: ReferenceCase) -> dict | None:
+    """The architecture as plain text and keys: only when it has components and no unresolved flag (#246).
+    It goes through protect() with the rest, and every output draws from that protected dict, never from the case."""
+    a = case.architecture
+    if not a or not a.components or a.flags:
+        return None
+    return {**a.model_dump(include={"title", "components", "flows", "callouts"}),
+            "components": [c.model_dump(exclude={"cite"}) for c in a.components],
+            "flows": [f.model_dump(exclude={"cite"}) for f in a.flows], "footer": ""}
+
+
+def architecture_of(sec: dict):
+    """(Architecture, Scene) from a protected section; None when it has none, or protect() rewrote a key (a client called "core")."""
+    a = sec.get("architecture")
+    if not a:
+        return None
+    try:
+        arch = Architecture.model_validate({k: a[k] for k in ("title", "components", "flows", "callouts")})
+    except ValidationError:
+        return None
+    return arch, layout(arch, a.get("footer", ""))
 
 
 def _walk(o, f):
@@ -255,7 +282,8 @@ def to_docx(sections: list[dict], industry: dict | None = None, images: dict[int
     tpl = DocxTemplate(template or TEMPLATE)
     # images are added after protect(): an InlineImage is not a string; one missing from `images` is skipped
     sections = [{**s, "diagrams": [{**d, "image": InlineImage(tpl, BytesIO(images[d["id"]]), width=Mm(min(160, d["width"] * 25.4 / 96)))}
-                                   for d in s["diagrams"] if d["id"] in images]} for s in sections]
+                                   for d in s["diagrams"] if d["id"] in images],
+                 "arch_image": InlineImage(tpl, BytesIO(to_png(a[1])), width=Mm(160)) if (a := architecture_of(s)) else None} for s in sections]
     if industry:  # a note is Consolas, line by line, in a run of its own (the template checks q.mono)
         industry = {**industry, "groups": [{**g, "quotes": [{**q, "rich": _mono(q)} if q.get("mono") else q for q in g["quotes"]]}
                                            for g in industry["groups"]]}
@@ -330,6 +358,29 @@ def _diagram_slide(prs, layout, names, title: str, d: dict, png: bytes) -> None:
     slide.shapes.add_picture(BytesIO(png), left + (w - pw) // 2, top + (h - ph_) // 2, width=pw, height=ph_)
 
 
+def _architecture_slide(prs, diagram_layout, title: str, scene) -> None:
+    """One slide of native shapes. The Diagram layout's picture box gives the area; without that layout, a blank slide with a title."""
+    from pptx.util import Emu, Inches, Pt
+    heading = f"{title}: solution architecture"
+    if diagram_layout:
+        layout_, names = diagram_layout
+        _fill(prs, layout_, names, {"Title": [heading], "Picture": [""], "Caption": [""]}, DIAGRAM_PLACEHOLDERS)
+        slide = prs.slides[-1]
+        idx = next(i for i, n in names.items() if n == "Picture")
+        box = next(ph for ph in slide.placeholders if ph.placeholder_format.idx == idx)
+        left, top, w, h = box.left, box.top, box.width, box.height
+        box._element.getparent().remove(box._element)
+    else:
+        slide = prs.slides.add_slide(min(prs.slide_layouts, key=lambda l: len(l.placeholders)))
+        for ph in list(slide.placeholders):
+            ph._element.getparent().remove(ph._element)
+        tb = slide.shapes.add_textbox(Inches(.5), Inches(.3), prs.slide_width - Inches(1), Inches(.7))
+        tb.text_frame.text = heading
+        tb.text_frame.paragraphs[0].runs[0].font.size = Pt(26)
+        left, top, w, h = Inches(.5), Inches(1.2), prs.slide_width - Inches(1), prs.slide_height - Inches(1.7)
+    to_pptx_shapes(slide, scene, left, top, w, h)
+
+
 def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int, bytes] = {}) -> bytes:
     prs = Presentation(MASTER)
     if len(prs.slides):  # a master's sample slides (and their text) must never ship
@@ -350,6 +401,8 @@ def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int
             "Challenge": [excerpt(block("Challenge"))], "Solution": [excerpt(block("Solution"))],
             "Outcomes": [c["note"]] if c["note"] else bullets("Outcomes")[:SLIDE_OUTCOMES], "Technology": [", ".join(bullets("Technology"))]},
             PLACEHOLDERS)
+        if a := architecture_of(c):
+            _architecture_slide(prs, _layout(prs, DIAGRAM_LAYOUT, DIAGRAM_PLACEHOLDERS), c["title"], a[1])
         for d in c["diagrams"]:
             if d["id"] in images:
                 _diagram_slide(prs, *diagram_layout, c["title"], d, images[d["id"]])
@@ -440,6 +493,13 @@ MD = _env.from_string("""\
 {% endfor %}
 
 {% endfor %}
+{% if c.mermaid %}
+## Architecture
+
+```mermaid
+{{ c.mermaid }}```
+
+{% endif %}
 {% if c.diagrams %}
 ## Diagrams
 
@@ -574,7 +634,7 @@ Source [{{ q.n }}]
 
 
 def to_markdown(sections: list[dict], industry: dict | None = None) -> str:
-    return MD.render(cases=sections, industry=industry)
+    return MD.render(cases=[{**c, "mermaid": to_mermaid(a[0]) if (a := architecture_of(c)) else ""} for c in sections], industry=industry)
 
 
 OFFICE = "application/vnd.openxmlformats-officedocument."
@@ -650,6 +710,12 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
         if study:  # a role and a date, never a person; goes through protect() with the rest
             n = members or 1
             sec["footer"] = f"Based on {n} source document{'s' if n != 1 else ''} reviewed{f' on {approved:%Y-%m-%d}' if approved else ''}"
+        if sec["architecture"]:
+            sec["architecture"]["footer"] = f"Source: {sec['title']}" + (f" · reviewed {approved:%Y-%m-%d}" if approved else "")
+            try:  # a blocked architecture is left out and counted on the preview; it never withholds the whole output
+                protect([sec["architecture"]], clients)
+            except Withheld:
+                sec["architecture"], sec["arch_withheld"] = None, True
         sections.append(sec)
     try:
         sections = protect(sections, clients)
@@ -717,7 +783,8 @@ def preview(request: Request, case_ids: list[int] = Form([]), research_id: int |
         if len(ids) == 1:
             _, study, study_industry, _, _, _ = build(conn, case_ids, research_id, industry_context_ack, user, "case_study_docx", library_ids)
             footer, retitled = study[0]["footer"], bool(study_industry) and study_industry["heading"] != (industry or {}).get("heading")
-    return page(request, "output_preview.html", user, cases=sections, industry=industry, ids=ids,
+    svgs = [Markup(to_svg(a[1], a[0].title)) if (a := architecture_of(c)) else "" for c in sections]  # Markup only after to_svg escaped every string
+    return page(request, "output_preview.html", user, cases=sections, svgs=svgs, industry=industry, ids=ids,
                 research_id=research_id, library_ids=list(dict.fromkeys(library_ids)), ack=industry_context_ack, footer=footer, retitled=APPROACH_HEADING if retitled else "")
 
 

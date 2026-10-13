@@ -703,7 +703,7 @@ def test_case_study_docx_full_and_anonymised(approved, reg):
     r = gen([cid], "case_study_docx")
     assert r.status_code == 200
     t = doc_text(r.content)
-    for want in ("Architecture", "Technical references", "a UK retailer was slow.", "Second paragraph.",
+    for want in ("Diagrams", "Technical references", "a UK retailer was slow.", "Second paragraph.",
                  "Flow at a UK retailer", "payments API v2", "Based on 1 source document"):
         assert want in t, want
     assert name not in t and "{{" not in t and "{%" not in t
@@ -728,3 +728,82 @@ def test_headline_value_is_one_unsplit_paragraph_in_md_and_docx(approved):
     paras = [p.text for p in Document(BytesIO(gen([cid], "docx").content)).paragraphs]
     assert not {"first part", "second part"} & {p.strip() for p in paras}
     assert any("first part" in p and "second part" in p for p in paras)
+
+
+# --- solution architecture (#246 step A5) ---
+def with_arch(*names, flags=(), label="Open account", **kw):
+    from app.schema import Architecture
+    names = names or ("Customer portal", "Account engine")
+    comps = [{"id": f"c{i}", "name": n, "role": "Does the work", "zone": z, "kind": "service"}
+             for i, (n, z) in enumerate(zip(names, ("channels", "core", "data", "external")))]
+    flows = [{"src": "c0", "dst": "c1", "label": label, "mode": "api"}]
+    arch = Architecture.model_validate({"components": comps, "flows": flows, "flags": list(flags),
+                                        "callouts": [{"text": "Onboarding in 3 days", "outcome": 0}]})
+    return full(**kw).model_copy(update={"architecture": arch})
+
+
+def pptx_arch(content):
+    prs = Presentation(BytesIO(content))
+    return [s for s in prs.slides if any(sh.name.startswith("arch:") for sh in s.shapes)]
+
+
+def test_architecture_is_in_every_format_and_the_preview(approved):
+    cid = approved(with_arch())
+    md = gen([cid], "md").text
+    assert "## Architecture" in md and "```mermaid" in md and "Account engine" in md and "Open account" in md
+    z = zipfile.ZipFile(BytesIO(gen([cid], "docx").content))
+    assert any(n.startswith("word/media/") for n in z.namelist())  # the PNG; this case has no other picture
+    assert "Architecture" in doc_text(gen([cid], "docx").content)
+    cs = zipfile.ZipFile(BytesIO(gen([cid], "case_study_docx").content))
+    assert any(n.startswith("word/media/") for n in cs.namelist())
+    slides_ = pptx_arch(gen([cid], "pptx").content)
+    assert len(slides_) == 1
+    text = " ".join(sh.text_frame.text for sh in slides_[0].shapes if sh.has_text_frame)
+    assert "solution architecture" in text and "Account engine" in text and "Open account" in text
+    p = prev([cid]).text
+    assert 'class="paper"><svg' in p and "Account engine" in p and "Open account" in p
+    assert all(n in md and n in p for n in ("Customer portal", "Account engine", "Open account"))  # the preview shows what is downloaded
+
+
+def test_architecture_names_are_anonymised_like_the_rest(approved, reg):
+    name, label_id = reg("Zorp", "a UK retailer")
+    cid = approved(with_arch(f"{name} ledger", "Account engine"))
+    link(cid, label_id)
+    outs = [gen([cid], "md").text, prev([cid]).text, doc_text(gen([cid], "docx").content)]
+    pp = pptx_arch(gen([cid], "pptx").content)[0]
+    outs.append(" ".join(sh.text_frame.text for sh in pp.shapes if sh.has_text_frame))
+    for o in outs:
+        assert name not in o and "a UK retailer ledger" in o or o is outs[2], o[:200]  # the docx has no text of the drawing, only its PNG
+    assert all(name not in o for o in outs)
+
+
+def test_a_blocked_architecture_is_left_out_not_the_whole_output(approved, reg, monkeypatch):
+    name, _ = reg("Zorp", "a UK retailer")
+    cid = approved(with_arch(f"{name} ledger", "Account engine"))
+    real = render.anonymise.apply
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t if "ledger" in t else real(t, c))  # apply() misses the component
+    r = gen([cid], "md")
+    assert r.status_code == 200 and name not in r.text and "## Architecture" not in r.text
+    p = prev([cid])
+    assert p.status_code == 200 and "left out" in p.text and 'class="paper"' not in p.text and name not in p.text
+
+
+def test_unapproved_or_flagged_architecture_is_not_output(approved):
+    assert gen([approved(with_arch(), status="extracted", due=None)], "md").status_code == 404
+    flagged = approved(with_arch(flags=["a number not in the quote"]))
+    assert "## Architecture" not in gen([flagged], "md").text and 'class="paper"' not in prev([flagged]).text
+    assert not pptx_arch(gen([flagged], "pptx").content)
+
+
+def test_architecture_preview_escapes_a_hostile_label(approved):
+    cid = approved(with_arch("<script>alert(1)</script>", "Account engine", label="<img src=x onerror=1>"))
+    p = prev([cid]).text
+    assert 'class="paper"><svg' in p and "<script>alert" not in p and "<img src=x" not in p and "&lt;script&gt;" in p
+    md = gen([cid], "md").text
+    assert "<script>" not in md and "#60;script#62;" in md
+
+
+def test_an_architecture_meets_the_completeness_diagram_item():
+    from app import completeness
+    item = lambda c: next(i for i in completeness.checklist(c) if i["key"] == "diagram")
+    assert not item(full())["ok"] and item(with_arch())["ok"]

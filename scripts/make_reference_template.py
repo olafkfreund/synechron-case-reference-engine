@@ -1,6 +1,6 @@
 """Write the placeholder Word template. Marketing's real template replaces brand/reference.docx
 and must use the same context: cases[] with title, client, note (empty unless an engagement), summary, details[{label,value}],
-blocks[{heading,text,paragraphs[str]}], lists[{heading,bullets[]}], diagrams[{image,caption}], footer (the case-study document only; empty elsewhere); and industry (or None): heading, disclaimer,
+blocks[{heading,text,paragraphs[str]}], lists[{heading,bullets[]}], diagrams[{image,caption}], arch_image (an InlineImage of the solution architecture; absent when there is none), footer (the case-study document only; empty elsewhere); and industry (or None): heading, disclaimer,
 groups[{title, lead, quotes[{quote, n, mono, rich}]}] (rich: a RichText of the note, only when mono), sources[{n, title, publisher, url, date}], note, show_head (false when only library briefs follow: skip the heading, disclaimer, groups and sources),
 briefs[{title, disclaimer, takeaways[str], themes[{heading, text}], sources[{n, title, publisher, url, date}], note}] (library briefs, each with its own sources)
 (statements[{text}] is the flat fallback). The optional second path gets the brief template (brand/brief.docx): brief with title, disclaimer,
@@ -91,8 +91,12 @@ if sys.argv[1] == "--case-study":
     d.add_paragraph("{{ p }}")
     d.add_paragraph("{%p endfor %}")
     d.add_paragraph("{%p endfor %}")
-    d.add_paragraph("{%p if c.diagrams %}")
+    d.add_paragraph("{%p if c.arch_image %}")
     d.add_heading("Architecture", 1)
+    d.add_paragraph("{{ c.arch_image }}")
+    d.add_paragraph("{%p endif %}")
+    d.add_paragraph("{%p if c.diagrams %}")
+    d.add_heading("Diagrams", 1)
     d.add_paragraph("{%p for d in c.diagrams %}")
     d.add_paragraph("{{ d.image }}")
     d.add_paragraph("{{ d.caption }}", style="Caption")
@@ -138,6 +142,10 @@ d.add_paragraph("{%p for i in l.bullets %}")
 d.add_paragraph("{{ i }}", style="List Bullet")
 d.add_paragraph("{%p endfor %}")
 d.add_paragraph("{%p endfor %}")
+d.add_paragraph("{%p if c.arch_image %}")
+d.add_heading("Architecture", 2)
+d.add_paragraph("{{ c.arch_image }}")
+d.add_paragraph("{%p endif %}")
 d.add_paragraph("{%p for d in c.diagrams %}")
 d.add_paragraph("{{ d.image }}")
 d.add_paragraph("{{ d.caption }}", style="Caption")
