@@ -13,6 +13,12 @@ pages. It then keeps only the claims whose quote really appears on the page,
 with publisher, URL and retrieval date. That evidence is sound, but it stops
 there:
 
+- **The download is a raw quote dump.** In the 2026-10-13 trial, the
+  "Industry context" preview and Word download are one flat bullet list. Each
+  bullet holds a label, the full quote, the host and the full URL inline
+  (often over 100 characters), and the date. There are no themes, no
+  takeaways, no reading order, and nothing that reads as a document. Nobody
+  could hand it to a customer or paste it into a proposal.
 - **No content of our own.** The page lists quotes, an AI one-line reading of
   each, and the type, an AI label. Nothing turns them into text we could put
   in a proposal. The only output is the "Industry context" download, which
@@ -40,6 +46,18 @@ there:
   date). They can edit it before downloading it as Word, PDF or Markdown. A
   sentence, number or name that no selected quote supports is flagged, as in
   #212's write-up checks.
+- **Formatted like a document.** Every research output (the brief, and the
+  "Industry context" section in bid outputs) has:
+  - a title
+  - a short "Key takeaways" list
+  - the statements grouped by theme, for example "CMDB as the foundation" and
+    "How SAM and HAM work together", each with a lead sentence and its quotes
+  - numbered citations [1] in the text, in place of inline URLs
+  - a numbered source list at the end (publisher, page title, URL, retrieved
+    date)
+
+  This applies to Word, PDF, PowerPoint (one theme per slide) and Markdown,
+  and the preview shows the same.
 - **Knowledge library.** A brief, or a set of chosen quotes, can be saved
   under a topic, for example "ServiceNow ITAM" or "CMDB". Saved items are
   searchable and visible to the team, so the next bid finds them without
