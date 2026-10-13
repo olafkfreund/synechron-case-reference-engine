@@ -212,7 +212,7 @@ def research_view(rid: int, request: Request, user: User = Depends(require("user
                 can_attach=sources_v is not None, sources_v=sources_v)
 
 
-def picked_claims(conn, rid, n, user) -> list[dict]:
+def picked_claims(conn, rid, n, user, strict=False) -> list[dict]:
     """The user's own finished research, the picked claims by index from the stored row (never the form), through visible_claims()."""
     row = conn.execute("select results from research where id=%s and created_by=%s and status='done'", (rid, user.sub)).fetchone()
     if not row:
@@ -222,6 +222,8 @@ def picked_claims(conn, rid, n, user) -> list[dict]:
     out = visible_claims(picked, anonymise.load_clients(conn))[0]
     if not out:
         raise HTTPException(400, "pick at least one statement")
+    if strict and len(out) != len(picked):  # saving to the library refuses rather than leaving a quote out
+        raise HTTPException(400, "a picked statement names a protected client")
     return out
 
 
@@ -249,9 +251,14 @@ def research_export(rid: int, request: Request, format: str = Form(), n: list[in
         conn.execute("insert into generations(user_id, format, research_id) values (%s,%s,%s)", (user.sub, f"export-{format}", rid))
     md = _export_md(claims)
     if format == "copy":
-        return page(request, "research_export.html", user, text=md, research_id=rid)
+        return page(request, "research_export.html", user, text=md, back=f"/research/{rid}")
+    return export_file(claims, format, f"research-{rid}")
+
+
+def export_file(claims, format: str, name: str) -> Response:
+    """The md or csv download of already-filtered claims. Shared with the library."""
     if format == "md":
-        body = md
+        body = _export_md(claims)
     else:
         out = io.StringIO()
         w = csv.writer(out)
@@ -260,7 +267,7 @@ def research_export(rid: int, request: Request, format: str = Form(), n: list[in
             w.writerow([_csv_safe(c.get(k)) for k in ("quote", "publisher", "title", "url")] + [_csv_safe((c.get("retrieved_at") or "")[:10])])
         body = out.getvalue()
     return Response(body, media_type="text/markdown" if format == "md" else "text/csv", headers={
-        "Content-Disposition": f'attachment; filename="research-{rid}.{format}"', "Cache-Control": "no-store",
+        "Content-Disposition": f'attachment; filename="{name}.{format}"', "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff"})
 
 

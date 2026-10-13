@@ -138,6 +138,20 @@ create table if not exists briefs (
   created_at timestamptz not null default now()
 );
 
+-- the shared knowledge library (#214): quotes and briefs saved from research, copied verbatim so an item does not
+-- depend on the research row. Not joined into cases.tsv or search_text: its text must never reach case search.
+create table if not exists library_items (
+  id bigserial primary key,
+  topic text not null,
+  kind text not null check (kind in ('brief','quotes')),
+  query text not null default '',
+  body jsonb not null,
+  created_by text not null,
+  created_at timestamptz not null default now(),
+  checked_at timestamptz not null default now()
+);
+create index if not exists library_items_topic_idx on library_items (lower(topic));
+
 create table if not exists generations (
   id bigserial primary key,
   user_id text not null,

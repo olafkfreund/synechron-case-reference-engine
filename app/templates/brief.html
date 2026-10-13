@@ -17,5 +17,7 @@
 <form method="post" action="/briefs/{{ bid }}/download" class="section-card stack">
 <div class="row"><label for="b-format">Format</label><select id="b-format" name="format" style="max-width:200px"><option value="docx">Word</option><option value="pdf_docx">PDF</option><option value="md">Markdown</option></select>
 <button class="btn primary"{% if body.flags %} disabled{% endif %}>Download</button></div></form>
+{% if not body.flags %}<form method="post" action="/library/save" class="section-card"><input type="hidden" name="brief_id" value="{{ bid }}">
+<div class="row"><label for="b-topic">Library topic</label><input id="b-topic" name="topic" maxlength="200" required><button class="btn">Save to library</button></div></form>{% endif %}
 {% endif %}
 {% endblock %}

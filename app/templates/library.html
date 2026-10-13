@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="page-head"><div><h1>Library</h1><p>Public research saved for reuse. Public statements by third parties, not our delivery evidence.</p></div></div>
+<form method="get" action="/library" class="section-card row"><label for="lib-q">Search</label><input id="lib-q" name="q" value="{{ q }}" maxlength="200"><button class="btn">Search</button></form>
+<div class="section-card">
+{% for i in items %}<p style="margin:0 0 8px"><a href="/library/{{ i.id }}"><b>{{ i.topic }}</b></a>
+<span class="badge neutral">{{ "brief" if i.kind == "brief" else "quotes" }}</span>
+<span class="muted">{{ i.sources }} source(s) &middot; {{ i.age }} day(s) old</span>{% if i.stale %} <span class="badge">re-check</span>{% endif %}</p>
+{% else %}<p class="muted" style="margin:0">Nothing saved{% if q %} for this search{% endif %}.</p>{% endfor %}
+</div>
+{% endblock %}

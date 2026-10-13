@@ -172,9 +172,25 @@ def save(bid: int, title: str = Form(), takeaways: str = Form(""), heading: list
     return RedirectResponse(f"/briefs/{bid}", status_code=303)
 
 
+def make_output(body, quotes, clients, format) -> tuple[bytes, str, str]:
+    """(bytes, media type, extension) of a brief in docx, pdf_docx or md. Shared with the library."""
+    from app import render  # here: render imports this module's neighbours
+    try:
+        sec = render.brief_section(body, quotes, clients)
+    except render.Withheld as e:
+        raise HTTPException(409, str(e)) from None
+    try:
+        if format == "md":
+            return render.BRIEF_MD.render(b=sec).encode(), "text/markdown; charset=utf-8", "md"
+        if format == "docx":
+            return render.to_brief_docx(sec), render.OFFICE + "wordprocessingml.document", "docx"
+        return render.to_pdf(render.to_brief_docx(sec), ".docx"), "application/pdf", "pdf"
+    except render.PdfError as e:
+        raise HTTPException(503, str(e)) from None
+
+
 @router.post("/briefs/{bid}/download")
 def download(bid: int, format: str = Form(), user: User = Depends(require("user"))):
-    from app import render  # here: render imports this module's neighbours
     if format not in ("docx", "pdf_docx", "md"):
         raise HTTPException(400, "unknown format")
     with db.connect() as conn:
@@ -183,21 +199,8 @@ def download(bid: int, format: str = Form(), user: User = Depends(require("user"
             raise HTTPException(409, "the brief is not ready")
         if body.get("flags"):
             raise HTTPException(409, "fix the flagged sentences first")
-        try:
-            sec = render.brief_section(body, quotes, anonymise.load_clients(conn))  # re-checked now: a client may be protected since
-        except render.Withheld as e:
-            raise HTTPException(409, str(e)) from None
-        try:
-            if format == "md":
-                data, mime = render.BRIEF_MD.render(b=sec).encode(), "text/markdown; charset=utf-8"
-            elif format == "docx":
-                data, mime = render.to_brief_docx(sec), render.OFFICE + "wordprocessingml.document"
-            else:
-                data, mime = render.to_pdf(render.to_brief_docx(sec), ".docx"), "application/pdf"
-        except render.PdfError as e:
-            raise HTTPException(503, str(e)) from None
+        data, mime, ext = make_output(body, quotes, anonymise.load_clients(conn), format)  # re-checked now: a client may be protected since
         conn.execute("insert into generations(user_id, format, research_id) "
                      "select %s, %s, research_id from briefs where id=%s", (user.sub, f"brief-{format}", bid))
-    ext = {"md": "md", "docx": "docx", "pdf_docx": "pdf"}[format]
     return Response(data, media_type=mime, headers={"Content-Disposition": f'attachment; filename="brief-{bid}.{ext}"',
                                                     "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})

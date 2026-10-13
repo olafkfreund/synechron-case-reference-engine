@@ -171,6 +171,8 @@ def create_app() -> FastAPI:
     app.include_router(research.router)
     from app import brief
     app.include_router(brief.router)
+    from app import library
+    app.include_router(library.router)
     from app import audit
     app.include_router(audit.router)
     from app import models_admin
