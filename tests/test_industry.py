@@ -843,3 +843,85 @@ def test_case_study_and_pdf_outputs_carry_library_items(libs, approved):
     study = lgen([cid], [lid], "case_study_docx")
     assert study.status_code == 200 and "Zero trust brief" in doc_text(study.content)
     assert lgen([cid], [lid], "pdf_docx").content.startswith(b"%PDF")
+
+
+CODE = 'mlflow.set_registry_uri("db")\nname = "a ``` b" # **keep** [x](y) <b>'
+
+
+def note(quote=CODE):
+    return {**claim(quote, "technical_note", url="https://v.example/n", publisher="v.example"), "statement": ""}
+
+
+def test_a_note_is_a_longer_fence_in_markdown_and_never_cleaned(rows):
+    r = gen(rows([note()]), ack=True)
+    assert r.status_code == 200
+    assert "````\n" + CODE + "\n````" in r.text and "Source [1]" in r.text  # one backtick longer than the ``` inside
+    assert "&lt;" not in r.text and "\\*" not in r.text                        # no HTML or Markdown escaping inside the fence
+
+
+def test_a_note_is_consolas_lines_in_docx_and_first_line_in_pptx(rows, approved):
+    rid = rows([note(), claim()])
+    doc = gen(rid, [approved()], "docx", ack=True).content
+    xml = zipfile.ZipFile(BytesIO(doc)).read("word/document.xml").decode()
+    assert "Consolas" in xml and "mlflow.set_registry_uri" in xml and "**keep**" in xml and "<w:br/>" in xml
+    sl = slides(gen(rid, [approved()], "pptx", ack=True).content)[1]
+    text = "\n".join(x for s in sl for ps in s.values() for x in ps)
+    assert 'mlflow.set_registry_uri("db") (see source [' in text and "**keep**" not in text
+
+
+def test_a_note_is_a_pre_on_the_preview_and_the_research_page(rows, approved):
+    rid = rows([note()])
+    p = as_user("u1", G).post("/preview", data={"case_ids": [approved()], "research_id": rid}).text
+    assert "<pre>mlflow.set_registry_uri" in p and "&lt;b&gt;" in p
+    v = as_user("u1", G).get(f"/research/{rid}").text
+    assert "<pre>mlflow.set_registry_uri" in v and "**keep**" in v and "AI reading:" not in v
+
+
+def test_a_note_stays_verbatim_through_export_attach_and_brief(rows, approved):
+    from app import brief
+    rid = rows([note()])
+    exp = as_user("u1", G).post(f"/research/{rid}/export", data={"format": "md", "n": [0]}).text
+    assert "**keep**" in exp
+    cid = approved()
+    assert attach(cid, rid, [0], s=token(cid)).status_code == 303
+    s = stored(cid)[0]
+    assert s["type"] == "technical_note" and s["quote"] == CODE            # the stored source is the raw block
+    sec = render.brief_section({"title": "t", "takeaways": [], "themes": []}, [s], [])
+    assert sec["appendix"][0]["quote"] == CODE and sec["appendix"][0]["mono"]
+    assert brief.quote_texts([s], []) == [" ".join(CODE.split())]
+    md = render.BRIEF_MD.render(b=sec)
+    assert "````\n" + CODE + "\n````" in md
+
+
+def test_the_research_export_fences_a_note_and_keeps_its_lines(rows):
+    exp = as_user("u1", G).post(f"/research/{rows([note()])}/export", data={"format": "md", "n": [0]}).text
+    assert "````\n" + CODE + "\n````" in exp
+
+
+def test_library_and_review_pages_show_a_note_as_pre(rows, approved, env):
+    rid = rows([note()])
+    cid = approved()
+    assert attach(cid, rid, [0], s=token(cid)).status_code == 303
+    assert "<pre>mlflow.set_registry_uri" in as_user("u1", RV).get(f"/review/{cid}").text
+    c = as_user("u1", G)
+    lid = int(c.post("/library/save", data={"research_id": rid, "n": [0], "topic": "Registry"}, follow_redirects=False).headers["location"].rsplit("/", 1)[1])
+    assert "<pre>mlflow.set_registry_uri" in as_user("u2", G).get(f"/library/{lid}").text
+    with db.connect() as conn:
+        conn.execute("delete from library_items where id=%s", (lid,))
+
+
+def test_a_note_is_consolas_in_the_brief_docx(rows):
+    sec = render.brief_section({"title": "t", "takeaways": [], "themes": []},
+                               [{"quote": CODE, "type": "technical_note", "publisher": "v.example", "url": "https://v.example/n"}], [])
+    xml = zipfile.ZipFile(BytesIO(render.to_brief_docx(sec))).read("word/document.xml").decode()
+    assert "Consolas" in xml and "mlflow.set_registry_uri" in xml and "<w:br/>" in xml  # the lines break inside one run
+
+
+def test_a_blank_note_is_dropped_the_flat_list_keeps_the_whole_note_and_the_slide_uses_a_real_line():
+    blank = {**note("  \n "), "statement": ""}
+    assert render.industry_section([blank], []) is None
+    ind = render.industry_section([note(), claim()], [])
+    flat = [s for s in ind["statements"] if s.get("mono")]
+    assert flat == [{"text": CODE + " [1]", "mono": True}]            # the whole note, newlines and all
+    lead = render.industry_section([note("\n\n  first real line\nsecond")], [])
+    assert render.slide_statements(lead)[0].endswith("first real line (see source [1])")

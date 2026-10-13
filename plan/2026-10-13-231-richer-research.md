@@ -350,6 +350,36 @@ check the brief has a diagram, counts only.
   - Only real page titles are cleaned, not the host or publisher fallback.
   - Brief, library and attach-from-library store the plain()+apply() text,
     as they already stored the apply() text.
+- Phase (b), steps b4-b6:
+  - Notes also stay verbatim beyond the outputs the plan listed: the research
+    export fences them, the library and review pages show them as `<pre>`,
+    and `brand/brief.docx` is regenerated so an appendix note is mono.
+  - `fence` lives in `app/schema.py`, because `research.py` can't import
+    `render`.
+  - b6 eval (qwen3:14b, 3 queries, counts only):
+    - notes were found on every query, and no quote went over 80 words
+      (max 49)
+    - the model rated every claim relevance 3
+    - "not verbatim" drops varied widely from run to run (1 of 12 against
+      14 of 15 on the same query)
+    - one run returned the schema itself
+    - there was no baseline on main, so the PR claims nothing about quote
+      quality
+  - The eval used the compose gateway IP for `api_base`, because
+    `host.docker.internal` resolves only in `web` and `worker`.
+- Phase (b) review fixes (Codex gpt-6-sol and Opus):
+  - A cache hit recomputes notes from the stored pages.
+  - Fences close only on enough backticks, and inline triple backticks open
+    nothing.
+  - A bad `relevance` value is coerced, not fatal.
+  - A budget under 500 chars raises and is recorded on the row (no floor).
+  - A `#` inside code is not a heading.
+  - Blank notes are skipped.
+  - The flat statements list keeps the whole note.
+  - The docx test checks line breaks.
+  - The drop-reason test is one 30-claim stub, not 20, because the total cap
+    needs several pages, and each bad claim is also run alone. It replaces
+    `test_quotes_are_ranked_capped_and_the_drops_apply`.
 
 ## Tests
 

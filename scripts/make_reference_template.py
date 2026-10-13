@@ -1,10 +1,10 @@
 """Write the placeholder Word template. Marketing's real template replaces brand/reference.docx
 and must use the same context: cases[] with title, client, note (empty unless an engagement), summary, details[{label,value}],
 blocks[{heading,text,paragraphs[str]}], lists[{heading,bullets[]}], diagrams[{image,caption}], footer (the case-study document only; empty elsewhere); and industry (or None): heading, disclaimer,
-groups[{title, lead, quotes[{quote, n}]}], sources[{n, title, publisher, url, date}], note, show_head (false when only library briefs follow: skip the heading, disclaimer, groups and sources),
+groups[{title, lead, quotes[{quote, n, mono, rich}]}] (rich: a RichText of the note, only when mono), sources[{n, title, publisher, url, date}], note, show_head (false when only library briefs follow: skip the heading, disclaimer, groups and sources),
 briefs[{title, disclaimer, takeaways[str], themes[{heading, text}], sources[{n, title, publisher, url, date}], note}] (library briefs, each with its own sources)
 (statements[{text}] is the flat fallback). The optional second path gets the brief template (brand/brief.docx): brief with title, disclaimer,
-takeaways[str], themes[{heading, text}], sources[{n, title, publisher, url, date}], appendix[{n, quote}], note.
+takeaways[str], themes[{heading, text}], sources[{n, title, publisher, url, date}], appendix[{n, quote, mono, rich}], note.
 Usage: make_reference_template.py <out.docx> [<brief.docx>]
        make_reference_template.py --case-study <case_study.docx>   (one case per document: same context, cases has one item)"""
 import sys
@@ -22,7 +22,11 @@ def industry_section(d, page_break=True):
     d.add_heading("{{ g.title }}", 2)
     d.add_paragraph().add_run("{{ g.lead }}").italic = True
     d.add_paragraph("{%p for q in g.quotes %}")
+    d.add_paragraph("{%p if q.mono %}")
+    d.add_paragraph("{{r q.rich }}", style="List Bullet")  # a technical note: Consolas, line by line
+    d.add_paragraph("{%p else %}")
     d.add_paragraph("\u201c{{ q.quote }}\u201d [{{ q.n }}]", style="List Bullet")
+    d.add_paragraph("{%p endif %}")
     d.add_paragraph("{%p endfor %}")
     d.add_paragraph("{%p endfor %}")
     d.add_paragraph("{%p if industry.sources %}")
@@ -165,7 +169,11 @@ if len(sys.argv) > 2:
     b.add_paragraph("{%p endfor %}")
     b.add_heading("Quotes", 2)
     b.add_paragraph("{%p for q in brief.appendix %}")
+    b.add_paragraph("{%p if q.mono %}")
+    b.add_paragraph("{{r q.rich }}")  # a technical note: Consolas
+    b.add_paragraph("{%p else %}")
     b.add_paragraph("\u201c{{ q.quote }}\u201d [{{ q.n }}]")
+    b.add_paragraph("{%p endif %}")
     b.add_paragraph("{%p endfor %}")
     b.add_paragraph("{%p endif %}")
     b.add_paragraph("{%p if brief.note %}")

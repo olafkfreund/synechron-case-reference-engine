@@ -19,7 +19,7 @@
 {% if industry.show_head %}<h2>{{ industry.heading }}</h2>
 <p><em>{{ industry.disclaimer }}</em></p>{% endif %}
 {% for g in industry.groups %}<h3>{{ g.title }}</h3><p><em>{{ g.lead }}</em></p>
-<ul>{% for q in g.quotes %}<li>&ldquo;{{ q.quote }}&rdquo; [{{ q.n }}]</li>{% endfor %}</ul>{% endfor %}
+<ul>{% for q in g.quotes %}<li>{% if q.mono %}<pre>{{ q.quote }}</pre> [{{ q.n }}]{% else %}&ldquo;{{ q.quote }}&rdquo; [{{ q.n }}]{% endif %}</li>{% endfor %}</ul>{% endfor %}
 {% if industry.sources %}<h3>Sources</h3>
 <ol>{% for s in industry.sources %}<li>{{ s.title }}, {{ s.publisher }}, {% if s.url.startswith(("http://", "https://")) %}<a href="{{ s.url }}" rel="noopener noreferrer">{{ s.url }}</a>{% else %}{{ s.url }}{% endif %}, retrieved {{ s.date }}</li>{% endfor %}</ol>{% endif %}
 {% if industry.note %}<p>{{ industry.note }}</p>{% endif %}

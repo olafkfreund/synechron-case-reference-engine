@@ -6,7 +6,7 @@
 {% if omitted %}<div class="note">{{ omitted }} quote(s) not shown: they name a protected client.</div>{% endif %}
 {% if kind == "quotes" %}
 <div class="section-card"><div class="card-head"><h2>Quotes</h2></div>
-{% for c in claims %}<div class="claim">{% if attach_cases %}<label class="check"><input type="checkbox" name="n" value="{{ c.n }}" form="attach"> Select</label>{% endif %}<q>{{ c.quote }}</q>
+{% for c in claims %}<div class="claim">{% if attach_cases %}<label class="check"><input type="checkbox" name="n" value="{{ c.n }}" form="attach"> Select</label>{% endif %}{% if c.type == "technical_note" %}<pre>{{ c.quote }}</pre>{% else %}<q>{{ c.quote }}</q>{% endif %}
 <div class="meta">{% if (c.url or "").startswith(("http://", "https://")) %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.publisher }}</a>{% else %}<span>{{ c.publisher }}</span>{% endif %}
 <span>retrieved {{ (c.retrieved_at or "")[:10] }}</span>
 {% if found is not none %}{% if found[loop.index] %}<span class="badge neutral">still on the page</span>{% else %}<span class="badge">not found again</span>{% endif %}{% endif %}</div></div>{% endfor %}
@@ -21,7 +21,7 @@
 {% for t in sec.themes %}<h3>{{ t.heading }}</h3><p>{{ t.text }}</p>{% endfor %}
 <h3>Sources</h3><ol>{% for s in sec.sources %}<li>{{ s.title }}, {{ s.publisher }}, {% if s.url.startswith(("http://", "https://")) %}<a href="{{ s.url }}" rel="noopener noreferrer">{{ s.url }}</a>{% else %}{{ s.url }}{% endif %}, retrieved {{ s.date }}
 {% if found is not none %}{% if found[s.n] %}<span class="badge neutral">still on the page</span>{% else %}<span class="badge">not found again</span>{% endif %}{% endif %}</li>{% endfor %}</ol>
-<h3>Quotes</h3>{% for q in sec.appendix %}<blockquote>&ldquo;{{ q.quote }}&rdquo; [{{ q.n }}]</blockquote>{% endfor %}
+<h3>Quotes</h3>{% for q in sec.appendix %}{% if q.mono %}<pre>{{ q.quote }}</pre> [{{ q.n }}]{% else %}<blockquote>&ldquo;{{ q.quote }}&rdquo; [{{ q.n }}]</blockquote>{% endif %}{% endfor %}
 {% if sec.note %}<p>{{ sec.note }}</p>{% endif %}</div>
 <form method="post" action="/library/{{ lid }}/download" class="section-card"><div class="row"><label for="l-format">Format</label><select id="l-format" name="format" style="max-width:200px"><option value="docx">Word</option><option value="pdf_docx">PDF</option><option value="md">Markdown</option></select><button class="btn primary">Download</button></div></form>
 {% endif %}

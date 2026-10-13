@@ -40,6 +40,12 @@ _MD = [(re.compile(p), r) for p, r in (
 _WRAP = {'"': '"', "\u201c": "\u201d"}
 
 
+def fence(code: str) -> str:
+    """A code fence one backtick longer than any run inside, so the code cannot close it early."""
+    ticks = "`" * max(3, max((len(r) for r in re.findall(r"`+", code)), default=0) + 1)
+    return f"{ticks}\n{code.strip(chr(10))}\n{ticks}"
+
+
 def plain(s: str) -> str:
     """Markdown to plain text for display and render only; the stored quote and quote_in() stay verbatim.
     Never for a technical note: code must stay exact."""

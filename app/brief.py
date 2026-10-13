@@ -92,7 +92,8 @@ _TAG = re.compile(r"</?\s*quotes\s*>", re.I)
 def quote_texts(quotes: list[dict], clients) -> list[str]:
     """What the model sees and check() compares against: apply() first, so a protected name never reaches a model.
     One line each, and without our delimiter tags, so a quote cannot forge a numbered line or close the data block."""
-    return [" ".join(_TAG.sub("", anonymise.apply(plain(str(q.get("quote") or "")), clients)).split()) for q in quotes]
+    return [" ".join(_TAG.sub("", anonymise.apply(str(q.get("quote") or "") if q.get("type") == "technical_note"
+                                                  else plain(str(q.get("quote") or "")), clients)).split()) for q in quotes]
 
 
 def run(brief_id: int) -> None:
