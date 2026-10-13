@@ -573,7 +573,8 @@ def _attach(cid, s, research_id, library_id, n, user):
                 raise HTTPException(404, "no such library item")
             stored = row[0]["quotes"]
             picked = [{**stored[i], "n": i} for i in dict.fromkeys(n) if 0 <= i < len(stored)]  # from the row, never the form
-            kept = [stored[c["n"]] for c in research.visible_claims(picked, anonymise.load_clients(conn))[0]]
+            # the item is shared: copy what is visible now (apply() done, blocked ones left out), so no protected name is stored
+            kept = research.visible_claims(picked, anonymise.load_clients(conn))[0]
             if not kept:
                 raise HTTPException(400, "pick at least one statement")
             ref = {"library_id": library_id}
@@ -594,11 +595,11 @@ def attach_sources(cid: int, research_id: int | None = Form(None), library_id: i
 
 
 @router.post("/sources/attach")
-def attach_to_chosen_case(target: str = Form(), research_id: int | None = Form(None), library_id: int | None = Form(None),
+def attach_to_chosen_case(target: str = Form(""), research_id: int | None = Form(None), library_id: int | None = Form(None),
                           n: list[int] = Form([]), user: User = Depends(require("reviewer"))):
     """The research and library pages pick the case: target is "<case id>:<version of its attached list>"."""
     cid, _, s = target.partition(":")
-    if not cid.isdigit():
+    if not (cid.isascii() and cid.isdigit() and len(cid) <= 18):  # str.isdigit() accepts "²"; a bigint holds 18 digits
         raise HTTPException(400, "choose a case")
     return _attach(int(cid), s, research_id, library_id, n, user)
 

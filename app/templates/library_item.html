@@ -28,7 +28,7 @@
 {% endif %}
 {% if attach_cases %}<form id="attach" method="post" action="/sources/attach" class="section-card"><input type="hidden" name="library_id" value="{{ lid }}">
 <div class="row"><label for="attach-to">Attach {{ "the selected quotes" if kind == "quotes" else "this brief's sources" }} as public sources to</label>
-<select id="attach-to" name="target" style="max-width:320px">{% for value, title in attach_cases %}<option value="{{ value }}">{{ title }}</option>{% endfor %}</select><button class="btn">Attach</button></div></form>{% endif %}
+<select id="attach-to" name="target" style="max-width:320px"><option value="" selected>Choose a case&hellip;</option>{% for value, title in attach_cases %}<option value="{{ value }}">{{ title }}</option>{% endfor %}</select><button class="btn">Attach</button></div></form>{% endif %}
 {% if can_manage %}<div class="section-card"><div class="card-head"><h2>Re-check</h2></div>
 {% if can_recheck %}
 {% if again in ("queued", "running") %}<p>Running the search again&hellip; reload this page in a minute.</p>

@@ -26,7 +26,7 @@
 <span>retrieved {{ (c.retrieved_at or "")[:10] }}</span></div>
 <p>AI reading: {{ c.statement }}</p></div>{% endfor %}
 {% if attach_cases %}<div class="row"><label for="attach-to">Attach the selected quotes as public sources to</label>
-<select id="attach-to" name="target" style="max-width:320px">{% for value, title, origin in attach_cases %}<option value="{{ value }}"{% if origin %} selected{% endif %}>{{ title }}</option>{% endfor %}</select>
+<select id="attach-to" name="target" style="max-width:320px"><option value=""{% if not attach_cases | selectattr(2) | list %} selected{% endif %}>Choose a case&hellip;</option>{% for value, title, origin in attach_cases %}<option value="{{ value }}"{% if origin %} selected{% endif %}>{{ title }}</option>{% endfor %}</select>
 <button class="btn" formaction="/sources/attach">Attach</button></div>{% endif %}</div>
 </form>
 <div class="section-card"><div class="card-head"><h2>Comparison</h2></div>

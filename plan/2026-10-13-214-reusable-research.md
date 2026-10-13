@@ -555,6 +555,14 @@ must exist on `main`.
   - It doesn't use a stored brief, because briefs aren't linked to cases.
   - A single-case preview's note says case studies retitle the section.
 
+- Step 22 review: the case picker runs one query per page view (the newest 50
+  reviewable cases, each with an md5 of its attached list). That cost is
+  accepted. A library item is attached as what is visible now (`apply()` done,
+  blocked quotes left out), not verbatim, because it is shared. `target` must
+  be ASCII digits (at most 18) before the colon, else 400. The case-study
+  heading "Approach and industry practice" is used only when the section comes
+  purely from the case's attached sources.
+
 ## Tests
 
 ```bash

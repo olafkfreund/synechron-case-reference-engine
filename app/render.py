@@ -604,7 +604,9 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
             seen.add(k); merged.append(c)
     # the new heading only if an attached claim survives apply()/blocked() at render
     cited = bool(attached) and bool((industry_section(attached, clients, pages=pages) or {}).get("statements"))
-    heading = (APPROACH_HEADING if study else SOURCES_HEADING) if cited else INDUSTRY_HEADING
+    mine = {(c.get("url"), c.get("quote")) for c in attached}
+    only_attached = not any((c.get("url"), c.get("quote")) not in mine for c in claims)  # no ad-hoc research merged in
+    heading = (APPROACH_HEADING if study and only_attached else SOURCES_HEADING) if cited else INDUSTRY_HEADING
     industry = industry_section(merged, clients, heading=heading, pages=pages) \
         if merged else None
     if not ids and not (industry and industry["statements"]):
