@@ -277,3 +277,8 @@ ignored.
   - Two existing tests that count `<script` now allow `theme.js`.
   - Negative controls pass for both step 2 tests: a literal `#fff` fails the
     lint, and a dark muted colour at 2.23:1 fails the contrast test.
+- Step 4:
+  - `css_version` is now hashed from `portal.css` and `theme.js` together.
+  - New `card_head` and `result_actions` macros are shared by both card loops.
+  - The old `.result .action-row` phone grid rules are removed.
+  - The stored-only check is its own test.

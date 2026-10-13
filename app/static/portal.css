@@ -248,6 +248,21 @@ h2.sub{font-size:15px;color:var(--muted);margin:20px 0 8px}
 .card-head + .other-row{border-top:0}
 .other-row p{margin:0;flex:1 1 100%;color:var(--muted);font-size:14px}
 
+.flush{margin:0}
+.small{font-size:var(--fs-s)}
+.push{margin-left:auto}
+.result h3{display:inline}
+/* card actions: a hairline above; the research button on the right, wrapping under 600px */
+.result-actions{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 12px;border-top:1px solid var(--border);padding-top:12px}
+.result-actions .research-form{margin:0 0 0 auto}
+.result-actions .generate{flex:1 1 auto}
+@media (max-width:599px){.result-actions .research-form{margin:0}}
+/* source documents */
+.doc-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.doc-list li{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-height:44px}
+.doc-list .icon{flex:none;color:var(--muted)}
+.doc-list .doc-label{flex:1 1 200px;min-width:0;overflow-wrap:anywhere}
+
 /* review */
 .field-row{display:grid;grid-template-columns:minmax(0,1fr);gap:8px 16px;padding:14px 0;border-top:1px solid var(--line)}
 .card-head + .field-row{border-top:0}
@@ -297,12 +312,6 @@ fieldset.pick legend{font-weight:600;padding:0 6px;text-transform:capitalize}
 .client-row details.edit[open]{grid-column:1 / -1;grid-row:3}
 .client-row details.del[open]{grid-column:1 / -1;grid-row:4}
 .client-row .slot{display:block}
-.result .action-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.result .action-row .generate{display:contents}
-.result .action-row .word{grid-column:1 / -1;width:100%;justify-content:center}
-.result .action-row details.mini[open]{grid-column:1 / -1}
-.result .action-row .research-form{margin:0 !important}
-.result .action-row details.mini>summary,.result .action-row .research-form .btn{width:100%;justify-content:center}
 }
 .mini-label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:2px;text-transform:capitalize}
 

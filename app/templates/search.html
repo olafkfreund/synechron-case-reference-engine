@@ -1,9 +1,18 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
 {% macro completeness(s) %}<span class="badge neutral">{% if s[0] == s[1] %}Complete{% else %}Partial · {{ s[0] }}/{{ s[1] }}{% endif %}</span>{% endmacro %}
-{% macro sources(list) %}{% if list %}<details class="mini"><summary>Source documents ({{ list | map(attribute="docs") | map("length") | sum }})</summary>
-{% for e in list %}<p class="muted" style="margin:2px 0">{{ e.label }}{% for d in e.docs %} &middot;
-{% if d.web %}<a href="/go/{{ d.id }}" target="_blank" rel="noopener noreferrer">Open</a>{% endif %}{% if d.folder %} <a href="/go/{{ d.id }}/folder" target="_blank" rel="noopener noreferrer">Open folder</a>{% endif %}{% if not d.web and not d.folder %}stored in the engine; ask a reviewer{% endif %}{% endfor %}</p>{% endfor %}</details>{% endif %}{% endmacro %}
+{% macro sources(list) %}{% if list %}<details class="mini"><summary>Source documents · {{ list | map(attribute="docs") | map("length") | sum }}</summary>
+<ul class="doc-list">{% for e in list %}{% for d in e.docs %}<li>{{ icon("file") }}<span class="doc-label">{{ e.label }}</span>
+{% if d.web %}<a class="btn btn-sm ghost" href="/go/{{ d.id }}" target="_blank" rel="noopener noreferrer">Open</a>{% endif %}{% if d.folder %}<a class="btn btn-sm ghost" href="/go/{{ d.id }}/folder" target="_blank" rel="noopener noreferrer">Open folder</a>{% endif %}{% if not d.web and not d.folder %}<span class="muted">Stored in the engine. Ask a reviewer for a copy.</span>{% endif %}</li>{% endfor %}{% endfor %}</ul></details>{% endif %}{% endmacro %}
+{% macro card_head(c) %}<div class="meta"><span class="avatar" aria-hidden="true">{{ icon("building") }}</span>
+<div class="who"><h3>{{ c.title }}</h3><span>{{ c.label }}</span></div>{{ basis(c.basis) }} {{ completeness(c.score) }}</div>{% endmacro %}
+{% macro result_actions(c) %}<div class="result-actions">
+<form method="post" action="/generate" class="generate"><input type="hidden" name="case_ids" value="{{ c.id }}">
+<button class="btn" formaction="/preview" aria-label="Preview {{ c.title }}">Preview</button>
+<button class="btn primary word" name="format" value="docx" aria-label="Download {{ c.title }} as Word">Download Word</button>
+<details class="mini"><summary aria-label="Other formats for {{ c.title }}">Other formats</summary>
+<div class="row">{% for v, l in [("pptx", "PowerPoint"), ("pdf_docx", "PDF"), ("pdf_pptx", "PDF slides"), ("md", "Markdown"), ("case_study_docx", "Case study · Word"), ("case_study_pdf", "Case study · PDF")] %}<button class="btn" name="format" value="{{ v }}" aria-label="{{ l }} for {{ c.title }}">{{ l }}</button>{% endfor %}</div></details></form>
+<form method="post" action="/research/from-case" class="research-form"><input type="hidden" name="case_id" value="{{ c.id }}"><button class="btn ghost">Research this (public sources)</button></form></div>{% endmacro %}
 {% macro basis(x) %}<span class="badge neutral">{{ "Engagement (contracted scope)" if x == "engagement" else "Delivered case" }}</span>{% endmacro %}
 {% block body %}
 <div class="page-head"><div><h1>Find reference cases</h1><p>Paste the bid requirement; narrow by industry, region or technology if you like.</p></div></div>
@@ -29,18 +38,11 @@
 {% if not ran and not rows %}<div class="empty-state">{{ icon("search") }}<p><b>No approved cases match these filters</b></p></div>{% endif %}
 {% for r in rows %}
 <article class="section-card stack result">
-<div class="meta"><span class="avatar" aria-hidden="true">{{ icon("building") }}</span>
-<div class="who"><h3 style="display:inline">{{ r.title }}</h3><span>{{ r.label }}</span></div>{{ basis(r.basis) }} {{ completeness(r.score) }}</div>
-<p class="muted" style="margin:0">{{ [r.industry, r.region] | select | join(" · ") }}{% if r.approved_at %} &middot; Approved {{ r.approved_at.strftime("%Y-%m-%d") }}{% endif %}</p>
+{{ card_head(r) }}
+<p class="muted flush">{{ [r.industry, r.region] | select | join(" · ") }}{% if r.approved_at %} &middot; Approved {{ r.approved_at.strftime("%Y-%m-%d") }}{% endif %}</p>
 {% if r.tech %}<div class="row">{% for t in r.tech %}<span class="badge neutral">{{ t }}</span>{% endfor %}</div>{% endif %}
 {{ sources(r.sources) }}
-<div class="action-row">
-{% with ids=[r.id], what="Download this case" %}<form method="post" action="/generate" class="generate">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}
-<button class="btn" formaction="/preview" aria-label="Preview {{ r.title }}">Preview</button>
-<button class="btn primary word" name="format" value="docx" aria-label="Download {{ r.title }} as Word">Download Word</button>
-<details class="mini"><summary class="btn-sm" aria-label="Other formats for {{ r.title }}">Other formats</summary>
-<div class="row" style="padding-bottom:4px"><button class="btn dark" name="format" value="pptx">{{ what }} (PowerPoint)</button> <button class="btn dark" name="format" value="pdf_docx">{{ what }} (PDF)</button> <button class="btn dark" name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button class="btn dark" name="format" value="md">{{ what }} (Markdown)</button> <button class="btn dark" name="format" value="case_study_docx">Case study (Word)</button> <button class="btn dark" name="format" value="case_study_pdf">Case study (PDF)</button></div></details></form>{% endwith %}
-<form method="post" action="/research/from-case" class="research-form" style="margin:0 0 0 auto"><input type="hidden" name="case_id" value="{{ r.id }}"><button class="btn">Research this (public sources)</button></form></div>
+{{ result_actions(r) }}
 </article>
 {% endfor %}
 {% if not ran and (pageno > 1 or full) %}{% macro pg(n) %}{{ {"industry": f.industry, "region": f.region, "tech": f.tech, "kind": kind, "sort": sort, "page": n} | urlencode }}{% endmacro %}
@@ -48,33 +50,26 @@
 <span class="muted">Page {{ pageno }}</span>{% if full %}<a class="btn" href="/search?{{ pg(pageno + 1) }}">Next</a>{% endif %}</nav>{% endif %}
 {% for p in top %}
 <article class="section-card stack result">
-<div class="meta"><span class="avatar" aria-hidden="true">{{ icon("building") }}</span>
-<div class="who"><h3 style="display:inline">{{ p.title }}</h3><span>{{ p.label }}</span></div>{{ basis(p.basis) }} {{ completeness(p.score) }}</div>
-{% if p.reason %}<p style="margin:0"><b>Why it fits:</b> {{ p.reason }}</p>{% endif %}
+{{ card_head(p) }}
+{% if p.reason %}<p class="flush"><b>Why it fits:</b> {{ p.reason }}</p>{% endif %}
 {% if p.outcomes %}<ul class="outcome-list">{% for o in p.outcomes %}<li>{{ icon("check") }}<span>{{ o }}</span></li>{% endfor %}</ul>{% endif %}
 {{ sources(p.sources) }}
 <div class="inset"><div class="t">Suggested wording &middot; not in downloads</div>{{ p.tailored }}</div>
-<div class="action-row" style="border-top:1px solid var(--line);padding-top:12px">
-{% with ids=[p.id], what="Download this case" %}<form method="post" action="/generate" class="generate">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}
-<button class="btn" formaction="/preview" aria-label="Preview {{ p.title }}">Preview</button>
-<button class="btn primary word" name="format" value="docx" aria-label="Download {{ p.title }} as Word">Download Word</button>
-<details class="mini"><summary class="btn-sm" aria-label="Other formats for {{ p.title }}">Other formats</summary>
-<div class="row" style="padding-bottom:4px"><button class="btn dark" name="format" value="pptx">{{ what }} (PowerPoint)</button> <button class="btn dark" name="format" value="pdf_docx">{{ what }} (PDF)</button> <button class="btn dark" name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button class="btn dark" name="format" value="md">{{ what }} (Markdown)</button> <button class="btn dark" name="format" value="case_study_docx">Case study (Word)</button> <button class="btn dark" name="format" value="case_study_pdf">Case study (PDF)</button></div></details></form>{% endwith %}
-<form method="post" action="/research/from-case" class="research-form" style="margin:0 0 0 auto"><input type="hidden" name="case_id" value="{{ p.id }}"><button class="btn">Research this (public sources)</button></form></div>
+{{ result_actions(p) }}
 </article>
 {% endfor %}
 {% if top | length > 1 or library %}{% with ids=top | map(attribute="id") | list, what="Download all" %}<form id="gen-all" method="post" action="/generate" class="section-card generate">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}
 {% if not top %}<label class="check"><input type="checkbox" name="industry_context_ack"> I understand library items are public statements by third parties, not our delivery evidence (required when no case is included).</label>{% endif %}
 <button class="btn" formaction="/preview">Preview all</button>
 <button class="btn primary" name="format" value="docx">{{ what }} (Word)</button>
-<details class="mini"><summary class="btn-sm">Other formats</summary>
-<div class="row" style="padding-bottom:4px"><button class="btn dark" name="format" value="pptx">{{ what }} (PowerPoint)</button> <button class="btn dark" name="format" value="pdf_docx">{{ what }} (PDF)</button> <button class="btn dark" name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button class="btn dark" name="format" value="md">{{ what }} (Markdown)</button></div></details></form>{% endwith %}{% endif %}
-{% if top %}<p class="muted" style="font-size:13px">Downloads contain the approved case record only, not the suggested wording above.</p>{% endif %}
+<details class="mini"><summary>Other formats</summary>
+<div class="row">{% for v, l in [("pptx", "PowerPoint"), ("pdf_docx", "PDF"), ("pdf_pptx", "PDF slides"), ("md", "Markdown")] %}<button class="btn" name="format" value="{{ v }}" aria-label="{{ what }}: {{ l }}">{{ l }}</button>{% endfor %}</div></details></form>{% endwith %}{% endif %}
+{% if top %}<p class="muted small">Downloads contain the approved case record only, not the suggested wording above.</p>{% endif %}
 {% if library %}<div class="section-card"><div class="card-head"><h2>From the library</h2><span class="muted">{{ library | length }}</span></div>
-<p class="muted" style="font-size:13px">Tick up to 3 to include in &ldquo;Download all&rdquo; (public statements, after the cases). The single-case downloads leave them out.</p>
+<p class="muted small">Tick up to 3 to include in &ldquo;Download all&rdquo; (public statements, after the cases). The single-case downloads leave them out.</p>
 {% for i in library %}<div class="other-row"><label class="check"><input type="checkbox" name="library_ids" value="{{ i.id }}" form="gen-all" aria-label="Include {{ i.topic }}"> Include</label> <a href="/library/{{ i.id }}"><b>{{ i.topic }}</b></a>
 <span class="badge neutral">{{ "Brief" if i.kind == "brief" else "Quotes" }}</span>{% if i.stale %}<span class="badge">re-check</span>{% endif %}
-<span class="muted" style="margin-left:auto">{{ i.sources }} source{{ "" if i.sources == 1 else "s" }} &middot; {{ "today" if i.age == 0 else (i.age ~ " day" ~ ("" if i.age == 1 else "s") ~ " old") }}</span></div>{% endfor %}</div>{% endif %}
+<span class="muted push">{{ i.sources }} source{{ "" if i.sources == 1 else "s" }} &middot; {{ "today" if i.age == 0 else (i.age ~ " day" ~ ("" if i.age == 1 else "s") ~ " old") }}</span></div>{% endfor %}</div>{% endif %}
 {% if others %}<div class="section-card"><div class="card-head"><h2>Other matches</h2></div>
 {% for o in others %}<div class="other-row"><b>{{ o.title }}</b> {{ basis(o.basis) }} {{ completeness(o.score) }} <span class="muted">({{ o.label }})</span><p>{{ o.summary }}</p>{{ sources(o.sources) }}</div>{% endfor %}</div>{% endif %}
 {% endblock %}
