@@ -232,6 +232,12 @@ Line numbers are from the #212 phase B code (PR #223, at
   - `basis_reason` is coalesced to '', and the redirect carries `total` as
     well as `queued` ("N of M").
   - CSRF is covered by the existing origin-check middleware for every POST.
+- Review fixes:
+  - Re-extract skips documents whose extract job failed in the last 24
+    hours, and skips merged members.
+  - One click is handled at a time (`pg_advisory_xact_lock`).
+  - The badge is tested on bid results, and the count test tolerates
+    leftover rows.
 - Step 7: the hand check in the demo (cases 16 and 17 show a score; the
   re-extract count) is done after merge by the session, on the rebuilt demo.
 

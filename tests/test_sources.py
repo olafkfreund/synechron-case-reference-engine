@@ -3,6 +3,7 @@ import uuid
 from psycopg.types.json import Jsonb
 
 from app import db
+from app.sources import OLDER
 from app.schema import ReferenceCase, Sourced
 from tests.test_auth import ADMIN, REV, client, env  # noqa: F401
 
@@ -245,6 +246,7 @@ def _old_case(c, did, status="extracted", version=None):
 def test_reextract_queues_only_older_live_unqueued_cases(env):  # noqa: F811
     db.init()
     with db.connect() as c:
+        n0 = c.execute("select count(*) " + OLDER, (2,)).fetchone()[0]  # leftovers from elsewhere
         sid = _src(c, False)
         old, rejected, gone, queued, current = (_doc(c, sid, "contract") for _ in range(5))
         _old_case(c, old)
@@ -259,17 +261,50 @@ def test_reextract_queues_only_older_live_unqueued_cases(env):  # noqa: F811
     try:
         assert client([REV]).post("/admin/reextract").status_code == 403
         r = client([ADMIN]).post("/admin/reextract", follow_redirects=False)
-        assert r.status_code == 303 and r.headers["location"].startswith("/admin/sources?notice=reextract&queued=1&total=1")
-        with db.connect() as c:
-            assert [p["document_id"] for (p,) in _jobs(c, sid) if p.get("basis") == "delivered"] == [old]
-        page = client([ADMIN]).get(r.headers["location"]).text
-        assert "1 of 1" in page and "Older cases queued" in page
-        again = client([ADMIN]).post("/admin/reextract", follow_redirects=False)
-        assert "queued=0" in again.headers["location"]  # the job just queued blocks a duplicate
+        assert r.status_code == 303 and f"total={n0 + 1}" in r.headers["location"]
+        if n0 < 25:  # ours come last by id, so a full batch of leftovers could crowd it out
+            with db.connect() as c:
+                assert [p["document_id"] for (p,) in _jobs(c, sid) if p.get("basis") == "delivered"] == [old]
+            assert f"queued={n0 + 1}&" in r.headers["location"]
+            assert f"{n0 + 1} of {n0 + 1}" in client([ADMIN]).get(r.headers["location"]).text
+            again = client([ADMIN]).post("/admin/reextract", follow_redirects=False)
+            assert "queued=0" in again.headers["location"]  # the jobs just queued block a duplicate
     finally:
         _clean(sid)
         with db.connect() as c:
             c.execute("delete from cases where document_id is null and member_count=2 and status='extracted'")
+
+
+def test_reextract_skips_recent_failures_and_merged_members(env):  # noqa: F811
+    db.init()
+    with db.connect() as c:
+        sid = _src(c, False)
+        failing = [_doc(c, sid, "contract") for _ in range(25)]
+        for d in failing:
+            _old_case(c, d)
+            c.execute("insert into jobs(kind, payload, status) values ('extract', jsonb_build_object('document_id', %s::bigint), 'failed')", (d,))
+        stale = _doc(c, sid, "contract")  # failed long ago: retried
+        _old_case(c, stale)
+        c.execute("insert into jobs(kind, payload, status, updated_at) values ('extract', "
+                  "jsonb_build_object('document_id', %s::bigint), 'failed', now() - interval '3 days')", (stale,))
+        good = _doc(c, sid, "contract")
+        _old_case(c, good)
+        member = _old_case(c, _doc(c, sid, "contract"))
+        parent = c.execute("insert into cases(document_id, member_count, status, data) values (null, 2, 'extracted', %s) returning id",
+                           (ReferenceCase(title=Sourced[str](value="M")).model_dump_json(),)).fetchone()[0]
+        c.execute("update cases set merged_into=%s where id=%s", (parent, member))
+        n0 = c.execute("select count(*) " + OLDER, (2,)).fetchone()[0]
+    try:
+        assert n0 >= 2  # stale and good are counted, the 25 failures and the member are not
+        client([ADMIN]).post("/admin/reextract", follow_redirects=False)
+        with db.connect() as c:
+            got = {p["document_id"] for (p,) in _jobs(c, sid) if p.get("basis") == "delivered"}
+        assert (good in got and stale in got) or n0 > 25
+        assert not got & set(failing) and len(got) <= 2
+    finally:
+        _clean(sid)
+        with db.connect() as c:
+            c.execute("delete from cases where id=%s", (parent,))
 
 
 def test_reextract_is_capped_per_click(env):  # noqa: F811

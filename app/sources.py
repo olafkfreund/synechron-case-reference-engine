@@ -27,8 +27,12 @@ NOTICES = {  # allow-list: the query string picks a message, never supplies one
 }
 # #222: cases extracted before the current EXTRACTION_VERSION; a merged parent has no document, so the join drops it
 REEXTRACT_BATCH = 25
+REEXTRACT_LOCK = 222_001  # fixed advisory-lock key for the bulk re-extract
 OLDER = """from cases c join documents d on d.id = c.document_id
     where coalesce((c.data->>'extraction_version')::int, 1) < %s and c.status <> 'rejected' and d.deleted_at is null
+    and c.merged_into is null  -- members are re-extracted through their parent's reopen path
+    and not exists (select 1 from jobs f where f.kind='extract' and f.status='failed' and f.updated_at > now() - interval '24 hours'
+                    and (f.payload->>'document_id')::bigint = d.id)  -- a failing case must not take every batch
     and not exists (select 1 from jobs j where j.kind='extract' and j.status in ('queued','running')
                     and (j.payload->>'document_id')::bigint = d.id)"""
 REEXTRACT = ("insert into jobs(kind, payload) select 'extract', jsonb_build_object('document_id', d.id, 'basis', c.basis, "
@@ -85,6 +89,8 @@ def sources_page(request: Request, notice: str = "", source: int | None = None,
 @router.post("/admin/reextract")
 def reextract(user: User = Depends(require("admin"))):
     with db.connect() as conn:
+        # two clicks at once would both see the same cases as unqueued and queue them twice; the lock lasts until commit
+        conn.execute("select pg_advisory_xact_lock(%s)", (REEXTRACT_LOCK,))
         total = conn.execute("select count(*) " + OLDER, (EXTRACTION_VERSION,)).fetchone()[0]
         queued = conn.execute(REEXTRACT, (EXTRACTION_VERSION, REEXTRACT_BATCH)).rowcount
     return RedirectResponse(f"/admin/sources?notice=reextract&queued={queued}&total={total}", status_code=303)

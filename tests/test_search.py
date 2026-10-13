@@ -377,3 +377,13 @@ def test_rows_show_complete_or_partial_badge(approved, monkeypatch):
     approved(full)
     text = client(GUEST).get("/search").text
     assert text.count("Partial · 1/9") == 1 and text.count(">Complete<") == 1
+
+
+def test_bid_results_top_and_others_carry_the_score(approved, monkeypatch):
+    a, b = approved(), approved(data(title="Other onboarding"))
+    picks_reply(monkeypatch, sr.Pick(case_id=a, reason="fits", tailored="Cut onboarding."))
+    top, others, _ = sr.results(ME, "onboarding", {})
+    assert [x["id"] for x in top] == [a] and b in [x["id"] for x in others]
+    assert all(x["score"] == (1, 9) for x in top + others)
+    text = client(GUEST).post("/search", data={"bid_text": "onboarding"}).text
+    assert text.count("Partial · 1/9") >= 2
