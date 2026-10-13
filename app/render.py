@@ -12,7 +12,7 @@ from jinja2 import Environment
 from pptx import Presentation
 
 from app import anonymise, db, office
-from app.main import User, require
+from app.main import User, require, wants_html
 from app.review import PNG_HEADERS, VISIBLE, page
 from app.schema import ReferenceCase, plain, vague_metric
 
@@ -552,6 +552,15 @@ OUTPUTS = {"docx": (to_docx, OFFICE + "wordprocessingml.document"),
 LIBRARY_MAX = 3
 
 
+def friendly(request, user, status, message, back):
+    """A browser gets a portal page with a way back; an API client keeps the JSON error."""
+    if wants_html(request):
+        resp = page(request, "message.html", user, message=message, back=back)
+        resp.status_code = status
+        return resp
+    raise HTTPException(status, message)
+
+
 def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, library_ids=()):
     """The content of an output, shared by the download and the preview: (ids, sections, industry, anonymised, claims, library_used).
     Library items (#235) join the industry section (quotes) or render as briefs in industry["briefs"]; library_used lists those shown."""
@@ -648,7 +657,12 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
 def preview(request: Request, case_ids: list[int] = Form([]), research_id: int | None = Form(None),
             industry_context_ack: bool = Form(False), library_ids: list[int] = Form([]), user: User = Depends(require("user"))):
     with db.connect() as conn:  # same content and errors as /generate; nothing is logged
-        ids, sections, industry, _, _, used = build(conn, case_ids, research_id, industry_context_ack, user, library_ids=library_ids)
+        try:
+            ids, sections, industry, _, _, used = build(conn, case_ids, research_id, industry_context_ack, user, library_ids=library_ids)
+        except HTTPException as e:
+            if e.status_code not in (400, 404):
+                raise
+            return friendly(request, user, e.status_code, e.detail, "/search")
         footer, retitled = "", False  # what a case-study download adds; the same code path as /generate, so the text cannot drift
         if len(ids) == 1:
             _, study, study_industry, _, _, _ = build(conn, case_ids, research_id, industry_context_ack, user, "case_study_docx", library_ids)
@@ -658,10 +672,15 @@ def preview(request: Request, case_ids: list[int] = Form([]), research_id: int |
 
 
 @router.post("/generate")
-def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: int | None = Form(None),
+def generate(request: Request, format: str = Form(), case_ids: list[int] = Form([]), research_id: int | None = Form(None),
              industry_context_ack: bool = Form(False), library_ids: list[int] = Form([]), user: User = Depends(require("user"))):
     with db.connect() as conn:
-        ids, sections, industry, anonymised, claims, library_used = build(conn, case_ids, research_id, industry_context_ack, user, format, library_ids)
+        try:
+            ids, sections, industry, anonymised, claims, library_used = build(conn, case_ids, research_id, industry_context_ack, user, format, library_ids)
+        except HTTPException as e:
+            if e.status_code not in (400, 404):
+                raise
+            return friendly(request, user, e.status_code, e.detail, "/search")
         make, mime = OUTPUTS[format]
         pairs = [(ids[n], d["id"]) for n, sec in enumerate(sections) for d in sec["diagrams"]]  # (case, diagram)
         images = {i: bytes(png) for i, png in conn.execute(

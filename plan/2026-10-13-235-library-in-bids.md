@@ -223,6 +223,10 @@ Branch `feat/235-library-in-bids`, worktree `../refs-engine-235`. Two PRs.
   HTML input has a single `form=` owner, so per-case downloads leave library
   items out, and the card says so. With library suggestions and no case, the
   form adds the acknowledgement checkbox.
+- Step 11: browser posts to `/preview` and `/generate` that fail a library
+  or case check get the `message.html` page with a link back to search,
+  through the shared `render.friendly()`, which `library._refuse` also uses.
+  Clients that aren't browsers still get JSON.
 
 ## Tests
 
