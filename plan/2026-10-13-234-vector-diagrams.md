@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 234
 spec: spec/2026-10-13-234-vector-diagrams.md
 ---
