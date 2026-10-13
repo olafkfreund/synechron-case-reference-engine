@@ -863,7 +863,7 @@ def test_a_note_is_consolas_lines_in_docx_and_first_line_in_pptx(rows, approved)
     rid = rows([note(), claim()])
     doc = gen(rid, [approved()], "docx", ack=True).content
     xml = zipfile.ZipFile(BytesIO(doc)).read("word/document.xml").decode()
-    assert "Consolas" in xml and "mlflow.set_registry_uri" in xml and "**keep**" in xml
+    assert "Consolas" in xml and "mlflow.set_registry_uri" in xml and "**keep**" in xml and "<w:br/>" in xml
     sl = slides(gen(rid, [approved()], "pptx", ack=True).content)[1]
     text = "\n".join(x for s in sl for ps in s.values() for x in ps)
     assert 'mlflow.set_registry_uri("db") (see source [' in text and "**keep**" not in text
@@ -914,4 +914,14 @@ def test_a_note_is_consolas_in_the_brief_docx(rows):
     sec = render.brief_section({"title": "t", "takeaways": [], "themes": []},
                                [{"quote": CODE, "type": "technical_note", "publisher": "v.example", "url": "https://v.example/n"}], [])
     xml = zipfile.ZipFile(BytesIO(render.to_brief_docx(sec))).read("word/document.xml").decode()
-    assert "Consolas" in xml and "mlflow.set_registry_uri" in xml
+    assert "Consolas" in xml and "mlflow.set_registry_uri" in xml and "<w:br/>" in xml  # the lines break inside one run
+
+
+def test_a_blank_note_is_dropped_the_flat_list_keeps_the_whole_note_and_the_slide_uses_a_real_line():
+    blank = {**note("  \n "), "statement": ""}
+    assert render.industry_section([blank], []) is None
+    ind = render.industry_section([note(), claim()], [])
+    flat = [s for s in ind["statements"] if s.get("mono")]
+    assert flat == [{"text": CODE + " [1]", "mono": True}]            # the whole note, newlines and all
+    lead = render.industry_section([note("\n\n  first real line\nsecond")], [])
+    assert render.slide_statements(lead)[0].endswith("first real line (see source [1])")

@@ -367,6 +367,19 @@ check the brief has a diagram, counts only.
       quality
   - The eval used the compose gateway IP for `api_base`, because
     `host.docker.internal` resolves only in `web` and `worker`.
+- Phase (b) review fixes (Codex gpt-6-sol and Opus):
+  - A cache hit recomputes notes from the stored pages.
+  - Fences close only on enough backticks, and inline triple backticks open
+    nothing.
+  - A bad `relevance` value is coerced, not fatal.
+  - A budget under 500 chars raises and is recorded on the row (no floor).
+  - A `#` inside code is not a heading.
+  - Blank notes are skipped.
+  - The flat statements list keeps the whole note.
+  - The docx test checks line breaks.
+  - The drop-reason test is one 30-claim stub, not 20, because the total cap
+    needs several pages, and each bad claim is also run alone. It replaces
+    `test_quotes_are_ranked_capped_and_the_drops_apply`.
 
 ## Tests
 

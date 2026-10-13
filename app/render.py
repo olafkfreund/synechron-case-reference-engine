@@ -61,6 +61,8 @@ def industry_section(claims: list[dict], clients, heading=INDUSTRY_HEADING, page
             continue
         # only quote and title are anonymised: rewriting a publisher or URL would forge the citation
         note = c.get("type") == NOTE
+        if note and not str(c.get("quote") or "").strip():  # nothing to show
+            continue
         pl = (lambda t: t) if note else plain  # a note's code stays exact
         title = pl(str(c.get("title") or page_titles.get(c.get("url")) or "")) or _host(c.get("url", "")) or c.get("publisher", "")
         safe = {k: CTRL.sub("", str(v)) for k, v in
@@ -82,9 +84,8 @@ def industry_section(claims: list[dict], clients, heading=INDUSTRY_HEADING, page
         return None
     gl = [groups[u] for u in order]
     sources = [g["source"] for g in gl]
-    first = lambda q: f"{q['quote'].splitlines()[0]} (see source [{q['n']}])" if q["quote"].strip() else ""  # noqa: E731
-    statements = [{"text": t} for g in gl for t in [g["title"], *(first(q) if q["mono"] else f"\u201c{q['quote']}\u201d [{q['n']}]"
-                                                                   for q in g["quotes"])]]
+    statements = [{"text": t, "mono": m} for g in gl for t, m in [(g["title"], False), *(
+        (f"{q['quote']} [{q['n']}]", True) if q["mono"] else (f"\u201c{q['quote']}\u201d [{q['n']}]", False) for q in g["quotes"])]]
     if sources:
         statements.append({"text": "Sources: " + "; ".join(f"[{x['n']}] {x['title']}, {x['publisher']}, {x['url']}, retrieved {x['date']}"
                                                           for x in sources)})

@@ -17,7 +17,7 @@ import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app import anonymise, db, ingest
 from app.llm import MAX_TOKENS, complete_json, profile
@@ -490,7 +490,16 @@ class Claim(BaseModel):
     page: int
     quote: str
     type: str  # checked by hand: one unknown value must not reject the whole reply
-    relevance: int = 2  # 1 tangential, 2 relevant, 3 directly answers the query; clamped by hand
+    relevance: int = 2  # 1 tangential, 2 relevant, 3 directly answers the query
+
+    @field_validator("relevance", mode="before")
+    @classmethod
+    def _lenient(cls, v):
+        """A bad value ("high", 2.5, null) must not reject the whole reply, as with `type`: round and clamp to 1-3, else 2."""
+        try:
+            return min(3, max(1, round(float(v))))
+        except (TypeError, ValueError, OverflowError):
+            return 2
 
 
 class Claims(BaseModel):
@@ -519,7 +528,10 @@ def page_chars() -> int:
     if not n or not os.environ.get("DRAFT_MODEL", "").startswith("ollama"):  # llm.py sends num_ctx to Ollama only
         return 6000
     system = len(CLAIMS_SYSTEM) + len(json.dumps(llm_schema(Claims))) + 60  # complete_json appends the schema
-    return max(500, min(6000, ((int(n) - MAX_TOKENS - 2000) * 3 - system) // MAX_RESULTS))
+    size = min(6000, ((int(n) - MAX_TOKENS - 2000) * 3 - system) // MAX_RESULTS)
+    if size < 500:  # a smaller page is no use, and a floor would overflow the context silently (#217)
+        raise ResearchError("num_ctx too small for research")
+    return size
 
 
 def query_words(query: str) -> set[str]:
@@ -530,22 +542,42 @@ def shares(text: str, words: set[str]) -> bool:
     return not words or bool(words & set(re.findall(r"[^\W\d_]{4,}", text.casefold())))  # no query words: nothing to filter on
 
 
-_FENCE = re.compile(r"^[ \t]*```[^\n]*\n(.*?)^[ \t]*```", re.S | re.M)
+_OPEN = re.compile(r"[ \t]*(`{3,})[^`\n]*\n?")  # an info string cannot hold a backtick: "```x``` text" opens nothing
 _STEP = re.compile(r"^\s*\d+[.)]\s")
 _HEAD = re.compile(r"^#{1,6}\s.*$", re.M)
+
+
+def fences(markdown: str) -> list[tuple[int, int, str]]:
+    """(start, end, body) of each closed fenced block. It closes on a line of only backticks, at least as many as
+    opened it, so a 4-backtick block may hold ``` lines. An unclosed fence is not a block."""
+    lines = markdown.splitlines(keepends=True)
+    off = [0]
+    for line in lines:
+        off.append(off[-1] + len(line))
+    out, i = [], 0
+    while i < len(lines):
+        m = _OPEN.fullmatch(lines[i])
+        if m:
+            n = len(m.group(1))
+            close = next((j for j in range(i + 1, len(lines)) if re.fullmatch(rf"[ \t]*`{{{n},}}[ \t]*", lines[j].rstrip("\r\n"))), None)
+            if close is not None:
+                out.append((off[i], off[close + 1], markdown[off[i + 1]:off[close]].strip("\n")))
+                i = close
+        i += 1
+    return out
 
 
 def notes_from(markdown: str, query: str) -> list[str]:
     """Technical notes, no model: fenced code blocks and runs of 3+ numbered steps, kept only if the block or the
     nearest heading above it shares a query word. Each is a substring of the page, so quote_in() holds by construction."""
-    words, found = query_words(query), []
-    for m in _FENCE.finditer(markdown):
-        found.append((m.start(), m.group(1).strip("\n")))
+    words, spans = query_words(query), fences(markdown)
+    found = [(s, body) for s, _, body in spans]
+    inside = lambda at: any(s <= at < e for s, e, _ in spans)  # noqa: E731
     pos = 0
     run: list[str] = []
     start = 0
     for line in [*markdown.splitlines(keepends=True), "x"]:  # the sentinel closes a final run
-        if _STEP.match(line):
+        if _STEP.match(line) and not inside(pos):
             if not run:
                 start = pos
             run.append(line.rstrip("\n"))
@@ -556,8 +588,10 @@ def notes_from(markdown: str, query: str) -> list[str]:
         pos += len(line)
     out = []
     for at, block in sorted(found):
-        heading = [h.group(0) for h in _HEAD.finditer(markdown, 0, at)][-1:]
-        if block.strip() and len(block) <= MAX_NOTE_CHARS and shares(block + " " + " ".join(heading), words) and block not in out:
+        if not block.strip():
+            continue
+        heading = [h.group(0) for h in _HEAD.finditer(markdown, 0, at) if not inside(h.start())][-1:]  # a "# comment" in code is no heading
+        if len(block) <= MAX_NOTE_CHARS and shares(block + " " + " ".join(heading), words) and block not in out:
             out.append(block)
     return out[:NOTES_PER_PAGE]
 
@@ -634,8 +668,9 @@ def run(research_id: int) -> None:
             if "claims" not in results or "note" in results:  # pre-claims row, or extraction failed: redo it
                 results.pop("note", None)                       # from the stored pages, nothing is re-fetched
                 claims, note = extract_claims(query, results.get("pages", []))
-                claims = with_notes(query, results.get("pages", []), claims)
                 results.update(claims=claims, **({"note": note} if note else {}))
+            # notes are deterministic: always recomputed from the stored pages, so no cache hit goes without them
+            results["claims"] = with_notes(query, results.get("pages", []), [c for c in results["claims"] if c.get("type") != "technical_note"])
         else:
             fetcher, pages, skipped, seen = Fetcher(), [], [], set()
             for hit in brave_search(query):
