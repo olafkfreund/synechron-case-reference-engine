@@ -4,7 +4,7 @@ import uuid
 import pytest
 
 from app import db
-from app.schema import Outcome, ReferenceCase, Sourced
+from app.schema import Outcome, Prose, ReferenceCase, Sourced
 from tests.test_auth import ADMIN, ORIGIN, REV, USER, client, env  # noqa: F401
 
 DOC = ("Acme cut customer onboarding from 12 days to 3 days. The programme was delivered "
@@ -23,6 +23,8 @@ def case_data(**kw):
         outcomes=[Outcome(metric="onboarding", value="12 to 3 days", source_quote=Q_TITLE)],
         summary="Onboarding fell from 12 days to 3 days.",
         needs_attention=["check the summary"],
+        # reviewer-written text meets the completeness minimum (#222): challenge, solution and two more sections
+        prose={f: Prose(text=" ".join(["word"] * 80), by_reviewer=True) for f in ("challenge", "solution", "implementation", "configuration")},
     )
     return ReferenceCase(**{**base, **kw}).model_dump_json()
 
@@ -1189,6 +1191,9 @@ def prosed(make, status="extracted", due=None, **kw):
     return make(status, due, data=case_data(points={"solution": [pt, gone]}, **kw))
 
 
+LONG = " ".join(["word"] * 80)  # keeps an edited section above the completeness minimum (#222)
+
+
 def edit_prose(cid, section, text, c=None):
     return (c or client(R)).post(f"/review/{cid}/edit", data={"field": f"prose.{section}", "value": text, "v": ver(cid)},
                                  follow_redirects=False)
@@ -1208,10 +1213,12 @@ def test_prose_edit_sets_reviewer_flags_and_removal(make):
 
 def test_approval_blocked_on_flagged_model_prose_until_edited(make):
     flagged = {"solution": {"text": "It took 99 days.", "by_reviewer": False, "flags": ["number 99 is in no quote"]}}
+    # the other sections stay long enough for the completeness minimum (#222)
+    flagged |= {f: {"text": LONG, "by_reviewer": True, "flags": []} for f in ("challenge", "implementation", "configuration")}
     cid = prosed(make, prose=flagged)
     r = client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)})
     assert r.status_code == 400 and "flagged write-up" in r.text
-    edit_prose(cid, "solution", "Onboarding fell to 3 days.")  # an edit confirms it
+    edit_prose(cid, "solution", f"Onboarding fell to 3 days. {LONG}")  # an edit confirms it
     r = client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}, follow_redirects=False)
     assert r.status_code == 303 and row(cid)[0] == "approved"
     assert [p["value"] for p in row(cid)[1]["points"]["solution"]] == ["Onboarding cut"]  # the unsourced point is dropped
@@ -1262,7 +1269,7 @@ def test_merge_unions_points_and_leaves_prose_empty(make, acme):
 
 def test_reviewer_text_still_flagged_for_a_number_can_be_approved(make):
     cid = prosed(make)
-    edit_prose(cid, "solution", "It took 99 days.")
+    edit_prose(cid, "solution", f"It took 99 days. {LONG}")
     assert row(cid)[1]["prose"]["solution"]["flags"] == ["number 99 is in no quote"]
     assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}, follow_redirects=False).status_code == 303
 
@@ -1273,3 +1280,28 @@ def test_a_price_in_the_write_up_blocks_approval_even_for_the_reviewer(make):
     assert row(cid)[1]["prose"]["solution"]["by_reviewer"] is True
     r = client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)})
     assert r.status_code == 400 and "price" in r.text and row(cid)[0] == "extracted"
+
+
+def test_below_the_minimum_needs_a_reason_and_leaves_an_override_row(make):
+    cid = make(data=case_data(prose={}))  # thin: no sections
+    c = client(R)
+    r = c.post(f"/review/{cid}/approve", data={"v": ver(cid)})
+    assert r.status_code == 400 and "below the minimum" in r.text and row(cid)[0] == "extracted"
+    r = c.post(f"/review/{cid}/approve", data={"v": ver(cid), "reason": "  <b>urgent</b> " + "x" * 600}, follow_redirects=False)
+    assert r.status_code == 303 and row(cid)[0] == "approved"
+    with db.connect() as conn:
+        got = conn.execute("select reason, score, approved_by from case_approval_overrides where case_id=%s", (cid,)).fetchall()
+    assert len(got) == 1 and got[0][0].startswith("<b>urgent</b>") and len(got[0][0]) == 500 and got[0][1] == "1/9"
+    # the page offers the reason box only below the minimum
+    thin = make(data=case_data(prose={}))
+    page = client(R).get(f"/review/{thin}").text
+    assert "Completeness: 1 of 9" in page and 'name="reason"' in page and 'href="#text"' not in page
+
+
+def test_complete_enough_case_needs_no_reason_and_writes_no_override(make):
+    cid = make()
+    page = client(R).get(f"/review/{cid}").text
+    assert "Completeness:" in page and 'name="reason"' not in page
+    assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}, follow_redirects=False).status_code == 303
+    with db.connect() as conn:
+        assert conn.execute("select count(*) from case_approval_overrides where case_id=%s", (cid,)).fetchone()[0] == 0
