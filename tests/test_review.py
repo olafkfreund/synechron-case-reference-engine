@@ -1306,3 +1306,96 @@ def test_complete_enough_case_needs_no_reason_and_writes_no_override(make):
     assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}, follow_redirects=False).status_code == 303
     with db.connect() as conn:
         assert conn.execute("select count(*) from case_approval_overrides where case_id=%s", (cid,)).fetchone()[0] == 0
+
+
+# --- diagram candidates found in the documents (#212 C4) ---
+def real_png(side=450):
+    import io as _io
+    from PIL import Image
+    b = _io.BytesIO()
+    Image.new("RGB", (side, side), "navy").save(b, "PNG")
+    return b.getvalue()
+
+
+def add_candidate(cid, hint="Target architecture", png=None, doc=None):
+    with db.connect() as c:
+        did = doc or c.execute("select document_id from cases where id=%s", (cid,)).fetchone()[0]
+        return c.execute("insert into document_images(document_id, png, width, height, hint) values (%s,%s,450,450,%s) returning id",
+                         (did, png or real_png(), hint)).fetchone()[0]
+
+
+def img_post(cid, iid, what, c=None, **data):
+    return (c or client(R)).post(f"/review/{cid}/images/{iid}/{what}", data={"v": ver(cid), **data}, follow_redirects=False)
+
+
+def test_candidate_thumbnail_headers_and_card(make):
+    cid = make()
+    iid = add_candidate(cid, hint="<b>Zed</b> flow")
+    r = client(R).get(f"/review/{cid}/images/{iid}.png")
+    assert r.status_code == 200 and r.content == real_png()
+    assert r.headers["content-type"] == "image/png" and r.headers["x-content-type-options"] == "nosniff"
+    assert "no-store" in r.headers["cache-control"]
+    page = client(R).get(f"/review/{cid}").text
+    assert "Diagrams found in the documents" in page and "Nothing here reaches an output until you choose Use" in page
+    assert f"/review/{cid}/images/{iid}.png" in page and "<b>Zed</b>" not in page and "&lt;b&gt;Zed" in page
+
+
+def test_use_goes_through_the_diagram_path_and_the_image_stops_being_a_candidate(make, jobs):
+    cid = make("approved", "10 days")
+    iid = add_candidate(cid)
+    assert img_post(cid, iid, "use", caption="Target architecture").status_code == 303
+    (e,) = entries(cid)
+    assert (e["status"], e["caption"], e["image_id"]) == ("pending", "Target architecture", iid)
+    with db.connect() as c:
+        assert c.execute("select raw from diagrams where id=%s", (e["id"],)).fetchone()[0] is not None  # the worker decodes it again
+        assert c.execute("select count(*) from jobs where kind='diagram'").fetchone()[0] == 1
+    assert row(cid)[0] == "extracted"  # reopened, as for an upload
+    assert f"/images/{iid}.png" not in client(R).get(f"/review/{cid}").text
+    assert img_post(cid, iid, "use", caption="again").status_code == 404 and len(entries(cid)) == 1
+
+
+def test_dismiss_hides_the_candidate_and_blocks_use(make, jobs):
+    cid = make("approved", "10 days")
+    iid = add_candidate(cid)
+    assert img_post(cid, iid, "dismiss").status_code == 303
+    assert row(cid)[1]["dismissed_images"] == [iid] and row(cid)[0] == "approved"  # no content changed: not reopened
+    assert f"/images/{iid}.png" not in client(R).get(f"/review/{cid}").text
+    assert img_post(cid, iid, "use", caption="x").status_code == 404 and entries(cid) == []
+
+
+def test_use_respects_the_cap(make, jobs):
+    from app.diagrams import MAX_PER_CASE
+    cid = make()
+    for _ in range(MAX_PER_CASE):
+        assert add_diagram(cid).status_code == 303
+    iid = add_candidate(cid)
+    assert img_post(cid, iid, "use", caption="one too many").status_code == 400 and len(entries(cid)) == MAX_PER_CASE
+
+
+def test_another_cases_or_an_outside_reviewers_candidate_is_404(make, jobs):
+    mine, other = make(), make()
+    theirs = add_candidate(other)
+    assert client(R).get(f"/review/{mine}/images/{theirs}.png").status_code == 404
+    assert img_post(mine, theirs, "use", caption="x").status_code == 404 and img_post(mine, theirs, "dismiss").status_code == 404
+    iid = add_candidate(mine)
+    outsider = client([REV, "g-other"])  # a reviewer who may not open this document
+    assert outsider.get(f"/review/{mine}/images/{iid}.png").status_code == 404
+    assert img_post(mine, iid, "use", outsider, caption="x").status_code == 404 and img_post(mine, iid, "dismiss", outsider).status_code == 404
+    assert client([USER, DOCS]).get(f"/review/{mine}/images/{iid}.png").status_code == 403  # not a reviewer
+    assert entries(mine) == [] and row(mine)[1]["dismissed_images"] == []
+
+
+def test_use_refuses_a_caption_naming_a_protected_client(make, acme, jobs):
+    cid = make()
+    iid = add_candidate(cid)
+    with db.connect() as c:
+        name = c.execute("select name from clients where id=%s", (acme,)).fetchone()[0]
+    r = img_post(cid, iid, "use", caption=f"Flow at {name}")
+    assert r.status_code == 400 and name not in r.text and entries(cid) == []
+
+
+def test_merged_case_offers_its_members_images(make, acme):
+    new, member = _merged(make)
+    iid = add_candidate(new, doc=_data_and_doc(new, member)[1])
+    assert client(R).get(f"/review/{new}/images/{iid}.png").status_code == 200
+    assert f"/images/{iid}.png" in client(R).get(f"/review/{new}").text
