@@ -22,7 +22,7 @@ router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")  # autoescape on
 # the stylesheet URL changes with its content, so a browser never pairs new pages with an old cached CSS (#90)
 templates.env.globals["css_version"] = hashlib.sha256(
-    (Path(__file__).parent / "static" / "portal.css").read_bytes()).hexdigest()[:12]
+    b"".join((Path(__file__).parent / "static" / f).read_bytes() for f in ("portal.css", "theme.js"))).hexdigest()[:12]
 
 PROSE_LABELS = {"challenge": "Challenge", "solution": "Solution", "implementation": "Implementation approach",
                 "configuration": "Configuration and integration"}

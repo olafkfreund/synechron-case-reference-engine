@@ -1,10 +1,13 @@
 <!doctype html>
+{% from "_icons.html" import icon %}
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{% block title %}Reference engine{% endblock %}</title>
 <link rel="stylesheet" href="/static/portal.css?v={{ css_version }}">
+<script src="/static/theme.js?v={{ css_version }}"></script>
 {% block head %}{% endblock %}</head><body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header"><div class="site-header-in">
-<a class="brand" href="/" style="text-decoration:none;color:inherit"><span class="brand-name">Reference Engine</span><span class="brand-tag">bids &amp; presales</span></a>
+<a class="brand" href="/"><span class="brand-name">Reference Engine</span><span class="brand-tag">bids &amp; presales</span></a>
+<button type="button" class="btn theme-toggle" aria-pressed="false" aria-label="Dark theme"><span class="i-moon">{{ icon("moon") }}</span><span class="i-sun">{{ icon("sun") }}</span></button>
 {% if user %}
 {% set path = request.url.path %}
 {% set tabs = [("/search", "Find references"), ("/research", "Research"), ("/library", "Library")] %}

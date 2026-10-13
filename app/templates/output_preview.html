@@ -1,6 +1,8 @@
 {% extends "base.html" %}
+{% from "_macros.html" import zoom, zoom_hint %}
 {% block body %}
 <div class="narrow">
+<a class="btn link" href="/search">&larr; Back to search</a>
 <div class="page-head"><div><h1>Preview</h1></div></div>
 <div class="note">This is the content of the download; the layout comes from the Word and PowerPoint templates.</div>
 {% for c in cases %}
@@ -11,7 +13,7 @@
 <ul>{% for x in c.details %}<li><b>{{ x.label }}:</b> {{ x.value }}</li>{% endfor %}</ul>
 {% for b in c.blocks %}<h3>{{ b.heading }}</h3>{% for p in b.paragraphs %}<p>{{ p }}</p>{% endfor %}{% endfor %}
 {% for l in c.lists %}<h3>{{ l.heading }}</h3><ul>{% for i in l.bullets %}<li>{{ i }}</li>{% endfor %}</ul>{% endfor %}
-{% set cid = ids[loop.index0] %}{% for d in c.diagrams %}<figure><img src="/cases/{{ cid }}/diagrams/{{ d.id }}.png" alt="{{ d.caption }}" width="{{ [d.width, 480] | min }}"><figcaption>{{ d.caption }}</figcaption></figure>{% endfor %}
+{% set cid = ids[loop.index0] %}{% for d in c.diagrams %}{% set u = "/cases/" ~ cid ~ "/diagrams/" ~ d.id ~ ".png" %}<figure>{{ zoom(u, d.caption) }}<figcaption>{{ d.caption }}</figcaption>{{ zoom_hint(u, d.caption) }}</figure>{% endfor %}
 </article>
 {% endfor %}
 {% if industry %}
@@ -36,14 +38,18 @@
 {% if research_id %}<input type="hidden" name="research_id" value="{{ research_id }}">{% endif %}
 {% for l in library_ids %}<input type="hidden" name="library_ids" value="{{ l }}">{% endfor %}
 {% if ack %}<input type="hidden" name="industry_context_ack" value="on">{% endif %}
-<div class="action-row"><a class="btn" href="/">Back to search</a>
-<button class="btn primary" name="format" value="docx">Download Word</button>
-<button class="btn dark" name="format" value="pptx">Download (PowerPoint)</button>
-<button class="btn dark" name="format" value="pdf_docx">Download (PDF)</button>
-<button class="btn dark" name="format" value="pdf_pptx">Download (PDF slides)</button>
-<button class="btn dark" name="format" value="md">Download (Markdown)</button>
-{% if footer %}<p class="muted" style="flex-basis:100%">Case study downloads also end with: {{ footer }}{% if retitled %}, and title the public sources section &ldquo;{{ retitled }}&rdquo;{% endif %}</p>{% endif %}
-{% if ids | length == 1 %}<button class="btn dark" name="format" value="case_study_docx">Download case study (Word)</button>
-<button class="btn dark" name="format" value="case_study_pdf">Download case study (PDF)</button>{% endif %}</div></form>
+<h2>Download</h2>
+<div class="download-groups">
+<div class="download-group" role="group" aria-labelledby="dl-bid"><h3 id="dl-bid">Bid pack</h3><div class="row">
+<button class="btn primary" name="format" value="docx">Word</button>
+<button class="btn" name="format" value="pptx">PowerPoint</button>
+<button class="btn" name="format" value="pdf_docx">PDF</button>
+<button class="btn" name="format" value="pdf_pptx">PDF slides</button>
+<button class="btn" name="format" value="md">Markdown</button></div></div>
+{% if ids | length == 1 %}<div class="download-group" role="group" aria-labelledby="dl-case"><h3 id="dl-case">Case study (this case only)</h3><div class="row">
+<button class="btn primary" name="format" value="case_study_docx">Word</button>
+<button class="btn" name="format" value="case_study_pdf">PDF</button></div>
+{% if footer %}<p class="muted small">Case study downloads also end with: {{ footer }}{% if retitled %}, and title the public sources section &ldquo;{{ retitled }}&rdquo;{% endif %}</p>{% endif %}</div>{% endif %}
+</div></form>
 </div>
 {% endblock %}

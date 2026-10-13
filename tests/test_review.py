@@ -581,7 +581,7 @@ def test_candidate_form_lists_only_same_client_engagements(make, acme):
     page = client(R).get(f"/review/{a}").text
     assert f'value="{a}:{ver(a)}"' in page and f'value="{b}:{ver(b)}"' in page
     assert f'value="{other}:' not in page and f'value="{delivered}:' not in page
-    assert "<script" not in page and "onclick" not in page
+    assert page.count("<script") == 1 and "onclick" not in page
     assert "/review/merge/preview" not in client(R).get(f"/review/{other}").text  # unregistered client
 
 
@@ -592,7 +592,7 @@ def test_preview_has_one_radio_group_per_differing_field(make, acme):
     page = r.text
     assert page.count('name="pick_title"') == 2 and page.count(f'value="{a}" checked') >= 1
     assert 'name="pick_client_mention"' not in page  # identical in both
-    assert page.count(f'name="members" value="{a}:{ver(a)}"') == 1 and "<script" not in page
+    assert page.count(f'name="members" value="{a}:{ver(a)}"') == 1 and page.count("<script") == 1
     assert client(R).post("/review/merge/preview", data={"members": [f"{a}:{ver(a)}"]}).status_code == 400
 
 
@@ -619,7 +619,7 @@ def test_merged_detail_and_list_show_members(make, acme):
     new = int(merge(client(R), [a, b]).headers["location"].rsplit("/", 1)[1])
     page = client(R).get(f"/review/{new}").text
     assert "Merged from 2 contracts" in page and page.count("Source doc") >= 2
-    assert "<small>(Source doc)</small>" in page and "<script" not in page
+    assert "<small>(Source doc)</small>" in page and page.count("<script") == 1
     assert "/review/merge/preview" not in page
     assert "2 contracts" in client(R).get("/review").text
 
@@ -1178,7 +1178,8 @@ def test_detail_shows_diagrams_card(make, jobs):
         c.execute("update cases set data = jsonb_set(jsonb_set(data, '{diagrams,0,status}', '\"ready\"'), "
                   "'{diagrams,0,width}', '900') where id=%s", (cid,))
     page = client(R).get(f"/review/{cid}").text
-    assert f'<img src="/review/{cid}/diagrams/{did}.png" alt="&lt;b&gt;Flow&lt;/b&gt;" width="480">' in page
+    assert (f'class="zoom" aria-label="Open &lt;b&gt;Flow&lt;/b&gt; full size"><img src="/review/{cid}/diagrams/{did}.png" alt="&lt;b&gt;Flow&lt;/b&gt;"></a>' in page
+            and page.count(f'href="/review/{cid}/diagrams/{did}.png"') == 2 and 'width="480"' not in page)
     assert 'name="diagrams_checked" required' in page and "no client name, logo, person" in page
     set_diagram(cid, "rejected")
     page = client(R).get(f"/review/{cid}").text
@@ -1338,6 +1339,7 @@ def test_candidate_thumbnail_headers_and_card(make):
     page = client(R).get(f"/review/{cid}").text
     assert "Diagrams found in the documents" in page and "Nothing here reaches an output until you choose Use" in page
     assert f"/review/{cid}/images/{iid}.png" in page and "<b>Zed</b>" not in page and "&lt;b&gt;Zed" in page
+    assert f'<a href="/review/{cid}/images/{iid}.png" target="_blank" rel="noopener" class="zoom"' in page and "width=" not in page.split("Diagrams found in the documents")[1].split("<img")[1].split(">")[0]
 
 
 def test_use_goes_through_the_diagram_path_and_the_image_stops_being_a_candidate(make, jobs):

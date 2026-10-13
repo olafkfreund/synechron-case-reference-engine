@@ -480,10 +480,21 @@ def test_card_links_go_through_the_redirect_and_the_page_holds_no_url(approved, 
     set_links(cid, URL, "https://h.example/Secret-Client/")
     t = client(GUEST).get("/search").text
     d = doc_of(cid)
-    assert "Source documents (1)" in t and f'href="/go/{d}"' in t and f'href="/go/{d}/folder"' in t
+    assert "Source documents · 1" in t and f'href="/go/{d}"' in t and f'href="/go/{d}/folder"' in t
     assert 'rel="noopener noreferrer"' in t and 'target="_blank"' in t
     assert "h.example" not in t and "Secret-Client" not in t and "<script>x" not in t  # the page never holds the URL
     assert "Quarterly report" not in t  # the title is hidden here
+
+
+def test_source_documents_are_a_list_with_open_buttons_or_the_stored_line(approved, monkeypatch):
+    both = card_html(approved, URL, "https://h.example/f/", monkeypatch)
+    doc = both[both.index('<ul class="doc-list">'):both.index("</ul>", both.index('<ul class="doc-list">'))]
+    assert doc.count("<li>") == 1 and ">Open</a>" in doc and ">Open folder</a>" in doc and "Stored in the engine" not in doc
+
+
+def test_a_stored_only_document_says_so_in_the_list(approved, monkeypatch):
+    stored = card_html(approved, None, None, monkeypatch)
+    assert "Stored in the engine. Ask a reviewer for a copy." in stored[stored.index('<ul class="doc-list">'):] and ">Open</a>" not in stored
 
 
 def go(d, folder="", user=GUEST):
@@ -514,4 +525,4 @@ def test_go_is_404_for_everything_else(approved):
 
 
 def test_card_for_an_upload_says_stored_in_the_engine(approved, monkeypatch):
-    assert "stored in the engine; ask a reviewer" in card_html(approved, None, None, monkeypatch)
+    assert "Stored in the engine. Ask a reviewer for a copy." in card_html(approved, None, None, monkeypatch)

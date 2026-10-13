@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% from "_macros.html" import zoom, zoom_hint %}
 {% macro field_row(r, idx) %}{% set f = "f" ~ idx %}
 <div class="field-row">
 <div class="fname">{{ r.label }}{% if r.doc %} <small>({{ r.doc }})</small>{% endif %}
@@ -67,7 +68,7 @@
 {% if diagrams or (reviewable and diagrams | length < max_diagrams) %}<div class="section-card" id="diagrams"><div class="card-head"><h2>Diagrams</h2></div>
 {% for d in diagrams %}<div class="field-row">
 <div class="fname">Diagram #{{ loop.index }} <span class="badge {{ "ok" if d.status == "ready" else "bad" if d.status == "rejected" else "neutral" }}">{{ d.status }}</span></div>
-<div>{% if d.status == "ready" %}<img src="/review/{{ id }}/diagrams/{{ d.id }}.png" alt="{{ d.caption }}" width="{{ [d.width, 480] | min }}">
+<div>{% if d.status == "ready" %}{% set u = "/review/" ~ id ~ "/diagrams/" ~ d.id ~ ".png" %}{{ zoom(u, d.caption) }}{{ zoom_hint(u, d.caption) }}
 {% elif d.status == "pending" %}<p class="muted">Processing: reload in a moment</p>
 {% else %}<p class="muted">Rejected: {{ d.reason }}</p>{% endif %}</div>
 <div>{% if reviewable %}<form method="post" action="/review/{{ id }}/diagrams/{{ d.id }}/caption" class="row"><input type="hidden" name="v" value="{{ v }}">
@@ -83,7 +84,7 @@
 <p class="muted">Nothing here reaches an output until you choose Use.</p>
 {% for i in found %}<div class="field-row">
 <div class="fname">Image #{{ loop.index }}</div>
-<div><img src="/review/{{ id }}/images/{{ i[0] }}.png" alt="{{ i[3] or "Image found in the document" }}" width="{{ [i[1], 240] | min }}"></div>
+<div>{% set u = "/review/" ~ id ~ "/images/" ~ i[0] ~ ".png" %}{% set alt = i[3] or "Image found in the document" %}{{ zoom(u, alt) }}{{ zoom_hint(u, alt) }}</div>
 <div>{% if diagrams | length < max_diagrams %}<form method="post" action="/review/{{ id }}/images/{{ i[0] }}/use" class="row"><input type="hidden" name="v" value="{{ v }}">
 <label for="fi-{{ i[0] }}" class="mini-label">Caption</label><input type="text" id="fi-{{ i[0] }}" name="caption" maxlength="200" required value="{{ i[3] }}">
 <button class="btn primary" aria-label="Use image #{{ loop.index }}">Use</button></form>{% else %}<p class="muted">This case has the most diagrams it can hold.</p>{% endif %}

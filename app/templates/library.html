@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import age %}
 {% from "_icons.html" import icon %}
 {% block body %}
 <div class="page-head"><div><h1>Library</h1><p>Briefs and quotes from public research, saved for the next bid. Public statements by third parties, not our delivery evidence.</p></div></div>
@@ -19,7 +20,7 @@
 <a href="/library/{{ i.id }}"><b>{{ i.topic }}</b></a>
 <span class="badge neutral">{{ "Brief" if i.kind == "brief" else "Quotes" }}</span>
 {% if i.stale %}<span class="badge">re-check</span>{% endif %}
-<span class="muted" style="margin-left:auto">saved by {{ i.by }} &middot; {{ i.sources }} source{{ "" if i.sources == 1 else "s" }} &middot; {{ "today" if i.age == 0 else (i.age ~ " day" ~ ("" if i.age == 1 else "s") ~ " old") }}</span>
+<span class="muted push">saved by {{ i.by }} &middot; {{ i.sources }} source{{ "" if i.sources == 1 else "s" }} &middot; {{ age(i.age) }}{% if i.age %} old{% endif %}</span>
 </div>{% endfor %}</div>
 {% elif q %}<div class="empty-state">{{ icon("search") }}<p><b>Nothing matches &ldquo;{{ q }}&rdquo;</b></p><p>Try another word, or <a href="/library">see everything saved</a>.</p></div>
 {% else %}<div class="empty-state">{{ icon("database") }}<p><b>Nothing saved yet</b></p>

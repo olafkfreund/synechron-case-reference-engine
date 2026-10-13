@@ -222,7 +222,8 @@ def test_preview_shows_ready_diagrams_from_the_user_route(approved):
     did = add_diagram(b, "Flow <b>&</b>", (900, 100))
     page = prev([a, b]).text
     url = f"/cases/{b}/diagrams/{did}.png"
-    assert f'<img src="{url}" alt="Flow &lt;b&gt;&amp;&lt;/b&gt;" width="480">' in page
+    assert f'<a href="{url}" target="_blank" rel="noopener" class="zoom" aria-label="Open Flow &lt;b&gt;&amp;&lt;/b&gt; full size"><img src="{url}" alt="Flow &lt;b&gt;&amp;&lt;/b&gt;"></a>' in page
+    assert page.count(f'href="{url}"') == 2 and "Open full size" in page and 'width="480"' not in page
     assert "<figcaption>Flow &lt;b&gt;&amp;&lt;/b&gt;</figcaption>" in page and page.count("<figure>") == 1
     assert client(R).get(url).status_code == 200  # the same user can load the image
     assert "<figure>" not in prev([a]).text
