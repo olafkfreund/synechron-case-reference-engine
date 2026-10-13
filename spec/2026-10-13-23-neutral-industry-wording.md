@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 23
 intent: intent/2026-10-13-23-neutral-industry-wording.md
 ---
