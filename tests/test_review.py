@@ -1493,3 +1493,28 @@ def test_merge_prefers_a_sourced_technical_reference_over_an_unsourced_copy(make
     docs = {cid: _data_and_doc(cid, cid)[1] for cid in (a, b)}
     got = combine([(cid, docs[cid], ReferenceCase.model_validate(row(cid)[1])) for cid in (a, b)], {})
     assert [(r.unsourced, r.document_id) for r in got.tech_references] == [(False, docs[b])]
+
+
+def arch_gate(make, **arch):
+    flagged = {"title": "Solution architecture", "components": [], "flows": [], "callouts": [], "flags": ["component 'X': names 'Zorbulon', which no quote supports"], **arch}
+    prose = {f: {"text": LONG, "by_reviewer": True, "flags": []} for f in ("challenge", "implementation", "configuration", "solution")}
+    return prosed(make, prose=prose, architecture=flagged)
+
+
+def test_flagged_architecture_blocks_approval_until_the_reviewer_confirms_it(make):
+    cid = arch_gate(make)
+    r = client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)})
+    assert r.status_code == 400 and "flagged architecture" in r.text and row(cid)[0] == "extracted"
+    cid = arch_gate(make, by_reviewer=True)  # the reviewer's own edit is the override
+    assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}, follow_redirects=False).status_code == 303
+
+
+def test_a_price_in_the_architecture_blocks_even_a_reviewers_diagram(make):
+    cid = arch_gate(make, by_reviewer=True, flags=["component 'X': contains a price or payment term"])
+    r = client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)})
+    assert r.status_code == 400 and "price or payment term" in r.text
+
+
+def test_a_clean_architecture_is_approved(make):
+    cid = arch_gate(make, flags=[])
+    assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}, follow_redirects=False).status_code == 303

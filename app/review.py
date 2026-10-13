@@ -474,6 +474,11 @@ def approve(cid: int, v: str = Form(), diagrams_checked: bool = Form(False), rea
             raise HTTPException(400, "remove the price or payment term from the write-up")  # whoever wrote it
         if any(p.flags and not p.by_reviewer for p in case.prose.values()):
             raise HTTPException(400, "fix or confirm the flagged write-up")  # editing it counts as confirming
+        a = case.architecture
+        if a and any(PRICE_FLAG in f for f in a.flags):
+            raise HTTPException(400, "remove the price or payment term from the architecture")
+        if a and a.flags and not a.by_reviewer:
+            raise HTTPException(400, "fix or confirm the flagged architecture")  # editing it counts as confirming, like the write-up
         if any(d.status == "ready" for d in case.diagrams) and not diagrams_checked:
             raise HTTPException(400, "confirm that you have checked every diagram")
         if isinstance(text, dict) and conn.execute(

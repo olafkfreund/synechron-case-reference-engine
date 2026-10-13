@@ -360,3 +360,9 @@ code ignores it. The demo can be re-seeded.
   - The autouse writeup stub returns `model()`, so each model class gets
     its own empty reply.
   - A proposal with zero components sets nothing.
+- B2:
+  - The override is `by_reviewer`, set when a reviewer saves (B3), the same
+    as prose: editing counts as confirming.
+  - A price flag blocks even a reviewer's architecture.
+  - Negative controls passed for B1 (trimming, class-only note,
+    reviewer-keep) and for the gate.
