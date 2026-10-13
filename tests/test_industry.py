@@ -1,3 +1,4 @@
+import html
 import json
 import re
 import zipfile
@@ -91,7 +92,7 @@ def test_markdown_section_wording(rows, approved):
 
 
 def test_every_fixed_string_avoids_first_person_and_delivery_wording():
-    fixed = [render.INDUSTRY_HEADING, render.INDUSTRY_DISCLAIMER, "states", "retrieved"]
+    fixed = [render.INDUSTRY_HEADING, render.APPROACH_HEADING, render.INDUSTRY_DISCLAIMER, "states", "retrieved"]
     assert not [s for s in fixed if re.search(r"\b(we|our|ours|us|delivered)\b", s, re.I)]
     assert render.COMPANY in render.INDUSTRY_DISCLAIMER
 
@@ -527,3 +528,48 @@ def test_a_malformed_url_does_not_break_the_section(env):
     db.init()
     s = section([claim(url="http://[x")])
     assert s["groups"][0]["title"] == "learn.microsoft.com"
+
+
+# ---- the case study's "Approach and industry practice" passage (#214) ----
+
+def test_case_study_puts_the_attached_sources_after_our_sections_under_the_disclaimer(rows, approved):
+    cid = approved()
+    attach(cid, rows([claim(), claim(Q2, "configuration")], case_id=cid), [0, 1])
+    t = doc_text(gen(None, [cid], "case_study_docx").content)
+    study, footer, head, disc = (t.index(x) for x in ("Faster onboarding", "Based on 1 source document", render.APPROACH_HEADING, render.INDUSTRY_DISCLAIMER))
+    assert study < footer < head < disc                                              # delivery first, then the passage and its disclaimer
+    after = t[head:]
+    assert f"{Q1}” [1]" in after and f"{Q2}” [1]" in after and "Sources" in after and "[1] learn.microsoft.com" in after
+    assert render.SOURCES_HEADING not in t and "Challenge" not in after              # never inside the delivery sections
+    assert render.APPROACH_HEADING not in doc_text(gen(None, [cid], "docx").content)  # the other documents keep their heading
+    pdf = " ".join(pdf_text(gen(None, [cid], "case_study_pdf").content)[0].split())
+    assert render.APPROACH_HEADING in pdf and Q1 in pdf
+
+
+def test_case_study_without_attached_sources_has_no_passage(rows, approved):
+    cid = approved()
+    t = doc_text(gen(None, [cid], "case_study_docx").content)
+    assert render.APPROACH_HEADING not in t and render.INDUSTRY_DISCLAIMER not in t
+    rid = rows([claim()])
+    t = doc_text(gen(rid, [cid], "case_study_docx").content)                          # research alone is industry context, not the approach
+    assert render.INDUSTRY_HEADING in t and render.APPROACH_HEADING not in t
+
+
+def test_case_study_passage_is_anonymised_and_dropped_when_blocked(rows, approved, reg, monkeypatch):
+    cid = approved()
+    attach(cid, rows([claim(f"{reg} runs this daily in production"), claim(Q2, "configuration")], case_id=cid), [0, 1])
+    t = doc_text(gen(None, [cid], "case_study_docx").content)
+    assert reg not in t and "a retailer runs this daily in production" in t
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)                   # apply() misses: blocked() alone must still guard
+    t = doc_text(gen(None, [cid], "case_study_docx").content)
+    assert reg not in t and Q2 in t and "1 public statement omitted" in t
+
+
+def test_preview_says_a_case_study_retitles_the_attached_sources(rows, approved):
+    cid = approved()
+    def note(c):
+        r = as_user("u1", G).post("/preview", data={"case_ids": [c]})
+        return html.unescape(re.search(r"Case study downloads also end with:[^<]*", r.text)[0])
+    assert "Approach and industry practice" not in note(cid)
+    attach(cid, rows([claim()], case_id=cid), [0])
+    assert note(cid).endswith(', and title the public sources section “Approach and industry practice”')

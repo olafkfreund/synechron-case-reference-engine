@@ -163,6 +163,7 @@ Keeping the public best-practice statements you accept with the case, so every d
 
 Every download of the case shows the attached sources under "Best practice and public sources", marked as
 statements by third parties, not our delivery. Attaching or removing does not change the case's approval.
+In a case study download the same sources come after the case, under "Approach and industry practice", with the same disclaimer.
 
 ## Re-review
 

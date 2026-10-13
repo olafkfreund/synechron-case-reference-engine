@@ -547,6 +547,13 @@ must exist on `main`.
   - The age reads "today" or "N days old".
   - Five inputs without `type=text` (in brief.html and research_view.html)
     were unstyled, and now have the type.
+- Steps 23-25:
+  - The passage is the existing grouped, cited industry section of the
+    case-study template, retitled "Approach and industry practice" when the
+    case's attached sources survive the checks. No template change was
+    needed.
+  - It doesn't use a stored brief, because briefs aren't linked to cases.
+  - A single-case preview's note says case studies retitle the section.
 
 ## Tests
 
