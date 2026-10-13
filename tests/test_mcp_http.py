@@ -1,0 +1,175 @@
+"""MCP endpoint over HTTP (#249)."""
+import asyncio
+import base64
+import json
+import time
+
+import pytest
+from fastapi.testclient import TestClient
+from joserfc import jwt
+from joserfc.jwk import OctKey, RSAKey
+
+from app import main, mcp_server
+
+ORIGIN = "http://testserver"
+ISS, AUD, TID = "https://login.example/tenant/v2.0", "api-app-id", "tenant"
+HDR = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+KEY = RSAKey.generate_key(2048, parameters={"kid": "k1"})  # one signing key for the test session
+
+
+@pytest.fixture
+def env(monkeypatch):
+    for k, v in dict(SESSION_SECRET="test-secret", SESSION_HTTPS_ONLY="false", APP_ORIGIN=ORIGIN,
+                     AWS_ACCESS_KEY_ID="x", AWS_SECRET_ACCESS_KEY="x", AWS_DEFAULT_REGION="us-east-1",
+                     MCP_ENABLED="1", MCP_ISSUER=ISS, MCP_AUDIENCE=AUD, MCP_TENANT_ID=TID).items():
+        monkeypatch.setenv(k, v)
+
+    async def jwks(url):
+        return {"keys": [KEY.as_dict(private=False)]}
+    monkeypatch.setattr(mcp_server, "fetch_jwks", jwks)
+
+
+def token(**over):
+    now = int(time.time())
+    claims = {"iss": ISS, "aud": AUD, "tid": TID, "exp": now + 600, "iat": now, "scp": "refs.access", "oid": "o1",
+              "azp": "client-1", **over}
+    return jwt.encode({"alg": "RS256", "kid": "k1"}, {k: v for k, v in claims.items() if v is not None}, KEY)
+
+
+def rpc(c, method, version, params=None, tok=None, **extra):
+    h = {**HDR, "MCP-Protocol-Version": version, "Mcp-Method": method, **extra}
+    if tok:
+        h["Authorization"] = f"Bearer {tok}"
+    return c.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}, headers=h)
+
+
+@pytest.mark.parametrize("version", ["2025-06-18", "2026-07-28"])
+def test_tools_list_both_protocol_versions(env, version):
+    with TestClient(main.create_app()) as c:  # `with` runs the lifespan, which starts the session manager
+        meta = {"io.modelcontextprotocol/protocolVersion": version, "io.modelcontextprotocol/clientCapabilities": {}}
+        r = rpc(c, "tools/list", version, {"_meta": meta} if version == "2026-07-28" else {}, token())
+        assert r.status_code == 200, r.text
+        assert "ping" in r.text
+
+
+def test_no_token_gets_challenge_and_prm_resolves(env):
+    with TestClient(main.create_app()) as c:
+        r = rpc(c, "tools/list", "2025-06-18")
+        assert r.status_code == 401
+        challenge = r.headers["www-authenticate"]
+        url = challenge.split('resource_metadata="')[1].split('"')[0]
+        assert url == f"{ORIGIN}/.well-known/oauth-protected-resource/mcp"
+        prm = c.get(url.removeprefix(ORIGIN))
+        assert prm.status_code == 200
+        assert prm.json()["authorization_servers"] == [ISS]
+        assert prm.json()["scopes_supported"] == [f"{AUD}/refs.access"]
+
+
+@pytest.mark.parametrize("bad,status", [
+    ({"aud": "other"}, 401), ({"iss": "https://evil/v2.0"}, 401), ({"tid": "other"}, 401),
+    ({"exp": int(time.time()) - 600}, 401), ({"iat": None}, 401),
+    ({"scp": None, "roles": ["refs.access"]}, 401),  # app-only token
+    ({"scp": "other.scope"}, 403)])
+def test_bad_tokens_refused(env, bad, status):
+    with TestClient(main.create_app()) as c:
+        assert rpc(c, "tools/list", "2025-06-18", tok=token(**bad)).status_code == status
+
+
+def test_token_signed_by_unknown_key_refused(env):
+    other = RSAKey.generate_key(2048, parameters={"kid": "k1"})
+    forged = jwt.encode({"alg": "RS256", "kid": "k1"}, {"iss": ISS, "aud": AUD, "tid": TID, "scp": "refs.access",
+                        "exp": int(time.time()) + 600, "iat": int(time.time())}, other)
+    with TestClient(main.create_app()) as c:
+        assert rpc(c, "tools/list", "2025-06-18", tok=forged).status_code == 401
+
+
+def test_mcp_is_404_when_disabled(env, monkeypatch):
+    monkeypatch.delenv("MCP_ENABLED")
+    with TestClient(main.create_app()) as c:
+        assert rpc(c, "tools/list", "2025-06-18").status_code == 404
+
+
+def b64(o):
+    return base64.urlsafe_b64encode(json.dumps(o).encode()).rstrip(b"=").decode()
+
+
+@pytest.mark.parametrize("header", [[], None, 5, "x"])
+def test_malformed_token_header_is_401_not_500(env, header):
+    with TestClient(main.create_app(), raise_server_exceptions=False) as c:
+        assert rpc(c, "tools/list", "2025-06-18", tok=f"{b64(header)}.{b64({})}.x").status_code == 401
+
+
+def test_hs256_and_none_tokens_refused(env):
+    claims = {"iss": ISS, "aud": AUD, "tid": TID, "scp": "refs.access", "exp": int(time.time()) + 600, "iat": int(time.time())}
+    hs = jwt.encode({"alg": "HS256", "kid": "k1"}, claims, OctKey.import_key("s" * 32))
+    none = f"{b64({'alg': 'none', 'kid': 'k1'})}.{b64(claims)}."
+    with TestClient(main.create_app()) as c:
+        assert rpc(c, "tools/list", "2025-06-18", tok=hs).status_code == 401
+        assert rpc(c, "tools/list", "2025-06-18", tok=none).status_code == 401
+
+
+def test_expiry_leeway_reaches_the_sdk(env):
+    now = int(time.time())
+    with TestClient(main.create_app()) as c:
+        assert rpc(c, "tools/list", "2025-06-18", tok=token(exp=now - 30)).status_code == 200
+        assert rpc(c, "tools/list", "2025-06-18", tok=token(exp=now - 90)).status_code == 401
+
+
+def verifier(monkeypatch, fetch):
+    monkeypatch.setattr(mcp_server, "fetch_jwks", fetch)
+    return mcp_server.EntraVerifier(ISS, AUD, "https://jwks", TID)
+
+
+def test_unknown_kids_make_at_most_one_fetch(monkeypatch):
+    calls = []
+
+    async def fetch(url):
+        calls.append(url)
+        return {"keys": [KEY.as_dict(private=False)]}
+    v = verifier(monkeypatch, fetch)
+    for i in range(50):
+        forged = jwt.encode({"alg": "RS256", "kid": f"nope{i}"}, {"iss": ISS}, KEY)
+        assert asyncio.run(v.verify_token(forged)) is None
+    assert len(calls) <= 1
+
+
+def test_failed_refresh_keeps_cached_keys(monkeypatch):
+    ok = True
+
+    async def fetch(url):
+        if not ok:
+            raise RuntimeError("jwks down")
+        return {"keys": [KEY.as_dict(private=False)]}
+    v = verifier(monkeypatch, fetch)
+    assert asyncio.run(v.verify_token(token()))
+    ok = False
+    v._fetched = v._attempt = 0.0  # cache is stale and the backoff has passed
+    assert asyncio.run(v.verify_token(token()))
+    assert v._attempt > 0  # it did try
+
+
+def test_foreign_origin_403_and_wrong_host_421(env):
+    with TestClient(main.create_app()) as c:
+        assert rpc(c, "tools/list", "2025-06-18", tok=token(), Origin="https://evil.example").status_code == 403
+        assert rpc(c, "tools/list", "2025-06-18", tok=token(), Origin=ORIGIN).status_code == 200
+    with TestClient(main.create_app(), base_url="http://evil.example") as c:  # a Host header alone loses the Authorization header
+        assert rpc(c, "tools/list", "2025-06-18", tok=token()).status_code == 421
+
+
+def test_guard_still_applies_beside_mcp(env):
+    with TestClient(main.create_app()) as c:
+        assert c.post("/mcpx", json={}).status_code == 403  # CSRF: only /mcp and /mcp/... are exempt
+        r = c.post("/mcp", content=iter([b"{}"]), headers={**HDR, "Authorization": f"Bearer {token()}"})
+        assert r.status_code == 413  # no content-length
+
+
+def test_enabled_without_issuer_raises(env, monkeypatch):
+    monkeypatch.delenv("MCP_ISSUER")
+    with pytest.raises(RuntimeError, match="MCP_ISSUER"):
+        main.create_app()
+
+
+def test_prm_is_404_when_disabled(env, monkeypatch):
+    monkeypatch.delenv("MCP_ENABLED")
+    with TestClient(main.create_app()) as c:
+        assert c.get("/.well-known/oauth-protected-resource/mcp").status_code == 404
