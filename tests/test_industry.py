@@ -21,6 +21,8 @@ def claim(quote=Q1, type="out_of_the_box", publisher="learn.microsoft.com", url=
     return {"statement": "AI summary that must never appear", "quote": quote, "type": type, "url": url,
             "publisher": publisher, "retrieved_at": "2026-10-01T00:00:00+00:00", "rank": 1}
 
+OLD = ("Supported out of the box", "Available through configuration", "Common industry practice", "Vendor statement")
+
 
 @pytest.fixture
 def rows(env):  # noqa: F811
@@ -77,15 +79,15 @@ def test_markdown_section_wording(rows, approved):
     t = gen(rid, [approved()], ack=True).text
     sec = t[t.index("# Industry context (public sources)"):]
     assert render.INDUSTRY_DISCLAIMER.replace("_", "\\_") in sec
-    for phrase in render.PHRASES.values():
-        assert phrase in sec
-    assert f"“{Q1}” — learn.microsoft.com, https://learn.microsoft.com/entra, retrieved 2026-10-01" in sec.replace("\\", "")
+    assert not [p for p in OLD if p in sec]
+    assert "docs.vendor.io states:" in sec
+    assert f"learn.microsoft.com states: “{Q1}” — https://learn.microsoft.com/entra, retrieved 2026-10-01" in sec.replace("\\", "")
     assert "AI summary" not in t
     assert not re.search(r"\b(we|our|ours|delivered)\b", sec.replace(Q1, ""), re.I), sec  # fixed wording only
 
 
 def test_every_fixed_string_avoids_first_person_and_delivery_wording():
-    fixed = [render.INDUSTRY_HEADING, render.INDUSTRY_DISCLAIMER, *render.PHRASES.values(), "retrieved"]
+    fixed = [render.INDUSTRY_HEADING, render.INDUSTRY_DISCLAIMER, "states", "retrieved"]
     assert not [s for s in fixed if re.search(r"\b(we|our|ours|us|delivered)\b", s, re.I)]
     assert render.COMPANY in render.INDUSTRY_DISCLAIMER
 
@@ -93,11 +95,13 @@ def test_every_fixed_string_avoids_first_person_and_delivery_wording():
 def test_docx_and_pdf_have_the_quote_and_source(rows, approved):
     rid, cid = rows([claim()]), approved()
     t = doc_text(gen(rid, [cid], "docx").content)
-    for want in (render.INDUSTRY_HEADING, render.INDUSTRY_DISCLAIMER, "Supported out of the box", Q1, "learn.microsoft.com", "retrieved 2026-10-01", "Faster onboarding"):
+    for want in (render.INDUSTRY_HEADING, render.INDUSTRY_DISCLAIMER, "learn.microsoft.com states:", Q1, "retrieved 2026-10-01", "Faster onboarding"):
         assert want in t, want
     text = " ".join(pdf_text(gen(rid, [cid], "pdf_docx").content)[0].split())  # the PDF wraps lines
     assert render.INDUSTRY_HEADING in text and Q1 in text and "learn.microsoft.com" in text
     assert "{{" not in t and "{%" not in t
+    assert t.count("learn.microsoft.com") == 2  # "states:" and the URL: the publisher is not repeated
+    assert not [p for p in OLD if p in t]
 
 
 def test_pptx_industry_slide_keeps_the_quote_next_to_the_phrase(rows, approved):
@@ -107,7 +111,7 @@ def test_pptx_industry_slide_keeps_the_quote_next_to_the_phrase(rows, approved):
     ind = out[1]
     assert ind["Title"] == [render.INDUSTRY_HEADING] and ind["Summary"] == [render.INDUSTRY_DISCLAIMER]
     assert len(ind["Statements"]) == 2
-    for line, phrase, quote in zip(ind["Statements"], ("Supported out of the box", "Available through configuration"), (Q1, Q2)):
+    for line, phrase, quote in zip(ind["Statements"], ("learn.microsoft.com states:", "docs.vendor.io states:"), (Q1, Q2)):
         assert line.startswith(phrase) and quote[:40] in line  # the AI-chosen phrase never stands alone
     assert len(slides(gen(rid, [], "pptx", ack=True).content)[1]) == 1  # industry only
     assert gen(rid, [cid], "pdf_pptx").content.startswith(b"%PDF")
@@ -138,7 +142,7 @@ def test_pptx_industry_slide_shows_the_omitted_note(rows, approved, reg, monkeyp
     monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)  # apply() misses: blocked() alone must still guard
     _, out = slides(gen(rid, [approved()], "pptx").content)
     st = out[1]["Statements"]
-    assert st[0].startswith("Supported out of the box") and st[-1] == "1 public statement omitted: it named a protected client"
+    assert st[0].startswith("learn.microsoft.com states:") and st[-1] == "1 public statement omitted: it named a protected client"
     many = rows([claim(f"{Q1} {i}") for i in range(render.SLIDE_ITEMS + 1)] + [claim(f"{reg.replace('o', 'ö')} runs this daily")])
     st = slides(gen(many, [approved()], "pptx").content)[1][1]["Statements"]
     assert len(st) == render.SLIDE_ITEMS + 1 and st[-1].startswith("1 public statement omitted")  # the cap never cuts the note
@@ -164,7 +168,7 @@ def test_preview_includes_industry_and_keeps_the_ack(rows, approved):
         form = {"format": "docx", "case_ids": list(ids), "research_id": rid, **({"industry_context_ack": "on"} if ack else {})}
         return as_user("u1", G).post("/preview", data=form)
     r = prev([cid])
-    assert r.status_code == 200 and Q1 in r.text and "learn.microsoft.com" in r.text
+    assert r.status_code == 200 and Q1 in r.text and "learn.microsoft.com states:" in r.text
     assert f'name="research_id" value="{rid}"' in r.text
     assert prev().status_code == 400
     esc = as_user("u1", G).post("/preview", data={"case_ids": [cid], "research_id": rows([claim("<b>x</b> in the quote")])})
@@ -192,7 +196,7 @@ def test_fallback_to_case_layout_without_industry_layout(rows, approved, tmp_pat
     rid, cid = rows([claim()]), approved()
     _, out = slides(gen(rid, [cid], "pptx").content)
     ind = out[1]
-    assert ind["Outcomes"][0].startswith("Supported out of the box") and Q1[:40] in ind["Outcomes"][0]
+    assert ind["Outcomes"][0].startswith("learn.microsoft.com states:") and Q1[:40] in ind["Outcomes"][0]
     assert ind["Challenge"] == [""] and ind["Solution"] == [""]
 
 
