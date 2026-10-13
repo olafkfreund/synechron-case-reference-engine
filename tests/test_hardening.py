@@ -271,7 +271,8 @@ def test_print_calls_are_the_known_content_free_ones():
                                    'print(f"revoked sessions of {sub}", flush=True)'],
         "app/migrate.py": ['print("schema applied", flush=True)'],
         "app/ingest.py": ['print(f"document {doc_id} images not stored: {type(e).__name__}", flush=True)'],  # class only
-        "app/diagrams.py": ['print(f"diagram {diagram_id} decoder error: {type(e).__name__}", flush=True)  # class only, as worker.py'],
+        "app/diagrams.py": ['print(f"diagram {diagram_id} decoder error: {type(e).__name__}", flush=True)  # class only, as worker.py',
+                           'print(f"vector diagrams skipped: {type(e).__name__}", flush=True)'],
     }
     found = {}
     for path in (ROOT / "app").rglob("*.py"):

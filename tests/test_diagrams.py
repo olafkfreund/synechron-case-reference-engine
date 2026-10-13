@@ -1,3 +1,5 @@
+import shutil
+import subprocess
 import uuid
 from io import BytesIO
 
@@ -5,7 +7,7 @@ import pytest
 from PIL import Image
 from psycopg.types.json import Jsonb
 
-from app import db, diagrams
+from app import db, diagrams, office
 from app.schema import Sourced
 
 TITLE = Sourced[str](value="T", source_quote="q").model_dump()
@@ -311,3 +313,120 @@ def test_a_declared_size_that_lies_is_bounded_and_loses_only_that_entry(monkeypa
         return infos
     monkeypatch.setattr(zipfile.ZipFile, "infolist", lying)
     assert [g[1:3] for g in diagrams.document_images_from(z, "x.docx")] == [(450, 450)]
+
+
+# --- vector (EMF/WMF) candidates (#234)
+EMF = b"\x01\x00\x00\x00" + b"\0" * 36 + b" EMF" + b"\0" * 2500
+WMF = b"\xd7\xcd\xc6\x9a" + b"\0" * 2500
+
+
+def page_png(box=(100, 200, 700, 800), size=(794, 1123), color="white"):
+    """A page-sized render with one dark drawing in it, as soffice makes."""
+    im = Image.new("RGB", size, color)
+    if box:
+        im.paste((20, 40, 160), box)
+    b = BytesIO()
+    im.save(b, "PNG")
+    return b.getvalue()
+
+
+def fake_convert(monkeypatch, png, calls=None):
+    def convert(files, fmt, timeout, wait, limit=None):
+        if calls is not None:
+            calls.append((dict(files), fmt, timeout, wait, limit))
+        return {n: png for n in files}
+    monkeypatch.setattr(diagrams.office, "convert", convert)
+
+
+def test_emf_and_wmf_are_found_by_magic_cropped_and_svg_never_converted(monkeypatch):
+    calls = []
+    fake_convert(monkeypatch, page_png(), calls)
+    z = pack({"word/media/a.bin": EMF, "word/media/b.dat": WMF, "word/media/fake.emf": noise_png(450)[:60] + b"\0" * 3000,
+              "word/media/c.svg": b"<svg/>" + b" " * 3000})
+    got = diagrams.document_images_from(z, "x.docx")
+    assert len(calls) == 1 and sorted(calls[0][0]) == ["v0.emf", "v1.wmf"] or sorted(calls[0][0]) == ["v0.wmf", "v1.emf"]
+    assert calls[0][1:] == ("png", diagrams.VEC_TIMEOUT, diagrams.VEC_WAIT, diagrams.MAX_BYTES)
+    assert len(got) == 2 and all((w, h) == (616, 616) for _, w, h, _ in got)  # 600 px of drawing + 8 px margin a side
+
+
+def test_blank_page_and_thin_drawing_are_skipped(monkeypatch):
+    for png in (page_png(box=None), page_png(box=(100, 200, 700, 300))):
+        fake_convert(monkeypatch, png)
+        assert diagrams.document_images_from(pack({"word/media/a.emf": EMF}), "x.docx") == []
+
+
+def test_vector_size_and_count_caps(monkeypatch):
+    calls = []
+    fake_convert(monkeypatch, page_png(), calls)
+    z = pack({"word/media/tiny.emf": EMF[:100] + b"\0" * 1000, "word/media/huge.emf": EMF + b"\0" * diagrams.MAX_BYTES})
+    assert diagrams.document_images_from(z, "x.docx") == [] and calls == []
+    calls.clear()
+    z = pack({f"word/media/{i}.emf": EMF + b"\0" * i for i in range(14)})
+    diagrams.document_images_from(z, "x.docx")
+    assert len(calls[0][0]) == diagrams.MAX_VECTORS
+
+
+def test_vectors_merge_by_area_and_are_not_converted_with_ten_rasters(monkeypatch, capsys):
+    calls = []
+    fake_convert(monkeypatch, page_png(), calls)
+    z = pack({"word/media/r.png": noise_png(450), "word/media/v.emf": EMF})
+    got = diagrams.document_images_from(z, "x.docx")
+    assert [g[1] for g in got] == [616, 450]
+    calls.clear()
+    z = pack({f"word/media/{i}.png": noise_png(420 + i) for i in range(10)} | {"word/media/v.emf": EMF})
+    assert len(diagrams.document_images_from(z, "x.docx")) == 10 and calls == []
+
+
+def test_converter_failure_keeps_rasters_and_logs_the_class_only(monkeypatch, capsys):
+    def boom(*a, **k):
+        raise RuntimeError("timeout SECRET-NAME")
+    monkeypatch.setattr(diagrams.office, "convert", boom)
+    got = diagrams.document_images_from(pack({"word/media/r.png": noise_png(450), "word/media/v.emf": EMF}), "x.docx")
+    assert [g[1] for g in got] == [450]
+    out = capsys.readouterr().out
+    assert "RuntimeError" in out and "SECRET" not in out
+
+
+def test_vector_hint_comes_from_the_alt_text_and_is_anonymised(monkeypatch):
+    import docx
+    fake_convert(monkeypatch, page_png())
+    d = docx.Document()
+    d.add_paragraph().add_run().add_picture(BytesIO(noise_png(500)))
+    pr = d.element.xpath(".//wp:docPr")[0]
+    pr.set("descr", "Flow at Zorpale Bank")
+    out = BytesIO()
+    d.save(out)
+    z = rewrite_png_to_emf(out.getvalue())
+    clients = [{"name": "Zorpale Bank", "aliases": [], "anonymised_label": "a retail bank", "referenceable": False}]
+    (png, w, h, hint), = diagrams.document_images_from(z, "d.docx", clients)
+    assert hint == "Flow at a retail bank"
+
+
+def rewrite_png_to_emf(data):
+    """The docx with its one media part replaced by EMF bytes (the relationship still names it)."""
+    b = BytesIO()
+    with zipfile.ZipFile(BytesIO(data)) as src, zipfile.ZipFile(b, "w") as dst:
+        for i in src.infolist():
+            dst.writestr(i.filename, EMF if i.filename.startswith("word/media/") else src.read(i.filename))
+    return b.getvalue()
+
+
+@pytest.mark.skipif(not shutil.which("soffice"), reason="needs LibreOffice")
+def test_real_conversion_of_a_generated_emf_gives_a_cropped_candidate(tmp_path):
+    svg = tmp_path / "d.svg"
+    svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600">'
+                   '<rect x="0" y="0" width="900" height="600" fill="#102a80"/></svg>')
+    emf = office.convert({"d.svg": svg.read_bytes()}, "emf", 60, 30)["d.svg"]
+    assert diagrams._vector_ext(emf[:48]) == "emf"
+    got = diagrams.document_images_from(pack({"word/media/d.emf": emf + b"\0" * diagrams.VEC_MIN_BYTES}), "x.docx")
+    assert len(got) == 1 and min(got[0][1:3]) >= diagrams.MIN_SIDE and got[0][1:3] != (794, 1123)
+
+
+def test_a_slow_office_is_killed_and_leaves_no_child(tmp_path, monkeypatch):
+    script = tmp_path / "slow.sh"
+    script.write_text("#!/bin/sh\nsleep 30 &\nsleep 30\n")
+    script.chmod(0o755)
+    monkeypatch.setattr(office, "SOFFICE", str(script))
+    with pytest.raises(RuntimeError, match="timeout"):
+        office.convert({"a.emf": EMF}, "png", 0.5, 1)
+    assert subprocess.run(["pgrep", "-f", "sleep 30"], capture_output=True).returncode == 1
