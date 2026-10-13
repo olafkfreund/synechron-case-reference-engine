@@ -180,7 +180,7 @@ def test_png_is_2x_and_text_is_drawn_in_every_card(name):
     assert im.size == (3200, 1800)
     for c in cards(sc):
         box = im.crop((int(c.x * 2) + 6, int(c.y * 2) + 6, int((c.x + c.w) * 2) - 6, int((c.y + c.h) * 2) - 6))
-        dark = sum(1 for p in box.getdata() if sum(p) < 450)
+        dark = sum(1 for p in box.get_flattened_data() if sum(p) < 450)
         assert dark / (box.width * box.height) > 0.01, c.ref
 
 
