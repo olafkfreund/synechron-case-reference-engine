@@ -218,3 +218,21 @@ def test_a_protected_client_is_replaced_or_dropped_at_render(reg, made, monkeypa
     assert sec["note"] == "2 statements omitted: they named a protected client" and sec["disclaimer"]
     bid = made({**b, "flags": []})
     assert as_user("u1").post(f"/briefs/{bid}/download", data={"format": "md"}).status_code == 200
+
+
+def test_start_then_run_sends_only_the_picked_quote_and_a_price_blocks_the_download(reg, made, monkeypatch):
+    c = as_user("u1")
+    loc = sent(c, None)
+    finish(loc, [{**BASE, "quote": q["quote"], "url": q["url"], "publisher": q["publisher"]} for q in QUOTES])
+    rid = loc.rsplit("/", 1)[1]
+    seen = []
+    monkeypatch.setattr(brief, "complete_json", lambda alias, system, user, cls, *, data_class: seen.append(user) or cls(
+        title="passwordless sign in", takeaways=["It costs $500 per user [1]."], themes=[]))
+    bid = int(c.post(f"/research/{rid}/brief", data={"n": [1]}, follow_redirects=False).headers["location"].rsplit("/", 1)[1])
+    brief.run(bid)
+    with db.connect() as conn:
+        conn.execute("delete from jobs where kind='brief'")
+        flags = conn.execute("select body->'flags' from briefs where id=%s", (bid,)).fetchone()[0]
+        conn.execute("delete from briefs where id=%s", (bid,))
+    assert seen == [f"<quotes>\n[1] {Q[1]}\n</quotes>"]  # only the picked quote, numbered from 1
+    assert any("price" in f["reason"] for f in flags)
