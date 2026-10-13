@@ -6,7 +6,7 @@ import uuid
 
 import pytest
 
-from app import db, research as rs
+from app import db, llm, research as rs
 from app.schema import Sourced
 from tests.test_auth import env  # noqa: F401
 from tests.test_research import KEY, Web, as_user, make_row, reg, row, web  # noqa: F401
@@ -584,3 +584,22 @@ def test_a_comment_inside_code_is_not_the_nearest_heading():
     assert rs.notes_from(page, "registry") == ["# registry setup"]  # the second block sits under "## Cats"
 
 
+
+
+def test_a_schema_echo_retry_fits_a_full_set_of_pages_at_the_readme_num_ctx(monkeypatch):
+    """The 2000-token slack in page_chars() covers one schema-echo retry (#245); a budget change that breaks it fails here."""
+    from types import SimpleNamespace
+    monkeypatch.setenv("DRAFT_MODEL", "ollama_chat/qwen3:14b")
+    monkeypatch.setenv("DRAFT_MODEL_OPTIONS", json.dumps({"num_ctx": 24576}))
+    n = rs.page_chars()
+    assert n > 500
+    replies = iter([json.dumps(rs.llm_schema(rs.Claims)), '{"claims": []}'])
+    calls = []
+
+    def completion(**kw):
+        calls.append(kw)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=next(replies)), finish_reason="stop")])
+    monkeypatch.setattr(llm.litellm, "completion", completion)
+    text = "QUERY: " + "q" * 200 + "".join(f"\n\n[page {i}] {'p' * 30}\n{'x' * n}" for i in range(rs.MAX_RESULTS))
+    rs.complete_json("DRAFT_MODEL", rs.CLAIMS_SYSTEM, text, rs.Claims, data_class="public", shape_hint=True)
+    assert len(calls) == 2  # the retry was not skipped by the overflow guard
