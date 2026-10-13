@@ -150,14 +150,48 @@ def view(c, clients, **extra):
     return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label=clean(c["label"], clients, "a client"), basis=c["basis"], score=score(checklist(case)), **extra)
 
 
+def source_docs(case_ids: list[int], user: User, clients) -> dict[int, list[dict]]:
+    """The live, visible source documents of each case (merged cases list every member), one query for the page (#236).
+
+    Entries: {"label", "docs": [{"web", "folder"}]}. Reviewers and referenceable linked clients get a title per
+    document; everyone else gets one "N documents in <source>" entry per source. The links stay either way."""
+    if not case_ids:
+        return {}
+    with db.connect() as conn:
+        rows = conn.execute(
+            "select c.id, d.title, s.name, d.web_url, d.folder_url, coalesce(cl.referenceable, false) and cl.id is not null "
+            "from cases c join cases m on (m.id = c.id or m.merged_into = c.id) "
+            "join documents d on d.id = m.document_id join sources s on s.id = d.source_id "
+            "left join clients cl on cl.id = c.client_id "
+            "where c.id = any(%s) and d.deleted_at is null and d.acl_groups && %s::text[] order by c.id, s.name, d.title, d.id",
+            (case_ids, list(user.groups))).fetchall()
+    reviewer, out = "reviewer" in user.roles, {}
+    for cid, title, source, web, folder, ref in rows:
+        doc, entries = dict(web=web, folder=folder), out.setdefault(cid, [])
+        if reviewer or ref:
+            entries.append(dict(label=clean(title, clients, "a document"), docs=[doc]))
+        elif entries and entries[-1]["source"] == source:
+            entries[-1]["docs"].append(doc)
+        else:
+            entries.append(dict(source=source, docs=[doc]))
+    for entries in out.values():
+        for e in entries:
+            if "source" in e:
+                n = len(e["docs"])
+                e["label"] = f"{n} document{'s' if n > 1 else ''} in {clean(e['source'], clients, 'a source')}"
+    return out
+
+
 def browse(user: User, filters: dict, kind: str = "", sort: str = "newest", page: int = 1) -> list[dict]:
     """One page of approved cases, no model. Rows go through view() and clean() like the ranked list."""
     clients = anonymise.load_clients()
-    return [view(c, clients, summary=clean(c["case"].summary, clients), approved_at=c["approved_at"],
+    cands = search(user, "", filters, kind, sort, page)
+    src = source_docs([c["id"] for c in cands], user, clients)
+    return [view(c, clients, sources=src.get(c["id"], []), summary=clean(c["case"].summary, clients), approved_at=c["approved_at"],
                  industry=clean(str(c["case"].industry.value or ""), clients),
                  region=clean(str(c["case"].region.value or ""), clients),
                  tech=[t for t in (clean(str(x.value), clients) for x in c["case"].tech_stack if not x.unsourced) if t][:5])
-            for c in search(user, "", filters, kind, sort, page)]
+            for c in cands]
 
 
 def facets(user: User) -> dict[str, list[tuple[str, int]]]:
@@ -184,11 +218,12 @@ def results(user: User, bid_text: str, filters: dict, kind: str = ""):
     picks, notes = pick(bid_text, cands, clients) if cands else ([], [])
     chosen = {p["id"] for p in picks}
     by_id = {c["id"]: c for c in cands}
+    src = source_docs([c["id"] for c in cands], user, clients)
 
-    top = [view(by_id[p["id"]], clients, reason=p["reason"], tailored=p["tailored"],
+    top = [view(by_id[p["id"]], clients, sources=src.get(p["id"], []), reason=p["reason"], tailored=p["tailored"],
                 outcomes=[clean((f"{o.metric}: {o.value}" if not vague_metric(o) else o.value), clients, "[withheld]")
                           for o in by_id[p["id"]]["case"].outcomes if not o.unsourced]) for p in picks]
-    others = [view(c, clients, summary=clean(c["case"].summary, clients)) for c in cands if c["id"] not in chosen]
+    others = [view(c, clients, sources=src.get(c["id"], []), summary=clean(c["case"].summary, clients)) for c in cands if c["id"] not in chosen]
     return top, others, notes
 
 
