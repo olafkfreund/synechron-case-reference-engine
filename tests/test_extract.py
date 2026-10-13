@@ -549,3 +549,11 @@ def test_engagement_keeps_points_and_drops_lessons(monkeypatch):
     c = ex.build(text, "internal", "engagement", "executed contract")
     assert [p.value for p in c.points["solution"]] == ["Migrate system 1", "Migrate system 2"]
     assert c.lessons_learned.value is None
+
+
+def test_chunks_ignore_a_blank_line_near_the_start():
+    t = "head\n\n" + "z" * 1200  # the only blank line is at the start
+    parts = ex.chunks(t, 500, overlap=100)
+    assert len(parts[0]) == 500 and all(len(p) >= 400 for p in parts[:-1])
+    t = "head\n\n" + ("y" * 90 + "\n") * 14  # no usable blank line, but newlines in the second half
+    assert ex.chunks(t, 500, overlap=100)[0].endswith("\n")

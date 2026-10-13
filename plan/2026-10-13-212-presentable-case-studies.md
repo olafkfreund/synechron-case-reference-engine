@@ -608,6 +608,20 @@ client. Run the full suite, then PR 4.
   would turn every such research into "claims could not be extracted". A
   Bedrock `num_ctx` stays ignored, as before. Research's own overflow is a
   follow-up issue.
+- A5 found a regression, fixed as an A2 deviation:
+  - The cause: "one item per distinct need/point" made line 1's main part
+    return 46 challenge and 46 solution items, and no capabilities or
+    technologies.
+  - The prompt fix: "up to 6 items each" for the four sections, with
+    capabilities and technologies listed as separate items.
+  - The chunking fix: `chunks()` cuts at a blank line only in the second
+    half of the window, then at a newline, then hard. A blank line near the
+    start had made two tiny parts.
+  - Result against the baseline (sourced/total, capabilities, technologies):
+    line 1 goes from 9/18, 6, 3 to 36/43, 14, 20; line 3 from 8/11, 1, 1 to
+    16/19, 6, 4. Points are line 1 1/1/1/1 and line 3 10/10/9/7.
+  - Still open for phase B: line 1 has few points, and both summaries are
+    still blanked. The write-up pass replaces the summary.
 
 ## Tests
 
