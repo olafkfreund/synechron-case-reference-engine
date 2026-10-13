@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 246
 intent: intent/2026-10-13-246-architecture-diagrams.md
 ---
