@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% macro completeness(s) %}<span class="badge neutral">{% if s[0] == s[1] %}Complete{% else %}Partial · {{ s[0] }}/{{ s[1] }}{% endif %}</span>{% endmacro %}
 {% macro basis(x) %}<span class="badge neutral">{{ "Engagement (contracted scope)" if x == "engagement" else "Delivered case" }}</span>{% endmacro %}
 {% block body %}
 <div class="page-head"><div><h1>Find reference cases</h1><p>Paste the bid requirement; narrow by industry, region or technology if you like.</p></div></div>
@@ -26,7 +27,7 @@
 {% for r in rows %}
 <article class="section-card stack result">
 <div class="meta"><span class="avatar" aria-hidden="true">{{ icon("building") }}</span>
-<div class="who"><h3 style="display:inline">{{ r.title }}</h3><span>{{ r.label }}</span></div>{{ basis(r.basis) }}</div>
+<div class="who"><h3 style="display:inline">{{ r.title }}</h3><span>{{ r.label }}</span></div>{{ basis(r.basis) }} {{ completeness(r.score) }}</div>
 <p class="muted" style="margin:0">{{ [r.industry, r.region] | select | join(" · ") }}{% if r.approved_at %} &middot; Approved {{ r.approved_at.strftime("%Y-%m-%d") }}{% endif %}</p>
 {% if r.tech %}<div class="row">{% for t in r.tech %}<span class="badge neutral">{{ t }}</span>{% endfor %}</div>{% endif %}
 <div class="action-row">
@@ -44,7 +45,7 @@
 {% for p in top %}
 <article class="section-card stack result">
 <div class="meta"><span class="avatar" aria-hidden="true">{{ icon("building") }}</span>
-<div class="who"><h3 style="display:inline">{{ p.title }}</h3><span>{{ p.label }}</span></div>{{ basis(p.basis) }}</div>
+<div class="who"><h3 style="display:inline">{{ p.title }}</h3><span>{{ p.label }}</span></div>{{ basis(p.basis) }} {{ completeness(p.score) }}</div>
 {% if p.reason %}<p style="margin:0"><b>Why it fits:</b> {{ p.reason }}</p>{% endif %}
 {% if p.outcomes %}<ul class="outcome-list">{% for o in p.outcomes %}<li>{{ icon("check") }}<span>{{ o }}</span></li>{% endfor %}</ul>{% endif %}
 <div class="inset"><div class="t">Suggested wording &middot; not in downloads</div>{{ p.tailored }}</div>
@@ -64,5 +65,5 @@
 <div class="row" style="padding-bottom:4px"><button class="btn dark" name="format" value="pptx">{{ what }} (PowerPoint)</button> <button class="btn dark" name="format" value="pdf_docx">{{ what }} (PDF)</button> <button class="btn dark" name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button class="btn dark" name="format" value="md">{{ what }} (Markdown)</button></div></details></form>{% endwith %}{% endif %}
 {% if top %}<p class="muted" style="font-size:13px">Downloads contain the approved case record only, not the suggested wording above.</p>{% endif %}
 {% if others %}<div class="section-card"><div class="card-head"><h2>Other matches</h2></div>
-{% for o in others %}<div class="other-row"><b>{{ o.title }}</b> {{ basis(o.basis) }} <span class="muted">({{ o.label }})</span><p>{{ o.summary }}</p></div>{% endfor %}</div>{% endif %}
+{% for o in others %}<div class="other-row"><b>{{ o.title }}</b> {{ basis(o.basis) }} {{ completeness(o.score) }} <span class="muted">({{ o.label }})</span><p>{{ o.summary }}</p></div>{% endfor %}</div>{% endif %}
 {% endblock %}
