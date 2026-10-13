@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 206
 intent: intent/2026-10-13-206-sharepoint-raised-cap.md
 ---
