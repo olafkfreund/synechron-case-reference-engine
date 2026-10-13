@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 234
 intent: intent/2026-10-13-234-vector-diagrams.md
 ---
@@ -80,15 +80,19 @@ impress. The plan's first step checks this in the container
 (`soffice --convert-to png x.emf`). If impress turns out to be enough, the
 package isn't added.
 
-### Backfill for older documents
+### Backfill for older documents (decision, 2026-10-13)
 
-The phase C rule stays as it is: a same-bytes re-ingest with **no** candidate
-rows runs `store_images()` once. That covers documents with no PNG or JPEG
-candidates, which is 10 of the 11 trial documents. A document that already
-has candidates doesn't get its vector ones until a new version arrives.
-
-*shortcut:* no version marker on candidate rows. Add one (for example
-`document_images.made_by = 2`) if a second backfill is ever needed.
+- `documents` gets `images_version int not null default 1`, added with
+  `add column if not exists`, so existing rows read as 1. `store_images()`
+  sets it to `IMAGES_VERSION = 2` after a run, whatever it found.
+- On a same-bytes re-ingest, `store_images()` runs once for a document whose
+  case is live and whose `images_version < IMAGES_VERSION`. Today the rule is
+  "no candidate rows".
+- So a document that already has PNG or JPEG candidates (trial line 3, the
+  user's case 17) also gets its vector ones on the next full crawl. Used or
+  dismissed images stay as they are: re-running replaces only rows that are
+  not used.
+- A later change to image handling bumps `IMAGES_VERSION`.
 
 ## Alternatives rejected
 
