@@ -43,7 +43,8 @@ def checklist(case) -> list[dict]:
     start = bool(case.period.start) and not case.period.unsourced
     rows.append(("period", "Period", start or months, "found" if start or months else "missing"))
     n = sum(1 for d in case.diagrams if d.status == "ready")
-    rows.append(("diagram", "Diagram", n >= 1, f"{n} ready"))
+    arch = bool(case.architecture and case.architecture.components)  # an architecture meets it too (#246)
+    rows.append(("diagram", "Diagram", n >= 1 or arch, f"{n} ready" + (", architecture" if arch else "")))
     return [dict(key=k, label=l, ok=ok, detail=d) for k, l, ok, d in rows]
 
 

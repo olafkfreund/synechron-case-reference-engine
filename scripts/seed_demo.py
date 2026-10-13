@@ -5,6 +5,7 @@
 Safe to run again: S3 originals are re-put (moto is in memory). A document whose checksum changed is updated in
 place, with its case; an unchanged one is left alone; nothing is deleted.
 Every source it creates is named "Demo: ...", and every write is keyed on one of them.
+An unchanged document still gets its case's `architecture` refreshed when the file's differs (nothing else of the case is touched).
 Entry keys read by the seed only: expect_flag (one unsupported prose item is intended), diagram, document_image, override.
 """
 import hashlib
@@ -25,7 +26,7 @@ from app.completeness import checklist, score
 from app.extract import EXTRACTION_VERSION, check
 from app.ingest import reopen_merged, to_markdown
 from app.review import fix_summary
-from app.schema import Diagram, ReferenceCase, quote_in
+from app.schema import Diagram, ReferenceCase, check_architecture, quote_in
 from app.writeup import check_prose, quotes_of
 
 DATA = Path(__file__).resolve().parents[1] / "demo" / "cases.json"
@@ -111,12 +112,26 @@ def validate(demo: dict, texts: dict[str, str]) -> list[str]:
                 errors.append(f"{name}: {f}: unsourced")
         if (e.get("diagram") or e.get("document_image")) and len([t for t in case.tech_stack if t.value]) < 2:
             errors.append(f"{name}: diagram or document_image needs at least 2 tech_stack values to draw")
+        errors += [f"{name}: architecture: {m}" for m in check_architecture(case)]
         for f, p in case.prose.items():
             if p.flags and (p.by_reviewer or not e.get("expect_flag")):
                 errors.append(f"{name}: prose.{f}: {'; '.join(p.flags)}")
             if not p.flags and e.get("expect_flag") and not p.by_reviewer:
                 errors.append(f"{name}: prose.{f}: expect_flag is set but the prose is clean")
     return errors
+
+
+def refresh_architecture(conn, doc_id: int, case: ReferenceCase) -> int:
+    """Set data.architecture (and the search text that includes it) when the file's differs from the stored one; 1 if changed."""
+    row = conn.execute("select id, data from cases where document_id=%s", (doc_id,)).fetchone()
+    want = case.model_dump(include={"architecture"})["architecture"]
+    if not row or row[1].get("architecture") == want:
+        return 0
+    stored = ReferenceCase.model_validate(row[1])
+    stored.architecture = case.architecture
+    conn.execute("update cases set data = jsonb_set(data, '{architecture}', %s::jsonb), search_text=%s where id=%s",
+                 (Jsonb(want), stored.search_text(), row[0]))
+    return 1
 
 
 def main() -> int:
@@ -128,7 +143,7 @@ def main() -> int:
     if errors := validate(demo, texts):
         print("demo seed: nothing written\n" + "\n".join(errors), file=sys.stderr)
         return 2
-    new = updated = 0
+    new = updated = refreshed = 0
     with db.connect() as conn:
         src = {}
         for s in demo["sources"]:
@@ -152,9 +167,10 @@ def main() -> int:
             key = row[1] if row and row[2] == sha else f"originals/{sha}"
             for k in {key, ext}:
                 s3.put_object(Bucket=bucket, Key=k, Body=data)
-            if row and row[2] == sha:
-                continue
             case = build(e, text)
+            if row and row[2] == sha:
+                refreshed += refresh_architecture(conn, row[0], case)
+                continue
             kind = "contract" if e["case"].get("basis") == "engagement" else "case"
             if row:
                 doc_id = row[0]
@@ -201,7 +217,8 @@ def main() -> int:
                     ok, total = score(items)
                     conn.execute("insert into case_approval_overrides(case_id, reason, score, approved_by) values (%s,%s,%s,'demo-seed')",
                                  (cid, "Demo: approved below the minimum to show the override", f"{ok}/{total}"))
-    print(f"demo seed: {new} new case(s), {updated} updated, {len(demo['cases']) - new - updated} already there")
+    print(f"demo seed: {new} new case(s), {updated} updated, {len(demo['cases']) - new - updated} already there"
+          + (f", {refreshed} architecture(s) refreshed" if refreshed else ""))
     return 0
 
 

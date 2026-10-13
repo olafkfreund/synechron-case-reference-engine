@@ -703,7 +703,7 @@ def test_case_study_docx_full_and_anonymised(approved, reg):
     r = gen([cid], "case_study_docx")
     assert r.status_code == 200
     t = doc_text(r.content)
-    for want in ("Architecture", "Technical references", "a UK retailer was slow.", "Second paragraph.",
+    for want in ("Diagrams", "Technical references", "a UK retailer was slow.", "Second paragraph.",
                  "Flow at a UK retailer", "payments API v2", "Based on 1 source document"):
         assert want in t, want
     assert name not in t and "{{" not in t and "{%" not in t
@@ -728,3 +728,165 @@ def test_headline_value_is_one_unsplit_paragraph_in_md_and_docx(approved):
     paras = [p.text for p in Document(BytesIO(gen([cid], "docx").content)).paragraphs]
     assert not {"first part", "second part"} & {p.strip() for p in paras}
     assert any("first part" in p and "second part" in p for p in paras)
+
+
+# --- solution architecture (#246 step A5) ---
+def with_arch(*names, flags=(), label="Open account", **kw):
+    from app.schema import Architecture
+    names = names or ("Customer portal", "Account engine")
+    comps = [{"id": f"c{i}", "name": n, "role": "Does the work", "zone": z, "kind": "service"}
+             for i, (n, z) in enumerate(zip(names, ("channels", "core", "data", "external")))]
+    flows = [{"src": "c0", "dst": "c1", "label": label, "mode": "api"}]
+    arch = Architecture.model_validate({"components": comps, "flows": flows, "flags": list(flags),
+                                        "callouts": [{"text": "Onboarding in 3 days", "outcome": 0}]})
+    return full(**kw).model_copy(update={"architecture": arch})
+
+
+def pptx_arch(content):
+    prs = Presentation(BytesIO(content))
+    return [s for s in prs.slides if any(sh.name.startswith("arch:") for sh in s.shapes)]
+
+
+def test_architecture_is_in_every_format_and_the_preview(approved):
+    cid = approved(with_arch())
+    md = gen([cid], "md").text
+    assert "## Architecture" in md and "```mermaid" in md and "Account engine" in md and "Open account" in md
+    z = zipfile.ZipFile(BytesIO(gen([cid], "docx").content))
+    assert any(n.startswith("word/media/") for n in z.namelist())  # the PNG; this case has no other picture
+    assert "Architecture" in doc_text(gen([cid], "docx").content)
+    cs = zipfile.ZipFile(BytesIO(gen([cid], "case_study_docx").content))
+    assert any(n.startswith("word/media/") for n in cs.namelist())
+    slides_ = pptx_arch(gen([cid], "pptx").content)
+    assert len(slides_) == 1
+    text = " ".join(sh.text_frame.text for sh in slides_[0].shapes if sh.has_text_frame)
+    assert "solution architecture" in text and "Account engine" in text and "Open account" in text
+    p = prev([cid]).text
+    assert 'class="zoom" aria-label="Open Solution architecture full size"><svg xmlns=' in p and "Account engine" in p and "Open account" in p
+    assert all(n in md and n in p for n in ("Customer portal", "Account engine", "Open account"))  # the preview shows what is downloaded
+
+
+def test_architecture_names_are_anonymised_like_the_rest(approved, reg):
+    name, label_id = reg("Zorp", "a UK retailer")
+    cid = approved(with_arch(f"{name} ledger", "Account engine"))
+    link(cid, label_id)
+    outs = [gen([cid], "md").text, prev([cid]).text, doc_text(gen([cid], "docx").content)]
+    pp = pptx_arch(gen([cid], "pptx").content)[0]
+    outs.append(" ".join(sh.text_frame.text for sh in pp.shapes if sh.has_text_frame))
+    for o in outs:
+        assert name not in o and "a UK retailer ledger" in o or o is outs[2], o[:200]  # the docx has no text of the drawing, only its PNG
+    assert all(name not in o for o in outs)
+
+
+def test_a_blocked_architecture_is_left_out_not_the_whole_output(approved, reg, monkeypatch):
+    name, _ = reg("Zorp", "a UK retailer")
+    cid = approved(with_arch(f"{name} ledger", "Account engine"))
+    real = render.anonymise.apply
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t if "ledger" in t else real(t, c))  # apply() misses the component
+    r = gen([cid], "md")
+    assert r.status_code == 200 and name not in r.text and "## Architecture" not in r.text
+    p = prev([cid])
+    assert p.status_code == 200 and "left out" in p.text and 'class="paper"' not in p.text and name not in p.text
+
+
+def test_unapproved_or_flagged_architecture_is_not_output(approved):
+    assert gen([approved(with_arch(), status="extracted", due=None)], "md").status_code == 404
+    flagged = approved(with_arch(flags=["a number not in the quote"]))
+    assert "## Architecture" not in gen([flagged], "md").text and 'class="paper"' not in prev([flagged]).text
+    assert not pptx_arch(gen([flagged], "pptx").content)
+
+
+def test_architecture_preview_escapes_a_hostile_label(approved):
+    cid = approved(with_arch("<script>alert(1)</script>", "Account engine", label="<img src=x onerror=1>"))
+    p = prev([cid]).text
+    assert 'class="zoom" aria-label="Open Solution architecture full size"><svg xmlns=' in p and "<script>alert" not in p and "<img src=x" not in p and "&lt;script&gt;" in p
+    md = gen([cid], "md").text
+    assert "<script>" not in md and "#60;script#62;" in md
+
+
+def test_an_architecture_meets_the_completeness_diagram_item():
+    from app import completeness
+    item = lambda c: next(i for i in completeness.checklist(c) if i["key"] == "diagram")
+    assert not item(full())["ok"] and item(with_arch())["ok"]
+
+
+def test_architecture_png_route(approved, reg):
+    from PIL import Image
+    cid = approved(with_arch())
+    r = client(R).get(f"/cases/{cid}/architecture.png")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    assert r.headers["cache-control"] == "private, no-store" and r.headers["x-content-type-options"] == "nosniff"
+    assert "default-src 'none'" in r.headers["content-security-policy"]
+    im = Image.open(BytesIO(r.content))
+    assert im.width == 3200 and im.height < 1800  # cropped to the content
+    url = f"/cases/{cid}/architecture.png"
+    page = prev([cid]).text
+    assert f'<a href="{url}" target="_blank" rel="noopener" class="zoom"' in page and page.count(f'href="{url}"') == 2 and "Open full size" in page
+
+
+def test_architecture_png_route_answers_404_alike_and_403_without_a_role(approved, reg, monkeypatch):
+    ok = approved(with_arch())
+    miss = [client(R).get("/cases/999999/architecture.png"),
+            client(["g-user"]).get(f"/cases/{ok}/architecture.png"),  # no access to the source document
+            client(R).get(f"/cases/{approved(with_arch(), status='extracted', due=None)}/architecture.png"),  # not approved
+            client(R).get(f"/cases/{approved(with_arch(flags=['unresolved']))}/architecture.png"),  # flagged
+            client(R).get(f"/cases/{approved()}/architecture.png")]  # none
+    assert [r.status_code for r in miss] == [404] * 5 and len({r.text for r in miss}) == 1
+    name, _ = reg("Zorp", "a UK retailer")
+    blocked = approved(with_arch(f"{name} ledger", "Account engine"))
+    real = render.anonymise.apply
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t if "ledger" in t else real(t, c))  # apply() misses: blocked() must omit it
+    r = client(R).get(f"/cases/{blocked}/architecture.png")
+    assert r.status_code == 404 and r.text == miss[0].text
+    assert client([]).get(f"/cases/{ok}/architecture.png").status_code == 403
+
+
+def test_a_long_expanded_client_label_does_not_drop_the_architecture(approved, reg):
+    name, label_id = reg("Zorp", "a UK retailer with a very long anonymised label that expands every client name past forty characters")
+    cid = approved(with_arch(f"{name} ledger", "Account engine", label=f"Open {name} account"))
+    link(cid, label_id)
+    md = gen([cid], "md").text
+    assert "## Architecture" in md and name not in md and "a very long anonymised label" in md
+    p = prev([cid]).text
+    assert 'class="paper"' in p and "left out" not in p and name not in p
+    assert gen([cid], "docx").status_code == 200 and pptx_arch(gen([cid], "pptx").content)
+    assert client(R).get(f"/cases/{cid}/architecture.png").status_code == 200
+
+
+def test_a_client_named_like_a_zone_does_not_rewrite_the_structure(approved):
+    with db.connect() as c:  # reg() adds a random tag to every name; a client really called "core" needs a row of its own
+        c.execute("delete from clients where name = 'core'")
+        label_id = c.execute("insert into clients(name, anonymised_label, referenceable) values ('core', 'a UK retailer', false) returning id").fetchone()[0]
+    try:
+        cid = approved(with_arch("core ledger", "Account engine"))
+        link(cid, label_id)
+        md = gen([cid], "md").text
+        assert "## Architecture" in md and 'subgraph core["Core"]' in md  # the zone literal is untouched
+        assert "a UK retailer ledger" in md and "core ledger" not in md
+        assert 'class="paper"' in prev([cid]).text
+    finally:
+        with db.connect() as c:
+            c.execute("update cases set client_id = null where client_id = %s", (label_id,))
+            c.execute("delete from clients where id = %s", (label_id,))
+
+
+def test_a_structure_that_cannot_be_kept_is_left_out_with_a_note(approved, monkeypatch):
+    cid = approved(with_arch())
+    monkeypatch.setattr(render, "architecture_of", lambda sec: None)
+    p = prev([cid]).text
+    assert "left out" in p and 'class="paper"' not in p
+
+
+def test_callouts_follow_the_shown_outcomes_and_a_contract_has_none(approved):
+    from app.schema import Architecture, Outcome
+    base = with_arch()
+    outs = [Outcome(metric="hidden", value="x", source_quote="q", unsourced=True),
+            Outcome(metric="onboarding", value="12 to 3 days", source_quote="q")]
+    arch = Architecture.model_validate({**base.architecture.model_dump(), "callouts": [{"text": "Onboarding in 3 days", "outcome": 1},
+                                                                                       {"text": "Hidden claim", "outcome": 0}]})
+    case = base.model_copy(update={"outcomes": outs, "architecture": arch})
+    d = render.architecture_dict(case)
+    assert d["callouts"] == [{"text": "Onboarding in 3 days", "outcome": 0}]  # numbered by place among the shown outcomes; unsourced dropped
+    eng = render.architecture_dict(case.model_copy(update={"basis": "engagement"}))
+    assert eng["callouts"] == [] and eng["components"]
+    cid = approved(case.model_copy(update={"basis": "engagement"}))
+    assert "Onboarding in 3 days" not in prev([cid]).text.split("<figure")[1].split("</figure>")[0] and "Hidden claim" not in gen([cid], "md").text

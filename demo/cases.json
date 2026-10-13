@@ -364,7 +364,152 @@
     "summary": "Contoso claims intake project, delivered over 14 months by 9 engineers. Simple claim handling time fell from 11 days to 4 days.",
     "organisations": [
      "Contoso"
-    ]
+    ],
+    "architecture": {
+     "title": "Claims intake architecture",
+     "components": [
+      {
+       "id": "chan",
+       "name": "Web and mobile app",
+       "role": "Claims from the web and the mobile app",
+       "zone": "channels",
+       "kind": "app",
+       "cite": "solution 1"
+      },
+      {
+       "id": "gw",
+       "name": "API gateway",
+       "role": "Enforces OAuth 2.0 tokens and a rate limit",
+       "zone": "experience",
+       "kind": "service",
+       "cite": "configuration 3"
+      },
+      {
+       "id": "api",
+       "name": "Intake API",
+       "role": "Accepts every claim from every channel",
+       "zone": "integration",
+       "kind": "service",
+       "cite": "solution 2"
+      },
+      {
+       "id": "kafka",
+       "name": "Kafka event stream",
+       "role": "One topic for each claim type",
+       "zone": "integration",
+       "kind": "queue",
+       "cite": "configuration 1"
+      },
+      {
+       "id": "val",
+       "name": "Validation and acceptance",
+       "role": "Checks each claim against the policy",
+       "zone": "core",
+       "kind": "service",
+       "cite": "solution 3"
+      },
+      {
+       "id": "queue",
+       "name": "Work queue for adjusters",
+       "role": "Ranks claims by severity and age",
+       "zone": "core",
+       "kind": "queue",
+       "cite": "solution 4"
+      },
+      {
+       "id": "pg",
+       "name": "PostgreSQL",
+       "role": "Holds the claim records",
+       "zone": "data",
+       "kind": "store",
+       "cite": "configuration 2"
+      },
+      {
+       "id": "docs",
+       "name": "Document store",
+       "role": "Keeps attachments in encrypted storage",
+       "zone": "data",
+       "kind": "store",
+       "cite": "configuration 2"
+      },
+      {
+       "id": "policy",
+       "name": "Policy system",
+       "role": "Left unchanged, reached through SOAP",
+       "zone": "external",
+       "kind": "external",
+       "cite": "solution 5"
+      }
+     ],
+     "flows": [
+      {
+       "src": "chan",
+       "dst": "gw",
+       "label": "Submit a claim",
+       "mode": "ui",
+       "cite": "solution 1"
+      },
+      {
+       "src": "gw",
+       "dst": "api",
+       "label": "Authorised request",
+       "mode": "api",
+       "cite": "configuration 3"
+      },
+      {
+       "src": "api",
+       "dst": "val",
+       "label": "Validate the claim",
+       "mode": "api",
+       "cite": "solution 3"
+      },
+      {
+       "src": "val",
+       "dst": "queue",
+       "label": "Route to an adjuster",
+       "mode": "api",
+       "cite": "solution 4"
+      },
+      {
+       "src": "val",
+       "dst": "kafka",
+       "label": "Publish claim changes",
+       "mode": "event",
+       "cite": "configuration 1"
+      },
+      {
+       "src": "val",
+       "dst": "pg",
+       "label": "Save the claim record",
+       "mode": "data",
+       "cite": "configuration 2"
+      },
+      {
+       "src": "api",
+       "dst": "docs",
+       "label": "Store attachments",
+       "mode": "file",
+       "cite": "configuration 2"
+      },
+      {
+       "src": "val",
+       "dst": "policy",
+       "label": "Check the policy over SOAP",
+       "mode": "api",
+       "cite": "configuration 4"
+      }
+     ],
+     "callouts": [
+      {
+       "text": "Simple claims in 4 days, not 11",
+       "outcome": 0
+      },
+      {
+       "text": "Over 70 percent of motor claims accepted automatically",
+       "outcome": 1
+      }
+     ]
+    }
    },
    "status": "approved"
   },
@@ -632,7 +777,167 @@
     "summary": "Northwind stock forecasting project, delivered over 10 months by 7 people. Fresh stock waste fell from 9 percent to 6 percent.",
     "organisations": [
      "Northwind"
-    ]
+    ],
+    "architecture": {
+     "title": "Demand forecasting architecture",
+     "components": [
+      {
+       "id": "mgr",
+       "name": "Store managers",
+       "role": "Review and override order proposals",
+       "zone": "channels",
+       "kind": "user",
+       "cite": "solution 2"
+      },
+      {
+       "id": "dash",
+       "name": "Ordering dashboard",
+       "role": "Proposes an order quantity with reasons",
+       "zone": "channels",
+       "kind": "app",
+       "cite": "solution 3"
+      },
+      {
+       "id": "api",
+       "name": "REST service on Kubernetes",
+       "role": "Serves forecasts and order proposals",
+       "zone": "experience",
+       "kind": "service",
+       "cite": "configuration 3"
+      },
+      {
+       "id": "pipe",
+       "name": "Feature pipeline",
+       "role": "Prepares sales, price, weather and calendar data",
+       "zone": "integration",
+       "kind": "service",
+       "cite": "solution 2"
+      },
+      {
+       "id": "spark",
+       "name": "Spark jobs",
+       "role": "Transform the nightly sales and stock data",
+       "zone": "integration",
+       "kind": "service",
+       "cite": "configuration 1"
+      },
+      {
+       "id": "models",
+       "name": "Python forecasting models",
+       "role": "A separate model for fresh products",
+       "zone": "core",
+       "kind": "service",
+       "cite": "configuration 2"
+      },
+      {
+       "id": "azure",
+       "name": "Azure storage",
+       "role": "Receives nightly sales and stock data",
+       "zone": "data",
+       "kind": "store",
+       "cite": "configuration 1"
+      },
+      {
+       "id": "wh",
+       "name": "Warehouse planning tool",
+       "role": "Replenishment follows the forecasts",
+       "zone": "external",
+       "kind": "external",
+       "cite": "solution 4"
+      },
+      {
+       "id": "weather",
+       "name": "Weather service",
+       "role": "Weather data and the promotion calendar",
+       "zone": "external",
+       "kind": "external",
+       "cite": "configuration 4"
+      },
+      {
+       "id": "k8s",
+       "name": "Kubernetes",
+       "role": "Runs the forecasting service",
+       "zone": "platform",
+       "kind": "platform",
+       "cite": "configuration 3"
+      }
+     ],
+     "flows": [
+      {
+       "src": "azure",
+       "dst": "spark",
+       "label": "Nightly data",
+       "mode": "data",
+       "cite": "configuration 1"
+      },
+      {
+       "src": "spark",
+       "dst": "pipe",
+       "label": "Prepared features",
+       "mode": "batch",
+       "cite": "configuration 1"
+      },
+      {
+       "src": "weather",
+       "dst": "pipe",
+       "label": "Weather and calendar",
+       "mode": "file",
+       "cite": "configuration 4"
+      },
+      {
+       "src": "pipe",
+       "dst": "models",
+       "label": "Training data",
+       "mode": "data",
+       "cite": "solution 2"
+      },
+      {
+       "src": "models",
+       "dst": "api",
+       "label": "Forecasts",
+       "mode": "api",
+       "cite": "configuration 3"
+      },
+      {
+       "src": "api",
+       "dst": "dash",
+       "label": "Order proposals",
+       "mode": "api",
+       "cite": "solution 3"
+      },
+      {
+       "src": "mgr",
+       "dst": "dash",
+       "label": "Review and override",
+       "mode": "ui",
+       "cite": "solution 3"
+      },
+      {
+       "src": "api",
+       "dst": "wh",
+       "label": "Publish forecasts",
+       "mode": "api",
+       "cite": "solution 4"
+      },
+      {
+       "src": "k8s",
+       "dst": "api",
+       "label": "Runs the service",
+       "mode": "data",
+       "cite": "configuration 3"
+      }
+     ],
+     "callouts": [
+      {
+       "text": "Forecast error from 31 to 18 percent",
+       "outcome": 0
+      },
+      {
+       "text": "Fresh stock waste from 9 to 6 percent",
+       "outcome": 1
+      }
+     ]
+    }
    },
    "status": "approved"
   },
@@ -900,7 +1205,167 @@
     "summary": "Woodgrove payments gateway project, delivered over 16 months by 14 engineers and testers. A new payment scheme now takes about 6 weeks instead of 9 months.",
     "organisations": [
      "Woodgrove"
-    ]
+    ],
+    "architecture": {
+     "title": "Payments gateway architecture",
+     "components": [
+      {
+       "id": "chan",
+       "name": "Digital channels",
+       "role": "Send payment instructions",
+       "zone": "channels",
+       "kind": "app",
+       "cite": "solution 1"
+      },
+      {
+       "id": "console",
+       "name": "Operations console",
+       "role": "One timeline for each payment",
+       "zone": "channels",
+       "kind": "app",
+       "cite": "solution 4"
+      },
+      {
+       "id": "gw",
+       "name": "Payments gateway",
+       "role": "Receives instructions and routes each payment",
+       "zone": "integration",
+       "kind": "service",
+       "cite": "solution 1"
+      },
+      {
+       "id": "kafka",
+       "name": "Kafka",
+       "role": "Carries payment events",
+       "zone": "integration",
+       "kind": "queue",
+       "cite": "configuration 1"
+      },
+      {
+       "id": "adapt",
+       "name": "Scheme adapters",
+       "role": "Translate ISO 20022 for each scheme",
+       "zone": "core",
+       "kind": "service",
+       "cite": "configuration 3"
+      },
+      {
+       "id": "sanc",
+       "name": "Sanctions screening",
+       "role": "A vendor product called by an internal service",
+       "zone": "core",
+       "kind": "service",
+       "cite": "configuration 4"
+      },
+      {
+       "id": "pg",
+       "name": "PostgreSQL",
+       "role": "Payment state with synchronous replication",
+       "zone": "data",
+       "kind": "store",
+       "cite": "configuration 2"
+      },
+      {
+       "id": "ledger",
+       "name": "Core account ledgers",
+       "role": "Kept as they were",
+       "zone": "external",
+       "kind": "external",
+       "cite": "solution 5"
+      },
+      {
+       "id": "card",
+       "name": "Card processor",
+       "role": "Kept as it was",
+       "zone": "external",
+       "kind": "external",
+       "cite": "solution 5"
+      },
+      {
+       "id": "k8s",
+       "name": "Kubernetes",
+       "role": "Two data centres",
+       "zone": "platform",
+       "kind": "platform",
+       "cite": "configuration 1"
+      }
+     ],
+     "flows": [
+      {
+       "src": "chan",
+       "dst": "gw",
+       "label": "Payment instruction",
+       "mode": "api",
+       "cite": "solution 1"
+      },
+      {
+       "src": "gw",
+       "dst": "sanc",
+       "label": "Screen each payment",
+       "mode": "api",
+       "cite": "solution 3"
+      },
+      {
+       "src": "gw",
+       "dst": "adapt",
+       "label": "Route to the scheme",
+       "mode": "api",
+       "cite": "configuration 3"
+      },
+      {
+       "src": "gw",
+       "dst": "kafka",
+       "label": "Payment events",
+       "mode": "event",
+       "cite": "configuration 1"
+      },
+      {
+       "src": "gw",
+       "dst": "pg",
+       "label": "Save payment state",
+       "mode": "data",
+       "cite": "configuration 2"
+      },
+      {
+       "src": "kafka",
+       "dst": "console",
+       "label": "Status updates",
+       "mode": "event",
+       "cite": "solution 4"
+      },
+      {
+       "src": "adapt",
+       "dst": "ledger",
+       "label": "Post to the ledger",
+       "mode": "api",
+       "cite": "solution 5"
+      },
+      {
+       "src": "adapt",
+       "dst": "card",
+       "label": "Card payments",
+       "mode": "api",
+       "cite": "solution 5"
+      },
+      {
+       "src": "k8s",
+       "dst": "gw",
+       "label": "Runs the gateway",
+       "mode": "data",
+       "cite": "configuration 1"
+      }
+     ],
+     "callouts": [
+      {
+       "text": "New scheme in about 6 weeks, not 9 months",
+       "outcome": 0
+      },
+      {
+       "text": "Confirmation within 10 seconds at any hour",
+       "outcome": 1
+      }
+     ]
+    }
    },
    "status": "approved"
   },
@@ -1172,7 +1637,152 @@
     "summary": "Tailspin route planning project, delivered over 11 months by 8 people. Distance driven fell by 14 percent and first attempt deliveries rose to 95 percent.",
     "organisations": [
      "Tailspin"
-    ]
+    ],
+    "architecture": {
+     "title": "Route planning architecture",
+     "components": [
+      {
+       "id": "disp",
+       "name": "Dispatcher console",
+       "role": "Plan and change the daily routes",
+       "zone": "channels",
+       "kind": "app",
+       "cite": "solution 2"
+      },
+      {
+       "id": "driver",
+       "name": "Driver app",
+       "role": "React app that works offline",
+       "zone": "channels",
+       "kind": "app",
+       "cite": "configuration 3"
+      },
+      {
+       "id": "track",
+       "name": "Customer map",
+       "role": "Customers follow the van on a map",
+       "zone": "channels",
+       "kind": "app",
+       "cite": "solution 4"
+      },
+      {
+       "id": "kafka",
+       "name": "Kafka topic",
+       "role": "Reads parcel and vehicle data",
+       "zone": "integration",
+       "kind": "queue",
+       "cite": "configuration 4"
+      },
+      {
+       "id": "engine",
+       "name": "Planning engine",
+       "role": "OR-Tools solver in a Python service",
+       "zone": "core",
+       "kind": "service",
+       "cite": "configuration 1"
+      },
+      {
+       "id": "pg",
+       "name": "PostgreSQL",
+       "role": "Stores the planned routes",
+       "zone": "data",
+       "kind": "store",
+       "cite": "configuration 4"
+      },
+      {
+       "id": "parcel",
+       "name": "Parcel system",
+       "role": "The existing source of parcel data",
+       "zone": "external",
+       "kind": "external",
+       "cite": "configuration 4"
+      },
+      {
+       "id": "map",
+       "name": "Map data service",
+       "role": "Road distances and live traffic",
+       "zone": "external",
+       "kind": "external",
+       "cite": "configuration 2"
+      },
+      {
+       "id": "k8s",
+       "name": "Kubernetes",
+       "role": "Scales the planning service",
+       "zone": "platform",
+       "kind": "platform",
+       "cite": "configuration 1"
+      }
+     ],
+     "flows": [
+      {
+       "src": "parcel",
+       "dst": "kafka",
+       "label": "Parcel and vehicle data",
+       "mode": "event",
+       "cite": "configuration 4"
+      },
+      {
+       "src": "kafka",
+       "dst": "engine",
+       "label": "Parcels to plan",
+       "mode": "event",
+       "cite": "configuration 4"
+      },
+      {
+       "src": "map",
+       "dst": "engine",
+       "label": "Distances and traffic",
+       "mode": "api",
+       "cite": "configuration 2"
+      },
+      {
+       "src": "engine",
+       "dst": "pg",
+       "label": "Planned routes",
+       "mode": "data",
+       "cite": "configuration 4"
+      },
+      {
+       "src": "engine",
+       "dst": "disp",
+       "label": "Proposed routes",
+       "mode": "api",
+       "cite": "solution 2"
+      },
+      {
+       "src": "engine",
+       "dst": "driver",
+       "label": "Route updates",
+       "mode": "event",
+       "cite": "configuration 3"
+      },
+      {
+       "src": "engine",
+       "dst": "track",
+       "label": "Van position",
+       "mode": "api",
+       "cite": "solution 4"
+      },
+      {
+       "src": "k8s",
+       "dst": "engine",
+       "label": "Runs the engine",
+       "mode": "data",
+       "cite": "configuration 1"
+      }
+     ],
+     "callouts": [
+      {
+       "text": "Distance driven down 14 percent",
+       "outcome": 0
+      },
+      {
+       "text": "First attempt deliveries from 87 to 95 percent",
+       "outcome": 1
+      }
+     ]
+    }
    },
    "status": "approved"
   },
@@ -1382,7 +1992,137 @@
     "summary": "Litware citizen portal project, delivered over 9 months by 6 people. The median wait for a decision fell from 23 days to 9 days.",
     "organisations": [
      "Litware"
-    ]
+    ],
+    "architecture": {
+     "title": "Citizen portal architecture",
+     "components": [
+      {
+       "id": "portal",
+       "name": "Citizen portal",
+       "role": "Residents sign in once and apply",
+       "zone": "channels",
+       "kind": "app",
+       "cite": "solution 1"
+      },
+      {
+       "id": "form",
+       "name": "Form builder",
+       "role": "Service teams build application forms",
+       "zone": "experience",
+       "kind": "app",
+       "cite": "solution 2"
+      },
+      {
+       "id": "status",
+       "name": "Status tracker",
+       "role": "Residents see where an application is",
+       "zone": "experience",
+       "kind": "app",
+       "cite": "solution 2"
+      },
+      {
+       "id": "notify",
+       "name": "Notification service",
+       "role": "Tell residents about each change",
+       "zone": "integration",
+       "kind": "service",
+       "cite": "solution 2"
+      },
+      {
+       "id": "idp",
+       "name": "National identity provider",
+       "role": "OpenID Connect sign in",
+       "zone": "external",
+       "kind": "external",
+       "cite": "solution 3"
+      },
+      {
+       "id": "py",
+       "name": "Python application",
+       "role": "Runs the portal services",
+       "zone": "core",
+       "kind": "service",
+       "cite": ""
+      },
+      {
+       "id": "register",
+       "name": "Case register",
+       "role": "Kept in place for the officers",
+       "zone": "core",
+       "kind": "app",
+       "cite": "solution 4"
+      },
+      {
+       "id": "pg",
+       "name": "PostgreSQL",
+       "role": "Applications and status",
+       "zone": "data",
+       "kind": "store",
+       "cite": ""
+      }
+     ],
+     "flows": [
+      {
+       "src": "portal",
+       "dst": "idp",
+       "label": "Sign in with OpenID Connect",
+       "mode": "api",
+       "cite": "solution 3"
+      },
+      {
+       "src": "portal",
+       "dst": "form",
+       "label": "Open an application form",
+       "mode": "ui",
+       "cite": "solution 2"
+      },
+      {
+       "src": "form",
+       "dst": "py",
+       "label": "Submit an application",
+       "mode": "api",
+       "cite": "solution 2"
+      },
+      {
+       "src": "py",
+       "dst": "pg",
+       "label": "Save the application",
+       "mode": "data",
+       "cite": "solution 2"
+      },
+      {
+       "src": "py",
+       "dst": "register",
+       "label": "Send to the case register",
+       "mode": "api",
+       "cite": "solution 4"
+      },
+      {
+       "src": "py",
+       "dst": "status",
+       "label": "Update the status",
+       "mode": "event",
+       "cite": "solution 2"
+      },
+      {
+       "src": "status",
+       "dst": "notify",
+       "label": "Status changes",
+       "mode": "event",
+       "cite": "solution 2"
+      }
+     ],
+     "callouts": [
+      {
+       "text": "Median wait from 23 to 9 days",
+       "outcome": 0
+      },
+      {
+       "text": "71 percent of applications online",
+       "outcome": 1
+      }
+     ]
+    }
    },
    "status": "approved",
    "override": true
@@ -1663,7 +2403,167 @@
     "summary": "Adventure Works booking platform project, delivered over 12 months by 11 people. Rejected bookings after payment fell from 6 percent to under 1 percent.",
     "organisations": [
      "Adventure Works"
-    ]
+    ],
+    "architecture": {
+     "title": "Booking platform architecture",
+     "components": [
+      {
+       "id": "front",
+       "name": "React front end",
+       "role": "Sells trips, activities and rooms in one basket",
+       "zone": "channels",
+       "kind": "app",
+       "cite": "configuration 4"
+      },
+      {
+       "id": "partner",
+       "name": "Partner availability portal",
+       "role": "Partners manage their own availability",
+       "zone": "experience",
+       "kind": "app",
+       "cite": "solution 3"
+      },
+      {
+       "id": "booking",
+       "name": "Booking service",
+       "role": "Takes and confirms each booking",
+       "zone": "core",
+       "kind": "service",
+       "cite": "solution 2"
+      },
+      {
+       "id": "inv",
+       "name": "Inventory service",
+       "role": "Holds live availability",
+       "zone": "core",
+       "kind": "service",
+       "cite": "solution 2"
+      },
+      {
+       "id": "kafka",
+       "name": "Kafka booking events",
+       "role": "Events for accounting and the customer relationship system",
+       "zone": "integration",
+       "kind": "queue",
+       "cite": "configuration 4"
+      },
+      {
+       "id": "redis",
+       "name": "Redis",
+       "role": "Fast reads of availability",
+       "zone": "data",
+       "kind": "store",
+       "cite": "configuration 2"
+      },
+      {
+       "id": "pg",
+       "name": "PostgreSQL",
+       "role": "Availability and timed reservations",
+       "zone": "data",
+       "kind": "store",
+       "cite": "configuration 2"
+      },
+      {
+       "id": "pay",
+       "name": "Card payment provider",
+       "role": "Strong customer authentication",
+       "zone": "external",
+       "kind": "external",
+       "cite": "configuration 3"
+      },
+      {
+       "id": "acct",
+       "name": "Accounting system",
+       "role": "Kept as it was",
+       "zone": "external",
+       "kind": "external",
+       "cite": "solution 5"
+      },
+      {
+       "id": "k8s",
+       "name": "Kubernetes on Azure",
+       "role": "Scales automatically",
+       "zone": "platform",
+       "kind": "platform",
+       "cite": "configuration 1"
+      }
+     ],
+     "flows": [
+      {
+       "src": "front",
+       "dst": "booking",
+       "label": "Place a booking",
+       "mode": "ui",
+       "cite": "solution 1"
+      },
+      {
+       "src": "partner",
+       "dst": "inv",
+       "label": "Change availability",
+       "mode": "ui",
+       "cite": "solution 3"
+      },
+      {
+       "src": "booking",
+       "dst": "inv",
+       "label": "Check availability",
+       "mode": "api",
+       "cite": "solution 2"
+      },
+      {
+       "src": "inv",
+       "dst": "redis",
+       "label": "Read availability",
+       "mode": "data",
+       "cite": "configuration 2"
+      },
+      {
+       "src": "inv",
+       "dst": "pg",
+       "label": "Write availability",
+       "mode": "data",
+       "cite": "configuration 2"
+      },
+      {
+       "src": "booking",
+       "dst": "pay",
+       "label": "Take the card payment",
+       "mode": "api",
+       "cite": "configuration 3"
+      },
+      {
+       "src": "booking",
+       "dst": "kafka",
+       "label": "Booking events",
+       "mode": "event",
+       "cite": "configuration 4"
+      },
+      {
+       "src": "kafka",
+       "dst": "acct",
+       "label": "Accounting entries",
+       "mode": "batch",
+       "cite": "solution 5"
+      },
+      {
+       "src": "k8s",
+       "dst": "booking",
+       "label": "Runs the services",
+       "mode": "data",
+       "cite": "configuration 1"
+      }
+     ],
+     "callouts": [
+      {
+       "text": "Online conversion from 2.1 to 3.4 percent",
+       "outcome": 0
+      },
+      {
+       "text": "Rejected bookings from 6 to under 1 percent",
+       "outcome": 1
+      }
+     ]
+    }
    },
    "status": "approved"
   },
@@ -1917,7 +2817,160 @@
     "summary": "Wide World Importers order automation project, delivered over 8 months by 6 people. The share of orders created without keying rose to 82 percent.",
     "organisations": [
      "Wide World Importers"
-    ]
+    ],
+    "architecture": {
+     "title": "Order automation architecture",
+     "components": [
+      {
+       "id": "orders",
+       "name": "Email and web orders",
+       "role": "Orders reach the service by email and the web form",
+       "zone": "channels",
+       "kind": "app",
+       "cite": "solution 1"
+      },
+      {
+       "id": "portal",
+       "name": "Customer portal",
+       "role": "Stock levels and substitutes, built with Angular",
+       "zone": "channels",
+       "kind": "app",
+       "cite": "configuration 3"
+      },
+      {
+       "id": "reader",
+       "name": "Document reader",
+       "role": "Extracts the lines from emails and attachments",
+       "zone": "integration",
+       "kind": "service",
+       "cite": "configuration 1"
+      },
+      {
+       "id": "rabbit",
+       "name": "RabbitMQ",
+       "role": "A message queue between the steps",
+       "zone": "integration",
+       "kind": "queue",
+       "cite": "configuration 2"
+      },
+      {
+       "id": "match",
+       "name": "Product matching service",
+       "role": "A Python service that matches each product",
+       "zone": "core",
+       "kind": "service",
+       "cite": "configuration 1"
+      },
+      {
+       "id": "exc",
+       "name": "Clerk exceptions queue",
+       "role": "Orders without a confident match wait here",
+       "zone": "core",
+       "kind": "queue",
+       "cite": "solution 3"
+      },
+      {
+       "id": "pg",
+       "name": "PostgreSQL",
+       "role": "Stores the orders and the exceptions queue",
+       "zone": "data",
+       "kind": "store",
+       "cite": "configuration 2"
+      },
+      {
+       "id": "wh",
+       "name": "Warehouse system",
+       "role": "Unchanged",
+       "zone": "external",
+       "kind": "external",
+       "cite": "solution 5"
+      },
+      {
+       "id": "fin",
+       "name": "Finance system",
+       "role": "Unchanged",
+       "zone": "external",
+       "kind": "external",
+       "cite": "solution 5"
+      },
+      {
+       "id": "ad",
+       "name": "Active Directory",
+       "role": "Customer sign in",
+       "zone": "external",
+       "kind": "external",
+       "cite": "configuration 3"
+      }
+     ],
+     "flows": [
+      {
+       "src": "orders",
+       "dst": "reader",
+       "label": "Incoming orders",
+       "mode": "file",
+       "cite": "configuration 1"
+      },
+      {
+       "src": "reader",
+       "dst": "rabbit",
+       "label": "Order lines",
+       "mode": "event",
+       "cite": "configuration 2"
+      },
+      {
+       "src": "rabbit",
+       "dst": "match",
+       "label": "Lines to match",
+       "mode": "event",
+       "cite": "configuration 1"
+      },
+      {
+       "src": "match",
+       "dst": "exc",
+       "label": "Low confidence",
+       "mode": "api",
+       "cite": "solution 3"
+      },
+      {
+       "src": "match",
+       "dst": "pg",
+       "label": "Create the order",
+       "mode": "data",
+       "cite": "configuration 2"
+      },
+      {
+       "src": "pg",
+       "dst": "wh",
+       "label": "EDIFACT order message",
+       "mode": "file",
+       "cite": "configuration 4"
+      },
+      {
+       "src": "pg",
+       "dst": "fin",
+       "label": "EDIFACT order message",
+       "mode": "file",
+       "cite": "configuration 4"
+      },
+      {
+       "src": "portal",
+       "dst": "ad",
+       "label": "Customer sign in",
+       "mode": "api",
+       "cite": "configuration 3"
+      }
+     ],
+     "callouts": [
+      {
+       "text": "82 percent of orders created without keying",
+       "outcome": 0
+      },
+      {
+       "text": "Order errors from 5 to 1 percent",
+       "outcome": 1
+      }
+     ]
+    }
    },
    "status": "approved"
   },
@@ -2177,7 +3230,167 @@
     "summary": "Proseware billing modernisation project, delivered over 20 months by 22 people. The bill run now takes 4 hours instead of 31.",
     "organisations": [
      "Proseware"
-    ]
+    ],
+    "architecture": {
+     "title": "Billing platform architecture",
+     "components": [
+      {
+       "id": "billview",
+       "name": "Customer service view",
+       "role": "Customer service sees every charge",
+       "zone": "channels",
+       "kind": "app",
+       "cite": "solution 4"
+      },
+      {
+       "id": "tariff",
+       "name": "Tariff tool",
+       "role": "Marketing defines plans without code changes",
+       "zone": "experience",
+       "kind": "app",
+       "cite": "solution 3"
+      },
+      {
+       "id": "kafka",
+       "name": "Kafka",
+       "role": "Carries the usage records",
+       "zone": "integration",
+       "kind": "queue",
+       "cite": "configuration 1"
+      },
+      {
+       "id": "rating",
+       "name": "Rating engine",
+       "role": "Java services that rate the usage",
+       "zone": "core",
+       "kind": "service",
+       "cite": "configuration 1"
+      },
+      {
+       "id": "bills",
+       "name": "Bill generator",
+       "role": "Produces the itemised bill",
+       "zone": "core",
+       "kind": "service",
+       "cite": "solution 2"
+      },
+      {
+       "id": "oracle",
+       "name": "Oracle",
+       "role": "Account and bill data, partitioned by month",
+       "zone": "data",
+       "kind": "store",
+       "cite": "configuration 2"
+      },
+      {
+       "id": "med",
+       "name": "Network mediation",
+       "role": "Supplies the usage records",
+       "zone": "external",
+       "kind": "external",
+       "cite": "solution 5"
+      },
+      {
+       "id": "gl",
+       "name": "General ledger",
+       "role": "Receives the postings",
+       "zone": "external",
+       "kind": "external",
+       "cite": "configuration 4"
+      },
+      {
+       "id": "bank",
+       "name": "Payment files from banks",
+       "role": "Read in the ISO 20022 format",
+       "zone": "external",
+       "kind": "external",
+       "cite": "configuration 4"
+      },
+      {
+       "id": "k8s",
+       "name": "Kubernetes",
+       "role": "Runs the rating engine",
+       "zone": "platform",
+       "kind": "platform",
+       "cite": "configuration 1"
+      }
+     ],
+     "flows": [
+      {
+       "src": "med",
+       "dst": "kafka",
+       "label": "Usage records",
+       "mode": "event",
+       "cite": "solution 5"
+      },
+      {
+       "src": "kafka",
+       "dst": "rating",
+       "label": "Rate the usage",
+       "mode": "event",
+       "cite": "configuration 1"
+      },
+      {
+       "src": "tariff",
+       "dst": "rating",
+       "label": "Plans and discounts",
+       "mode": "api",
+       "cite": "solution 3"
+      },
+      {
+       "src": "rating",
+       "dst": "oracle",
+       "label": "Rated charges",
+       "mode": "data",
+       "cite": "configuration 2"
+      },
+      {
+       "src": "oracle",
+       "dst": "bills",
+       "label": "Charges for the bill",
+       "mode": "data",
+       "cite": "solution 2"
+      },
+      {
+       "src": "bills",
+       "dst": "billview",
+       "label": "Explained charges",
+       "mode": "api",
+       "cite": "solution 4"
+      },
+      {
+       "src": "bank",
+       "dst": "oracle",
+       "label": "Payment files",
+       "mode": "file",
+       "cite": "configuration 4"
+      },
+      {
+       "src": "oracle",
+       "dst": "gl",
+       "label": "Postings",
+       "mode": "batch",
+       "cite": "configuration 4"
+      },
+      {
+       "src": "k8s",
+       "dst": "rating",
+       "label": "Runs the engine",
+       "mode": "data",
+       "cite": "configuration 1"
+      }
+     ],
+     "callouts": [
+      {
+       "text": "Bill run in 4 hours, not 31",
+       "outcome": 0
+      },
+      {
+       "text": "Offers in about 3 weeks, not 4 months",
+       "outcome": 1
+      }
+     ]
+    }
    },
    "status": "approved"
   },
@@ -2438,7 +3651,174 @@
     "summary": "Alpine Ski House guest app project, delivered over 7 months by 9 people. More than 80 percent of lift passes are now bought in the app.",
     "organisations": [
      "Alpine Ski House"
-    ]
+    ],
+    "architecture": {
+     "title": "Guest app architecture",
+     "components": [
+      {
+       "id": "app",
+       "name": "Guest app",
+       "role": "Passes, lessons, rentals and hotel services",
+       "zone": "channels",
+       "kind": "app",
+       "cite": "solution 1"
+      },
+      {
+       "id": "staff",
+       "name": "Staff console",
+       "role": "Change a booking and issue a pass",
+       "zone": "channels",
+       "kind": "app",
+       "cite": "solution 3"
+      },
+      {
+       "id": "gate",
+       "name": "Gate scanning integration",
+       "role": "Gates read a QR code from the app",
+       "zone": "integration",
+       "kind": "service",
+       "cite": "solution 2"
+      },
+      {
+       "id": "push",
+       "name": "Push notifications",
+       "role": "Targeted by location in the resort",
+       "zone": "integration",
+       "kind": "service",
+       "cite": "configuration 4"
+      },
+      {
+       "id": "kafka",
+       "name": "Kafka",
+       "role": "Carries booking events",
+       "zone": "integration",
+       "kind": "queue",
+       "cite": "configuration 2"
+      },
+      {
+       "id": "back",
+       "name": "Back end for passes",
+       "role": "Passes and bookings",
+       "zone": "core",
+       "kind": "service",
+       "cite": "solution 2"
+      },
+      {
+       "id": "pg",
+       "name": "PostgreSQL",
+       "role": "Guests and bookings",
+       "zone": "data",
+       "kind": "store",
+       "cite": "configuration 2"
+      },
+      {
+       "id": "hotel",
+       "name": "Hotel system",
+       "role": "Kept as it was",
+       "zone": "external",
+       "kind": "external",
+       "cite": "solution 4"
+      },
+      {
+       "id": "ctl",
+       "name": "Gate controller",
+       "role": "Checks the signed JWT",
+       "zone": "external",
+       "kind": "external",
+       "cite": "configuration 3"
+      },
+      {
+       "id": "k8s",
+       "name": "Azure and Kubernetes",
+       "role": "Containers for the back end",
+       "zone": "platform",
+       "kind": "platform",
+       "cite": "configuration 2"
+      }
+     ],
+     "flows": [
+      {
+       "src": "app",
+       "dst": "back",
+       "label": "Buy a pass",
+       "mode": "api",
+       "cite": "solution 1"
+      },
+      {
+       "src": "staff",
+       "dst": "back",
+       "label": "Change a booking",
+       "mode": "api",
+       "cite": "solution 3"
+      },
+      {
+       "src": "back",
+       "dst": "pg",
+       "label": "Save the booking",
+       "mode": "data",
+       "cite": "configuration 2"
+      },
+      {
+       "src": "back",
+       "dst": "kafka",
+       "label": "Booking events",
+       "mode": "event",
+       "cite": "configuration 2"
+      },
+      {
+       "src": "kafka",
+       "dst": "push",
+       "label": "Notify the guest",
+       "mode": "event",
+       "cite": "configuration 4"
+      },
+      {
+       "src": "push",
+       "dst": "app",
+       "label": "Push message",
+       "mode": "event",
+       "cite": "configuration 4"
+      },
+      {
+       "src": "app",
+       "dst": "gate",
+       "label": "QR code every 30 seconds",
+       "mode": "api",
+       "cite": "configuration 3"
+      },
+      {
+       "src": "gate",
+       "dst": "ctl",
+       "label": "Signed JWT",
+       "mode": "api",
+       "cite": "configuration 3"
+      },
+      {
+       "src": "back",
+       "dst": "hotel",
+       "label": "Hotel services",
+       "mode": "api",
+       "cite": "solution 4"
+      },
+      {
+       "src": "k8s",
+       "dst": "back",
+       "label": "Runs the back end",
+       "mode": "data",
+       "cite": "configuration 2"
+      }
+     ],
+     "callouts": [
+      {
+       "text": "Over 80 percent of lift passes bought in the app",
+       "outcome": 0
+      },
+      {
+       "text": "Ticket queue from 40 to under 10 minutes",
+       "outcome": 1
+      }
+     ]
+    }
    },
    "status": "approved"
   },

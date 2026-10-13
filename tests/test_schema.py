@@ -286,3 +286,109 @@ def test_plain_is_fast_on_hostile_input():
 
 def test_plain_leaves_no_link_behind_nested_markup():
     assert plain("[[x](y)](javascript:z)") == "x"
+
+
+def _arch(**kw):
+    from app.schema import Architecture
+    comp = lambda i: {"id": f"c{i}", "name": f"N{i}", "zone": "core", "kind": "service"}
+    return Architecture.model_validate({"components": [comp(i) for i in range(15)], **kw})
+
+
+def test_architecture_caps_keep_the_first_n_and_drop_unknown_endpoints():
+    flow = lambda s, d: {"src": s, "dst": d, "mode": "api"}
+    a = _arch(flows=[flow("c0", "zz"), flow("c0", "c14"), *[flow("c0", "c1")] * 20],
+              callouts=[{"text": "x", "outcome": 0}] * 5)
+    assert [c.id for c in a.components] == [f"c{i}" for i in range(12)]
+    assert len(a.flows) == 14 and all(f.dst == "c1" for f in a.flows)  # zz and the capped-out c14 are gone
+    assert len(a.callouts) == 3
+
+
+def test_architecture_rejects_unknown_keys_and_enums():
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        _arch(extra=1)
+    with pytest.raises(ValidationError):
+        _arch(components=[{"id": "a", "name": "A", "zone": "moon", "kind": "app"}])
+
+
+def test_architecture_hidden_from_llm_schema_old_json_loads_and_searchable():
+    assert "architecture" not in llm_schema()["properties"]
+    assert "Arch" not in json.dumps(llm_schema())
+    d = {"title": {"value": "T", "source_quote": "q"}}
+    assert ReferenceCase.model_validate(d).architecture is None
+    d["architecture"] = {"components": [{"id": "a", "name": "Ledger", "role": "books", "zone": "core", "kind": "store"}]}
+    c = ReferenceCase.model_validate(d)
+    assert "Ledger" in c.search_text() and "Solution architecture" in c.search_text()
+    assert ReferenceCase.model_validate_json(c.model_dump_json()) == c
+
+
+# --- check_architecture (#246 A6) ---
+def _checked(**arch):
+    from app.schema import Architecture, check_architecture
+    pts = {"solution": [Sourced[str](value="An intake API for web and mobile", source_quote="An intake API accepts claims from the web and mobile app")],
+           "configuration": [Sourced[str](value="Kafka carries events", source_quote="Kafka carries the claim events, 30 days")]}
+    c = ReferenceCase(title=Sourced[str](value="T", source_quote="T"), points=pts,
+                      tech_stack=[Sourced[str](value="Kafka", source_quote="Kafka carries the claim events")],
+                      outcomes=[Outcome(metric="handling time", value="11 days to 4 days", source_quote="fell from 11 days to 4 days")])
+    base = {"components": [{"id": "a", "name": "Intake API", "role": "Accepts claims", "zone": "integration", "kind": "service", "cite": "solution 1"},
+                           {"id": "k", "name": "Kafka events", "role": "Carries claim events", "zone": "data", "kind": "queue", "cite": "configuration 1"}],
+            "flows": [{"src": "a", "dst": "k", "label": "Publish claim", "mode": "event", "cite": "configuration 1"}],
+            "callouts": [{"text": "Handling from 11 days to 4", "outcome": 0}]}
+    base.update(arch)
+    c.architecture = Architecture.model_validate(base)
+    return c, check_architecture
+
+
+def test_a_clean_architecture_passes_and_none_is_clean():
+    c, check = _checked()
+    assert check(c) == []
+    c.architecture = None
+    assert check(c) == []
+
+
+def test_architecture_unsourced_name_number_price_and_cite_are_flagged():
+    def comp(**kw):
+        return {"id": "a", "name": "Intake API", "role": "Accepts claims", "zone": "core", "kind": "app", "cite": "solution 1", **kw}
+    c, check = _checked(components=[comp(name="Snowflake store")], flows=[], callouts=[])
+    assert any("Snowflake" in f for f in check(c))  # a name no quote supports
+    c, check = _checked(components=[comp(role="Handles 99 claims a day")], flows=[], callouts=[])
+    assert any("number 99" in f for f in check(c))
+    c, check = _checked(components=[comp(role="Costs EUR 50,000 per year")], flows=[], callouts=[])
+    assert any("price" in f for f in check(c))
+    c, check = _checked(components=[comp(cite="solution 9")], flows=[], callouts=[])
+    assert any("no sourced point" in f for f in check(c))
+    c, check = _checked(callouts=[{"text": "Handling from 11 days to 3", "outcome": 0}])
+    assert any("number 3" in f for f in check(c))  # a callout's number must match its outcome
+    c, check = _checked(callouts=[{"text": "Fewer days", "outcome": 4}])
+    assert any("outcome 4" in f for f in check(c))
+
+
+def test_a_tech_stack_match_is_accepted_without_a_cite_and_a_bare_name_is_not():
+    from app.schema import prune_architecture
+    def comp(i, name, cite):
+        return {"id": i, "name": name, "role": "x", "zone": "core", "kind": "app", "cite": cite}
+    c, check = _checked(components=[comp("k", "Kafka cluster", ""), comp("m", "Mystery box", "")],
+                        flows=[{"src": "k", "dst": "m", "label": "x", "mode": "api", "cite": "configuration 1"}], callouts=[])
+    flags = check(c)
+    assert any("Mystery box" in f and "no cite" in f for f in flags) and not any("Kafka cluster" in f for f in flags)
+    prune_architecture(c)
+    assert [x.id for x in c.architecture.components] == ["k"] and c.architecture.flows == []
+
+
+def test_an_invented_product_is_flagged_even_as_the_first_word():
+    def comp(name, cite="configuration 1"):
+        return {"id": "k", "name": name, "role": "Carries claim events", "zone": "data", "kind": "queue", "cite": cite}
+    c, check = _checked(components=[comp("Snowflake events")], flows=[], callouts=[])
+    assert any("'Snowflake'" in f for f in check(c))  # "events" overlaps the quote; "Snowflake" is in no quote, tech or reference
+    c, check = _checked(components=[comp("Kafka events")], flows=[], callouts=[])
+    assert check(c) == []
+    c, check = _checked(components=[comp("The Kafka events")], flows=[], callouts=[])
+    assert check(c) == []  # an ordinary opener is exempt
+    c, check = _checked(components=[comp("Postgres14 store")], flows=[], callouts=[])
+    assert any("Postgres14" in f for f in check(c))  # a word with a digit is a product too
+
+
+def test_no_cite_and_no_tech_match_is_one_flag():
+    c, check = _checked(components=[{"id": "m", "name": "Mystery box", "role": "x", "zone": "core", "kind": "app", "cite": ""}], flows=[], callouts=[])
+    flags = check(c)
+    assert sum("has no cite" in f for f in flags) == 1 and not any("matches neither" in f for f in flags)

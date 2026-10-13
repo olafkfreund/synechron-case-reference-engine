@@ -1,0 +1,83 @@
+{
+ "title": "Retail onboarding architecture",
+ "components": [
+  {
+   "id": "web",
+   "name": "Customer portal",
+   "role": "Self-service sign-up for new customers",
+   "zone": "channels",
+   "kind": "app",
+   "cite": ""
+  },
+  {
+   "id": "api",
+   "name": "Onboarding API",
+   "role": "Validates and routes applications",
+   "zone": "integration",
+   "kind": "service",
+   "cite": ""
+  },
+  {
+   "id": "kyc",
+   "name": "Identity check",
+   "role": "Screens applicants against watch lists",
+   "zone": "external",
+   "kind": "external",
+   "cite": ""
+  },
+  {
+   "id": "core",
+   "name": "Account engine",
+   "role": "Opens accounts and holds balances",
+   "zone": "core",
+   "kind": "service",
+   "cite": ""
+  },
+  {
+   "id": "db",
+   "name": "Customer store",
+   "role": "Customer and account records",
+   "zone": "data",
+   "kind": "store",
+   "cite": ""
+  }
+ ],
+ "flows": [
+  {
+   "src": "web",
+   "dst": "api",
+   "label": "Submit application",
+   "mode": "ui"
+  },
+  {
+   "src": "api",
+   "dst": "kyc",
+   "label": "Screen applicant",
+   "mode": "api"
+  },
+  {
+   "src": "api",
+   "dst": "core",
+   "label": "Open account",
+   "mode": "api"
+  },
+  {
+   "src": "core",
+   "dst": "db",
+   "label": "Write records",
+   "mode": "data"
+  },
+  {
+   "src": "kyc",
+   "dst": "api",
+   "label": "Screening result",
+   "mode": "event"
+  }
+ ],
+ "callouts": [
+  {
+   "text": "Onboarding in 2 days, not 12",
+   "outcome": 0
+  }
+ ]
+}

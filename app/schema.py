@@ -1,7 +1,7 @@
 import re
 from typing import Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
 T = TypeVar("T")
@@ -141,6 +141,54 @@ class Prose(_Model):
     flags: list[str] = []
 
 
+Zone = Literal["channels", "experience", "integration", "core", "data", "platform", "external"]
+
+
+class ArchComponent(_Model):
+    id: str
+    name: str = Field(max_length=40)
+    role: str = Field("", max_length=70)
+    zone: Zone
+    kind: Literal["user", "app", "service", "queue", "store", "external", "platform"]
+    cite: str = ""  # a numbered point such as "solution 2"
+
+
+class ArchFlow(_Model):
+    src: str
+    dst: str
+    label: str = Field("", max_length=40)
+    mode: Literal["api", "event", "batch", "file", "ui", "data"]
+    cite: str = ""
+
+
+class ArchCallout(_Model):
+    text: str = Field(max_length=60)
+    outcome: int  # index into ReferenceCase.outcomes
+
+
+class Architecture(_Model):
+    """The solution architecture diagram (#246); built by app/archdiagram.py inputs, never by the LLM schema."""
+    title: str = Field("Solution architecture", max_length=80)
+    components: list[ArchComponent] = []
+    flows: list[ArchFlow] = []
+    callouts: list[ArchCallout] = []
+    by_reviewer: bool = False
+    flags: list[str] = []
+
+    @model_validator(mode="after")
+    def _caps_and_endpoints(self) -> "Architecture":
+        # trimmed, never rejected (like summary); a component with no cite and no tech match is dropped by check_architecture
+        self.components = self.components[:12]
+        ids = {c.id for c in self.components}
+        self.flows = [f for f in self.flows if f.src in ids and f.dst in ids][:14]
+        self.callouts = self.callouts[:3]
+        return self
+
+    def text(self) -> str:
+        return " ".join([self.title, *(f"{c.name} {c.role}" for c in self.components),
+                         *(f.label for f in self.flows), *(c.text for c in self.callouts)])
+
+
 class ReferenceCase(_Model):
     title: Sourced[str]
     client_mention: Sourced[str] = Sourced[str]()  # raw name as written; client_id is resolved later
@@ -170,6 +218,7 @@ class ReferenceCase(_Model):
     # reviewer notes set by extract.py only (hidden from the LLM, like `unsourced`)
     needs_attention: SkipJsonSchema[list[str]] = []
     diagrams: SkipJsonSchema[list[Diagram]] = []
+    architecture: SkipJsonSchema[Architecture | None] = None
     dismissed_images: SkipJsonSchema[list[int]] = []  # document_images candidates the reviewer turned down (#212)
     basis: SkipJsonSchema[Literal["delivered", "engagement"]] = "delivered"
     extraction_version: SkipJsonSchema[int] = 1  # bump EXTRACTION_VERSION when extraction output changes
@@ -203,7 +252,8 @@ class ReferenceCase(_Model):
                  *(c.value for c in self.capabilities), *(t.value for t in self.tech_stack), *(t.value for t in self.tech_references),
                  *(p.value for ps in self.points.values() for p in ps),
                  *(f"{o.metric} {o.value}" for o in self.outcomes), self.summary,
-                 *(p.text for p in self.prose.values())]
+                 *(p.text for p in self.prose.values()),
+                 self.architecture.text() if self.architecture else ""]
         return " ".join(p for p in parts if p)
 
 
@@ -310,3 +360,102 @@ def assemble(x: Extraction) -> tuple[ReferenceCase, list[str]]:
         notes.append("summary trimmed to 80 words")
     c.summary = " ".join(words[:80])  # assignment skips the validator
     return c, notes
+
+
+# --- the architecture check (#246) ---------------------------------------------------------------
+_GENERIC = frozenset("the and for with service services system systems layer platform engine store app api portal queue hub".split())
+CITE_POINTS = ("solution", "implementation", "configuration")
+
+
+def _cite_quote(case: "ReferenceCase", cite: str) -> str | None:
+    """The sourced quote a cite such as "solution 2" or "reference 3" names, else None."""
+    kind, _, n = cite.strip().lower().partition(" ")
+    if not n.isdigit() or int(n) < 1:
+        return None
+    items = case.tech_references if kind == "reference" else case.points.get(kind, []) if kind in CITE_POINTS else []
+    i = int(n) - 1
+    return items[i].source_quote if i < len(items) and items[i].source_quote and not items[i].unsourced else None
+
+
+def _words(s: str) -> set[str]:
+    return {w for w in (x.rstrip(".-") for x in re.findall(r"[a-z0-9][a-z0-9.+#-]*", _norm(s))) if len(w) >= 3 and w not in _GENERIC}
+
+
+def _tech_values(case: "ReferenceCase") -> list[str]:
+    return [t.value for t in (*case.tech_stack, *case.tech_references) if t.value and not t.unsourced]
+
+
+def _tokens(s: str) -> set[str]:
+    return {w.rstrip(".-") for w in re.findall(r"[a-z0-9][a-z0-9.+#-]*", _norm(s))}
+
+
+def _known(token: str, vocab: set[str]) -> bool:
+    """A word the vocabulary uses, in any form: "validation" for "validates" (five letters shared), exact for short words."""
+    t = token.rstrip(".-").casefold()
+    return any(t == v or (len(t) >= 5 and len(v) >= 5 and t[:5] == v[:5]) for v in vocab)
+
+
+def unsupported_terms(name: str, vocab: set[str]) -> list[str]:
+    """Capitalised words, acronyms and words with a digit in a component name that the cited quote, the tech stack and the
+    references never use, the first word included: only an ordinary opener ("The", "Using") is exempt (a product is not one)."""
+    from app.writeup import COMMON_STARTS
+    out = []
+    for i, w in enumerate(name.split()):
+        bare = w.strip(".,;:()[]\"'")
+        if not bare or not (bare[0].isupper() or any(ch.isdigit() for ch in bare)):
+            continue
+        if i == 0 and bare.casefold() in COMMON_STARTS:
+            continue
+        if not _known(bare, vocab):
+            out.append(bare)
+    return out
+
+
+def tech_match(case: "ReferenceCase", name: str) -> bool:
+    return bool(_words(name) & _words(" ".join(_tech_values(case))))
+
+
+def prune_architecture(case: "ReferenceCase") -> None:
+    """Drop a component with neither a cite nor a technology match, and the flows that lose an end (decision 2)."""
+    a = case.architecture
+    if a:
+        a.components = [c for c in a.components if c.cite.strip() or tech_match(case, c.name)]
+        ids = {c.id for c in a.components}
+        a.flows = [f for f in a.flows if f.src in ids and f.dst in ids]
+
+
+def check_architecture(case: "ReferenceCase") -> list[str]:
+    """What in the architecture no sourced point supports; empty means clean. The case is not changed."""
+    from app.writeup import check_prose  # writeup imports this module
+    a = case.architecture
+    if not a:
+        return []
+    allq, flags = case.quotes(), []
+    tech = " ".join(_tech_values(case))
+    for c in a.components:
+        q = _cite_quote(case, c.cite) if c.cite.strip() else None
+        who = f"component '{c.name}'"
+        if c.cite.strip() and q is None:
+            flags.append(f"{who} cites '{c.cite}', which is no sourced point")
+        if not c.cite.strip() and not tech_match(case, c.name):
+            flags.append(f"{who} has no cite and matches no technology")
+        if c.cite.strip() and not _words(c.name) & (_words(q or "") | _words(tech)):
+            flags.append(f"{who} matches neither its cited point nor the technology")  # one flag when there is no cite either: above
+        flags += [f"{who} names '{t}', which neither its cited point nor the technology uses"
+                  for t in unsupported_terms(c.name, _tokens(q or "") | _tokens(tech))]
+        flags += [f"{who}: {f}" for t in (c.name, c.role) for f in check_prose(t, [q] if q else [], allq, heading=True)]
+    names = {c.id: c.name for c in a.components}
+    for f in a.flows:
+        q = _cite_quote(case, f.cite) if f.cite.strip() else None
+        who = f"flow '{names.get(f.src, f.src)}' to '{names.get(f.dst, f.dst)}'"
+        if not f.cite.strip() or q is None:
+            flags.append(f"{who} cites no sourced point" if not f.cite.strip() else f"{who} cites '{f.cite}', which is no sourced point")
+        flags += [f"{who}: {m}" for m in check_prose(f.label, [q] if q else [], allq, heading=True)]
+    for co in a.callouts:
+        o = case.outcomes[co.outcome] if 0 <= co.outcome < len(case.outcomes) else None
+        if o is None or o.unsourced:
+            flags.append(f"callout '{co.text}' points at outcome {co.outcome}, which is no sourced outcome")
+            continue
+        flags += [f"callout '{co.text}': {m}" for m in check_prose(co.text, [o.source_quote], allq, heading=True)]
+    flags += [f"title: {m}" for m in check_prose(a.title, allq, allq, heading=True)]
+    return list(dict.fromkeys(flags))

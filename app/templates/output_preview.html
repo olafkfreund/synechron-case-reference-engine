@@ -13,6 +13,8 @@
 <ul>{% for x in c.details %}<li><b>{{ x.label }}:</b> {{ x.value }}</li>{% endfor %}</ul>
 {% for b in c.blocks %}<h3>{{ b.heading }}</h3>{% for p in b.paragraphs %}<p>{{ p }}</p>{% endfor %}{% endfor %}
 {% for l in c.lists %}<h3>{{ l.heading }}</h3><ul>{% for i in l.bullets %}<li>{{ i }}</li>{% endfor %}</ul>{% endfor %}
+{% if c.arch_withheld %}<div class="note">The architecture diagram is left out: it names a protected client.</div>{% endif %}
+{% if svgs[loop.index0] %}{% set au = "/cases/" ~ ids[loop.index0] ~ "/architecture.png" %}<figure class="paper"><a href="{{ au }}" target="_blank" rel="noopener" class="zoom" aria-label="Open {{ c.architecture.title }} full size">{{ svgs[loop.index0] }}</a><figcaption>{{ c.architecture.title }}</figcaption>{{ zoom_hint(au, c.architecture.title) }}</figure>{% endif %}
 {% set cid = ids[loop.index0] %}{% for d in c.diagrams %}{% set u = "/cases/" ~ cid ~ "/diagrams/" ~ d.id ~ ".png" %}<figure>{{ zoom(u, d.caption) }}<figcaption>{{ d.caption }}</figcaption>{{ zoom_hint(u, d.caption) }}</figure>{% endfor %}
 </article>
 {% endfor %}
