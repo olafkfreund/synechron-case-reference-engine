@@ -3197,17 +3197,36 @@
    "source": "Demo: Delivery archive",
    "file": "fabrikam-sow.docx",
    "paragraphs": [
-    "Fabrikam Statement of Work for plant analytics.",
-    "This statement of work is signed by Fabrikam and the supplier.",
-    "Fabrikam is a manufacturing company.",
-    "This is a statement of work for the plant analytics build.",
-    "The term of the agreement is 12 months."
+    "Fabrikam plant analytics statement of work.",
+    "This statement of work is signed by Fabrikam and the supplier. Fabrikam is a manufacturing company that runs five plants producing metal components in Europe.",
+    "This is a statement of work for the plant analytics build. It sets out the scope, the approach and the term of the work.",
+    "Fabrikam wants to understand why its machines stop. Unplanned stops cost each plant about 120 hours of production a year, according to the records of Fabrikam.",
+    "Machine data is collected in each plant, but it stays in local systems that cannot be compared. Maintenance planners work from fixed schedules instead of the condition of the machine.",
+    "Plant managers asked for a single view of machine health across the five plants. Fabrikam wants to reduce unplanned stops and to plan maintenance in advance.",
+    "The supplier will build a plant analytics platform that collects machine data from all five plants into one store. The scope covers the 40 machine types listed in the annex.",
+    "Deliverables are a data collection layer, a machine health dashboard, a model that predicts stops up to 7 days ahead and a maintenance planning view.",
+    "The scope excludes new sensors, changes to machine controllers and changes to the maintenance management system, which stays as it is.",
+    "Fabrikam will provide access to the plant networks and a named contact in each plant.",
+    "The supplier will deliver the work in three phases: data collection, the health dashboard and stop prediction. Each phase ends with an acceptance review by Fabrikam.",
+    "The term of the agreement is 12 months. The work starts in January 2025 and the agreement ends in December 2025.",
+    "The supplier will provide a team of 6 people, including data engineers, a data scientist and a delivery lead. Fabrikam will name a plant analytics owner and one contact in each plant.",
+    "One pilot plant will go live first, and the other plants will follow in groups. Fabrikam acceptance is required before each group starts.",
+    "Machine data will be collected over MQTT from the plants and sent through Kafka to a central store in PostgreSQL. Data from the local plant systems will be copied in nightly.",
+    "The prediction model will be developed in Python and retrained every month. The dashboard will run on Kubernetes in a cloud account on Azure.",
+    "Access to the platform will use the staff directory of Fabrikam in Active Directory. All data will stay in Europe.",
+    "Every prediction will be stored with the model version and the data it used, so that results can be explained to Fabrikam on request.",
+    "The statement of work is governed by the master agreement between the parties, and the supplier will report on progress to the plant analytics owner every month.",
+    "Data protection duties, the handling of machine data and the rules for access by supplier staff are set out in the master agreement, and this statement of work adds no new terms on those subjects.",
+    "Changes to the scope, the term or the team during the work will be made by a signed change order, and the first change order is expected after the second phase has been accepted.",
+    "The supplier staff who work on the platform will receive security training from Fabrikam before they get access to a plant network, and the contact in each plant will approve their visits in advance.",
+    "Acceptance of each phase is recorded in a short report that lists the tests run, the results and any open points, and the plant analytics owner signs it for Fabrikam.",
+    "The supplier will keep a list of open points for each phase and review it with the plant analytics owner every month, so that nothing is left unresolved at acceptance."
    ],
    "status": "extracted",
    "case": {
     "title": {
-     "value": "Fabrikam plant analytics SOW",
-     "source_quote": "Fabrikam Statement of Work for plant analytics."
+     "value": "Fabrikam plant analytics statement of work",
+     "source_quote": "Fabrikam plant analytics statement of work."
     },
     "client_mention": {
      "value": "Fabrikam",
@@ -3215,17 +3234,198 @@
     },
     "industry": {
      "value": "Manufacturing",
-     "source_quote": "Fabrikam is a manufacturing company."
+     "source_quote": "Fabrikam is a manufacturing company that runs five plants producing metal components in Europe."
+    },
+    "region": {
+     "value": "Europe",
+     "source_quote": "Fabrikam is a manufacturing company that runs five plants producing metal components in Europe."
     },
     "engagement_type": {
      "value": "statement of work",
-     "source_quote": "This is a statement of work for the plant analytics build."
+     "source_quote": "This is a statement of work for the plant analytics build. It sets out the scope, the approach and the term of the work."
+    },
+    "challenge": {
+     "value": "Unplanned stops cost about 120 hours of production for each plant a year",
+     "source_quote": "Unplanned stops cost each plant about 120 hours of production a year, according to the records of Fabrikam."
+    },
+    "solution": {
+     "value": "A plant analytics platform for all five plants",
+     "source_quote": "The supplier will build a plant analytics platform that collects machine data from all five plants into one store."
+    },
+    "implementation": {
+     "value": "Three phases with acceptance reviews",
+     "source_quote": "The supplier will deliver the work in three phases: data collection, the health dashboard and stop prediction. Each phase ends with an acceptance review by Fabrikam."
+    },
+    "configuration": {
+     "value": "MQTT, Kafka and PostgreSQL",
+     "source_quote": "Machine data will be collected over MQTT from the plants and sent through Kafka to a central store in PostgreSQL."
+    },
+    "lessons_learned": {},
+    "capabilities": [
+     {
+      "value": "Industrial analytics",
+      "source_quote": "The supplier will build a plant analytics platform that collects machine data from all five plants into one store."
+     },
+     {
+      "value": "Predictive maintenance",
+      "source_quote": "Deliverables are a data collection layer, a machine health dashboard, a model that predicts stops up to 7 days ahead and a maintenance planning view."
+     },
+     {
+      "value": "Maintenance planning",
+      "source_quote": "Deliverables are a data collection layer, a machine health dashboard, a model that predicts stops up to 7 days ahead and a maintenance planning view."
+     }
+    ],
+    "tech_stack": [
+     {
+      "value": "Kafka",
+      "source_quote": "Machine data will be collected over MQTT from the plants and sent through Kafka to a central store in PostgreSQL."
+     },
+     {
+      "value": "PostgreSQL",
+      "source_quote": "Machine data will be collected over MQTT from the plants and sent through Kafka to a central store in PostgreSQL."
+     },
+     {
+      "value": "Python",
+      "source_quote": "The prediction model will be developed in Python and retrained every month. The dashboard will run on Kubernetes in a cloud account on Azure."
+     },
+     {
+      "value": "Kubernetes",
+      "source_quote": "The prediction model will be developed in Python and retrained every month. The dashboard will run on Kubernetes in a cloud account on Azure."
+     },
+     {
+      "value": "Azure",
+      "source_quote": "The prediction model will be developed in Python and retrained every month. The dashboard will run on Kubernetes in a cloud account on Azure."
+     }
+    ],
+    "tech_references": [
+     {
+      "value": "MQTT",
+      "source_quote": "Machine data will be collected over MQTT from the plants and sent through Kafka to a central store in PostgreSQL."
+     },
+     {
+      "value": "Active Directory",
+      "source_quote": "Access to the platform will use the staff directory of Fabrikam in Active Directory."
+     }
+    ],
+    "outcomes": [],
+    "points": {
+     "challenge": [
+      {
+       "value": "Unplanned stops cost about 120 hours of production for each plant a year",
+       "source_quote": "Unplanned stops cost each plant about 120 hours of production a year, according to the records of Fabrikam."
+      },
+      {
+       "value": "Machine data in local systems that cannot be compared",
+       "source_quote": "Machine data is collected in each plant, but it stays in local systems that cannot be compared."
+      },
+      {
+       "value": "Maintenance on fixed schedules, not machine condition",
+       "source_quote": "Maintenance planners work from fixed schedules instead of the condition of the machine."
+      },
+      {
+       "value": "Wish for one view of machine health",
+       "source_quote": "Plant managers asked for a single view of machine health across the five plants."
+      }
+     ],
+     "solution": [
+      {
+       "value": "A plant analytics platform for all five plants",
+       "source_quote": "The supplier will build a plant analytics platform that collects machine data from all five plants into one store."
+      },
+      {
+       "value": "Collection layer, dashboard, 7 day stop prediction and planning view",
+       "source_quote": "Deliverables are a data collection layer, a machine health dashboard, a model that predicts stops up to 7 days ahead and a maintenance planning view."
+      },
+      {
+       "value": "Exclusions: sensors, controllers, maintenance system",
+       "source_quote": "The scope excludes new sensors, changes to machine controllers and changes to the maintenance management system, which stays as it is."
+      },
+      {
+       "value": "Access and contacts provided by Fabrikam",
+       "source_quote": "Fabrikam will provide access to the plant networks and a named contact in each plant."
+      }
+     ],
+     "implementation": [
+      {
+       "value": "Three phases with acceptance reviews",
+       "source_quote": "The supplier will deliver the work in three phases: data collection, the health dashboard and stop prediction. Each phase ends with an acceptance review by Fabrikam."
+      },
+      {
+       "value": "Term of 12 months",
+       "source_quote": "The term of the agreement is 12 months."
+      },
+      {
+       "value": "January 2025 to December 2025",
+       "source_quote": "The work starts in January 2025 and the agreement ends in December 2025."
+      },
+      {
+       "value": "Team of 6 people",
+       "source_quote": "The supplier will provide a team of 6 people, including data engineers, a data scientist and a delivery lead."
+      },
+      {
+       "value": "Pilot plant first, other plants in groups",
+       "source_quote": "One pilot plant will go live first, and the other plants will follow in groups. Fabrikam acceptance is required before each group starts."
+      }
+     ],
+     "configuration": [
+      {
+       "value": "MQTT, Kafka and PostgreSQL",
+       "source_quote": "Machine data will be collected over MQTT from the plants and sent through Kafka to a central store in PostgreSQL."
+      },
+      {
+       "value": "Local plant systems copied nightly",
+       "source_quote": "Data from the local plant systems will be copied in nightly."
+      },
+      {
+       "value": "Python model on Kubernetes and Azure",
+       "source_quote": "The prediction model will be developed in Python and retrained every month. The dashboard will run on Kubernetes in a cloud account on Azure."
+      },
+      {
+       "value": "Active Directory access",
+       "source_quote": "Access to the platform will use the staff directory of Fabrikam in Active Directory."
+      },
+      {
+       "value": "Predictions stored with the model version",
+       "source_quote": "Every prediction will be stored with the model version and the data it used, so that results can be explained to Fabrikam on request."
+      }
+     ]
+    },
+    "prose": {
+     "challenge": {
+      "text": "Fabrikam wanted to understand why its machines stop. Unplanned stops cost each plant about 120 hours of production a year, according to the records of Fabrikam. Machine data was collected in each plant, but it stayed in local systems that could not be compared, and maintenance planners worked from fixed schedules instead of the condition of the machine. Plant managers asked for a single view of machine health across the five plants, and Fabrikam wants to reduce unplanned stops and to plan maintenance in advance. These drivers are the basis for the scope of the statement of work.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "solution": {
+      "text": "The supplier will build a plant analytics platform that collects machine data from all five plants into one store, covering the 40 machine types listed in the annex. The deliverables are a data collection layer, a machine health dashboard, a model that predicts stops up to 7 days ahead and a maintenance planning view. The scope excludes new sensors, changes to machine controllers and changes to the maintenance management system, which stays as it is. Fabrikam will provide access to the plant networks and a named contact in each plant, so that the supplier can start the work without delay.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "implementation": {
+      "text": "The supplier will deliver the work in three phases: data collection, the health dashboard and stop prediction, and each phase ends with an acceptance review by Fabrikam. The term of the agreement is 12 months, with the work starting in January 2025 and the agreement ending in December 2025. The supplier will provide a team of 6 people, including data engineers, a data scientist and a delivery lead, while Fabrikam will name a plant analytics owner and one contact in each plant. One pilot plant will go live first and the other plants will follow in groups, with Fabrikam acceptance required before each group starts.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "configuration": {
+      "text": "Machine data will be collected over MQTT from the plants and sent through Kafka to a central store in PostgreSQL, and data from the local plant systems will be copied in nightly. The prediction model will be developed in Python and retrained every month, and the dashboard will run on Kubernetes in a cloud account on Azure. Access to the platform will use the staff directory of Fabrikam in Active Directory. Every prediction will be stored with the model version and the data it used, so that results can be explained to Fabrikam on request.",
+      "by_reviewer": true,
+      "flags": []
+     }
     },
     "duration_months": {
      "value": 12,
      "source_quote": "The term of the agreement is 12 months."
     },
-    "summary": "Fabrikam statement of work, a 12 months engagement.",
+    "team_size": {
+     "value": 6,
+     "source_quote": "The supplier will provide a team of 6 people, including data engineers, a data scientist and a delivery lead."
+    },
+    "period": {
+     "start": "2025-01",
+     "end": "2025-12",
+     "source_quote": "The work starts in January 2025 and the agreement ends in December 2025."
+    },
+    "summary": "Fabrikam plant analytics statement of work, with a term of 12 months and a team of 6 people.",
     "organisations": [
      "Fabrikam"
     ],
@@ -3237,17 +3437,38 @@
    "source": "Demo: Delivery archive",
    "file": "fabrikam-change-order.docx",
    "paragraphs": [
-    "Fabrikam Change Order 1 for plant analytics.",
-    "This change order is signed by Fabrikam and the supplier.",
-    "Fabrikam is a manufacturing company.",
-    "This is a change order to the plant analytics statement of work.",
-    "The term of the agreement is extended by 6 months."
+    "Fabrikam plant analytics change order 1.",
+    "This change order is signed by Fabrikam and the supplier. Fabrikam is a manufacturing company that runs five plants producing metal components in Europe.",
+    "This is a change order to the plant analytics statement of work. It changes the scope, the term and the team.",
+    "After the first two phases, Fabrikam asked to add a sixth plant that it acquired in the meantime. The plant has machines of 12 types that were not in the original scope.",
+    "The pilot showed that maintenance planners needed alerts on their phones, not only a dashboard. This was not in the original deliverables.",
+    "The original term of 12 months is not long enough to add the sixth plant and the alerts.",
+    "The supplier will extend the platform to the sixth plant and add the 12 new machine types to the data collection layer.",
+    "The supplier will add a mobile alert service that sends a message to the planner when the predicted risk of a stop passes a limit agreed with Fabrikam.",
+    "All other terms of the statement of work stay as they are. The maintenance management system remains out of scope.",
+    "The term of the agreement is extended by 6 months. All other dates in the statement of work move with it.",
+    "The extension adds one phase after the three original phases. It starts after the acceptance of the third phase.",
+    "The team grows from 6 to 8 people for the extension, with two more data engineers.",
+    "The extension starts in December 2025 and ends in June 2026. Fabrikam acceptance is required before the alert service goes live.",
+    "The supplier will report progress to Fabrikam every month. The plant analytics owner will approve each report.",
+    "The sixth plant connects over MQTT in the same way as the other plants. Its data is sent through Kafka to the central store in PostgreSQL.",
+    "The alert service runs on Kubernetes and sends messages through push notifications to the planner app. The limit for an alert is set for each machine type.",
+    "Alerts are logged with the model version, and planners can mute an alert for a machine for 24 hours.",
+    "The alert settings are reviewed with Fabrikam after the first month of use.",
+    "This change order is governed by the master agreement, and it is the first change order to the statement of work.",
+    "Fabrikam and the supplier agreed the change at the monthly review after the second phase, and the plant analytics owner signed for Fabrikam.",
+    "The change order has no effect on data protection duties or on the handling of machine data, which stay as set out in the master agreement.",
+    "A short plan for the sixth plant was shared with the plant manager before signing, so that the site knew what access the supplier would need.",
+    "The sixth plant produces a different range of components from the other five plants, and its maintenance team asked that the alert service be tested there before it is used elsewhere.",
+    "Acceptance of the extension follows the same steps as the original phases, with a short report that lists the tests run, the results and any open points, signed by the plant analytics owner for Fabrikam.",
+    "The supplier will keep the documentation of the platform up to date for the sixth plant, and the user guide for planners will cover the alert service, including how to change a limit and how to mute an alert.",
+    "A kick off meeting for the extension will be held within two weeks of signing, with the plant manager of the sixth plant, the maintenance team and the supplier team present."
    ],
    "status": "extracted",
    "case": {
     "title": {
-     "value": "Fabrikam plant analytics change order",
-     "source_quote": "Fabrikam Change Order 1 for plant analytics."
+     "value": "Fabrikam plant analytics change order 1",
+     "source_quote": "Fabrikam plant analytics change order 1."
     },
     "client_mention": {
      "value": "Fabrikam",
@@ -3255,17 +3476,178 @@
     },
     "industry": {
      "value": "Manufacturing",
-     "source_quote": "Fabrikam is a manufacturing company."
+     "source_quote": "Fabrikam is a manufacturing company that runs five plants producing metal components in Europe."
+    },
+    "region": {
+     "value": "Europe",
+     "source_quote": "Fabrikam is a manufacturing company that runs five plants producing metal components in Europe."
     },
     "engagement_type": {
      "value": "change order",
-     "source_quote": "This is a change order to the plant analytics statement of work."
+     "source_quote": "This is a change order to the plant analytics statement of work. It changes the scope, the term and the team."
+    },
+    "challenge": {
+     "value": "Request to add a sixth plant",
+     "source_quote": "After the first two phases, Fabrikam asked to add a sixth plant that it acquired in the meantime."
+    },
+    "solution": {
+     "value": "Extend the platform to the sixth plant and 12 machine types",
+     "source_quote": "The supplier will extend the platform to the sixth plant and add the 12 new machine types to the data collection layer."
+    },
+    "implementation": {
+     "value": "One more phase after the original three",
+     "source_quote": "The extension adds one phase after the three original phases."
+    },
+    "configuration": {
+     "value": "Sixth plant over MQTT, Kafka and PostgreSQL",
+     "source_quote": "The sixth plant connects over MQTT in the same way as the other plants. Its data is sent through Kafka to the central store in PostgreSQL."
+    },
+    "lessons_learned": {},
+    "capabilities": [
+     {
+      "value": "Predictive maintenance",
+      "source_quote": "The supplier will add a mobile alert service that sends a message to the planner when the predicted risk of a stop passes a limit agreed with Fabrikam."
+     },
+     {
+      "value": "Mobile alerts for planners",
+      "source_quote": "The supplier will add a mobile alert service that sends a message to the planner when the predicted risk of a stop passes a limit agreed with Fabrikam."
+     },
+     {
+      "value": "Industrial analytics",
+      "source_quote": "The supplier will extend the platform to the sixth plant and add the 12 new machine types to the data collection layer."
+     }
+    ],
+    "tech_stack": [
+     {
+      "value": "Kafka",
+      "source_quote": "The sixth plant connects over MQTT in the same way as the other plants. Its data is sent through Kafka to the central store in PostgreSQL."
+     },
+     {
+      "value": "PostgreSQL",
+      "source_quote": "The sixth plant connects over MQTT in the same way as the other plants. Its data is sent through Kafka to the central store in PostgreSQL."
+     },
+     {
+      "value": "Kubernetes",
+      "source_quote": "The alert service runs on Kubernetes and sends messages through push notifications to the planner app."
+     }
+    ],
+    "tech_references": [
+     {
+      "value": "MQTT",
+      "source_quote": "The sixth plant connects over MQTT in the same way as the other plants. Its data is sent through Kafka to the central store in PostgreSQL."
+     }
+    ],
+    "outcomes": [],
+    "points": {
+     "challenge": [
+      {
+       "value": "Request to add a sixth plant",
+       "source_quote": "After the first two phases, Fabrikam asked to add a sixth plant that it acquired in the meantime."
+      },
+      {
+       "value": "Machines of 12 types outside the original scope",
+       "source_quote": "The plant has machines of 12 types that were not in the original scope."
+      },
+      {
+       "value": "Planners need phone alerts, not only a dashboard",
+       "source_quote": "The pilot showed that maintenance planners needed alerts on their phones, not only a dashboard."
+      },
+      {
+       "value": "The 12 month term is too short",
+       "source_quote": "The original term of 12 months is not long enough to add the sixth plant and the alerts."
+      }
+     ],
+     "solution": [
+      {
+       "value": "Extend the platform to the sixth plant and 12 machine types",
+       "source_quote": "The supplier will extend the platform to the sixth plant and add the 12 new machine types to the data collection layer."
+      },
+      {
+       "value": "Mobile alert service for planners",
+       "source_quote": "The supplier will add a mobile alert service that sends a message to the planner when the predicted risk of a stop passes a limit agreed with Fabrikam."
+      },
+      {
+       "value": "Other terms unchanged",
+       "source_quote": "All other terms of the statement of work stay as they are."
+      }
+     ],
+     "implementation": [
+      {
+       "value": "One more phase after the original three",
+       "source_quote": "The extension adds one phase after the three original phases."
+      },
+      {
+       "value": "Team grows from 6 to 8 people",
+       "source_quote": "The team grows from 6 to 8 people for the extension, with two more data engineers."
+      },
+      {
+       "value": "December 2025 to June 2026",
+       "source_quote": "The extension starts in December 2025 and ends in June 2026."
+      },
+      {
+       "value": "Monthly progress reports",
+       "source_quote": "The supplier will report progress to Fabrikam every month."
+      },
+      {
+       "value": "Other dates move with the new term",
+       "source_quote": "All other dates in the statement of work move with it."
+      }
+     ],
+     "configuration": [
+      {
+       "value": "Sixth plant over MQTT, Kafka and PostgreSQL",
+       "source_quote": "The sixth plant connects over MQTT in the same way as the other plants. Its data is sent through Kafka to the central store in PostgreSQL."
+      },
+      {
+       "value": "Alert service on Kubernetes with push notifications",
+       "source_quote": "The alert service runs on Kubernetes and sends messages through push notifications to the planner app."
+      },
+      {
+       "value": "Alerts logged with the model version",
+       "source_quote": "Alerts are logged with the model version, and planners can mute an alert for a machine for 24 hours."
+      },
+      {
+       "value": "Alert settings reviewed after the first month",
+       "source_quote": "The alert settings are reviewed with Fabrikam after the first month of use."
+      }
+     ]
+    },
+    "prose": {
+     "challenge": {
+      "text": "After the first two phases, Fabrikam asked to add a sixth plant that it acquired in the meantime, with machines of 12 types that were not in the original scope. The pilot also showed that maintenance planners needed alerts on their phones, not only a dashboard, and this was not in the original deliverables. The original term of 12 months is not long enough to add the sixth plant and the alerts. The change order records how these two needs will be met while the rest of the statement of work stays in place.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "solution": {
+      "text": "The supplier will extend the platform to the sixth plant and add the 12 new machine types to the data collection layer. The supplier will also add a mobile alert service that sends a message to the planner when the predicted risk of a stop passes a limit agreed with Fabrikam. All other terms of the statement of work stay as they are, and the maintenance management system remains out of scope. The change order is the first change to the statement of work, and it keeps the scope of the original agreement otherwise unchanged.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "implementation": {
+      "text": "The extension adds one phase after the three original phases and starts after the acceptance of the third phase. It starts in December 2025 and ends in June 2026, and Fabrikam acceptance is required before the alert service goes live. The team grows from 6 to 8 people for the extension, with two more data engineers. The supplier will report progress to Fabrikam every month, and the plant analytics owner will approve each report before the next period begins. All other dates in the statement of work move with the extended term.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "configuration": {
+      "text": "The sixth plant connects over MQTT in the same way as the other plants, and its data is sent through Kafka to the central store in PostgreSQL. The alert service runs on Kubernetes and sends messages through push notifications to the planner app, with the limit for an alert set for each machine type. Alerts are logged with the model version, and planners can mute an alert for a machine for 24 hours. The alert settings are reviewed with Fabrikam after the first month of use.",
+      "by_reviewer": true,
+      "flags": []
+     }
     },
     "duration_months": {
      "value": 6,
      "source_quote": "The term of the agreement is extended by 6 months."
     },
-    "summary": "Fabrikam change order, adding 6 months.",
+    "team_size": {
+     "value": 8,
+     "source_quote": "The team grows from 6 to 8 people for the extension, with two more data engineers."
+    },
+    "period": {
+     "start": "2025-12",
+     "end": "2026-06",
+     "source_quote": "The extension starts in December 2025 and ends in June 2026."
+    },
+    "summary": "Fabrikam plant analytics change order 1, extending the term by 6 months and the team to 8 people.",
     "organisations": [
      "Fabrikam"
     ],

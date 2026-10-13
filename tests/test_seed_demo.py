@@ -121,7 +121,6 @@ ALLOWED = {"OpenID Connect", "ServiceNow", "Kafka", "Azure", "Kubernetes", "Post
            "Snowflake", "Databricks", "Elasticsearch", "RabbitMQ", "MongoDB", "Jenkins", "GitHub", "GitLab"}
 
 
-@pytest.mark.xfail(strict=False, reason="demo content is written in steps 3 to 6")
 def test_only_fictional_names():
     clients = {n.casefold() for c in DEMO["clients"] for n in (c["name"], *c["aliases"])}
     ok = clients | {a.casefold() for a in ALLOWED}
@@ -195,7 +194,6 @@ def test_failed_validation_writes_nothing(env, tmp_path, monkeypatch, capsys):
     assert counts()[:2] == (0, 0)
 
 
-@pytest.mark.xfail(strict=False, reason="demo content is written in steps 3 to 6")
 def test_completeness_mix(env):
     assert seed.main() == 0
     want = {i: (9, 9) for i in (0, 1, 2, 3, 5, 6, 7, 8)} | {4: (6, 9), 10: (8, 9), 11: (8, 9)}
