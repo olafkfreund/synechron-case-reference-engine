@@ -330,3 +330,9 @@ code ignores it. The demo can be re-seeded.
     empty bands); pptx keeps the 16:9 canvas.
   - Row heights fit their tallest card (minimum 46), so cards in a row are
     equal.
+- User-requested full size:
+  - `GET /cases/{cid}/architecture.png` runs `build()` for one case
+    (approved, in date, ACL-visible, protected, blocked-checked).
+  - Any failure gives the same 404 "no such diagram".
+  - It sends `PNG_HEADERS` and `Cache-Control: private, max-age=300`.
+  - The preview links it with the `zoom` macros.

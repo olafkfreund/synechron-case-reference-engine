@@ -761,7 +761,7 @@ def test_architecture_is_in_every_format_and_the_preview(approved):
     text = " ".join(sh.text_frame.text for sh in slides_[0].shapes if sh.has_text_frame)
     assert "solution architecture" in text and "Account engine" in text and "Open account" in text
     p = prev([cid]).text
-    assert 'class="paper"><svg' in p and "Account engine" in p and "Open account" in p
+    assert 'class="zoom" aria-label="Open Solution architecture full size"><svg xmlns=' in p and "Account engine" in p and "Open account" in p
     assert all(n in md and n in p for n in ("Customer portal", "Account engine", "Open account"))  # the preview shows what is downloaded
 
 
@@ -798,7 +798,7 @@ def test_unapproved_or_flagged_architecture_is_not_output(approved):
 def test_architecture_preview_escapes_a_hostile_label(approved):
     cid = approved(with_arch("<script>alert(1)</script>", "Account engine", label="<img src=x onerror=1>"))
     p = prev([cid]).text
-    assert 'class="paper"><svg' in p and "<script>alert" not in p and "<img src=x" not in p and "&lt;script&gt;" in p
+    assert 'class="zoom" aria-label="Open Solution architecture full size"><svg xmlns=' in p and "<script>alert" not in p and "<img src=x" not in p and "&lt;script&gt;" in p
     md = gen([cid], "md").text
     assert "<script>" not in md and "#60;script#62;" in md
 
@@ -807,3 +807,34 @@ def test_an_architecture_meets_the_completeness_diagram_item():
     from app import completeness
     item = lambda c: next(i for i in completeness.checklist(c) if i["key"] == "diagram")
     assert not item(full())["ok"] and item(with_arch())["ok"]
+
+
+def test_architecture_png_route(approved, reg):
+    from PIL import Image
+    cid = approved(with_arch())
+    r = client(R).get(f"/cases/{cid}/architecture.png")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    assert r.headers["cache-control"] == "private, max-age=300" and r.headers["x-content-type-options"] == "nosniff"
+    assert "default-src 'none'" in r.headers["content-security-policy"]
+    im = Image.open(BytesIO(r.content))
+    assert im.width == 3200 and im.height < 1800  # cropped to the content
+    url = f"/cases/{cid}/architecture.png"
+    page = prev([cid]).text
+    assert f'<a href="{url}" target="_blank" rel="noopener" class="zoom"' in page and page.count(f'href="{url}"') == 2 and "Open full size" in page
+
+
+def test_architecture_png_route_answers_404_alike_and_403_without_a_role(approved, reg, monkeypatch):
+    ok = approved(with_arch())
+    miss = [client(R).get("/cases/999999/architecture.png"),
+            client(["g-user"]).get(f"/cases/{ok}/architecture.png"),  # no access to the source document
+            client(R).get(f"/cases/{approved(with_arch(), status='extracted', due=None)}/architecture.png"),  # not approved
+            client(R).get(f"/cases/{approved(with_arch(flags=['unresolved']))}/architecture.png"),  # flagged
+            client(R).get(f"/cases/{approved()}/architecture.png")]  # none
+    assert [r.status_code for r in miss] == [404] * 5 and len({r.text for r in miss}) == 1
+    name, _ = reg("Zorp", "a UK retailer")
+    blocked = approved(with_arch(f"{name} ledger", "Account engine"))
+    real = render.anonymise.apply
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t if "ledger" in t else real(t, c))  # apply() misses: blocked() must omit it
+    r = client(R).get(f"/cases/{blocked}/architecture.png")
+    assert r.status_code == 404 and r.text == miss[0].text
+    assert client([]).get(f"/cases/{ok}/architecture.png").status_code == 403

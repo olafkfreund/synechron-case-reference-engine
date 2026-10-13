@@ -825,3 +825,19 @@ def diagram_png(cid: int, did: int, user: User = Depends(require("user"))):
     if not row:
         raise HTTPException(404, "no such diagram")
     return Response(bytes(row[0]), media_type="image/png", headers=PNG_HEADERS)
+
+
+@router.get("/cases/{cid}/architecture.png")
+def architecture_png(cid: int, user: User = Depends(require("user"))):
+    """The architecture of one case at full size, through build(): approved, in date, visible, protected, never blocked."""
+    with db.connect() as conn:
+        try:
+            _, sections, *_ = build(conn, [cid], None, False, user)
+        except HTTPException as e:
+            if e.status_code not in (400, 404, 409):
+                raise
+            sections = []
+    a = architecture_of(sections[0]) if sections else None
+    if not a:
+        raise HTTPException(404, "no such diagram")  # the same answer for a hidden case, a missing one and a case with none
+    return Response(to_png(a[1]), media_type="image/png", headers={**PNG_HEADERS, "Cache-Control": "private, max-age=300"})
