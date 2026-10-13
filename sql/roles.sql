@@ -18,3 +18,4 @@ alter default privileges in schema public grant usage, select on sequences to re
 -- audit logs are append-only for the app
 revoke update, delete on source_class_changes from refs_app;
 revoke update, delete on source_acl_changes from refs_app;
+revoke update, delete on case_approval_overrides from refs_app;

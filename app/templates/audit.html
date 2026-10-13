@@ -42,6 +42,15 @@
 </div>
 
 <div class="section-card">
+<div class="card-head"><h2>Approvals below the minimum</h2></div>
+<p class="muted">Cases approved with fewer completeness checks than the minimum, with the reviewer's reason.</p>
+{% if not overrides %}<p class="muted">No approvals below the minimum recorded.</p>{% else %}
+<div class="table-box"><table><thead><tr><th>When</th><th>Case</th><th>Score</th><th>Reason</th><th>By</th></tr></thead><tbody>
+{% for at, cid, score, reason, by in overrides %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ cid }}</td><td>{{ score }}</td><td>{{ reason }}</td><td>{{ by }}</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+</div>
+
+<div class="section-card">
 <div class="card-head"><h2>Access group changes</h2></div>
 <p class="muted">Changes to a source's access groups apply to its documents at once.</p>
 {% if not acl_changes %}<p class="muted">No access-group changes recorded.</p>{% else %}

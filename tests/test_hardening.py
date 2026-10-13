@@ -339,3 +339,25 @@ def test_diagram_route_headers(make):
     assert r.headers["x-content-type-options"] == "nosniff" and r.headers["cache-control"] == "private, no-store"
     assert r.headers["content-security-policy"] == "frame-ancestors 'none'; default-src 'none'"  # the guard's framing rule comes first
     assert r.headers["content-disposition"] == "inline"
+
+
+def test_override_reason_is_escaped_on_the_audit_page(approved):
+    with db.connect() as c:
+        c.execute("insert into case_approval_overrides(case_id, reason, score, approved_by) values (1, %s, '1/9', 'rev')",
+                  ("<b>why</b>",))
+    try:
+        t = client([ADMIN]).get("/admin/audit").text
+        assert "Approvals below the minimum" in t and "&lt;b&gt;why&lt;/b&gt;" in t and "<b>why</b>" not in t
+        assert client(R).get("/admin/audit").status_code == 403
+    finally:
+        with db.connect() as c:
+            c.execute("delete from case_approval_overrides where reason=%s", ("<b>why</b>",))
+
+
+def test_approval_overrides_are_append_only_for_the_app(app_role):
+    with db.connect() as c:
+        db.apply_app_role(c, "pw-1")
+    for stmt in ("update case_approval_overrides set approved_by='x'", "delete from case_approval_overrides"):
+        with as_app("pw-1") as a:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                a.execute(stmt)

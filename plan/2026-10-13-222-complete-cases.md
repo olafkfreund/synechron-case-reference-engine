@@ -223,6 +223,12 @@ Line numbers are from the #212 phase B code (PR #223, at
    phases C and D, add the trap "bump `EXTRACTION_VERSION` (C → 3, D → 4)".
    Commit it on the #212 branch.
 
+## Deviations
+
+- Step 4: `case_approval_overrides` is append-only for the app role
+  (`sql/roles.sql` revokes update and delete), like the other audit tables.
+  It has its own test.
+
 ## Tests
 
 ```bash
