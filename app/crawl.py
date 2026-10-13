@@ -337,7 +337,7 @@ def crawl_sharepoint(source_id: int) -> dict:
                 if not ok:
                     counts["withdrawn_on_recheck"] += withdraw(iid)
                     continue
-            if no_link:  # backfill: one metadata call; a failure here never withdraws (#236)
+            if no_link and host and iid not in seen:  # backfill (this crawl's own items already carried their links): one metadata call; a failure here never withdraws (#236)
                 try:
                     web, folder = links_of(g.get(f"{GRAPH}/drives/{drive}/items/{iid}?$select=webUrl,parentReference").json())
                     lock.execute("update documents set web_url=coalesce(%s, web_url), folder_url=coalesce(%s, folder_url) "

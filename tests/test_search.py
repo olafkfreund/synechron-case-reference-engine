@@ -436,7 +436,7 @@ def test_source_docs_titles_follow_the_referenceable_rule(approved, reg):
     assert [e["label"] for e in entries(ME, a)] == ["Quarterly report"]  # referenceable and linked
     for cid in (b, u):  # protected, or not linked to a client: count text, links kept
         (e,) = entries(ME, cid)
-        assert e["label"].startswith("1 document in ") and e["docs"] == [dict(web="https://h.example/a", folder="https://h.example/")]
+        assert e["label"].startswith("1 document in ") and [(d["web"], d["folder"]) for d in e["docs"]] == [(True, True)]
     assert [e["label"] for e in entries(REVIEW, b)] == ["Quarterly report"]
 
 
@@ -466,12 +466,51 @@ def card_html(approved, web, folder, monkeypatch):
     return client(GUEST).get("/search").text
 
 
-def test_card_shows_safe_links_and_never_the_url_as_text(approved, monkeypatch):
-    t = card_html(approved, 'https://h.example/a"><script>x</script>', "https://h.example/", monkeypatch)
-    assert "Source documents (1)" in t and "Open folder" in t
+URL = 'https://h.example/Secret-Client/a"><script>x</script>'
+
+
+def doc_of(cid):
+    with db.connect() as c:
+        return c.execute("select document_id from cases where id=%s", (cid,)).fetchone()[0]
+
+
+def test_card_links_go_through_the_redirect_and_the_page_holds_no_url(approved, monkeypatch):
+    no_model(monkeypatch)
+    cid = approved()
+    set_links(cid, URL, "https://h.example/Secret-Client/")
+    t = client(GUEST).get("/search").text
+    d = doc_of(cid)
+    assert "Source documents (1)" in t and f'href="/go/{d}"' in t and f'href="/go/{d}/folder"' in t
     assert 'rel="noopener noreferrer"' in t and 'target="_blank"' in t
-    assert "<script>x</script>" not in t and "&#34;" in t  # the quote and angle brackets are escaped
-    assert ">https://h.example" not in t and "Quarterly report" not in t  # the URL is no link text; the title is hidden here
+    assert "h.example" not in t and "Secret-Client" not in t and "<script>x" not in t  # the page never holds the URL
+    assert "Quarterly report" not in t  # the title is hidden here
+
+
+def go(d, folder="", user=GUEST):
+    return client(user).get(f"/go/{d}{folder}", follow_redirects=False)
+
+
+def test_go_redirects_a_visible_document_without_caching_or_referrer(approved):
+    cid = approved()
+    set_links(cid, URL, "https://h.example/f/")
+    r = go(doc_of(cid))
+    assert r.status_code == 303 and r.headers["location"].startswith("https://h.example/Secret-Client/a")
+    assert r.headers["cache-control"] == "no-store" and r.headers["referrer-policy"] == "no-referrer"
+    assert go(doc_of(cid), "/folder").headers["location"] == "https://h.example/f/"
+
+
+def test_go_is_404_for_everything_else(approved):
+    def linked(**kw):
+        cid = approved(**kw)
+        set_links(cid, "https://h.example/a", "https://h.example/f/")
+        return doc_of(cid)
+    assert go(linked(acl=("g-other",))).status_code == 404  # outside the user's groups
+    assert go(linked(deleted=True)).status_code == 404  # withdrawn
+    assert go(linked(status="extracted")).status_code == 404  # a plain user, case not approved
+    nolink = approved()
+    set_links(nolink, None, None)
+    assert go(doc_of(nolink)).status_code == 404 and go(doc_of(nolink), "/folder").status_code == 404
+    assert go(10**9).status_code == 404
 
 
 def test_card_for_an_upload_says_stored_in_the_engine(approved, monkeypatch):

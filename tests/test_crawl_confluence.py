@@ -567,3 +567,14 @@ def test_recheck_backfills_missing_links(cf):
     u = urls(cf.sid)
     assert u["page:p2"][0] == f"{BASE}/wiki/spaces/ENG/pages/p2"
     assert u["att:p1:a1"][0] == f"{BASE}/wiki/spaces/ENG/pages/p1"
+
+
+def test_unchanged_attachment_skip_passes_its_links(cf):
+    when = "2026-01-01T00:00:00.000Z"
+    cf.page("p1", when=when)
+    cf.attach("p1", "a1", when=when, number=1)
+    crawl.crawl_confluence(cf.sid)
+    with db.connect() as c:
+        c.execute("update documents set web_url=null, folder_url=null where external_id='att:p1:a1' and source_id=%s", (cf.sid,))
+    assert crawl.crawl_confluence(cf.sid)["skipped"] >= 1  # the attachment took the skip_unchanged path
+    assert urls(cf.sid)["att:p1:a1"] == (f"{BASE}/wiki/spaces/ENG/pages/p1",) * 2

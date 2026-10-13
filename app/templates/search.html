@@ -3,7 +3,7 @@
 {% macro completeness(s) %}<span class="badge neutral">{% if s[0] == s[1] %}Complete{% else %}Partial · {{ s[0] }}/{{ s[1] }}{% endif %}</span>{% endmacro %}
 {% macro sources(list) %}{% if list %}<details class="mini"><summary>Source documents ({{ list | map(attribute="docs") | map("length") | sum }})</summary>
 {% for e in list %}<p class="muted" style="margin:2px 0">{{ e.label }}{% for d in e.docs %} &middot;
-{% if d.web %}<a href="{{ d.web }}" target="_blank" rel="noopener noreferrer">Open</a>{% endif %}{% if d.folder %} <a href="{{ d.folder }}" target="_blank" rel="noopener noreferrer">Open folder</a>{% endif %}{% if not d.web and not d.folder %}stored in the engine; ask a reviewer{% endif %}{% endfor %}</p>{% endfor %}</details>{% endif %}{% endmacro %}
+{% if d.web %}<a href="/go/{{ d.id }}" target="_blank" rel="noopener noreferrer">Open</a>{% endif %}{% if d.folder %} <a href="/go/{{ d.id }}/folder" target="_blank" rel="noopener noreferrer">Open folder</a>{% endif %}{% if not d.web and not d.folder %}stored in the engine; ask a reviewer{% endif %}{% endfor %}</p>{% endfor %}</details>{% endif %}{% endmacro %}
 {% macro basis(x) %}<span class="badge neutral">{{ "Engagement (contracted scope)" if x == "engagement" else "Delivered case" }}</span>{% endmacro %}
 {% block body %}
 <div class="page-head"><div><h1>Find reference cases</h1><p>Paste the bid requirement; narrow by industry, region or technology if you like.</p></div></div>

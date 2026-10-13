@@ -488,3 +488,23 @@ def test_backfill_fills_null_links_without_a_new_version_and_a_failure_withdraws
     with db.connect() as cc:
         assert cc.execute("select external_id, updated_at from documents where source_id=%s order by 1", (sp.sid,)).fetchall() == before
     assert sum(x.endswith("/items/f1") for x in sp.calls[-30:]) >= 1
+
+
+def test_backfill_adds_one_metadata_call_and_no_second_permission_check(sp):
+    first_run(sp)
+    sp.meta["f1"] = {"webUrl": f"{HOST}/a.docx", "parentReference": {"id": "dir1"}}
+    sp.folders["dir1"] = f"{HOST}/Cases"
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([], delta=f"{ROOT}?token=d2"))
+    sp.calls.clear()
+    crawl.crawl_sharepoint(sp.sid)
+    assert sum(c.endswith("/items/f1/permissions") for c in sp.calls) == 1  # the backfill is not a permission check
+    assert sum(c.endswith("/items/f1") for c in sp.calls) == 1
+
+
+def test_no_drive_host_means_no_backfill_calls(sp):
+    first_run(sp)
+    sp.drive_url = None
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([], delta=f"{ROOT}?token=d2"))
+    sp.calls.clear()
+    crawl.crawl_sharepoint(sp.sid)
+    assert not [c for c in sp.calls if c.endswith(("/items/f1", "/items/f2"))]

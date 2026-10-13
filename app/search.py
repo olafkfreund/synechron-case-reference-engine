@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict
 
 from app import anonymise, db
 from app.completeness import checklist, score
 from app.llm import complete_json
 from app.main import User, require
-from app.review import VISIBLE, page
+from app.review import REVIEWABLE, VISIBLE, page
 from app.schema import ReferenceCase, numbers, vague_metric
 
 router = APIRouter()
@@ -159,15 +160,15 @@ def source_docs(case_ids: list[int], user: User, clients) -> dict[int, list[dict
         return {}
     with db.connect() as conn:
         rows = conn.execute(
-            "select c.id, d.title, s.name, d.web_url, d.folder_url, coalesce(cl.referenceable, false) and cl.id is not null "
+            "select c.id, d.title, s.name, d.id, d.web_url is not null, d.folder_url is not null, coalesce(cl.referenceable, false) and cl.id is not null "
             "from cases c join cases m on (m.id = c.id or m.merged_into = c.id) "
             "join documents d on d.id = m.document_id join sources s on s.id = d.source_id "
             "left join clients cl on cl.id = c.client_id "
             "where c.id = any(%s) and d.deleted_at is null and d.acl_groups && %s::text[] order by c.id, s.name, d.title, d.id",
             (case_ids, list(user.groups))).fetchall()
     reviewer, out = "reviewer" in user.roles, {}
-    for cid, title, source, web, folder, ref in rows:
-        doc, entries = dict(web=web, folder=folder), out.setdefault(cid, [])
+    for cid, title, source, did, web, folder, ref in rows:  # the URLs stay server-side: /go/ redirects, so a name in a URL is never shown
+        doc, entries = dict(id=did, web=web, folder=folder), out.setdefault(cid, [])
         if reviewer or ref:
             entries.append(dict(label=clean(title, clients, "a document"), docs=[doc]))
         elif entries and entries[-1]["source"] == source:
@@ -180,6 +181,32 @@ def source_docs(case_ids: list[int], user: User, clients) -> dict[int, list[dict
                 n = len(e["docs"])
                 e["label"] = f"{n} document{'s' if n > 1 else ''} in {clean(e['source'], clients, 'a source')}"
     return out
+
+
+def go(doc_id: int, user: User, column: str) -> RedirectResponse:
+    """303 to a document's stored source link if the user may see it, else 404. Same rules as source_docs():
+    live, in the user's groups, and part of a case the user can see (a reviewer: any reviewable case)."""
+    cond = REVIEWABLE if "reviewer" in user.roles else f"c.status = 'approved' and c.review_due > now() and {VISIBLE}"
+    groups = list(user.groups)
+    with db.connect() as conn:
+        row = conn.execute(
+            f"select d.{column} from documents d join cases x on x.document_id = d.id "
+            f"join cases c on (c.id = x.id or c.id = x.merged_into) "
+            f"where d.id = %s and d.deleted_at is null and d.acl_groups && %s::text[] and {cond} and d.{column} is not null limit 1",
+            (doc_id, groups, groups)).fetchone()
+    if not row:
+        raise HTTPException(404)
+    return RedirectResponse(row[0], status_code=303, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+
+
+@router.get("/go/{doc_id}")
+def go_document(doc_id: int, user: User = Depends(require("user"))):
+    return go(doc_id, user, "web_url")
+
+
+@router.get("/go/{doc_id}/folder")
+def go_folder(doc_id: int, user: User = Depends(require("user"))):
+    return go(doc_id, user, "folder_url")
 
 
 def browse(user: User, filters: dict, kind: str = "", sort: str = "newest", page: int = 1) -> list[dict]:
