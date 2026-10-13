@@ -207,6 +207,9 @@ Branch `feat/235-library-in-bids`, worktree `../refs-engine-235`. Two PRs.
   - POST filters are capped like GET.
   - Saved-by is "" when the display name equals the sub (never an email or
     UPN).
+- Codex review (gpt-6-sol), P2, confirmed: a topic chip sent `due=` when
+  "Needs re-check" was off, which gave a 422. It now sends `due=0`. A test
+  follows the rendered chip link.
 
 ## Tests
 

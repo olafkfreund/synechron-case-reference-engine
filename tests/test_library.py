@@ -378,3 +378,15 @@ def test_suggest_is_fast_on_300_items(reg, lib):
     took = time.perf_counter() - t0
     print(f"suggest() with 300 saved items: {took * 1000:.0f} ms")
     assert took < 0.5  # the 150-candidate cap measured about 63 ms; this only catches a collapse
+
+
+def test_a_topic_chip_link_can_be_followed(reg, lib):
+    import html
+    import re
+    a = put("Cloud Migration", "alpha one")
+    other = put("Kafka", "gamma three")
+    c = as_user("u1")
+    hrefs = [html.unescape(h) for h in re.findall(r'<a class="badge[^"]*" href="(/library\?[^"]*)"', c.get("/library").text)]
+    chip = next(h for h in hrefs if "Cloud" in h)
+    r = c.get(chip)
+    assert r.status_code == 200 and f"/library/{a}" in r.text and f"/library/{other}" not in r.text
