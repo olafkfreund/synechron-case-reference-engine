@@ -283,7 +283,7 @@ def test_export_csv_prefixes_hidden_formulas(reg, quote):
     rid = done_row(c, quote)
     r = c.post(f"/research/{rid}/export", data={"format": "csv", "n": [0]})
     cell = list(csv.reader(io.StringIO(r.text)))[1][0]
-    assert cell == "'" + quote
+    assert cell == "'" + " ".join(quote.split())  # plain() collapses whitespace; the formula is still prefixed
 
 
 def test_export_anonymises_or_drops_a_protected_title(reg):
@@ -354,3 +354,11 @@ def test_research_is_not_refused_by_the_extraction_guard(monkeypatch):
     pages = [dict(PAGES[0], markdown="x" * rs.PAGE_CHARS) for _ in range(8)]
     claims, note = rs.extract_claims("q", pages)
     assert sent and note is None and claims == []
+
+
+def test_a_markdown_quote_is_sourced_against_the_raw_page_and_stored_verbatim(monkeypatch):
+    raw = "Entra **supports** [passwordless](https://x.io/a) sign in out of the box"
+    page = [{**PAGES[0], "markdown": raw + "."}]
+    reply(monkeypatch, claim(quote=raw))
+    claims, _ = rs.extract_claims("passwordless", page)
+    assert [c["quote"] for c in claims] == [raw]  # kept: sourced on the raw text, stored as written

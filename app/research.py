@@ -22,7 +22,7 @@ from app import anonymise, db, ingest
 from app.llm import complete_json
 from app.main import User, require
 from app.review import VISIBLE, page, reviewable_cases
-from app.schema import ReferenceCase, numbers, quote_in
+from app.schema import ReferenceCase, numbers, plain, quote_in
 from app.search import clean
 
 router = APIRouter()
@@ -171,9 +171,10 @@ def visible_claims(claims, clients) -> tuple[list[dict], int]:
     """The download's rule (render.industry_section) for the screen: apply(), then drop what blocked() still finds."""
     out = []
     for c in claims:
-        c = {**c, "quote": anonymise.apply(str(c.get("quote") or ""), clients),
+        txt = (lambda t: str(t or "")) if c.get("type") == "technical_note" else (lambda t: plain(str(t or "")))  # code stays exact
+        c = {**c, "quote": anonymise.apply(txt(c.get("quote")), clients),
              "statement": anonymise.apply(str(c.get("statement") or ""), clients),
-             "title": anonymise.apply(str(c.get("title") or ""), clients)}
+             "title": anonymise.apply(txt(c.get("title")), clients)}
         if not anonymise.blocked("\n".join(str(c.get(k, "")) for k in ("quote", "statement", "title", "publisher", "url")), clients):
             out.append(c)
     return out, len(claims) - len(out)
