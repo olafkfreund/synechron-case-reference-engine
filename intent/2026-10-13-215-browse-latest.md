@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 215
 author: olafkfreund
 ---
@@ -81,12 +81,8 @@ Reviewed in the demo portal on 2026-10-13:
 - The list must stay fast with a few thousand cases: indexed queries and
   paging, no full load into memory.
 
-## Open questions
+## Decisions (2026-10-13, approved with the intent)
 
-1. **Latest documents for users.** Should plain users also see the latest
-   documents, titles only, without skipped ones? Or should they only see
-   approved cases, as proposed?
-2. **Overlap with #212 and #214.** The case list shows the headline fields
-   today. Once #212 adds prose, the rows can show its first sentence. I
-   propose shipping #215 first, since it is independent and quick to use, and
-   then picking up #212's prose in the rows when it lands.
+1. Plain users see approved cases only. "Latest documents" is for reviewers
+   and admins.
+2. #215 ships first. Case rows pick up #212's prose when it lands.
