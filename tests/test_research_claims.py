@@ -39,7 +39,7 @@ def test_only_verified_claims_survive(monkeypatch):
           claim("Bad page.", page=7), claim("Negative page.", page=-1),
           claim("Bad type.", type="marketing"), claim("  ", quote="supports passwordless sign in out of the box"),
           claim("Needs 3 steps.", quote="Setup needs 3 configuration steps", type="configuration"))
-    claims, note = rs.extract_claims("passwordless", PAGES)
+    claims, note = rs.extract_claims("passwordless configuration steps", PAGES)
     assert [c["statement"] for c in claims] == ["Entra supports passwordless sign in.", "Needs 3 steps."] and note is None
     c = claims[0]
     assert (c["url"], c["publisher"], c["retrieved_at"], c["rank"], c["type"]) == (
@@ -86,7 +86,7 @@ def test_job_stores_claims_with_rank(web, monkeypatch):
     web.html("docs.example", "/g", "Kubernetes supports rolling updates without downtime out of the box.")
     monkeypatch.setattr(rs, "complete_json", lambda *a, **k: rs.Claims(claims=[
         claim("Kubernetes rolls updates.", quote="supports rolling updates without downtime")]))
-    rid = make_row(f"research test {uuid.uuid4().hex}")
+    rid = make_row(f"rolling updates {uuid.uuid4().hex}")
     rs.run(rid)
     c = row(rid)[2]["claims"][0]
     assert c["rank"] == 3 and c["publisher"] == "docs.example" and c["url"] == "https://docs.example/g" and c["retrieved_at"]
@@ -312,7 +312,7 @@ def test_search_page_has_research_button(approved, monkeypatch):
 
 
 def test_cache_hit_redoes_failed_or_missing_claims_without_refetching(web, monkeypatch):
-    q = f"research cache {uuid.uuid4().hex}"
+    q = f"rolling updates cache {uuid.uuid4().hex}"
     page = {"url": "https://x.example/p", "publisher": "x.example", "title": "T", "retrieved_at": "2026-10-01T00:00:00+00:00",
             "markdown": "Kubernetes supports rolling updates without downtime out of the box."}
     with db.connect() as conn:  # an earlier row: extraction failed (or a pre-claims row)
@@ -333,7 +333,7 @@ def test_cache_hit_redoes_failed_or_missing_claims_without_refetching(web, monke
 
 def test_quote_must_be_within_what_the_model_saw(monkeypatch):
     pages = [{"url": "https://x.example/p", "publisher": "x.example", "retrieved_at": "t",
-              "markdown": "x " * rs.PAGE_CHARS + "this sentence is past the cut"}]
+              "markdown": "x " * rs.page_chars() + "this sentence is past the cut"}]
     monkeypatch.setattr(rs, "complete_json", lambda *a, **k: rs.Claims(claims=[
         claim("Past the cut.", quote="this sentence is past the cut")]))
     assert rs.extract_claims("q", pages)[0] == []
@@ -352,7 +352,7 @@ def test_research_is_not_refused_by_the_extraction_guard(monkeypatch):
         sent.append(kw)
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"claims": []}'), finish_reason="stop")])
     monkeypatch.setattr(llm.litellm, "completion", completion)
-    pages = [dict(PAGES[0], markdown="x" * rs.PAGE_CHARS) for _ in range(8)]
+    pages = [dict(PAGES[0], markdown="x" * rs.page_chars()) for _ in range(8)]
     claims, note = rs.extract_claims("q", pages)
     assert sent and note is None and claims == []
 
@@ -415,3 +415,81 @@ def test_save_falls_back_to_untitled_research_and_never_stores_an_email_as_the_n
     lid = int(c.post("/library/save", data={"brief_id": bid}, follow_redirects=False).headers["location"].rsplit("/", 1)[1])
     with db.connect() as conn:
         assert conn.execute("select topic, created_by_name from library_items where id=%s", (lid,)).fetchone() == ("Untitled research", "")  # name == sub: no real name
+
+
+def test_page_chars_follows_num_ctx_for_ollama_only(monkeypatch):
+    monkeypatch.delenv("DRAFT_MODEL_OPTIONS", raising=False)
+    monkeypatch.setenv("DRAFT_MODEL", "ollama_chat/qwen3:14b")
+    assert rs.page_chars() == 6000  # no num_ctx
+    monkeypatch.setenv("DRAFT_MODEL_OPTIONS", json.dumps({"num_ctx": 24576}))
+    n = rs.page_chars()
+    assert 4500 < n < 6000
+    system = len(rs.CLAIMS_SYSTEM) + len(json.dumps(rs.llm_schema(rs.Claims))) + 60
+    assert rs.MAX_RESULTS * n + system <= (24576 - rs.MAX_TOKENS - 2000) * 3  # 8 pages fit with no silent cut (#217)
+    monkeypatch.setenv("DRAFT_MODEL", "bedrock/x")
+    assert rs.page_chars() == 6000  # llm.py sends num_ctx to Ollama only
+
+
+def test_quotes_are_ranked_capped_and_the_drops_apply(monkeypatch):
+    long_page = " ".join(f"word{i}" for i in range(100))
+    pages = [dict(PAGES[0], markdown="Passwordless sign in works. " + long_page),
+             dict(PAGES[1], markdown="Passwordless sign in is common. " + " ".join(f"item{i} passwordless" for i in range(30)))]
+    cs = [claim("Too long.", quote=long_page),                                           # 100 words: dropped, never cut
+          claim("Tangential.", quote="Passwordless sign in works.", ).model_copy(update={"relevance": 1}),
+          claim("Off topic.", quote="item1 passwordless item2 passwordless")]            # no shared query word with the query below
+    cs[2] = claim("Cats.", quote="item1 passwordless item2 passwordless").model_copy(update={"relevance": 3})
+    for i in range(6):                                                                   # six on page 1: per-page cap is 4
+        cs.append(claim(f"Page one {i}.", page=1, quote=f"item{i} passwordless item{i + 1} passwordless").model_copy(update={"relevance": 2 + i % 2}))
+    cs.append(claim("Clamped.", quote="Passwordless sign in works.").model_copy(update={"relevance": 9}))
+    reply(monkeypatch, *cs)
+    out = rs.extract_claims("passwordless", pages)[0]
+    assert "Too long." not in [c["statement"] for c in out] and "Tangential." not in [c["statement"] for c in out]
+    assert sum(c["url"] == pages[1]["url"] for c in out) == rs.MAX_PER_PAGE
+    assert out[0]["statement"] in {"Clamped.", "Cats."}  # rank 1 vendor page first, relevance 3 before 2
+    reply(monkeypatch, *[claim(f"S{i}.", page=i % 2, quote=f"item{i} passwordless item{i + 1} passwordless") for i in range(40)])
+    assert len(rs.extract_claims("passwordless", [pages[1], dict(pages[1], url="https://b.example/", publisher="b.example")])[0]) <= rs.MAX_CLAIMS
+    reply(monkeypatch, claim("Unrelated.", quote="Passwordless sign in works."))
+    assert rs.extract_claims("kubernetes pods", pages)[0] == []  # shares no query word of 4+ letters
+
+
+MD_PAGE = """# Configure the registry
+
+Some text.
+
+```python
+mlflow.set_registry_uri("databricks")
+```
+
+## Unrelated
+
+```
+rm -rf /
+```
+
+## Deploying the registry
+
+1. Create a model
+2. Register the model
+3. Promote the version
+
+- not numbered
+"""
+
+
+def test_notes_from_takes_fences_and_step_runs_that_share_a_query_word():
+    notes = rs.notes_from(MD_PAGE, "mlflow model registry")
+    assert notes == ['mlflow.set_registry_uri("databricks")', "1. Create a model\n2. Register the model\n3. Promote the version"]
+    assert all(rs.quote_in(MD_PAGE, n) for n in notes)  # a substring of the page by construction
+    assert rs.notes_from(MD_PAGE, "kubernetes pods") == []
+    assert rs.notes_from("1. a\n2. b\n", "registry") == []  # fewer than three steps
+    assert rs.notes_from("```\n" + "x" * 1600 + " registry\n```", "registry") == []  # over 1,500 characters
+    many = "# registry\n" + "".join(f"```\ncode {i}\n```\n" for i in range(5))
+    assert len(rs.notes_from(many, "registry")) == rs.NOTES_PER_PAGE
+
+
+def test_with_notes_adds_technical_note_claims_capped_per_research():
+    pages = [dict(PAGES[0], url=f"https://v{i}.example/", publisher=f"v{i}.example", markdown=MD_PAGE) for i in range(6)]
+    out = rs.with_notes("mlflow model registry", pages, [{"statement": "S", "type": "configuration"}])
+    notes = [c for c in out if c["type"] == "technical_note"]
+    assert out[0]["statement"] == "S" and len(notes) == rs.MAX_NOTES
+    assert notes[0]["statement"] == "" and notes[0]["url"] == pages[0]["url"] and notes[0]["rank"] == 3
