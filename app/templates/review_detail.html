@@ -42,6 +42,18 @@
 {% for r in rows %}{% if r.unsourced and not r.new %}{{ field_row(r, loop.index) }}{% endif %}{% endfor %}</div>{% endif %}
 <div class="section-card"><div class="card-head"><h2>Fields</h2></div>
 {% for r in rows %}{% if not (r.unsourced and not r.new) %}{{ field_row(r, loop.index) }}{% endif %}{% endfor %}</div>
+{% if sections %}<div class="section-card"><div class="card-head"><h2>Case-study text</h2></div>
+{% for sec in sections %}<div class="field-row">
+<div class="fname">{{ sec.label }}
+{% if sec.prose and sec.prose.by_reviewer %}<span class="badge ok">written by reviewer</span>{% elif sec.prose and sec.prose.flags %}<span class="badge bad">flagged</span>{% elif sec.prose %}<span class="badge neutral">generated</span>{% else %}<span class="badge empty">not written</span>{% endif %}</div>
+<div>{% if sec.prose %}{% for fl in sec.prose.flags %}<div class="note">{{ fl }}</div>{% endfor %}{% endif %}
+{% if reviewable %}<form method="post" action="/review/{{ id }}/edit" class="row"><input type="hidden" name="field" value="prose.{{ sec.f }}"><input type="hidden" name="v" value="{{ v }}">
+<label for="pr-{{ sec.f }}" class="mini-label">{{ sec.label }} text</label><textarea id="pr-{{ sec.f }}" name="value" rows="8">{{ sec.prose.text if sec.prose else "" }}</textarea>
+<button class="btn" aria-label="Save {{ sec.label }} text">Save</button></form>
+{% elif sec.prose %}<p style="white-space:pre-wrap">{{ sec.prose.text }}</p>{% endif %}
+{% if sec.points %}<details><summary>Sourced points ({{ sec.points | length }})</summary>
+{% for p in sec.points %}<div class="claim"><p>{{ p.value }}</p>{% if p.source_quote %}<q>{{ p.source_quote }}</q>{% endif %}{% if p.unsourced %} <span class="badge bad">unsourced</span>{% endif %}</div>{% endfor %}</details>{% endif %}</div>
+</div>{% endfor %}</div>{% endif %}
 {% if sources %}<div class="section-card"><div class="card-head"><h2>Public sources (not delivery evidence)</h2></div>
 {% for s in sources %}<div class="claim">{% if s.hidden %}<p class="muted">Withheld: names a protected client</p>{% else %}<q>{{ s.quote }}</q>
 <div class="meta">{% if (s.url or "").startswith(("http://", "https://")) %}<a href="{{ s.url }}" rel="noopener noreferrer">{{ s.publisher }}</a>{% else %}<span>{{ s.publisher }}</span>{% endif %}
