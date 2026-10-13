@@ -448,6 +448,7 @@ def test_chunks_cut_at_blank_lines_and_overlap():
 
 
 def test_chunk_chars(monkeypatch):
+    monkeypatch.setenv("EXTRACT_MODEL", "ollama_chat/m")
     monkeypatch.setattr(ex, "profile", lambda a: {"num_ctx": 24576})
     assert ex.chunk_chars() == (24576 - ex.MAX_TOKENS - 2000) * 3
     monkeypatch.setattr(ex, "profile", lambda a: {})
@@ -496,6 +497,7 @@ def test_strip_commercial_filters_points():
 
 
 def test_chunk_chars_refuses_a_context_too_small_to_step(monkeypatch):
+    monkeypatch.setenv("EXTRACT_MODEL", "ollama_chat/m")
     monkeypatch.setattr(ex, "profile", lambda a: {"num_ctx": ex.MAX_TOKENS + 2000})
     with pytest.raises(ValueError, match="num_ctx too small"):
         ex.chunk_chars()
@@ -521,6 +523,7 @@ def test_build_summary_not_vouched_by_an_unsourced_quote(monkeypatch):
 
 
 def test_three_chunks_via_num_ctx_source_a_quote_only_in_the_last(monkeypatch):
+    monkeypatch.setenv("EXTRACT_MODEL", "ollama_chat/m")
     monkeypatch.setenv("EXTRACT_MODEL_OPTIONS", json.dumps({"num_ctx": 12000}))
     size = ex.chunk_chars()
     paras = [f"Filler paragraph {i}. " + "lorem ipsum " * 60 for i in range(14)]  # ~10k characters: 3 pieces of ~5.4k
@@ -557,3 +560,26 @@ def test_chunks_ignore_a_blank_line_near_the_start():
     assert len(parts[0]) == 500 and all(len(p) >= 400 for p in parts[:-1])
     t = "head\n\n" + ("y" * 90 + "\n") * 14  # no usable blank line, but newlines in the second half
     assert ex.chunks(t, 500, overlap=100)[0].endswith("\n")
+
+
+def test_blanked_note_when_only_a_later_chunk_has_a_failing_summary(monkeypatch):
+    text = "\n\n".join(f"Part {i}: the bank migrated system {i} in {i + 2} weeks." for i in range(40))
+    monkeypatch.setattr(ex, "chunk_chars", lambda: 400)
+    n = []
+
+    def fake(alias, system, user, model, **k):
+        n.append(1)
+        q = "the bank migrated system 1 in 3 weeks"
+        return Extraction(items=[Item(field="title", value="T", quote=q)],
+                          summary="Saved 99 percent." if len(n) == 2 else "")
+    monkeypatch.setattr(ex, "complete_json", fake)
+    c = ex.build(text, "internal")
+    assert c.summary == "" and any("summary used numbers absent" in x for x in c.needs_attention)
+
+
+def test_bedrock_is_never_chunked(monkeypatch):
+    monkeypatch.setenv("EXTRACT_MODEL", "bedrock/m")
+    monkeypatch.setenv("EXTRACT_MODEL_OPTIONS", json.dumps({"num_ctx": 12000}))
+    assert ex.chunk_chars() is None and ex.split("x" * 100_000) == ["x" * 100_000]
+    monkeypatch.setenv("EXTRACT_MODEL", "ollama_chat/m")
+    assert ex.chunk_chars() == (12000 - ex.MAX_TOKENS - 2000) * 3

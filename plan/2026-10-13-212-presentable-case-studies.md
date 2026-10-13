@@ -622,6 +622,17 @@ client. Run the full suite, then PR 4.
     16/19, 6, 4. Points are line 1 1/1/1/1 and line 3 10/10/9/7.
   - Still open for phase B: line 1 has few points, and both summaries are
     still blanked. The write-up pass replaces the summary.
+- Phase A review fixes:
+  - Chunking applies to Ollama only, like the guard, so Bedrock is never
+    chunked.
+  - The summary is the first non-empty chunk summary the quotes vouch for,
+    else the first non-empty one, which gets blanked with a note.
+  - `extract.split()` returns the pieces, and the eval prints `parts=`.
+  - The guard test now fails without the alias check, and the research
+    test is renamed (#217).
+  - Accepted: a merged case has no points until phase B (M1). The
+    3-characters-per-token estimate leaves about 14% slack for dense
+    numeric text.
 
 ## Tests
 

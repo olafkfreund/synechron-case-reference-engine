@@ -197,4 +197,7 @@ def test_prompt_that_overflows_num_ctx_is_refused_before_the_call(monkeypatch):
 
 def test_overflow_guard_covers_extraction_only(monkeypatch):
     # research's worst case sits right at the context limit (#212 G1), so only extraction is guarded
-    run(monkeypatch, '{"title": {}}', "DRAFT_MODEL", model="ollama_chat/m", opts={"num_ctx": 100}, dc="public")
+    monkeypatch.setenv("DRAFT_MODEL", "ollama_chat/m")  # an Ollama model too, so only the alias check exempts it
+    monkeypatch.setenv("DRAFT_MODEL_OPTIONS", json.dumps({"num_ctx": 100}))
+    monkeypatch.setattr(llm.litellm, "completion", fake('{"title": {}}', []))
+    llm.complete_json("DRAFT_MODEL", "s" * 3000, "u" * 3000, ReferenceCase, data_class="public")

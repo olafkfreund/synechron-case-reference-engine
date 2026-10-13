@@ -1,3 +1,4 @@
+import os
 import re
 
 from psycopg.types.json import Jsonb
@@ -152,9 +153,9 @@ def chunks(text: str, size: int, overlap: int = OVERLAP) -> list[str]:
 
 
 def chunk_chars() -> int | None:
-    """Characters of document one call can read (3 per token), or None when the context is not set."""
+    """Characters of document one call can read (3 per token), or None when the context is not set or ignored."""
     n = profile("EXTRACT_MODEL").get("num_ctx")
-    if not n:
+    if not n or not os.environ.get("EXTRACT_MODEL", "").startswith("ollama"):  # llm.py sends num_ctx to Ollama only
         return None
     size = (int(n) - MAX_TOKENS - 2000) * 3
     if size <= 2 * OVERLAP:  # a smaller piece could not step past its own overlap
@@ -162,21 +163,26 @@ def chunk_chars() -> int | None:
     return size
 
 
+def split(text: str) -> list[str]:
+    """The pieces build() reads: the whole text when one call can take it."""
+    size = chunk_chars()
+    return chunks(text, size) if size and len(text) > size else [text]
+
+
 def build(full_text: str, data_class: str, basis: str = "delivered", basis_reason: str = "") -> ReferenceCase:
     """The extraction steps on a text, without the database (also run by scripts/eval_extraction.py)."""
     text = full_text[:MAX_CHARS]
-    size = chunk_chars()
-    parts = chunks(text, size) if size and len(text) > size else [text]
+    parts = split(text)
     replies = [complete_json("EXTRACT_MODEL", CONTRACT_SYSTEM if basis == "engagement" else SYSTEM, f"<document>\n{part}\n</document>",
                              Extraction, data_class=data_class) for part in parts]
     items = [i for r in replies for i in r.items]
     trial, _ = assemble(Extraction(items=items))
     check(trial, text)  # sets `unsourced`, which quotes() needs before a summary can be judged
-    summary = replies[0].summary  # else the first, which the check below blanks with a note
-    for r in replies:
-        trial.summary = r.summary
-        if r.summary and trial.summary_sourced():
-            summary = r.summary
+    # the first non-empty summary the sourced quotes vouch for; else the first non-empty, which the check below blanks with a note
+    summary = ""
+    for r in (r for r in replies if r.summary):
+        trial.summary = summary = r.summary
+        if trial.summary_sourced():
             break
     case, notes = assemble(Extraction(items=items, summary=summary))  # notes always assigned: anything the model sent is overwritten
     check(case, text)

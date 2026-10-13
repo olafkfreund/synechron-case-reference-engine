@@ -229,8 +229,8 @@ def test_quote_must_be_within_what_the_model_saw(monkeypatch):
     assert rs.extract_claims("q", pages)[0] == []
 
 
-def test_eight_full_pages_fit_the_draft_context(monkeypatch):
-    """The research worst case (8 pages of PAGE_CHARS, schema in the prompt) must clear the overflow guard (#212 G1)."""
+def test_research_is_not_refused_by_the_extraction_guard(monkeypatch):
+    """The research worst case (8 pages of PAGE_CHARS, schema in the prompt) must clear the overflow guard (#212 G1); its real overflow is tracked in #217."""
     from types import SimpleNamespace
 
     from app import llm
