@@ -25,7 +25,7 @@
 <div class="row"><label for="dl-format">Format</label><select id="dl-format" name="format" style="max-width:200px"><option value="docx">Word</option><option value="pptx">PowerPoint</option><option value="pdf_docx">PDF</option><option value="pdf_pptx">PDF slides</option><option value="md">Markdown</option></select>
 <button class="btn" formaction="/preview">Preview</button>
 <button class="btn primary">Download</button></div></form>
-<form id="pick" method="post">{% if attach_cases %}<input type="hidden" name="research_id" value="{{ research_id }}">{% endif %}
+<form id="pick" method="post"><input type="hidden" name="research_id" value="{{ research_id }}">
 <div class="section-card"><div class="card-head"><h2>What public sources say</h2></div>
 <p class="muted" style="font-size:13px">The quote is the source; the reading under it is the AI's. Rely on the quote.</p>
 {% for c in claims %}<div class="claim"><label class="check"><input type="checkbox" name="n" value="{{ c.n }}" form="pick"> Select</label><q>{{ c.quote }}</q>
