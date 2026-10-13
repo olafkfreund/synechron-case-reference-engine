@@ -534,6 +534,34 @@ must exist on `main`.
   - Delete is not audited: there's no generic admin log.
   - A brief whose client is protected later drops and counts the sentence
     (as `industry_section` does) instead of returning 409.
+- Step 22 (and the step 24 attach tests):
+  - Attaching research or a library item to any reviewable case doesn't
+    reopen an approved case, as in #199, because public sources aren't
+    approved content.
+  - `POST /sources/attach` takes `target="<case>:<version>"`.
+  - `picked_claims(verbatim=True)` is used, and library quotes record
+    `library_id`.
+  - The user guide is updated for the picker.
+- UI polish, at the user's request:
+  - The library page uses the portal's field and empty-state patterns.
+  - The age reads "today" or "N days old".
+  - Five inputs without `type=text` (in brief.html and research_view.html)
+    were unstyled, and now have the type.
+- Steps 23-25:
+  - The passage is the existing grouped, cited industry section of the
+    case-study template, retitled "Approach and industry practice" when the
+    case's attached sources survive the checks. No template change was
+    needed.
+  - It doesn't use a stored brief, because briefs aren't linked to cases.
+  - A single-case preview's note says case studies retitle the section.
+
+- Step 22 review: the case picker runs one query per page view (the newest 50
+  reviewable cases, each with an md5 of its attached list). That cost is
+  accepted. A library item is attached as what is visible now (`apply()` done,
+  blocked quotes left out), not verbatim, because it is shared. `target` must
+  be ASCII digits (at most 18) before the colon, else 400. The case-study
+  heading "Approach and industry practice" is used only when the section comes
+  purely from the case's attached sources.
 
 ## Tests
 

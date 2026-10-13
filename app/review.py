@@ -551,28 +551,57 @@ def _lock_sources(conn, cid, user, s):
     return r[1]
 
 
-@router.post("/review/{cid}/sources")
-def attach_sources(cid: int, research_id: int = Form(), n: list[int] = Form([]), s: str = Form(),
-                   user: User = Depends(require("reviewer"))):
-    from app.research import visible_claims  # here: research imports this module
+def reviewable_cases(conn, user, first=None, limit=50):
+    """[(id, title, md5 of its attached list)] of the newest cases this reviewer may review, `first` (if any) leading."""
+    return conn.execute("select c.id, c.data->'title'->>'value', md5(c.public_sources::text) from cases c "
+                        f"left join documents d on d.id = c.document_id where {REVIEWABLE} "
+                        "order by c.id = %s desc, c.id desc limit %s", (list(user.groups), first or 0, limit)).fetchall()
+
+
+def _attach(cid, s, research_id, library_id, n, user):
+    """Attach picked quotes from the user's own finished research, or from a library item, to a case they may review."""
+    from app import research  # here: research imports this module
+    if (research_id is None) == (library_id is None):
+        raise HTTPException(400, "attach either research quotes or a library item")
     with db.connect() as conn:
         old = _lock_sources(conn, cid, user, s)
-        row = conn.execute("select results from research where id=%s and created_by=%s and status='done' and case_id=%s",
-                           (research_id, user.sub, cid)).fetchone()
-        if not row:
-            raise HTTPException(404, "no such research")
-        stored = row[0].get("claims", [])
-        picked = [{**stored[i], "n": i} for i in dict.fromkeys(n) if 0 <= i < len(stored)]  # from the row, never the form
-        # visible_claims only filters: the stored claim is copied verbatim and anonymised again at render
-        kept = [stored[c["n"]] for c in visible_claims(picked, anonymise.load_clients(conn))[0]]
+        if research_id is not None:
+            kept, ref = research.picked_claims(conn, research_id, n, user, verbatim=True), {"research_id": research_id}
+        else:
+            row = conn.execute("select body from library_items where id=%s", (library_id,)).fetchone()
+            if not row:
+                raise HTTPException(404, "no such library item")
+            stored = row[0]["quotes"]
+            picked = [{**stored[i], "n": i} for i in dict.fromkeys(n) if 0 <= i < len(stored)]  # from the row, never the form
+            # the item is shared: copy what is visible now (apply() done, blocked ones left out), so no protected name is stored
+            kept = research.visible_claims(picked, anonymise.load_clients(conn))[0]
+            if not kept:
+                raise HTTPException(400, "pick at least one statement")
+            ref = {"library_id": library_id}
+        # the stored claim is copied verbatim and anonymised again at render
         now = datetime.now(timezone.utc).isoformat()
-        new = [{**{k: c.get(k) for k in SOURCE_KEYS}, "research_id": research_id, "attached_by": user.sub, "attached_at": now}
-               for c in kept]
+        new = [{**{k: c.get(k) for k in SOURCE_KEYS}, **ref, "attached_by": user.sub, "attached_at": now} for c in kept]
         merged = _add_sources(old, new)
         if len(merged) > MAX_SOURCES:
             raise HTTPException(400, f"at most {MAX_SOURCES} public sources per case")
         conn.execute("update cases set public_sources=%s where id=%s", (Jsonb(merged), cid))
     return RedirectResponse(f"/review/{cid}", status_code=303)
+
+
+@router.post("/review/{cid}/sources")
+def attach_sources(cid: int, research_id: int | None = Form(None), library_id: int | None = Form(None),
+                   n: list[int] = Form([]), s: str = Form(), user: User = Depends(require("reviewer"))):
+    return _attach(cid, s, research_id, library_id, n, user)
+
+
+@router.post("/sources/attach")
+def attach_to_chosen_case(target: str = Form(""), research_id: int | None = Form(None), library_id: int | None = Form(None),
+                          n: list[int] = Form([]), user: User = Depends(require("reviewer"))):
+    """The research and library pages pick the case: target is "<case id>:<version of its attached list>"."""
+    cid, _, s = target.partition(":")
+    if not (cid.isascii() and cid.isdigit() and len(cid) <= 18):  # str.isdigit() accepts "²"; a bigint holds 18 digits
+        raise HTTPException(400, "choose a case")
+    return _attach(int(cid), s, research_id, library_id, n, user)
 
 
 @router.post("/review/{cid}/sources/remove")

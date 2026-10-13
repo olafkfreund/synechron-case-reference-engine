@@ -42,6 +42,7 @@ class Withheld(Exception):
 COMPANY = "Synechron"
 INDUSTRY_HEADING = "Industry context (public sources)"
 SOURCES_HEADING = "Best practice and public sources"
+APPROACH_HEADING = "Approach and industry practice"  # a case study: after our delivery sections, under the disclaimer
 INDUSTRY_DISCLAIMER = f"These are public statements by third parties, not {COMPANY} delivery evidence."
 # the type filters claims; it never reaches an output (#23)
 CLAIM_TYPES = frozenset({"out_of_the_box", "configuration", "industry_practice", "vendor_claim"})
@@ -603,7 +604,10 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
             seen.add(k); merged.append(c)
     # the new heading only if an attached claim survives apply()/blocked() at render
     cited = bool(attached) and bool((industry_section(attached, clients, pages=pages) or {}).get("statements"))
-    industry = industry_section(merged, clients, heading=SOURCES_HEADING if cited else INDUSTRY_HEADING, pages=pages) \
+    mine = {(c.get("url"), c.get("quote")) for c in attached}
+    only_attached = not any((c.get("url"), c.get("quote")) not in mine for c in claims)  # no ad-hoc research merged in
+    heading = (APPROACH_HEADING if study and only_attached else SOURCES_HEADING) if cited else INDUSTRY_HEADING
+    industry = industry_section(merged, clients, heading=heading, pages=pages) \
         if merged else None
     if not ids and not (industry and industry["statements"]):
         raise HTTPException(400, "the research has no usable public statements")
@@ -615,11 +619,12 @@ def preview(request: Request, case_ids: list[int] = Form([]), research_id: int |
             industry_context_ack: bool = Form(False), user: User = Depends(require("user"))):
     with db.connect() as conn:  # same content and errors as /generate; nothing is logged
         ids, sections, industry, _, _ = build(conn, case_ids, research_id, industry_context_ack, user)
-        footer = ""  # what a case-study download adds; the same code path as /generate, so the text cannot drift
+        footer, retitled = "", False  # what a case-study download adds; the same code path as /generate, so the text cannot drift
         if len(ids) == 1:
-            footer = build(conn, case_ids, research_id, industry_context_ack, user, "case_study_docx")[1][0]["footer"]
+            _, study, study_industry, _, _ = build(conn, case_ids, research_id, industry_context_ack, user, "case_study_docx")
+            footer, retitled = study[0]["footer"], bool(study_industry) and study_industry["heading"] != (industry or {}).get("heading")
     return page(request, "output_preview.html", user, cases=sections, industry=industry, ids=ids,
-                research_id=research_id, ack=industry_context_ack, footer=footer)
+                research_id=research_id, ack=industry_context_ack, footer=footer, retitled=APPROACH_HEADING if retitled else "")
 
 
 @router.post("/generate")

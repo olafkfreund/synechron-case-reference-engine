@@ -1,11 +1,19 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block body %}
-<div class="page-head"><div><h1>Library</h1><p>Public research saved for reuse. Public statements by third parties, not our delivery evidence.</p></div></div>
-<form method="get" action="/library" class="section-card row"><label for="lib-q">Search</label><input id="lib-q" name="q" value="{{ q }}" maxlength="200"><button class="btn">Search</button></form>
-<div class="section-card">
-{% for i in items %}<p style="margin:0 0 8px"><a href="/library/{{ i.id }}"><b>{{ i.topic }}</b></a>
-<span class="badge neutral">{{ "brief" if i.kind == "brief" else "quotes" }}</span>
-<span class="muted">{{ i.sources }} source(s) &middot; {{ i.age }} day(s) old</span>{% if i.stale %} <span class="badge">re-check</span>{% endif %}</p>
-{% else %}<p class="muted" style="margin:0">Nothing saved{% if q %} for this search{% endif %}.</p>{% endfor %}
-</div>
+<div class="page-head"><div><h1>Library</h1><p>Briefs and quotes from public research, saved for the next bid. Public statements by third parties, not our delivery evidence.</p></div></div>
+<form method="get" action="/library" class="section-card">
+<div class="row filters"><div class="field"><label for="lib-q">Search the library</label>
+<input type="search" id="lib-q" name="q" value="{{ q }}" maxlength="200" placeholder="Topic or words in a quote, e.g. CMDB"></div>
+<button class="btn primary">Search</button>{% if q %} <a class="btn" href="/library">Clear</a>{% endif %}</div></form>
+{% if items %}<div class="section-card"><div class="card-head"><h2>{% if q %}Results for &ldquo;{{ q }}&rdquo;{% else %}Saved items{% endif %}</h2><span class="muted">{{ items | length }}</span></div>
+{% for i in items %}<div class="other-row">
+<a href="/library/{{ i.id }}"><b>{{ i.topic }}</b></a>
+<span class="badge neutral">{{ "Brief" if i.kind == "brief" else "Quotes" }}</span>
+{% if i.stale %}<span class="badge">re-check</span>{% endif %}
+<span class="muted" style="margin-left:auto">{{ i.sources }} source{{ "" if i.sources == 1 else "s" }} &middot; {{ "today" if i.age == 0 else (i.age ~ " day" ~ ("" if i.age == 1 else "s") ~ " old") }}</span>
+</div>{% endfor %}</div>
+{% elif q %}<div class="empty-state">{{ icon("search") }}<p><b>Nothing matches &ldquo;{{ q }}&rdquo;</b></p><p>Try another word, or <a href="/library">see everything saved</a>.</p></div>
+{% else %}<div class="empty-state">{{ icon("database") }}<p><b>Nothing saved yet</b></p>
+<p>Run <a href="/research">online research</a>, tick the quotes you want, then choose <b>Save to library</b>, or write a brief first and save that.</p></div>{% endif %}
 {% endblock %}

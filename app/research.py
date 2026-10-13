@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict
 from app import anonymise, db, ingest
 from app.llm import complete_json
 from app.main import User, require
-from app.review import REVIEWABLE, VISIBLE, page
+from app.review import VISIBLE, page, reviewable_cases
 from app.schema import ReferenceCase, numbers, quote_in
 from app.search import clean
 
@@ -194,12 +194,11 @@ def research_view(rid: int, request: Request, user: User = Depends(require("user
                                       ", ".join(t.value for t in case.tech_stack if t.value and not t.unsourced)] if x)
         ours = clean(text, clients, "[withheld]") if text else None
     claims, omitted = visible_claims([{**c, "n": i} for i, c in enumerate(row[3].get("claims", []))], clients)
-    sources_v = None  # md5 of the case's attached list; set only for a reviewer who may open the case
-    if case and "reviewer" in user.roles:
+    attach_cases = []  # a reviewer may attach to any case they may review: "<id>:<version>" and a title for the picker
+    if "reviewer" in user.roles:
         with db.connect() as conn:
-            r = conn.execute("select md5(c.public_sources::text) from cases c left join documents d on d.id = c.document_id "
-                             f"where c.id = %s and {REVIEWABLE}", (row[4], list(user.groups))).fetchone()
-        sources_v = r[0] if r else None
+            attach_cases = [(f"{c}:{v}", clean(t or "", clients, "[withheld]") or f"Case {c}", c == row[4])
+                            for c, t, v in reviewable_cases(conn, user, first=row[4])]
     groups: dict[str, list] = {}
     for c in claims:
         groups.setdefault(c["publisher"], []).append(c)
@@ -209,10 +208,10 @@ def research_view(rid: int, request: Request, user: User = Depends(require("user
     return page(request, "research_view.html", user, query=query, status=row[1], error=row[2], ours=ours,
                 pages=pages, skipped=skipped, omitted=omitted, claims=claims, groups=groups,
                 note=row[3].get("note"), case_id=row[4] if case else None, research_id=rid,
-                can_attach=sources_v is not None, sources_v=sources_v)
+                attach_cases=attach_cases)
 
 
-def picked_claims(conn, rid, n, user, strict=False) -> list[dict]:
+def picked_claims(conn, rid, n, user, strict=False, verbatim=False) -> list[dict]:
     """The user's own finished research, the picked claims by index from the stored row (never the form), through visible_claims()."""
     row = conn.execute("select results from research where id=%s and created_by=%s and status='done'", (rid, user.sub)).fetchone()
     if not row:
@@ -224,7 +223,7 @@ def picked_claims(conn, rid, n, user, strict=False) -> list[dict]:
         raise HTTPException(400, "pick at least one statement")
     if strict and len(out) != len(picked):  # saving to the library refuses rather than leaving a quote out
         raise HTTPException(400, "a picked statement names a protected client")
-    return out
+    return [stored[c["n"]] for c in out] if verbatim else out  # verbatim: the stored claims that survived, to be anonymised again at render
 
 
 def _csv_safe(v) -> str:

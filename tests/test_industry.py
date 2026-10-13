@@ -1,3 +1,4 @@
+import html
 import json
 import re
 import zipfile
@@ -91,7 +92,7 @@ def test_markdown_section_wording(rows, approved):
 
 
 def test_every_fixed_string_avoids_first_person_and_delivery_wording():
-    fixed = [render.INDUSTRY_HEADING, render.INDUSTRY_DISCLAIMER, "states", "retrieved"]
+    fixed = [render.INDUSTRY_HEADING, render.APPROACH_HEADING, render.INDUSTRY_DISCLAIMER, "states", "retrieved"]
     assert not [s for s in fixed if re.search(r"\b(we|our|ours|us|delivered)\b", s, re.I)]
     assert render.COMPANY in render.INDUSTRY_DISCLAIMER
 
@@ -278,17 +279,63 @@ def test_reviewer_attaches_chosen_claims_to_the_case(rows, approved):
     assert "statement" not in item
     page = as_user("u1", RV).get(f"/review/{cid}").text
     assert "Public sources (not delivery evidence)" in page and Q2 in page and Q1 not in page
-    assert 'action="/review/%d/sources"' % cid in as_user("u1", RV).get(f"/research/{rid}").text
-    assert f'action="/review/{cid}/sources"' not in as_user("u1", G).get(f"/research/{rid}").text  # a plain user cannot attach
+    assert f'<option value="{cid}:{token(cid)}" selected>' in as_user("u1", RV).get(f"/research/{rid}").text  # the origin case leads
+    assert 'formaction="/sources/attach"' not in as_user("u1", G).get(f"/research/{rid}").text  # a plain user cannot attach
 
 
-def test_attach_refuses_research_not_yours_not_done_or_from_another_case(rows, approved):
-    cid, other = approved(), approved()
-    for rid in (rows([claim()], by="u2", case_id=cid), rows([claim()], status="running", case_id=cid),
-                rows([claim()], case_id=other), rows([claim()]), 999999999):
+def test_attach_refuses_research_not_yours_or_not_done(rows, approved):
+    cid = approved()
+    for rid in (rows([claim()], by="u2", case_id=cid), rows([claim()], status="running", case_id=cid), 999999999):
         assert attach(cid, rid, [0]).status_code == 404
     assert attach(cid, rows([claim()], case_id=cid), [0], groups=G).status_code == 403
     assert stored(cid) == []
+
+
+def test_research_from_another_case_or_none_attaches_to_any_case_the_reviewer_may_review(rows, approved):
+    cid, other = approved(), approved()
+    assert attach(cid, rows([claim()], case_id=other), [0]).status_code == 303
+    assert attach(cid, rows([Q2 and claim(Q2, "configuration")]), [0]).status_code == 303
+    assert [c["quote"] for c in stored(cid)] == [Q1, Q2] and stored(other) == []
+
+
+def test_a_case_the_reviewer_cannot_review_gets_404_and_a_stale_version_409(rows, approved):
+    hidden, cid = approved(acl=("g-other",)), approved()
+    rid = rows([claim()])
+    assert attach(hidden, rid, [0], s=token(hidden)).status_code == 404
+    assert attach(cid, rid, [0], s="stale").status_code == 409
+    assert stored(cid) == [] and stored(hidden) == []
+
+
+def test_the_picker_posts_case_and_version_together(rows, approved):
+    cid = approved()
+    rid = rows([claim()])
+    c = as_user("u1", RV)
+    assert c.post("/sources/attach", data={"target": f"{cid}:{token(cid)}", "research_id": rid, "n": [0]}, follow_redirects=False).status_code == 303
+    assert [x["research_id"] for x in stored(cid)] == [rid]
+    for bad in ("", "x:y", f"{cid}:stale", f"{cid}"):
+        assert c.post("/sources/attach", data={"target": bad, "research_id": rid, "n": [0]}).status_code in (400, 409, 422)
+    assert c.post("/sources/attach", data={"target": f"{cid}:{token(cid)}", "n": [0]}).status_code == 400            # neither source
+    both = {"target": f"{cid}:{token(cid)}", "research_id": rid, "library_id": 1, "n": [0]}
+    assert c.post("/sources/attach", data=both).status_code == 400                                                  # both sources
+    assert as_user("u1", G).post("/sources/attach", data={"target": f"{cid}:{token(cid)}", "research_id": rid, "n": [0]}).status_code == 403
+
+
+def test_a_library_item_attaches_any_users_item_and_records_library_id(approved, env):
+    cid = approved()
+    quotes = [{"quote": Q1, "publisher": "learn.microsoft.com", "url": "https://learn.microsoft.com/entra", "retrieved_at": "2026-10-01T00:00:00+00:00", "type": "out_of_the_box"},
+              {"quote": Q2, "publisher": "docs.vendor.io", "url": "https://docs.vendor.io/x", "retrieved_at": "2026-10-01T00:00:00+00:00", "type": "configuration"}]
+    with db.connect() as c:
+        lid = c.execute("insert into library_items(topic, kind, body, created_by) values ('t','quotes',%s,'u9') returning id",
+                        (json.dumps({"quotes": quotes}),)).fetchone()[0]
+    try:
+        r = as_user("u1", RV).post(f"/review/{cid}/sources", data={"library_id": lid, "n": [1, 1, 5, -1], "s": token(cid), "quote": "forged"}, follow_redirects=False)
+        assert r.status_code == 303
+        (item,) = stored(cid)
+        assert item["quote"] == Q2 and item["library_id"] == lid and "research_id" not in item and item["attached_by"] == "u1"
+        assert as_user("u1", RV).post(f"/review/{cid}/sources", data={"library_id": 999999999, "n": [0], "s": token(cid)}).status_code == 404
+    finally:
+        with db.connect() as c:
+            c.execute("delete from library_items where id=%s", (lid,))
 
 
 def test_attach_copies_from_the_row_not_the_form(rows, approved):
@@ -481,3 +528,135 @@ def test_a_malformed_url_does_not_break_the_section(env):
     db.init()
     s = section([claim(url="http://[x")])
     assert s["groups"][0]["title"] == "learn.microsoft.com"
+
+
+# ---- the case study's "Approach and industry practice" passage (#214) ----
+
+def test_case_study_puts_the_attached_sources_after_our_sections_under_the_disclaimer(rows, approved):
+    cid = approved()
+    attach(cid, rows([claim(), claim(Q2, "configuration")], case_id=cid), [0, 1])
+    t = doc_text(gen(None, [cid], "case_study_docx").content)
+    study, footer, head, disc = (t.index(x) for x in ("Faster onboarding", "Based on 1 source document", render.APPROACH_HEADING, render.INDUSTRY_DISCLAIMER))
+    assert study < footer < head < disc                                              # delivery first, then the passage and its disclaimer
+    after = t[head:]
+    assert f"{Q1}” [1]" in after and f"{Q2}” [1]" in after and "Sources" in after and "[1] learn.microsoft.com" in after
+    assert render.SOURCES_HEADING not in t and "Challenge" not in after              # never inside the delivery sections
+    assert render.APPROACH_HEADING not in doc_text(gen(None, [cid], "docx").content)  # the other documents keep their heading
+    pdf = " ".join(pdf_text(gen(None, [cid], "case_study_pdf").content)[0].split())
+    assert render.APPROACH_HEADING in pdf and Q1 in pdf
+
+
+def test_case_study_without_attached_sources_has_no_passage(rows, approved):
+    cid = approved()
+    t = doc_text(gen(None, [cid], "case_study_docx").content)
+    assert render.APPROACH_HEADING not in t and render.INDUSTRY_DISCLAIMER not in t
+    rid = rows([claim()])
+    t = doc_text(gen(rid, [cid], "case_study_docx").content)                          # research alone is industry context, not the approach
+    assert render.INDUSTRY_HEADING in t and render.APPROACH_HEADING not in t
+
+
+def test_case_study_passage_is_anonymised_and_dropped_when_blocked(rows, approved, reg, monkeypatch):
+    cid = approved()
+    attach(cid, rows([claim(f"{reg} runs this daily in production"), claim(Q2, "configuration")], case_id=cid), [0, 1])
+    t = doc_text(gen(None, [cid], "case_study_docx").content)
+    assert reg not in t and "a retailer runs this daily in production" in t
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)                   # apply() misses: blocked() alone must still guard
+    t = doc_text(gen(None, [cid], "case_study_docx").content)
+    assert reg not in t and Q2 in t and "1 public statement omitted" in t
+
+
+def test_preview_says_a_case_study_retitles_the_attached_sources(rows, approved):
+    cid = approved()
+    def note(c):
+        r = as_user("u1", G).post("/preview", data={"case_ids": [c]})
+        return html.unescape(re.search(r"Case study downloads also end with:[^<]*", r.text)[0])
+    assert "Approach and industry practice" not in note(cid)
+    attach(cid, rows([claim()], case_id=cid), [0])
+    assert note(cid).endswith(', and title the public sources section “Approach and industry practice”')
+
+
+# ---- the case picker and library attach (#214 phase 5 review) ----
+
+LIB_QUOTES = [{"quote": Q1, "publisher": "learn.microsoft.com", "url": "https://learn.microsoft.com/entra", "retrieved_at": "2026-10-01T00:00:00+00:00", "type": "out_of_the_box"},
+              {"quote": Q2, "publisher": "docs.vendor.io", "url": "https://docs.vendor.io/x", "retrieved_at": "2026-10-01T00:00:00+00:00", "type": "configuration"}]
+
+
+@pytest.fixture
+def lib_item(env):
+    made = []
+
+    def add(kind="quotes", quotes=LIB_QUOTES, brief=None):
+        with db.connect() as c:
+            made.append(c.execute("insert into library_items(topic, kind, body, created_by) values ('t',%s,%s,'u9') returning id",
+                                  (kind, json.dumps({"quotes": quotes, **({"brief": brief} if brief else {})}))).fetchone()[0])
+        return made[-1]
+    yield add
+    with db.connect() as c:
+        c.execute("delete from library_items where id = any(%s)", (made,))
+
+
+def test_the_picker_lists_only_cases_the_reviewer_may_review(rows, approved, lib_item):
+    hidden, shown = approved(acl=("g-other",)), approved()
+    rid, lid = rows([claim()]), lib_item()
+    c = as_user("u1", RV)
+    for url in (f"/research/{rid}", f"/library/{lid}"):
+        t = c.get(url).text
+        assert f'value="{shown}:' in t and f'value="{hidden}:' not in t, url
+        assert '<option value="" selected>Choose a case' in t, url
+    assert 'name="target"' not in as_user("u1", G).get(f"/research/{rid}").text
+
+
+def test_the_picker_defaults_to_choose_a_case_unless_the_research_started_from_a_listed_case(rows, approved):
+    cid = approved()
+    t = as_user("u1", RV).get(f"/research/{rows([claim()])}").text
+    assert '<option value="" selected>Choose a case' in t
+    t = as_user("u1", RV).get(f"/research/{rows([claim()], case_id=cid)}").text
+    assert '<option value="">Choose a case' in t and f'<option value="{cid}:{token(cid)}" selected>' in t
+
+
+def test_a_library_brief_item_form_attaches_exactly_its_sources(approved, lib_item):
+    cid = approved()
+    brief = {"title": "Entra", "takeaways": ["Entra supports passwordless sign in [1][2]."], "themes": []}
+    lid = lib_item("brief", brief=brief)
+    c = as_user("u1", RV)
+    t = c.get(f"/library/{lid}").text
+    form = t[t.index('<form id="attach"'):]
+    form = form[:form.index("</form>")]
+    target = re.search(rf'<option value="({cid}:[0-9a-f]+)"', t)[1]
+    ns = [int(x) for x in re.findall(r'name="n" value="(\d+)" form="attach"', t)]
+    assert ns == [0, 1] and 'name="library_id"' in form
+    r = c.post("/sources/attach", data={"target": target, "library_id": lid, "n": ns}, follow_redirects=False)
+    assert r.status_code == 303
+    assert [x["quote"] for x in stored(cid)] == [Q1, Q2] and all(x["library_id"] == lid for x in stored(cid))
+
+
+def test_a_library_quote_naming_a_protected_client_is_never_stored_with_the_name(approved, lib_item, reg, monkeypatch):
+    cid = approved()
+    lid = lib_item(quotes=[{**LIB_QUOTES[0], "quote": f"{reg} runs passwordless sign in out of the box"}, LIB_QUOTES[1]])
+    c = as_user("u1", RV)
+    assert c.post(f"/review/{cid}/sources", data={"library_id": lid, "n": [0, 1], "s": token(cid)}).status_code in (200, 303)
+    got = stored(cid)
+    assert reg not in json.dumps(got) and [x["quote"] for x in got][0].startswith("a retailer runs") and len(got) == 2   # replaced
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)                                                    # apply() misses: skipped
+    cid2 = approved()
+    assert c.post(f"/review/{cid2}/sources", data={"library_id": lid, "n": [0, 1], "s": token(cid2)}).status_code in (200, 303)
+    got = stored(cid2)
+    assert reg not in json.dumps(got) and [x["quote"] for x in got] == [Q2]
+
+
+def test_the_target_must_be_a_plain_ascii_id(approved):
+    cid = approved()
+    c = as_user("u1", RV)
+    for bad in ("²:x", f"{'9' * 25}:{token(cid)}", "٣:x", "", f"-{cid}:x"):
+        assert c.post("/sources/attach", data={"target": bad, "research_id": 1, "n": [0]}).status_code == 400, bad
+
+
+def test_the_approach_heading_only_when_the_section_is_purely_the_attached_sources(rows, approved):
+    cid = approved()
+    attach(cid, rows([claim()], case_id=cid), [0])
+    assert render.APPROACH_HEADING in doc_text(gen(None, [cid], "case_study_docx").content)
+    same = rows([claim()])                                       # the same quote again: still purely the attached sources
+    assert render.APPROACH_HEADING in doc_text(gen(same, [cid], "case_study_docx").content)
+    extra = rows([claim(), claim(Q2, "configuration", "docs.vendor.io", "https://docs.vendor.io/x")])
+    t = doc_text(gen(extra, [cid], "case_study_docx").content)   # ad-hoc research merged in
+    assert render.APPROACH_HEADING not in t and render.SOURCES_HEADING in t and Q2 in t

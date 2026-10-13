@@ -17,15 +17,17 @@
 <div class="row"><label for="dl-format">Format</label><select id="dl-format" name="format" style="max-width:200px"><option value="docx">Word</option><option value="pptx">PowerPoint</option><option value="pdf_docx">PDF</option><option value="pdf_pptx">PDF slides</option><option value="md">Markdown</option></select>
 <button class="btn" formaction="/preview">Preview</button>
 <button class="btn primary">Download</button></div></form>
-<div class="row" style="margin-top:8px"><span class="muted">Selected quotes:</span><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="md">Markdown</button><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="csv">CSV</button><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="copy">Copy</button><input name="title" form="pick" placeholder="Brief title" maxlength="200" aria-label="Brief title" style="max-width:220px"><button class="btn" form="pick" formaction="/research/{{ research_id }}/brief">Write a brief</button><input name="topic" form="pick" placeholder="Library topic" maxlength="200" aria-label="Library topic" style="max-width:220px"><button class="btn" form="pick" formaction="/library/save">Save to library</button></div>
-<form id="pick" method="post">{% if can_attach %}<input type="hidden" name="research_id" value="{{ research_id }}"><input type="hidden" name="s" value="{{ sources_v }}">{% endif %}
+<div class="row" style="margin-top:8px"><span class="muted">Selected quotes:</span><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="md">Markdown</button><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="csv">CSV</button><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="copy">Copy</button><input type="text" name="title" form="pick" placeholder="Brief title" maxlength="200" aria-label="Brief title" style="max-width:220px"><button class="btn" form="pick" formaction="/research/{{ research_id }}/brief">Write a brief</button><input type="text" name="topic" form="pick" placeholder="Library topic" maxlength="200" aria-label="Library topic" style="max-width:220px"><button class="btn" form="pick" formaction="/library/save">Save to library</button></div>
+<form id="pick" method="post">{% if attach_cases %}<input type="hidden" name="research_id" value="{{ research_id }}">{% endif %}
 <div class="section-card"><div class="card-head"><h2>What public sources say</h2></div>
 <p class="muted" style="font-size:13px">The quote is the source; the reading under it is the AI's. Rely on the quote.</p>
 {% for c in claims %}<div class="claim"><label class="check"><input type="checkbox" name="n" value="{{ c.n }}" form="pick"> Select</label><q>{{ c.quote }}</q>
 <div class="meta">{% if (c.url or "").startswith(("http://", "https://")) %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.publisher }}</a>{% else %}<span>{{ c.publisher }}</span>{% endif %}
 <span>retrieved {{ (c.retrieved_at or "")[:10] }}</span></div>
 <p>AI reading: {{ c.statement }}</p></div>{% endfor %}
-{% if can_attach %}<button class="btn" formaction="/review/{{ case_id }}/sources">Attach to the case as public sources</button>{% endif %}</div>
+{% if attach_cases %}<div class="row"><label for="attach-to">Attach the selected quotes as public sources to</label>
+<select id="attach-to" name="target" style="max-width:320px"><option value=""{% if not attach_cases | selectattr(2) | list %} selected{% endif %}>Choose a case&hellip;</option>{% for value, title, origin in attach_cases %}<option value="{{ value }}"{% if origin %} selected{% endif %}>{{ title }}</option>{% endfor %}</select>
+<button class="btn" formaction="/sources/attach">Attach</button></div>{% endif %}</div>
 </form>
 <div class="section-card"><div class="card-head"><h2>Comparison</h2></div>
 <div class="table-box"><table><thead><tr><th>Who</th><th>What they say</th></tr></thead><tbody>

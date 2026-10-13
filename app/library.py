@@ -9,8 +9,9 @@ from psycopg.types.json import Jsonb
 
 from app import anonymise, brief, db, render, research
 from app.main import User, require
-from app.review import SOURCE_KEYS, page
+from app.review import SOURCE_KEYS, page, reviewable_cases
 from app.schema import quote_in
+from app.search import clean
 
 router = APIRouter()
 STALE_DAYS = 365
@@ -123,7 +124,7 @@ def view(lid: int, request: Request, user: User = Depends(require("user"))):
         again = conn.execute("select status, results from research where id=%s and created_by=%s", (rid, user.sub)).fetchone() if rid else None
     claims, omitted, sec = [], 0, None
     if kind == "quotes":
-        claims, omitted = research.visible_claims(body["quotes"], clients)
+        claims, omitted = research.visible_claims([{**q, "n": i} for i, q in enumerate(body["quotes"])], clients)
     else:
         try:
             sec = render.brief_section(body["brief"], body["quotes"], clients)
@@ -138,9 +139,13 @@ def view(lid: int, request: Request, user: User = Depends(require("user"))):
         else:
             found = {s["n"]: on_page(body["quotes"][s["n"] - 1]) for s in sec.get("sources", [])}
     shown = WITHHELD if anonymise.blocked(topic, clients) else anonymise.apply(topic, clients)
+    attach_cases = []
+    if "reviewer" in user.roles:
+        with db.connect() as conn:
+            attach_cases = [(f"{c}:{v}", clean(t or "", clients, WITHHELD) or f"Case {c}") for c, t, v in reviewable_cases(conn, user)]
     return page(request, "library_item.html", user, lid=lid, topic=shown, kind=kind, age=age, checked_age=checked_age, stale=stale,
                 claims=claims, omitted=omitted, sec=sec, can_recheck=bool(query), again=again[0] if again else None,
-                found=found, found_yes=sum(found.values()) if found else 0, can_manage=creator == user.sub or "admin" in user.roles)
+                found=found, found_yes=sum(found.values()) if found else 0, can_manage=creator == user.sub or "admin" in user.roles, attach_cases=attach_cases)
 
 
 @router.post("/library/{lid}/export")
