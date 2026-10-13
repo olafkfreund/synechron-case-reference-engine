@@ -270,6 +270,13 @@ h2.sub{font-size:15px;color:var(--muted);margin:20px 0 8px}
 .download-group p{margin:8px 0 0}
 .generate .download-groups,.generate h2{flex:1 1 100%}
 
+.cap-first::first-letter{text-transform:uppercase}
+.sel-s{max-width:200px}.sel-m{max-width:320px}
+/* library item: one toolbar row; Delete at the far right */
+.lib-toolbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 24px}
+.lib-toolbar form{margin:0}
+.lib-toolbar .recheck p{margin:8px 0 0}
+
 /* review */
 .field-row{display:grid;grid-template-columns:minmax(0,1fr);gap:8px 16px;padding:14px 0;border-top:1px solid var(--line)}
 .card-head + .field-row{border-top:0}

@@ -1,0 +1,2 @@
+{# Shared bits. Use: {% from "_macros.html" import age %}{{ age(3) }} #}
+{% macro age(n) -%}{{ "today" if n == 0 else (n ~ " day" ~ ("" if n == 1 else "s")) }}{%- endmacro %}

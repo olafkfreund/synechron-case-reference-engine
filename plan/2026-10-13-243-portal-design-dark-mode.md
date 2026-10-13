@@ -285,3 +285,10 @@ ignored.
 - Step 5: no test asserted the old preview labels. A new test checks the
   Download heading, the Bid pack group, the back link, and that the case
   study group appears for one case and not for three.
+- Step 6:
+  - The Re-check card is folded into the toolbar, with the status line under
+    the buttons.
+  - The attach form now comes after the toolbar.
+  - `library_item.html` imports the `age` macro as `ago`, because `age` is
+    already a page variable.
+  - The `.claim` accent rule is reused.

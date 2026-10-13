@@ -282,3 +282,12 @@ def test_preview_groups_the_downloads_and_the_case_study_group_needs_one_case(ma
     for t in (one, three):
         assert "<h2>Download</h2>" in t and "Bid pack" in t and 'href="/search"' in t
     assert "Case study (this case only)" in one and "Case study (this case only)" not in three
+
+
+def test_library_item_has_one_toolbar_with_delete_at_the_end(make, approved, monkeypatch, libs):  # noqa: F811
+    p = form_pages(make, approved, monkeypatch, libs)
+    for k in ("library quotes", "library brief"):
+        t = p[k]
+        bar = t[t.index("lib-toolbar"):]
+        assert "saved today" in t and "last checked today" in t and "style=" not in t
+        assert bar.index("Search again") < bar.index("Mark re-checked") < bar.index("Delete this item") and "danger-ghost" in bar
