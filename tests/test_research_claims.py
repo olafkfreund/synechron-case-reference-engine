@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import uuid
 
@@ -172,7 +174,7 @@ def test_view_is_private_and_escapes_claims(reg):
     finish(loc, [{"statement": evil, "quote": evil, "type": "vendor_claim", "url": "https://v.example/x",
                   "publisher": evil, "retrieved_at": "2026-10-01T00:00:00+00:00", "rank": 3}])
     t = c.get(loc).text
-    assert "<script>alert" not in t and "&lt;script&gt;" in t and "vendor claim" in t
+    assert "<script>alert" not in t and "&lt;script&gt;" in t and "vendor claim" not in t
     assert as_user("u2").get(loc).status_code == 404
 
 
@@ -191,6 +193,111 @@ def test_view_hides_protected_names_in_claims_and_sources(reg):
     assert reg.lower() not in t.lower()
     assert "2 statement(s) not shown" in t and "1 source(s) skipped." in t
     assert "clean claim quote" in t and "runs this nightly in production" in t
+
+
+BASE = {"statement": "S", "type": "vendor_claim", "retrieved_at": "2026-10-01T00:00:00+00:00", "rank": 3}
+
+
+def done_row(c, *quotes, **extra):
+    loc = sent(c, None)
+    finish(loc, [{**BASE, "quote": q, "url": f"https://v.example/{i}", "publisher": "v.example", **extra} for i, q in enumerate(quotes)])
+    return loc.rsplit("/", 1)[1]
+
+
+def test_export_returns_only_the_picked_claims_and_is_private(reg):
+    c = as_user("u1")
+    rid = done_row(c, "first quote here", "second quote here", "third quote here")
+    r = c.post(f"/research/{rid}/export", data={"format": "md", "n": [0, 2]})
+    assert r.status_code == 200 and "attachment" in r.headers["content-disposition"] and r.headers["cache-control"] == "no-store"
+    assert "first quote" in r.text and "third quote" in r.text and "second quote" not in r.text and "https://v.example/2" in r.text
+    assert as_user("u2").post(f"/research/{rid}/export", data={"format": "md", "n": [0]}).status_code == 404
+
+
+def test_export_drops_protected_claims_and_refuses_when_none_are_left(reg):
+    c = as_user("u1")
+    loc = sent(c, None)
+    finish(loc, [{**BASE, "quote": "ok quote", "url": "https://v.example/a", "publisher": "v.example"},
+                 {**BASE, "quote": "bad quote", "url": "https://w.example/b", "publisher": f"{reg}.example"}])
+    rid = loc.rsplit("/", 1)[1]
+    r = c.post(f"/research/{rid}/export", data={"format": "md", "n": [0, 1]})
+    assert "ok quote" in r.text and "bad quote" not in r.text and reg.lower() not in r.text.lower()
+    assert c.post(f"/research/{rid}/export", data={"format": "md", "n": [1]}).status_code == 400
+    assert c.post(f"/research/{rid}/export", data={"format": "md"}).status_code == 400
+
+
+def test_export_csv_neutralises_formulas(reg):
+    c = as_user("u1")
+    rid = done_row(c, "=HYPERLINK(\"http://x\")")
+    r = c.post(f"/research/{rid}/export", data={"format": "csv", "n": [0]})
+    assert r.headers["content-type"].startswith("text/csv") and "'=HYPERLINK" in r.text
+    assert "\n=HYPERLINK" not in r.text and ',=HYPERLINK' not in r.text and '"=HYPERLINK' not in r.text
+
+
+def test_export_copy_is_a_readonly_textarea(reg):
+    c = as_user("u1")
+    rid = done_row(c, "copy me quote")
+    r = c.post(f"/research/{rid}/export", data={"format": "copy", "n": [0]})
+    assert "<textarea readonly" in r.text and "copy me quote" in r.text and "attachment" not in r.headers.get("content-disposition", "")
+
+
+def test_view_puts_actions_first_and_has_no_type_label(reg):
+    c = as_user("u1")
+    rid = done_row(c, "some quote text")
+    t = c.get(f"/research/{rid}").text
+    assert t.index("Use these sources") < t.index("What public sources say")
+    assert "vendor claim" not in t and "AI reading:" in t and 'form="pick"' in t
+
+
+def test_reviewer_view_has_attach_inside_the_pick_form(approved, reg, echo):
+    cid = approved(case_with())
+    c = as_user("u1", ["g-rev", DOCS])
+    loc = sent(c, cid)
+    finish(loc, [{**BASE, "quote": "q q q q", "url": "https://v.example/x", "publisher": "v.example"}])
+    t = c.get(loc).text
+    form = t[t.index('<form id="pick"'):]
+    form = form[:form.index("</form>")]
+    assert f'formaction="/review/{cid}/sources"' in form and 'name="s"' in form and 'name="research_id"' in form
+
+
+def test_export_unknown_format_and_unfinished_research(reg):
+    c = as_user("u1")
+    rid = done_row(c, "a quote")
+    assert c.post(f"/research/{rid}/export", data={"format": "xlsx", "n": [0]}).status_code == 400
+    queued = sent(c, None).rsplit("/", 1)[1]  # still queued
+    assert c.post(f"/research/{queued}/export", data={"format": "md", "n": [0]}).status_code == 404
+
+
+def test_export_ignores_out_of_range_and_duplicate_indices(reg):
+    c = as_user("u1")
+    rid = done_row(c, "only quote")
+    r = c.post(f"/research/{rid}/export", data={"format": "md", "n": [0, 0, 5, -1]})
+    assert r.status_code == 200 and r.text.count("only quote") == 1
+    assert c.post(f"/research/{rid}/export", data={"format": "md", "n": [5, -1]}).status_code == 400
+
+
+@pytest.mark.parametrize("quote", [" =SUM(1)", "\n=SUM(1)", "\uff1dSUM(1)", "+1", "@x"])
+def test_export_csv_prefixes_hidden_formulas(reg, quote):
+    c = as_user("u1")
+    rid = done_row(c, quote)
+    r = c.post(f"/research/{rid}/export", data={"format": "csv", "n": [0]})
+    cell = list(csv.reader(io.StringIO(r.text)))[1][0]
+    assert cell == "'" + quote
+
+
+def test_export_anonymises_or_drops_a_protected_title(reg):
+    c = as_user("u1")
+    loc = sent(c, None)
+    finish(loc, [{**BASE, "quote": "fine quote", "url": "https://v.example/a", "publisher": "v.example", "title": f"{reg} case study"}])
+    rid = loc.rsplit("/", 1)[1]
+    r = c.post(f"/research/{rid}/export", data={"format": "csv", "n": [0]})
+    assert reg.lower() not in r.text.lower()
+
+
+def test_export_markdown_keeps_each_item_on_one_line(reg):
+    c = as_user("u1")
+    rid = done_row(c, "line one\n\n2. injected")
+    r = c.post(f"/research/{rid}/export", data={"format": "md", "n": [0]})
+    assert "line one 2. injected" in r.text and "\n2. injected" not in r.text
 
 
 def test_search_page_has_research_button(approved, monkeypatch):
