@@ -336,6 +336,18 @@ def register(server, origin: str) -> None:
         return await _run(work, "preview_output")
 
 
+class ExactMcpPath:
+    """Clients POST to /mcp, but Starlette's mount only matches /mcp/...: without this it answers 307 to /mcp/."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"] == "/mcp":
+            scope = {**scope, "path": "/mcp/", "raw_path": b"/mcp/"}
+        await self.app(scope, receive, send)
+
+
 def enabled() -> bool:
     return os.environ.get("MCP_ENABLED") == "1"
 

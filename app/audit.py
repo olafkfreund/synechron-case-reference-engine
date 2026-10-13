@@ -29,6 +29,10 @@ def audit_page(request: Request, p: int = Query(1, ge=1, le=100000), who: str = 
             "from source_acl_changes c left join sources s on s.id = c.source_id order by c.id desc limit 100").fetchall()
         overrides = conn.execute("select approved_at, case_id, score, reason, approved_by from case_approval_overrides "
                                  "order by id desc limit 100").fetchall()
+        tool_rows = conn.execute("select created_at, user_key, client_id, tool, outcome, ms from tool_calls "
+                                 "order by id desc limit 200").fetchall()
+        tool_counts = conn.execute("select tool, count(*) from tool_calls where created_at > now() - interval '30 days' "
+                                   "group by tool order by tool").fetchall()
     link = lambda n: "/admin/audit?" + urlencode({"p": n, **({"user": who} if who else {})})  # noqa: E731
-    return page(request, "audit.html", user, rows=rows[:PAGE_SIZE], approvals=approvals, class_changes=class_changes, acl_changes=acl_changes, overrides=overrides, who=who, p=p,
+    return page(request, "audit.html", user, rows=rows[:PAGE_SIZE], approvals=approvals, class_changes=class_changes, acl_changes=acl_changes, overrides=overrides, tool_rows=tool_rows, tool_counts=tool_counts, who=who, p=p,
                 prev=link(p - 1) if p > 1 else None, next=link(p + 1) if len(rows) > PAGE_SIZE else None)

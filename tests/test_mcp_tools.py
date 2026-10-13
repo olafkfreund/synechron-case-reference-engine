@@ -156,3 +156,24 @@ def test_rate_limit_counts_per_user_and_is_audited(mcp, approved):
     assert res["isError"] and res["content"][0]["text"] == "slow down: 60 calls in the last minute"
     assert s.rows()[-1][:2] == ("list_latest", "rate_limited")
     assert not other.call("list_latest").get("isError")
+
+
+def test_admin_audit_page_lists_tool_calls_for_admins_only(mcp, approved):
+    s = mcp()
+    s.out("list_latest")
+    assert portal_client(R).get("/admin/audit").status_code == 403
+    t = portal_client(["g-admin"]).get("/admin/audit").text
+    assert "<h2>Tool calls</h2>" in t and s.who in t and "list_latest" in t and "client-1" in t
+
+
+def test_mcp_doc_names_real_variables_and_files():
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    doc = (root / "docs" / "mcp.md").read_text()
+    known = (root / "app" / "mcp_server.py").read_text()
+    for var in set(re.findall(r"\bMCP_[A-Z_]+\b", doc)):
+        assert var in known, var
+    for path in re.findall(r"scripts/[a-z_]+\.sh", doc):
+        assert (root / path).exists(), path
+    for flag in ("--transport http", "--client-id", "--header", "--callback-port"):  # as `claude mcp add --help` lists them
+        assert flag in doc

@@ -58,4 +58,13 @@
 {% for at, name, old, new, by in acl_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ (old or [])|join(", ") }}</td><td>{{ new|join(", ") }}</td><td>{{ by }}</td></tr>{% endfor %}</tbody></table></div>
 {% endif %}
 </div>
+<div class="section-card">
+<div class="card-head"><h2>Tool calls</h2></div>
+<p class="muted">Calls from AI clients over MCP. Only who, which tool, which cases and the outcome are kept, never the question or the answer.</p>
+{% if not tool_rows %}<p class="muted">No tool calls recorded.</p>{% else %}
+<p class="muted">Last 30 days: {% for t, n in tool_counts %}<b>{{ t }}</b> {{ n }}{{ ", " if not loop.last }}{% endfor %}</p>
+<div class="table-box"><table><thead><tr><th>When</th><th>User</th><th>Client</th><th>Tool</th><th>Outcome</th><th>ms</th></tr></thead><tbody>
+{% for at, who_, client_id, tool, outcome, ms in tool_rows %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M:%S") }}</td><td>{{ who_ }}</td><td>{{ client_id }}</td><td>{{ tool }}</td><td><span class="badge {{ 'ok' if outcome == 'ok' else 'warn' }}">{{ outcome }}</span></td><td>{{ ms }}</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+</div>
 {% endblock %}

@@ -46,7 +46,7 @@ def rpc(c, method, version, params=None, tok=None, **extra):
 
 @pytest.mark.parametrize("version", ["2025-06-18", "2026-07-28"])
 def test_tools_list_both_protocol_versions(env, version):
-    with TestClient(main.create_app()) as c:  # `with` runs the lifespan, which starts the session manager
+    with TestClient(main.create_app(), follow_redirects=False) as c:  # `with` runs the lifespan, which starts the session manager
         meta = {"io.modelcontextprotocol/protocolVersion": version, "io.modelcontextprotocol/clientCapabilities": {}}
         r = rpc(c, "tools/list", version, {"_meta": meta} if version == "2026-07-28" else {}, token())
         assert r.status_code == 200, r.text
@@ -226,3 +226,9 @@ def test_session_cookie_alone_gets_no_access_to_mcp(env):
     c = portal_client(["g-user"])
     assert c.cookies.get("session") and c.get("/me").status_code == 200  # a real, valid portal session
     assert rpc(c, "tools/list", "2025-06-18").status_code == 401
+
+
+def test_post_to_mcp_is_served_without_a_redirect(env):
+    with TestClient(main.create_app(), follow_redirects=False) as c:  # real clients may not follow a 307
+        assert rpc(c, "tools/list", "2025-06-18").status_code == 401
+        assert rpc(c, "tools/list", "2025-06-18", tok=token()).status_code == 200

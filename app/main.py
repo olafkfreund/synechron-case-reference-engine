@@ -210,6 +210,7 @@ def create_app() -> FastAPI:
     if mcp_app:
         app.router.routes.extend(mcp_prm)  # before the mount: the root PRM path
         app.mount("/mcp", mcp_app)
+        app.add_middleware(mcp_server.ExactMcpPath)  # last added, outermost: before the guard and the router
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
     oauth = OAuth()
     app.state.oauth = oauth
