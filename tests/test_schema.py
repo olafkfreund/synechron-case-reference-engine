@@ -238,3 +238,14 @@ def test_prose_round_trips_is_searchable_and_hidden():
     assert ReferenceCase.model_validate(c.model_dump()).prose == c.prose
     assert "Zanzibar intake" in c.search_text()
     assert "prose" not in json.dumps(llm_schema())
+
+
+def test_references_are_deduplicated_searchable_and_old_cases_validate():
+    from app.schema import FIELDS, Extraction, Item, assemble
+    assert "reference" in FIELDS
+    its = [Item(field="reference", value=v, quote=v) for v in ("OAuth 2.0", "oauth  2.0", "ISO 20022")]
+    c, _ = assemble(Extraction(items=its))
+    assert [r.value for r in c.tech_references] == ["OAuth 2.0", "ISO 20022"]
+    assert "ISO 20022" in c.quotes() and "ISO 20022" in c.search_text()
+    assert ReferenceCase.model_validate({"title": {"value": "T"}}).tech_references == []
+    assert ReferenceCase.model_validate(c.model_dump()).tech_references == c.tech_references

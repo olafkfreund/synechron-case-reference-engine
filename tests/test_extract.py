@@ -629,12 +629,12 @@ def test_reextract_recomputes_the_flags_of_kept_reviewer_prose(doc):
 
 def test_build_stamps_the_extraction_version(monkeypatch):
     monkeypatch.setattr(ex, "complete_json", lambda *a, **k: case())
-    assert ex.build(DOC, "internal").extraction_version == 2
+    assert ex.build(DOC, "internal").extraction_version == ex.EXTRACTION_VERSION
     assert "extraction_version" not in json.dumps(llm_schema())
 
 
 def test_extraction_version_is_pinned():
-    assert ex.EXTRACTION_VERSION == 2  # a change to extraction output must bump this
+    assert ex.EXTRACTION_VERSION == 3  # a change to extraction output must bump this
 
 
 NOTE = "Re-extracted with richer extraction: check and approve again"
@@ -650,7 +650,7 @@ def test_reextracting_an_old_row_adds_the_note_and_keeps_reviewer_prose(doc):
         c.execute("update cases set data=%s where document_id=%s", (Jsonb(data), did))
     data, *_ = run(doc, case())
     assert NOTE in data["needs_attention"] and data["prose"]["challenge"]["text"] == "Mine"
-    assert data["extraction_version"] == 2
+    assert data["extraction_version"] == ex.EXTRACTION_VERSION
 
 
 def test_reextracting_a_current_row_has_no_note(doc):
@@ -666,3 +666,23 @@ def test_reextract_keeps_dismissed_images_and_diagrams(doc):
         c.execute("update cases set data=%s where document_id=%s", (Jsonb(data), doc[0]))
     data, *_ = run(doc, case())
     assert data["dismissed_images"] == [7] and data["diagrams"][0]["id"] == 3
+
+
+def test_references_are_checked_literally_and_stripped_of_prices():
+    c = ReferenceCase(title=Sourced[str]())
+    c.tech_references = [Sourced[str](value="ISO 20022", source_quote="payments follow ISO 20022 messaging"),
+                         Sourced[str](value="SWIFT gpi", source_quote="payments follow ISO 20022 messaging"),  # not in its quote
+                         Sourced[str](value="£1,200 per day", source_quote="fees of £1,200 per day apply")]
+    ex.check(c, "payments follow ISO 20022 messaging and fees of £1,200 per day apply")
+    assert [r.unsourced for r in c.tech_references] == [False, True, False]
+    assert ex.strip_commercial(c) == 1 and [r.value for r in c.tech_references] == ["ISO 20022", "SWIFT gpi"]
+
+
+def test_build_gathers_references_with_both_prompts(monkeypatch):
+    q = "cut customer onboarding from 12 days to 3 days"
+    seen = []
+    monkeypatch.setattr(ex, "complete_json", lambda a, system, *r, **k: (seen.append(system), case(("reference", "onboarding", q)))[1])
+    for basis in ("delivered", "engagement"):
+        c = ex.build(DOC, "internal", basis, "executed contract" if basis == "engagement" else "")
+        assert [r.value for r in c.tech_references] == ["onboarding"]
+    assert all("one reference item per standard, protocol" in s for s in seen) and len(seen) == 2

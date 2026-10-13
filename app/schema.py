@@ -118,6 +118,7 @@ class ReferenceCase(_Model):
     lessons_learned: Sourced[str] = Sourced[str]()
     capabilities: list[Sourced[str]] = []
     tech_stack: list[Sourced[str]] = []
+    tech_references: list[Sourced[str]] = []  # standards, protocols, interfaces and versioned products, as written
     outcomes: list[Outcome] = []
     # every point the document makes per POINT_FIELDS field, beyond the one-line headline above
     points: SkipJsonSchema[dict[str, list[Sourced[str]]]] = {}
@@ -148,7 +149,7 @@ class ReferenceCase(_Model):
     def quotes(self) -> list[str]:
         items = [self.title, self.client_mention, self.industry, self.region, self.engagement_type,
                  self.challenge, self.solution, self.implementation, self.configuration,
-                 self.lessons_learned, *self.capabilities, *self.tech_stack,
+                 self.lessons_learned, *self.capabilities, *self.tech_stack, *self.tech_references,
                  *(p for ps in self.points.values() for p in ps),
                  self.duration_months, self.team_size, *self.outcomes, self.period]
         # an unsourced quote must not vouch for summary numbers
@@ -163,7 +164,7 @@ class ReferenceCase(_Model):
         parts = [self.title.value, self.industry.value, self.region.value,
                  self.engagement_type.value, self.challenge.value, self.solution.value,
                  self.implementation.value, self.configuration.value, self.lessons_learned.value,
-                 *(c.value for c in self.capabilities), *(t.value for t in self.tech_stack),
+                 *(c.value for c in self.capabilities), *(t.value for t in self.tech_stack), *(t.value for t in self.tech_references),
                  *(p.value for ps in self.points.values() for p in ps),
                  *(f"{o.metric} {o.value}" for o in self.outcomes), self.summary,
                  *(p.text for p in self.prose.values())]
@@ -207,7 +208,7 @@ POINT_FIELDS = ("challenge", "solution", "implementation", "configuration")
 MAX_POINTS = 12
 _INTS = ("duration_months", "team_size")
 MAX_INT_CHARS = 12  # "1,000,000" fits; a longer run is a runaway reply, not a count (#131)
-FIELDS = (*_TEXTS, *_INTS, "period_start", "period_end", "capability", "technology", "outcome", "organisation")
+FIELDS = (*_TEXTS, *_INTS, "period_start", "period_end", "capability", "technology", "outcome", "organisation", "reference")
 
 
 def assemble(x: Extraction) -> tuple[ReferenceCase, list[str]]:
@@ -239,6 +240,9 @@ def assemble(x: Extraction) -> tuple[ReferenceCase, list[str]]:
             c.capabilities.append(Sourced[str](value=v, source_quote=q))
         elif f == "technology":
             c.tech_stack.append(Sourced[str](value=v, source_quote=q))
+        elif f == "reference":
+            if _norm(v) not in {_norm(r.value or "") for r in c.tech_references}:
+                c.tech_references.append(Sourced[str](value=v, source_quote=q))
         elif f == "outcome":
             metric, sep, val = v.partition(":")
             c.outcomes.append(Outcome(metric=metric.strip() if sep else "",

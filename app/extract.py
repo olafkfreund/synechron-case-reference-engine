@@ -7,7 +7,7 @@ from app import db, writeup
 from app.llm import MAX_TOKENS, complete_json, profile
 from app.schema import FIELDS, POINT_FIELDS, Extraction, Period, Prose, ReferenceCase, Sourced, assemble, quote_in, sourced, vague_metric
 
-EXTRACTION_VERSION = 2  # #212 phases A and B; every PR that changes extraction output bumps it (#222)
+EXTRACTION_VERSION = 3  # #212 phases A, B and D; every PR that changes extraction output bumps it (#222)
 MAX_CHARS = 400_000  # budget: longer documents are cut; chunks fit the model's context
 
 SYSTEM = (
@@ -15,7 +15,8 @@ SYSTEM = (
     "(one of " + ", ".join(FIELDS) + "), a short value, and quote: a verbatim passage copied from "
     "the document, at least 4 words, that supports the value. Give one item per capability, one "
     "per technology, one per outcome and one per organisation: list every capability, technology "
-    "and outcome the document names. For outcome write the value as 'metric: result', where metric is a short noun phrase "
+    "and outcome the document names. Give one reference item per standard, protocol, interface or "
+    "integration point, or product with its version, that the document names, as written. For outcome write the value as 'metric: result', where metric is a short noun phrase "
     "naming what was measured, in the document's words, for example 'onboarding time: "
     "cut from 9 days to 4 days'; never write the word 'metric' itself. Also give "
     "implementation (how it was delivered), configuration (how the platform was configured or "
@@ -30,7 +31,9 @@ CONTRACT_SYSTEM = (
     "change order. Each fact is one item: field (one of " + ", ".join(FIELDS) + "), a short "
     "value, and quote: a verbatim passage copied from the document, at least 4 words, that "
     "supports the value. Describe the scope as challenge (the need) and solution (what is to be "
-    "delivered). Give one item per capability, one per technology and one per organisation. Also "
+    "delivered). Give one item per capability, one per technology and one per organisation. Give one "
+    "reference item per standard, protocol, interface or integration point, or product with its version, "
+    "that the document names, as written. Also "
     "give duration_months, team_size and the period if stated. implementation and configuration "
     "describe the planned approach. For challenge, solution, implementation and configuration give up to 6 items each, each a distinct point (challenge: the client's situation and drivers; solution: scope and deliverables; implementation: phases, method and team; configuration: each configuration or integration). Capabilities and technologies are separate items: list every one the document names. Do not give outcome or lessons_learned items, "
     "targets or SLAs. Never include prices, fees, rates, payment terms or person names. Only "
@@ -74,7 +77,7 @@ def strip_commercial(case: ReferenceCase) -> int:
     p = case.period
     if COMMERCIAL.search(f"{p.start} {p.end} {p.source_quote}"):
         case.period, n = Period(), n + 1
-    for f in ("capabilities", "tech_stack"):
+    for f in ("capabilities", "tech_stack", "tech_references"):
         items = getattr(case, f)
         keep = [s for s in items if not bad(s)]
         n += len(items) - len(keep)
@@ -119,7 +122,7 @@ def check(case: ReferenceCase, text: str | dict[int, str]) -> None:
     for f, items in case.points.items():  # marked as their headline field is
         for s in items:
             mark(s, s.value, own=f in ("implementation", "configuration"))
-    for s in (case.client_mention, *case.tech_stack):
+    for s in (case.client_mention, *case.tech_stack, *case.tech_references):
         mark(s, s.value, literal=True)
     for o in case.outcomes:
         mark(o, f"{o.metric} {o.value}")
