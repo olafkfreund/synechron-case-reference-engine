@@ -210,6 +210,10 @@ Branch `feat/235-library-in-bids`, worktree `../refs-engine-235`. Two PRs.
 - Codex review (gpt-6-sol), P2, confirmed: a topic chip sent `due=` when
   "Needs re-check" was off, which gave a 422. It now sends `due=0`. A test
   follows the rendered chip link.
+- Step 8: brief items travel inside the `industry` dict (`industry["briefs"]`)
+  rather than as a separate return value, so the renderers need no new
+  parameter. `build()` returns the ids actually rendered, and those are what
+  `generations.library_ids` stores.
 
 ## Tests
 
