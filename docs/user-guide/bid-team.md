@@ -32,8 +32,9 @@ Finding approved cases that fit a bid.
 
 1. Open **Find references**. The page is titled **Find reference cases**.
 2. Paste the requirement into **Bid context**, for example "card payments platform for a retail bank".
-3. If you like, narrow the search with **Industry**, **Region** or **Technology**.
-4. Press **Search**.
+3. If you like, narrow the search with **Industry**, **Region** or **Technology**. Press **Filter** to apply them
+   to the list of approved cases the page opens on; they also apply to the bid search.
+4. Press **Search with bid text**.
 
 **What you see**
 

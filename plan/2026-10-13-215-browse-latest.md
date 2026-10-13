@@ -297,6 +297,12 @@ Branch `feat/215-browse-latest`, worktree `../refs-engine-215`. One PR.
   carry the "Research this" form, as bid results do (`test_review.in_search`
   relies on it). The `updated_at` ingest test is in `tests/test_ingest.py`,
   for its S3 and triage fixtures. `tests/test_ui.py` expects the new tab.
+- Step 8: `explain analyze` on the demo, read-only (26 documents, 16 visible
+  cases): browse 0.26 ms, industry facet 0.49 ms, documents 0.40 ms. The
+  documents query ran with `created_at` as a proxy, because the demo isn't
+  migrated yet. The filter labels became `{% call %}` bodies so
+  `test_user_guide` finds them, and `docs/user-guide/bid-team.md` now names
+  **Filter** and **Search with bid text**.
 
 ## Tests
 

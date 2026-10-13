@@ -3,13 +3,13 @@
 {% macro basis(x) %}<span class="badge neutral">{{ "Engagement (contracted scope)" if x == "engagement" else "Delivered case" }}</span>{% endmacro %}
 {% block body %}
 <div class="page-head"><div><h1>Find reference cases</h1><p>Paste the bid requirement; narrow by industry, region or technology if you like.</p></div></div>
-{% macro pick(id, label, name, cur, opts) %}<div class="field"><label for="{{ id }}">{{ label }}</label>
+{% macro pick(id, name, cur, opts) %}<div class="field"><label for="{{ id }}">{{ caller() }}</label>
 <select id="{{ id }}" name="{{ name }}"><option value="">Any</option>{% if cur and cur not in opts | map("first") | list %}<option value="{{ cur }}" selected>{{ cur }} (filtered)</option>{% endif %}{% for v, n in opts %}<option value="{{ v }}"{{ " selected" if v == cur }}>{{ v }} ({{ n }})</option>{% endfor %}</select></div>{% endmacro %}
 <form method="get" action="/search" class="section-card" aria-label="Filter cases">
 <div class="row filters">
-{{ pick("f-industry", "Industry", "industry", f.industry, facets.industry) }}
-{{ pick("f-region", "Region", "region", f.region, facets.region) }}
-{{ pick("f-tech", "Technology", "tech", f.tech, facets.tech) }}
+{% call pick("f-industry", "industry", f.industry, facets.industry) %}<span>Industry</span>{% endcall %}
+{% call pick("f-region", "region", f.region, facets.region) %}<span>Region</span>{% endcall %}
+{% call pick("f-tech", "tech", f.tech, facets.tech) %}<span>Technology</span>{% endcall %}
 <div class="field"><label for="f-kind">Kind</label>
 <select id="f-kind" name="kind">{% for v, t in [("", "Any"), ("delivered", "Delivered case"), ("engagement", "Engagement")] %}<option value="{{ v }}"{{ " selected" if v == kind }}>{{ t }}</option>{% endfor %}</select></div>
 <div class="field"><label for="f-sort">Sort</label>
