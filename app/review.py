@@ -223,11 +223,15 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
     shown = {c["n"]: c for c in visible_claims([{**c, "n": i} for i, c in enumerate(r[10])], registry)[0]}
     sources = [shown.get(i) or {"n": i, "hidden": True} for i in range(len(r[10]))]  # a hidden one can still be removed
     unlisted = anonymise.unlisted([*case.organisations, case.client_mention.value or ""], registry) if r[5] else []
+    found = []
+    if r[5]:  # reviewable: candidates from the documents are offered, never shown elsewhere
+        with db.connect() as conn:
+            found = candidates_of(conn, cid, user, case)
     sections = [dict(f=f, label=PROSE_LABELS[f], prose=case.prose.get(f), points=case.points.get(f, []))
                 for f in POINT_FIELDS if case.points.get(f) or f in case.prose]
     checks = checklist(case)
     return page(request, "review_detail.html", user, id=cid, checks=checks, minimum=meets_minimum(checks), rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
-                sections=sections,
+                sections=sections, found=found, max_diagrams=diagrams.MAX_PER_CASE,
                 unlisted=unlisted, diagrams=case.diagrams, members=members, cands=cands, remerge=remerge,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
                 external_id=r[3], source=r[4], merged=bool(members),
@@ -339,14 +343,74 @@ def add_diagram(cid: int, file: UploadFile, caption: str = Form(), v: str = Form
             raise HTTPException(413, "the image is larger than 5 MB")
         if not raw.startswith(diagrams.MAGIC):
             raise HTTPException(400, "only PNG and JPEG images are accepted")
-        if len(case.diagrams) >= diagrams.MAX_PER_CASE:
-            raise HTTPException(400, f"a case has at most {diagrams.MAX_PER_CASE} diagrams")
-        did = conn.execute("insert into diagrams(case_id, raw, created_by) values (%s, %s, %s) returning id",
-                           (cid, raw, user.sub)).fetchone()[0]
-        case.diagrams.append(Diagram(id=did, caption=caption, status="pending"))
-        save(conn, cid, case)
-        conn.execute("insert into jobs(kind, payload) values ('diagram', jsonb_build_object('diagram_id', %s::bigint))", (did,))
-        _reopen(conn, cid)
+        _queue_diagram(conn, cid, case, raw, caption, user)
+    return RedirectResponse(f"/review/{cid}", status_code=303)
+
+
+def _queue_diagram(conn, cid, case, raw, caption, user, image_id=None):
+    """A new pending diagram for the worker to decode (#200); the case row is locked by the caller."""
+    if len(case.diagrams) >= diagrams.MAX_PER_CASE:
+        raise HTTPException(400, f"a case has at most {diagrams.MAX_PER_CASE} diagrams")
+    did = conn.execute("insert into diagrams(case_id, raw, created_by) values (%s, %s, %s) returning id",
+                       (cid, raw, user.sub)).fetchone()[0]
+    case.diagrams.append(Diagram(id=did, caption=caption, status="pending", image_id=image_id))
+    save(conn, cid, case)
+    conn.execute("insert into jobs(kind, payload) values ('diagram', jsonb_build_object('diagram_id', %s::bigint))", (did,))
+    _reopen(conn, cid)
+
+
+# the documents behind a case: its own, or its members' when merged. Params: (case id, case id)
+DOCS_OF = "(select document_id from cases where id = %s union select document_id from cases where merged_into = %s)"
+# a candidate is shown only while its document is live and open to the user
+LIVE_DOC = "md.id = i.document_id and md.deleted_at is null and md.acl_groups && %s::text[]"
+
+
+def candidates_of(conn, cid, user, case):
+    """[(image id, width, height, hint)] found in the case's documents, not yet used or dismissed."""
+    gone = {*case.dismissed_images, *(d.image_id for d in case.diagrams if d.image_id is not None)}
+    rows = conn.execute(f"select i.id, i.width, i.height, i.hint from document_images i join documents md on {LIVE_DOC} "
+                        f"where i.document_id in {DOCS_OF} order by i.document_id, i.id", (list(user.groups), cid, cid)).fetchall()
+    return [r for r in rows if r[0] not in gone]
+
+
+def _candidate_png(conn, cid, iid, user, case):
+    """The stored PNG of an unused, undismissed candidate of this case, else 404 (never says which part failed)."""
+    row = conn.execute(f"select i.png from document_images i join documents md on {LIVE_DOC} "
+                       f"where i.id = %s and i.document_id in {DOCS_OF}", (list(user.groups), iid, cid, cid)).fetchone()
+    if not row or iid in case.dismissed_images or any(d.image_id == iid for d in case.diagrams):
+        raise HTTPException(404, "no such image")
+    return bytes(row[0])
+
+
+@router.get("/review/{cid}/images/{iid}.png")
+def candidate_png(cid: int, iid: int, user: User = Depends(require("reviewer"))):
+    with db.connect() as conn:
+        row = conn.execute(
+            f"select i.png, c.data from document_images i join documents md on {LIVE_DOC} join cases c on c.id = %s and {REVIEWABLE} "
+            f"where i.id = %s and i.document_id in {DOCS_OF.replace('%s', 'c.id')}",
+            (list(user.groups), cid, list(user.groups), iid)).fetchone()
+    # a used or dismissed candidate is no longer offered, so its thumbnail is not served either
+    if not row or iid in row[1].get("dismissed_images", []) or any(d.get("image_id") == iid for d in row[1].get("diagrams", [])):
+        raise HTTPException(404, "no such image")
+    return Response(bytes(row[0]), media_type="image/png", headers=PNG_HEADERS)
+
+
+@router.post("/review/{cid}/images/{iid}/use")
+def use_image(cid: int, iid: int, caption: str = Form(), v: str = Form(), user: User = Depends(require("reviewer"))):
+    with db.connect() as conn:
+        case, _ = load(conn, cid, user, v)
+        png = _candidate_png(conn, cid, iid, user, case)
+        _queue_diagram(conn, cid, case, png, _caption(conn, caption), user, image_id=iid)  # decoded again by the worker
+    return RedirectResponse(f"/review/{cid}", status_code=303)
+
+
+@router.post("/review/{cid}/images/{iid}/dismiss")
+def dismiss_image(cid: int, iid: int, v: str = Form(), user: User = Depends(require("reviewer"))):
+    with db.connect() as conn:
+        case, _ = load(conn, cid, user, v)
+        _candidate_png(conn, cid, iid, user, case)
+        case.dismissed_images.append(iid)
+        save(conn, cid, case)  # no reopen: nothing that reaches an output changed
     return RedirectResponse(f"/review/{cid}", status_code=303)
 
 
@@ -370,6 +434,9 @@ def remove_diagram(cid: int, did: int, v: str = Form(), user: User = Depends(req
         case, _ = load(conn, cid, user, v)
         if not any(d.id == did for d in case.diagrams):
             raise HTTPException(404, "no such diagram")
+        gone = next(d.image_id for d in case.diagrams if d.id == did)
+        if gone is not None:
+            case.dismissed_images.append(gone)  # a removed document image is not offered again
         case.diagrams = [d for d in case.diagrams if d.id != did]
         save(conn, cid, case)
         conn.execute("delete from diagrams where id=%s and case_id=%s", (did, cid))
@@ -717,7 +784,7 @@ def remerge(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))
         pick = {f: m[0] for f in MERGE_FIELDS for m in live if m[1] == getattr(merged, f).document_id}
         case = combine([(m[0], m[1], cases[m[0]]) for m in live], pick)
         check(case, {m[1]: m[5][:MAX_CHARS] for m in live})
-        case.diagrams = merged.diagrams  # the merged case's own; combine() starts empty
+        case.diagrams, case.dismissed_images = merged.diagrams, merged.dismissed_images  # the merged case's own; combine() starts empty
         save(conn, cid, case)
         conn.execute("update cases set status = 'extracted', approved_by = null, approved_at = null, "
                      "review_due = null, member_count = %s where id = %s", (len(live), cid))

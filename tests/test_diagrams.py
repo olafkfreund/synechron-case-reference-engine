@@ -138,3 +138,176 @@ def test_diagram_deleted_before_processing_is_a_noop(make):
     before = version(cid)
     diagrams.process(gid)
     assert version(cid) == before
+
+
+# --- images inside a docx/pptx (#212): the zip is hostile ---
+import os
+import struct
+import zipfile
+import zlib
+
+
+def noise_png(side=500):
+    b = BytesIO()
+    Image.frombytes("RGB", (side, side), os.urandom(side * side * 3)).save(b, "PNG")
+    return b.getvalue()
+
+
+def bomb_png(side=9000):
+    """A valid PNG header for a 9000 x 9000 image whose pixels are all zero: ~250 KB, 243 MB decoded."""
+    def chunk(tag, body):
+        return struct.pack(">I", len(body)) + tag + body + struct.pack(">I", zlib.crc32(tag + body))
+    z, out = zlib.compressobj(9), []
+    row = b"\x00" * (1 + side * 3)
+    for _ in range(side):
+        out.append(z.compress(row))
+    out.append(z.flush())
+    return (diagrams.MAGIC[0] + chunk(b"IHDR", struct.pack(">IIBBBBB", side, side, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", b"".join(out)) + chunk(b"IEND", b""))
+
+
+def pack(entries, name="x.docx"):
+    b = BytesIO()
+    with zipfile.ZipFile(b, "w", zipfile.ZIP_DEFLATED) as z:
+        for n, d in entries.items():
+            z.writestr(n, d)
+    return b.getvalue()
+
+
+def test_good_image_found_and_small_or_fake_ones_filtered():
+    good = noise_png(500)
+    z = pack({"word/media/a.png": good, "word/media/logo.png": noise_png(200),   # 120 KB but only 200 px
+              "word/media/fake.png": b"A" * 40_000,                                # not an image
+              "word/media/junk.png": diagrams.MAGIC[0] + b"J" * 40_000,            # magic, no image
+              "word/media/tiny.png": good[:100], "word/other/b.png": good})       # too small; wrong folder
+    got = diagrams.document_images_from(z, "Case.DOCX")
+    assert len(got) == 1 and got[0][1:3] == (500, 500) and got[0][0].startswith(diagrams.MAGIC[0]) and got[0][3] == ""
+    assert diagrams.document_images_from(z, "case.txt") == [] and diagrams.document_images_from(z, "case.pdf") == []
+
+
+def test_bomb_is_refused_and_does_not_hide_a_good_image():
+    z = pack({"word/media/bomb.png": bomb_png(), "word/media/ok.png": noise_png(450)})
+    got = diagrams.document_images_from(z, "x.docx")
+    assert [g[1:3] for g in got] == [(450, 450)]
+
+
+def test_oversized_entry_is_skipped_before_it_is_read(monkeypatch):
+    z = pack({"word/media/huge.png": diagrams.MAGIC[0] + b"\0" * (diagrams.MAX_BYTES + 10), "word/media/ok.png": noise_png(450)})
+    opened = []
+    real = zipfile.ZipFile.open
+    monkeypatch.setattr(zipfile.ZipFile, "open", lambda self, n, *a, **k: (opened.append(getattr(n, "filename", n)), real(self, n, *a, **k))[1])
+    assert [g[1:3] for g in diagrams.document_images_from(z, "x.docx")] == [(450, 450)]
+    assert "word/media/huge.png" not in opened and "word/media/ok.png" in opened
+
+
+def test_entry_count_past_the_cap_reads_nothing(monkeypatch):
+    monkeypatch.setattr(diagrams, "MAX_ENTRIES", 5)
+    z = pack({**{f"word/other/{i}.txt": b"x" for i in range(6)}, "word/media/ok.png": noise_png(450)})
+    assert diagrams.document_images_from(z, "x.docx") == []
+
+
+def test_at_most_ten_largest_first_and_corrupt_zip_is_empty():
+    z = pack({f"ppt/media/{i}.png": noise_png(420 + i * 10) for i in range(12)})
+    got = diagrams.document_images_from(z, "x.pptx")
+    assert len(got) == diagrams.MAX_FOUND and got[0][1] == 530 and [g[1] for g in got] == sorted((g[1] for g in got), reverse=True)
+    assert diagrams.document_images_from(b"PK\x03\\x04 not a zip", "x.docx") == [] and diagrams.document_images_from(b"", "x.pptx") == []
+
+
+def test_docx_alt_text_hint_is_anonymised_and_cut():
+    import docx
+    d = docx.Document()
+    run = d.add_paragraph().add_run()
+    run.add_picture(BytesIO(noise_png(500)))
+    pr = run._r.xpath(".//wp:docPr")[0]
+    pr.set("descr", "Target architecture for Zorpale Bank " + "x" * 400)
+    out = BytesIO()
+    d.save(out)
+    clients = [{"name": "Zorpale Bank", "aliases": [], "anonymised_label": "a retail bank", "referenceable": False}]
+    (png, w, h, hint), = diagrams.document_images_from(out.getvalue(), "d.docx", clients)
+    assert "Zorpale" not in hint and hint.startswith("Target architecture for a retail bank") and len(hint) <= diagrams.MAX_CAPTION
+    assert "Zorpale" in diagrams.document_images_from(out.getvalue(), "d.docx")[0][3]  # no registry, no anonymising
+
+
+def test_pptx_hint_falls_back_to_the_slide_title_and_filename_alt_text_is_ignored():
+    import pptx
+    prs = pptx.Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    slide.shapes.title.text = "Payments platform overview"
+    slide.shapes.add_picture(BytesIO(noise_png(500)), 0, 0)  # python-pptx fills descr with "image.png"
+    out = BytesIO()
+    prs.save(out)
+    (_, _, _, hint), = diagrams.document_images_from(out.getvalue(), "d.pptx")
+    assert hint == "Payments platform overview"
+
+
+def docx_with_alt(alt, side=500):
+    import docx
+    d = docx.Document()
+    run = d.add_paragraph().add_run()
+    run.add_picture(BytesIO(noise_png(side)))
+    run._r.xpath(".//wp:docPr")[0].set("descr", alt)
+    out = BytesIO()
+    d.save(out)
+    return out.getvalue()
+
+
+def rewrite(data, part, fn):
+    src, out = zipfile.ZipFile(BytesIO(data)), BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for i in src.infolist():
+            body = src.read(i.filename)
+            z.writestr(i.filename, fn(body) if i.filename == part else body)
+    return out.getvalue()
+
+
+CLIENTS = [{"name": "Zorpale Bank", "aliases": [], "anonymised_label": "a retail bank", "referenceable": False}]
+
+
+def test_invisible_characters_cannot_hide_a_client_name_from_the_anonymiser():
+    # U+E000 (private use) is not a format character, so the anonymiser alone would not see through it
+    data = docx_with_alt("Plan for Zor\u200bpale Bank core, Zor\ue000pale Bank too")
+    (_, _, _, hint), = diagrams.document_images_from(data, "d.docx", CLIENTS)
+    assert "Zorpale" not in hint and hint.count("a retail bank") == 2 and "\u200b" not in hint and "\ue000" not in hint
+
+
+def test_xml_with_a_doctype_or_a_nul_byte_gives_no_hint_but_keeps_the_image():
+    data = docx_with_alt("Architecture overview")
+    assert diagrams.document_images_from(data, "d.docx")[0][3] == "Architecture overview"
+    doctype = rewrite(data, "word/document.xml", lambda b: b.replace(b"<w:document", b'<!DOCTYPE d [<!ENTITY a "b">]><w:document', 1))
+    utf16 = rewrite(data, "word/document.xml", lambda b: b.decode().split("?>", 1)[1].encode("utf-16"))  # no encoding declaration: it parses, and hides a DOCTYPE
+    for bad in (doctype, utf16):
+        (png, w, h, hint), = diagrams.document_images_from(bad, "d.docx")
+        assert (w, h, hint) == (500, 500, "")
+
+
+def test_xml_part_past_max_xml_and_the_total_budget_give_no_hint(monkeypatch):
+    data = docx_with_alt("Architecture overview")
+    monkeypatch.setattr(diagrams, "MAX_XML", 100)
+    assert diagrams.document_images_from(data, "d.docx")[0][3] == ""
+    monkeypatch.undo()
+    monkeypatch.setattr(diagrams, "MAX_XML_TOTAL", 600)  # the rels file fits, the document part does not
+    assert diagrams.document_images_from(data, "d.docx")[0][3] == ""
+    monkeypatch.setattr(diagrams, "MAX_XML_TOTAL", 10_000_000)
+    assert diagrams.document_images_from(data, "d.docx")[0][3] == "Architecture overview"
+
+
+def test_decoding_stops_once_enough_images_are_kept(monkeypatch):
+    z = pack({f"word/media/{i}.png": noise_png(420 + i) for i in range(13)})
+    calls = []
+    real = diagrams._decode
+    monkeypatch.setattr(diagrams, "_decode", lambda raw: (calls.append(1), real(raw))[1])
+    assert len(diagrams.document_images_from(z, "x.docx")) == diagrams.MAX_FOUND and len(calls) == diagrams.MAX_FOUND
+
+
+def test_a_declared_size_that_lies_is_bounded_and_loses_only_that_entry(monkeypatch):
+    z = pack({"word/media/liar.png": diagrams.MAGIC[0] + os.urandom(diagrams.MAX_BYTES + 5000), "word/media/ok.png": noise_png(450)})
+    real = zipfile.ZipFile.infolist
+
+    def lying(self):
+        infos = real(self)
+        for i in infos:
+            if i.filename.endswith("liar.png"):
+                i.file_size = 40_000  # the real entry is over 5 MB
+        return infos
+    monkeypatch.setattr(zipfile.ZipFile, "infolist", lying)
+    assert [g[1:3] for g in diagrams.document_images_from(z, "x.docx")] == [(450, 450)]

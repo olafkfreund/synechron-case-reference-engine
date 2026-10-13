@@ -721,3 +721,93 @@ def test_changed_content_moves_a_document_up_but_unchanged_does_not(env):  # #21
     assert updated_age(sid) == 2
     assert ing.ingest(sid, "a", "a", b"two", source_version="v2") == "updated"
     assert updated_age(sid) == 0
+
+
+def images_of(sid):
+    with db.connect() as c:
+        return c.execute("select i.width, i.height, i.hint, i.png from document_images i join documents d on d.id = i.document_id "
+                         "where d.source_id=%s order by i.id", (sid,)).fetchall()
+
+
+def test_image_candidates_are_stored_with_the_registry_and_replaced_on_a_new_version(env, monkeypatch):
+    _, sid = env
+    seen = []
+
+    def fake(data, name, clients=()):
+        seen.append((name, [c["name"] for c in clients]))
+        return [(b"png-" + data, 500, 400, f"hint {data.decode()}")]
+    monkeypatch.setattr(ing, "document_images_from", fake)
+    with db.connect() as c:
+        cid = c.execute("insert into clients(name, aliases, anonymised_label) values (%s, '{}', 'a bank') returning id",
+                        (f"Zorpale {uuid.uuid4().hex[:6]}",)).fetchone()[0]
+    try:
+        ing.ingest(sid, "a", "a.docx", b"one")
+        assert images_of(sid) == [(500, 400, "hint one", b"png-one")]
+        assert seen[0][0] == "a.docx" and any(n.startswith("Zorpale") for n in seen[0][1])  # the registry is passed in
+        ing.ingest(sid, "a", "a.docx", b"two")
+        assert images_of(sid) == [(500, 400, "hint two", b"png-two")]  # replaced, not added
+        ing.ingest(sid, "a", "a.docx", b"two")  # same bytes: left as they are
+        assert len(seen) == 2 and len(images_of(sid)) == 1
+    finally:
+        with db.connect() as c:
+            c.execute("delete from clients where id=%s", (cid,))
+
+
+def test_a_document_that_gets_no_case_gets_no_images(env, monkeypatch):
+    _, sid = env
+    monkeypatch.setattr(ing, "document_images_from", lambda *a, **k: [(b"p", 500, 400, "")])
+    ing.ingest(sid, "a", "a.docx", b"one")
+    assert len(images_of(sid)) == 1
+    TRIAGE["v"] = ing.Triage(kind="proposal", describes_delivered_work=False)
+    ing.ingest(sid, "a", "a.docx", b"two")  # now routed away: the old candidates go
+    assert images_of(sid) == []
+
+
+def test_an_image_failure_never_fails_the_ingest(env, monkeypatch, capsys):
+    _, sid = env
+
+    def boom(*a, **k):
+        raise RuntimeError("echo Zorbulon")
+    monkeypatch.setattr(ing, "document_images_from", boom)
+    assert ing.ingest(sid, "a", "a.docx", b"one") == "new" and jobs() == 1
+    out = capsys.readouterr().out
+    assert "RuntimeError" in out and "Zorbulon" not in out and images_of(sid) == []
+
+
+def test_a_document_ingested_before_images_gets_them_once_on_a_same_bytes_crawl(env, monkeypatch):
+    _, sid = env
+    calls = []
+    monkeypatch.setattr(ing, "document_images_from", lambda *a, **k: calls.append(1) or [(b"p", 500, 400, "h")])
+    ing.ingest(sid, "a", "a.docx", b"one")
+    with db.connect() as c:  # as if it was ingested before phase C: a case, no candidates
+        did = c.execute("select id from documents where source_id=%s", (sid,)).fetchone()[0]
+        c.execute("insert into cases(document_id,status) values (%s,'extracted')", (did,))
+        c.execute("delete from document_images where document_id=%s", (did,))
+    calls.clear()
+    assert ing.ingest(sid, "a", "a.docx", b"one") == "skipped"
+    assert len(calls) == 1 and len(images_of(sid)) == 1
+    assert ing.ingest(sid, "a", "a.docx", b"one") == "skipped"
+    assert len(calls) == 1  # the rows exist now: nothing is decoded again
+
+
+def test_same_bytes_without_a_case_stores_no_images(env, monkeypatch):
+    _, sid = env
+    TRIAGE["v"] = ing.Triage(kind="proposal", describes_delivered_work=False)
+    ing.ingest(sid, "a", "a.docx", b"one")
+    calls = []
+    monkeypatch.setattr(ing, "document_images_from", lambda *a, **k: calls.append(1) or [])
+    assert ing.ingest(sid, "a", "a.docx", b"one") == "skipped" and calls == [] and images_of(sid) == []
+
+
+def test_stale_candidates_are_gone_the_moment_the_new_version_is_saved(env, monkeypatch):
+    _, sid = env
+    monkeypatch.setattr(ing, "document_images_from", lambda *a, **k: [(b"p", 500, 400, "h")])
+    ing.ingest(sid, "a", "a.docx", b"one")
+    assert len(images_of(sid)) == 1
+    seen = []
+
+    def spy(doc_id, data, name, wanted):  # what a reader sees after the commit, before images are stored
+        seen.append(len(images_of(sid)))
+    monkeypatch.setattr(ing, "store_images", spy)
+    ing.ingest(sid, "a", "a.docx", b"two")
+    assert seen == [0]

@@ -8,7 +8,8 @@ from typing import Literal
 import boto3
 from pydantic import BaseModel, ConfigDict
 
-from app import db
+from app import anonymise, db
+from app.diagrams import document_images_from
 from app.llm import complete_json
 
 TRIAGE_HEAD, TRIAGE_TAIL = 8000, 4000  # plain cuts, no tokenizer; signatures sit at the end
@@ -76,6 +77,7 @@ def reopen_merged(conn, doc_ids: list[int]) -> None:
 def ingest(source_id: int, external_id: str, title: str, data: bytes, source_version: str | None = None) -> str:
     """Returns 'skipped' (same bytes), 'updated' (new version) or 'new'."""
     checksum = hashlib.sha256(data).hexdigest()
+    missing = None  # set when the bytes are unchanged: does the document still need its image candidates?
     with db.connect() as conn:
         row = conn.execute(
             "select id, checksum from documents where source_id=%s and external_id=%s",
@@ -86,11 +88,19 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
             conn.execute("update documents set acl_groups=(select acl_groups from sources where id=%s for share), "
                          "deleted_at=null, source_version=%s, title=%s where id=%s",
                          (source_id, source_version, title, row[0]))
-            return "skipped"
-        src = conn.execute("select data_class from sources where id=%s", (source_id,)).fetchone()
-        if not src:
-            raise LookupError(f"source {source_id} no longer exists")
-        data_class = src[0]
+            # a document ingested before images were read gets its candidates once: it has a case and no rows yet.
+            # shortcut: a document with no usable image is scanned again on each crawl, which reads the zip but decodes nothing
+            missing = conn.execute(
+                "select exists(select 1 from cases where document_id=%s and status <> 'rejected') "
+                "and not exists(select 1 from document_images where document_id=%s)", (row[0], row[0])).fetchone()[0]
+        else:
+            src = conn.execute("select data_class from sources where id=%s", (source_id,)).fetchone()
+            if not src:
+                raise LookupError(f"source {source_id} no longer exists")
+    if missing is not None:  # outside the transaction: decoding holds no lock
+        if missing:
+            store_images(row[0], data, title or PurePosixPath(external_id).name, True)
+        return "skipped"
 
     key = f"originals/{checksum}"
     boto3.client("s3").put_object(Bucket=os.environ["S3_BUCKET"], Key=key, Body=data)
@@ -122,6 +132,7 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
         if not got:
             raise LookupError(f"source {source_id} no longer exists")
         doc_id = got[0]
+        conn.execute("delete from document_images where document_id=%s", (doc_id,))  # new content: no stale candidate is offered meanwhile
         # a changed document re-opens its case for review, or retires it when it no longer
         # describes delivered work (a stale case must not stay approvable)
         conn.execute("update cases set status=%s, retired_by=null where document_id=%s",
@@ -131,7 +142,27 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
             conn.execute("insert into jobs(kind, payload) values ('extract', jsonb_build_object("
                          "'document_id', %s::bigint, 'basis', %s::text, 'basis_reason', %s::text, 'checksum', %s::text))",
                          (doc_id, basis, reason, checksum))  # checksum: a retry must not outlive its version (#120)
+    store_images(doc_id, data, title or PurePosixPath(external_id).name, basis is not None)
     return "updated" if row else "new"
+
+
+def store_images(doc_id: int, data: bytes, name: str, wanted: bool) -> None:
+    """Replace the document's diagram candidates (#212). After the document is saved and outside its transaction:
+    decoding can take seconds, and a failure here must never fail the ingest."""
+    try:
+        if wanted:
+            with db.connect() as conn:
+                clients = anonymise.load_clients(conn)
+            images = document_images_from(data, name, clients)  # hints are anonymised here, once
+        else:
+            images = []  # a document that gets no case gets no candidates
+        with db.connect() as conn:
+            conn.execute("delete from document_images where document_id=%s", (doc_id,))
+            for png, w, h, hint in images:
+                conn.execute("insert into document_images(document_id, png, width, height, hint) values (%s,%s,%s,%s,%s)",
+                             (doc_id, png, w, h, hint))
+    except Exception as e:  # noqa: BLE001 - the class only: a message could echo document text
+        print(f"document {doc_id} images not stored: {type(e).__name__}", flush=True)
 
 
 def skip_unchanged(source_id: int, external_id: str, source_version: str, title: str) -> bool:

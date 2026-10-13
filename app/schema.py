@@ -95,6 +95,7 @@ class Diagram(_Model):
     reason: str = ""
     width: int = 0
     height: int = 0
+    image_id: int | None = None  # the document_images candidate it came from (#212)
 
 
 class Prose(_Model):
@@ -132,6 +133,7 @@ class ReferenceCase(_Model):
     # reviewer notes set by extract.py only (hidden from the LLM, like `unsourced`)
     needs_attention: SkipJsonSchema[list[str]] = []
     diagrams: SkipJsonSchema[list[Diagram]] = []
+    dismissed_images: SkipJsonSchema[list[int]] = []  # document_images candidates the reviewer turned down (#212)
     basis: SkipJsonSchema[Literal["delivered", "engagement"]] = "delivered"
     extraction_version: SkipJsonSchema[int] = 1  # bump EXTRACTION_VERSION when extraction output changes
     basis_reason: SkipJsonSchema[str] = ""  # "executed contract" | "source marked executed"
