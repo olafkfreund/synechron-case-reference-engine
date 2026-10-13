@@ -366,3 +366,12 @@ code ignores it. The demo can be re-seeded.
   - A price flag blocks even a reviewer's architecture.
   - Negative controls passed for B1 (trimming, class-only note,
     reviewer-keep) and for the gate.
+- B3:
+  - A new append-only `architecture_changes` table, since the diagram
+    routes had no per-case audit.
+  - The editor shows callout outcomes 1-based.
+  - The SVG is wrapped in a zoom link and hint, because the `zoom` macro
+    renders an `<img>`.
+  - A Regenerate that yields nothing adds a note.
+  - The line format can't express a name containing `|` or `->`.
+  - The reviewer PNG route is limited to `REVIEWABLE` cases.

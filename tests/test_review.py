@@ -1518,3 +1518,100 @@ def test_a_price_in_the_architecture_blocks_even_a_reviewers_diagram(make):
 def test_a_clean_architecture_is_approved(make):
     cid = arch_gate(make, flags=[])
     assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}, follow_redirects=False).status_code == 303
+
+
+# --- the architecture editor (#246 B3) ---
+ARCH_TEXT = """title: Onboarding platform
+component: Onboarding service | Handles the onboarding | core | service | solution 1
+component: Case store | Holds onboarding cases | data | store | solution 1
+flow: Onboarding service -> Case store | writes cases | data | solution 1
+callout: 12 to 3 days | 1"""
+
+
+def arch_case(make, status="extracted", due=None, **arch):
+    pt = Sourced[str](value="Onboarding service and case store", source_quote=Q_TITLE)
+    return make(status, due, data=case_data(points={"solution": [pt]}, **({"architecture": arch} if arch else {})))
+
+
+def post_arch(cid, path="", c=None, **form):
+    return (c or client(R)).post(f"/review/{cid}/architecture{path}", data={"v": ver(cid), **form}, follow_redirects=False)
+
+
+def audit(cid):
+    with db.connect() as c:
+        return [r[0] for r in c.execute("select action from architecture_changes where case_id=%s order by id", (cid,))]
+
+
+def test_architecture_line_format_round_trips_and_is_confirmed_by_the_reviewer(make):
+    from app.review import arch_lines
+    cid = arch_case(make)
+    assert post_arch(cid, text=ARCH_TEXT).status_code == 303
+    a = ReferenceCase.model_validate(row(cid)[1]).architecture
+    assert a.by_reviewer and a.title == "Onboarding platform" and [c.id for c in a.components] == ["c1", "c2"]
+    assert (a.flows[0].src, a.flows[0].dst, a.callouts[0].outcome) == ("c1", "c2", 0)
+    assert arch_lines(a) == ARCH_TEXT and audit(cid) == ["edit"]
+    page = client(R).get(f"/review/{cid}").text
+    assert "<svg" in page and f'/review/{cid}/architecture.png' in page and "Onboarding platform" in page
+
+
+def test_architecture_parse_error_keeps_the_old_version_and_lists_lines(make):
+    cid = arch_case(make)
+    post_arch(cid, text=ARCH_TEXT)
+    before = row(cid)[1]["architecture"]
+    bad = ARCH_TEXT + "\ncomponent: x | y | moon | service | \nflow: Nowhere -> Case store | l | data | \nnonsense\ncallout: t | two"
+    r = post_arch(cid, text=bad)
+    assert r.status_code == 400 and "Not saved" in r.text
+    for n in (6, 7, 8, 9):
+        assert f"Line {n}:" in r.text
+    assert row(cid)[1]["architecture"] == before and audit(cid) == ["edit"]
+
+
+def test_architecture_save_checks_it_and_a_price_still_blocks_approval(make):
+    cid = arch_case(make)
+    post_arch(cid, text=ARCH_TEXT.replace("Handles the onboarding", "Costs 500 pounds a day"))
+    flags = row(cid)[1]["architecture"]["flags"]
+    assert any("price or payment term" in f for f in flags)
+    r = client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)})
+    assert r.status_code == 400 and "price or payment term" in r.text
+
+
+def test_architecture_edit_reopens_an_approved_case(make):
+    cid = arch_case(make, "approved", "10 days")
+    post_arch(cid, text=ARCH_TEXT)
+    assert row(cid)[0] == "extracted"
+
+
+def test_architecture_remove_and_regenerate(make, monkeypatch):
+    from app import writeup
+    cid = arch_case(make)
+    post_arch(cid, text=ARCH_TEXT)
+    assert post_arch(cid, "/remove").status_code == 303 and row(cid)[1]["architecture"] is None
+    assert post_arch(cid, "/remove").status_code == 404
+    monkeypatch.setattr(writeup, "complete_json", lambda *a, **k: writeup.ArchProposal(
+        components=[writeup.ArchItem(name="Onboarding service", zone="core", kind="service", cite="solution 1")]))
+    assert post_arch(cid, "/regenerate").status_code == 303
+    a = row(cid)[1]["architecture"]
+    assert a["by_reviewer"] is False and [c["id"] for c in a["components"]] == ["c1"]
+    post_arch(cid, text=ARCH_TEXT)  # an edited one needs the confirmation
+    assert post_arch(cid, "/regenerate").status_code == 400 and row(cid)[1]["architecture"]["by_reviewer"] is True
+    assert post_arch(cid, "/regenerate", confirm="true").status_code == 303 and row(cid)[1]["architecture"]["by_reviewer"] is False
+    assert audit(cid) == ["edit", "remove", "regenerate", "edit", "regenerate"]
+
+
+def test_architecture_routes_refuse_stale_versions_and_non_reviewers(make):
+    cid = arch_case(make)
+    for path in ("", "/regenerate", "/remove"):
+        assert client(R).post(f"/review/{cid}/architecture{path}", data={"v": "stale", "text": ARCH_TEXT}).status_code == 409
+        assert post_arch(cid, path, c=client([USER]), text=ARCH_TEXT).status_code == 403
+    assert client([USER]).get(f"/review/{cid}/architecture.png").status_code == 403
+    assert audit(cid) == []
+
+
+def test_architecture_png_is_served_to_a_reviewer_who_can_see_the_case_only(make):
+    cid = arch_case(make)
+    post_arch(cid, text=ARCH_TEXT)
+    ok = client(R).get(f"/review/{cid}/architecture.png")
+    assert ok.status_code == 200 and ok.content.startswith(b"\x89PNG") and ok.headers["cache-control"] == "private, no-store"
+    assert client([REV, "g-other"]).get(f"/review/{cid}/architecture.png").status_code == 404
+    other = arch_case(make)
+    assert client(R).get(f"/review/{other}/architecture.png").status_code == 404  # none yet

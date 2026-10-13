@@ -283,3 +283,6 @@ create index if not exists cases_approved_idx on cases (approved_at desc, id des
 
 -- an approval below the completeness minimum, with the reviewer's reason (#222); no foreign key, so it survives case deletion
 create table if not exists case_approval_overrides (id bigserial primary key, case_id bigint not null, reason text not null, score text not null, approved_by text not null, approved_at timestamptz not null default now());
+
+-- who changed a case's architecture, and how (#246); no foreign key, so it survives case deletion
+create table if not exists architecture_changes (id bigserial primary key, case_id bigint not null, action text not null, changed_by text not null, changed_at timestamptz not null default now());

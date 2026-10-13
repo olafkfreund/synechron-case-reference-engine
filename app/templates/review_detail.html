@@ -65,6 +65,25 @@
 <form method="post" action="/review/{{ id }}/sources/remove" style="margin:0"><input type="hidden" name="i" value="{{ s.n }}"><input type="hidden" name="s" value="{{ sources_v }}"><button class="btn">Remove</button></form></div>{% endfor %}</div>{% endif %}
 
 
+{% if arch.a or reviewable %}<div class="section-card" id="architecture"><div class="card-head"><h2>Architecture</h2>{% if arch.a %}<span class="badge {{ "bad" if arch.a.flags else "ok" if arch.a.by_reviewer else "neutral" }}">{{ "flagged" if arch.a.flags else "written by reviewer" if arch.a.by_reviewer else "proposed" }}</span>{% endif %}</div>
+{% if arch.svg %}{% set u = "/review/" ~ id ~ "/architecture.png" %}<figure class="paper"><a href="{{ u }}" target="_blank" rel="noopener" class="zoom" aria-label="Open {{ arch.a.title }} full size">{{ arch.svg }}</a></figure>{{ zoom_hint(u, arch.a.title) }}
+{% elif not arch.a %}<p class="muted">This case has no architecture diagram.</p>{% endif %}
+{% if arch.a and arch.a.flags %}<p class="warn-line">{{ icon("alert") }}<span>Fix or confirm these before approval (saving your edit confirms them):</span></p><ul>{% for f in arch.a.flags %}<li>{{ f }}</li>{% endfor %}</ul>{% endif %}
+{% if arch.cites %}<details class="mini"><summary>Cited points ({{ arch.cites | length }})</summary>{% for c in arch.cites %}<p><b>{{ c[0] }}</b>: {{ c[1] }}<br><q>{{ c[2] }}</q></p>{% endfor %}</details>{% endif %}
+{% if reviewable %}{% if arch.errors %}<div role="alert" class="warn-line">{{ icon("alert") }}<span>Not saved. The earlier version is kept:</span></div><ul>{% for e in arch.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+<form method="post" action="/review/{{ id }}/architecture"><input type="hidden" name="v" value="{{ v }}">
+<label for="arch-text" class="mini-label">One line each: title: ... / component: name | role | zone | kind | cite / flow: A -&gt; B | label | mode | cite / callout: text | outcome number</label>
+<textarea id="arch-text" name="text" rows="14" maxlength="20000">{{ arch.text }}</textarea>
+{% if arch.outcomes %}<p class="muted small">Outcomes: {{ arch.outcomes | join("; ") }}</p>{% endif %}
+<button class="btn primary">Save architecture</button></form>
+<div class="action-row">
+<form method="post" action="/review/{{ id }}/architecture/regenerate" class="row"><input type="hidden" name="v" value="{{ v }}">
+{% if arch.a and arch.a.by_reviewer %}<label class="check"><input type="checkbox" name="confirm" value="true" required> Replace my edited version</label>{% endif %}
+<button class="btn">Regenerate</button></form>
+{% if arch.a %}<form method="post" action="/review/{{ id }}/architecture/remove"><input type="hidden" name="v" value="{{ v }}"><button class="btn danger-ghost">Remove</button></form>{% endif %}
+</div>{% endif %}
+</div>{% endif %}
+
 {% if diagrams or (reviewable and diagrams | length < max_diagrams) %}<div class="section-card" id="diagrams"><div class="card-head"><h2>Diagrams</h2></div>
 {% for d in diagrams %}<div class="field-row">
 <div class="fname">Diagram #{{ loop.index }} <span class="badge {{ "ok" if d.status == "ready" else "bad" if d.status == "rejected" else "neutral" }}">{{ d.status }}</span></div>

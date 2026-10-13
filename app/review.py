@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Upl
 from fastapi.responses import RedirectResponse, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from pathlib import Path
 from psycopg.errors import ForeignKeyViolation
 from psycopg.types.json import Jsonb
@@ -15,7 +16,9 @@ from app import anonymise, db, diagrams
 from app.extract import MAX_CHARS, check
 from app.main import User, require
 from app.completeness import checklist, meets_minimum, score
-from app.schema import POINT_FIELDS, Diagram, Outcome, Period, Prose, ReferenceCase, Sourced, _norm
+from app import archdiagram, writeup
+from app.schema import (CITE_POINTS, POINT_FIELDS, ArchCallout, ArchComponent, ArchFlow, Architecture, Diagram, Outcome, Period, Prose,
+                        ReferenceCase, Sourced, _norm, check_architecture)
 from app.writeup import PRICE_FLAG, check_prose, quotes_of
 
 router = APIRouter()
@@ -203,6 +206,10 @@ def documents(request: Request, pageno: int = Query(1, alias="page"), user: User
 
 @router.get("/review/{cid}")
 def review_detail(cid: int, request: Request, user: User = Depends(require("reviewer"))):
+    return _detail(cid, request, user)
+
+
+def _detail(cid, request, user, arch_form=None):
     with db.connect() as conn:
         r = conn.execute(
             f"select c.data, c.status, d.title, d.external_id, s.name, {OPEN}, {VERSION}, c.member_count, c.basis, "
@@ -234,7 +241,7 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
     sections = [dict(f=f, label=PROSE_LABELS[f], prose=case.prose.get(f), points=case.points.get(f, []))
                 for f in POINT_FIELDS if case.points.get(f) or f in case.prose]
     checks = checklist(case)
-    return page(request, "review_detail.html", user, id=cid, checks=checks, minimum=meets_minimum(checks), rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
+    return page(request, "review_detail.html", user, arch=_arch_panel(case, arch_form), id=cid, checks=checks, minimum=meets_minimum(checks), rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
                 sections=sections, found=found, max_diagrams=diagrams.MAX_PER_CASE,
                 unlisted=unlisted, diagrams=case.diagrams, members=members, cands=cands, remerge=remerge,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
@@ -446,6 +453,151 @@ def remove_diagram(cid: int, did: int, v: str = Form(), user: User = Depends(req
         conn.execute("delete from diagrams where id=%s and case_id=%s", (did, cid))
         _reopen(conn, cid)
     return RedirectResponse(f"/review/{cid}", status_code=303)
+
+
+# --- the solution architecture (#246): a line format the reviewer edits, checked like the proposal ---
+
+def arch_lines(a: Architecture) -> str:
+    names = {c.id: c.name for c in a.components}
+    return "\n".join([f"title: {a.title}",
+                      *(f"component: {c.name} | {c.role} | {c.zone} | {c.kind} | {c.cite}" for c in a.components),
+                      *(f"flow: {names[f.src]} -> {names[f.dst]} | {f.label} | {f.mode} | {f.cite}" for f in a.flows),
+                      *(f"callout: {c.text} | {c.outcome + 1}" for c in a.callouts)])
+
+
+def _complaint(e: ValidationError) -> str:  # field names only: no input echoed back
+    return "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors(include_input=False, include_url=False, include_context=False))
+
+
+def parse_architecture(text: str, case: ReferenceCase) -> tuple[Architecture | None, list[str]]:
+    """The architecture a line-format text describes, or the errors by line; the case is not changed."""
+    errs, title, comps, flows, notes = [], "Solution architecture", [], [], []
+    ids = {}
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line:
+            continue
+        key, _, rest = line.partition(":")
+        parts = [x.strip() for x in rest.split("|")]
+        try:
+            match key.strip().lower():
+                case "title":
+                    title = rest.strip()
+                    Architecture(title=title)
+                case "component":
+                    if len(parts) != 5:
+                        raise ValueError("a component is: name | role | zone | kind | cite")
+                    if parts[0] in ids:
+                        raise ValueError("two components have this name")
+                    c = ArchComponent(id=f"c{len(comps) + 1}", name=parts[0], role=parts[1], zone=parts[2], kind=parts[3], cite=parts[4])
+                    comps.append(c)
+                    ids[c.name] = c.id
+                case "flow":
+                    src, arrow, dst = (x.strip() for x in parts[0].partition("->"))
+                    if len(parts) != 4 or not arrow:
+                        raise ValueError("a flow is: A -> B | label | mode | cite")
+                    if src not in ids or dst not in ids:
+                        raise ValueError("a flow joins two components listed above it")
+                    flows.append(ArchFlow(src=ids[src], dst=ids[dst], label=parts[1], mode=parts[2], cite=parts[3]))
+                case "callout":
+                    if len(parts) != 2 or not parts[1].isdigit():
+                        raise ValueError("a callout is: text | outcome number")
+                    notes.append(ArchCallout(text=parts[0], outcome=int(parts[1]) - 1))
+                case _:
+                    raise ValueError("a line starts with title:, component:, flow: or callout:")
+        except ValidationError as e:
+            errs.append(f"Line {n}: {_complaint(e)}")
+        except ValueError as e:
+            errs.append(f"Line {n}: {e}")
+    for what, items, cap in (("components", comps, 12), ("flows", flows, 14), ("callouts", notes, 3)):
+        if len(items) > cap:
+            errs.append(f"At most {cap} {what}; there are {len(items)}")
+    if not comps and not errs:
+        errs.append("Add at least one component, or use Remove")
+    return (None, errs) if errs else (Architecture(title=title, components=comps, flows=flows, callouts=notes, by_reviewer=True), [])
+
+
+def _arch_log(conn, cid, action, user):
+    conn.execute("insert into architecture_changes(case_id, action, changed_by) values (%s,%s,%s)", (cid, action, user.sub))
+
+
+def _arch_panel(case, form):
+    """What the Architecture card shows: the SVG, the flags, the cited points and the editable text."""
+    a = case.architecture
+    svg = None
+    if a and a.components:
+        try:
+            svg = Markup(archdiagram.to_svg(archdiagram.layout(a), a.title))  # to_svg escapes every string
+        except Exception:  # noqa: BLE001 - a drawing failure must not hide the case
+            svg = None
+    cites = [(f"{f} {i}", p.value, p.source_quote) for f in CITE_POINTS for i, p in enumerate(case.points.get(f, []), 1)
+             if p.value and p.source_quote and not p.unsourced]
+    cites += [(f"reference {i}", r.value, r.source_quote) for i, r in enumerate(case.tech_references, 1) if r.value and r.source_quote and not r.unsourced]
+    text, errors = form if form else (arch_lines(a) if a else "", [])
+    return dict(a=a, svg=svg, cites=cites, text=text, errors=errors, outcomes=[f"{i}. {o.metric} {o.value}" for i, o in enumerate(case.outcomes, 1) if not o.unsourced])
+
+
+@router.post("/review/{cid}/architecture")
+def save_architecture(cid: int, request: Request, text: str = Form(), v: str = Form(), user: User = Depends(require("reviewer"))):
+    with db.connect() as conn:
+        case, _ = load(conn, cid, user, v)
+        arch, errs = parse_architecture(text[:20000], case)
+        if arch:
+            case.architecture = arch
+            arch.flags = check_architecture(case)
+            save(conn, cid, case)
+            _arch_log(conn, cid, "edit", user)
+            _reopen(conn, cid)
+    if errs:  # the previous version stays; the page shows what to fix
+        r = _detail(cid, request, user, (text, errs))
+        r.status_code = 400
+        return r
+    return RedirectResponse(f"/review/{cid}#architecture", status_code=303)
+
+
+DATA_CLASSES = ("confidential", "sanitised", "public")  # strictest first
+
+
+@router.post("/review/{cid}/architecture/regenerate")
+def regenerate_architecture(cid: int, v: str = Form(), confirm: bool = Form(False), user: User = Depends(require("reviewer"))):
+    with db.connect() as conn:
+        case, _ = load(conn, cid, user, v)
+        if case.architecture and case.architecture.by_reviewer and not confirm:
+            raise HTTPException(400, "confirm that your edited architecture may be replaced")
+        classes = {r[0] for r in conn.execute(
+            "select s.data_class from cases m join documents d on d.id = m.document_id join sources s on s.id = d.source_id "
+            "where m.id = %s or m.merged_into = %s", (cid, cid))}
+        case.architecture = None
+        writeup.propose(case, next((c for c in DATA_CLASSES if c in classes), "confidential"))
+        if case.architecture is None and not any("architecture proposal failed" in n for n in case.needs_attention):
+            case.needs_attention.append("architecture: the model proposed nothing the points support")
+        save(conn, cid, case)
+        _arch_log(conn, cid, "regenerate", user)
+        _reopen(conn, cid)
+    return RedirectResponse(f"/review/{cid}#architecture", status_code=303)
+
+
+@router.post("/review/{cid}/architecture/remove")
+def remove_architecture(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))):
+    with db.connect() as conn:
+        case, _ = load(conn, cid, user, v)
+        if not case.architecture:
+            raise HTTPException(404, "no architecture")
+        case.architecture = None
+        save(conn, cid, case)
+        _arch_log(conn, cid, "remove", user)
+        _reopen(conn, cid)
+    return RedirectResponse(f"/review/{cid}#architecture", status_code=303)
+
+
+@router.get("/review/{cid}/architecture.png")
+def architecture_png(cid: int, user: User = Depends(require("reviewer"))):
+    with db.connect() as conn:
+        row = conn.execute(f"select c.data from cases c where c.id = %s and {REVIEWABLE}", (cid, list(user.groups))).fetchone()
+    a = ReferenceCase.model_validate(row[0]).architecture if row else None
+    if not a or not a.components:
+        raise HTTPException(404, "no such diagram")
+    return Response(archdiagram.to_png(archdiagram.layout(a)), media_type="image/png", headers=PNG_HEADERS)
 
 
 PNG_HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'",
