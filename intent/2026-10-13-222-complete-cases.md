@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 222
 author: olafkfreund
 ---
@@ -70,9 +70,10 @@ makes an *approved* case complete:
 - The minimum and thresholds live in one place in the code, so they're easy
   to tune once the bid team has used it.
 
-## Open questions
+## Decisions (2026-10-13, approved with the intent)
 
-1. **The approval minimum:** a hard block with a reason override, as
-   proposed, or a warning only?
-2. **Thresholds:** are ~80 words for Challenge and Solution and 3
-   capabilities and technologies the right starting point?
+1. The approval minimum is a hard block. The reviewer can override it with a
+   short reason, recorded in the audit log.
+2. Thresholds to start with: about 80 words each for Challenge and Solution,
+   and at least 3 capabilities and 3 technologies, kept in one place so they
+   are easy to tune.
