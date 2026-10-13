@@ -94,8 +94,9 @@ def slide_statements(ind: dict) -> list[str]:
     """Every slide line starts with its source and keeps the verbatim quote next to it, so a reader can
     check it. The omitted-statements note (if any) comes last, as in
     Word and Markdown (#123)."""
-    return [f"{i['phrase']}: \u201c{excerpt(i['quote'], SLIDE_QUOTE)}\u201d \u2014 {i['date']}"
-            for i in ind["statements"]][:SLIDE_ITEMS] + ([ind["note"]] if ind["note"] else [])
+    lines = [f"{g['lead']} \u201c{excerpt(g['quotes'][0]['quote'], SLIDE_QUOTE)}\u201d [{g['quotes'][0]['n']}]"
+             for g in ind["groups"]]
+    return lines[:SLIDE_ITEMS] + ([ind["note"]] if ind["note"] else [])
 
 
 def section(case: ReferenceCase, client: str) -> dict:
@@ -253,11 +254,11 @@ def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int
             _fill(prs, *own, {"Title": [industry["heading"]], "Summary": [industry["disclaimer"]],
                               "Statements": slide_statements(industry)}, INDUSTRY_PLACEHOLDERS)
         else:  # fallback: the case layout, its case-only boxes left empty
-            publishers = list(dict.fromkeys(i["publisher"] for i in industry["statements"]))
+            refs = [f"[{x['n']}] {x['publisher']}" for x in industry["sources"]]
             _fill(prs, *case_layout, {
                 "Title": [industry["heading"]], "Client": [""], "Summary": [industry["disclaimer"]],
                 "Challenge": [""], "Solution": [""], "Outcomes": slide_statements(industry),
-                "Technology": ["Sources: " + ", ".join(publishers)] if publishers else [""]}, PLACEHOLDERS)
+                "Technology": ["Sources: " + ", ".join(refs)] if refs else [""]}, PLACEHOLDERS)
     props = prs.core_properties
     props.title, props.author, props.last_modified_by = "Reference cases", "Reference Engine", "Reference Engine"
     props.comments = props.subject = props.keywords = props.category = ""
@@ -383,8 +384,20 @@ MD = _env.from_string("""\
 
 *{{ industry.disclaimer | md }}*
 
-{% for i in industry["statements"] %}
-- {{ i.phrase | md }}: \u201c{{ i.quote | md }}\u201d \u2014 {{ i.url | md }}, retrieved {{ i.date | md }}
+{% for g in industry.groups %}
+## {{ g.title | md }}
+
+*{{ g.lead | md }}*
+
+{% for q in g.quotes %}
+> \u201c{{ q.quote | md }}\u201d [{{ q.n }}]
+
+{% endfor %}
+{% endfor %}
+## Sources
+
+{% for s in industry.sources %}
+{{ s.n }}. {{ s.title | md }}, {{ s.publisher | md }}, <{{ s.url }}>, retrieved {{ s.date }}
 {% endfor %}
 {% if industry.note %}
 
