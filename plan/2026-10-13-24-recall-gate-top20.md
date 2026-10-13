@@ -57,6 +57,8 @@ Branch `feat/24-recall-gate-top20`.
    → verify: `grep -n "top-3 recall" plan/2026-10-06-1-reference-engine.md`
    prints nothing.
    Traps: do not rewrite other steps.
+   Deviation (review): step 22's Done note "Gate as written: top-3 ≥ 90%…"
+   (`:806`) contradicted the new rule, so it now says it was superseded by #24.
 
 ## Tests
 

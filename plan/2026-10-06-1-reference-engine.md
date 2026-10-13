@@ -803,9 +803,9 @@ access yet):
         user without the LLM pick, matches on document external_id or title,
         reports top-3 and top-20, and exits 0, 1 (below `--min`) or 2
         (nothing to score).
-      - Gate as written: top-3 ≥ 90% of FTS ranking. Top-20 measures the
-        retrieval that the pgvector decision is really about. If they
-        disagree, decide with the bid team.
+      - Gate as first written: top-3 ≥ 90% of FTS ranking. Superseded by
+        #24: top-20 is the gate, since it measures the retrieval that the
+        pgvector decision is really about. Top-3 is reported.
       - Prefer external_id over title in expectations, since titles can
         repeat.
     - `/admin/audit` (admin): paged and filterable; case links go to the
