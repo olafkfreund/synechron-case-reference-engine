@@ -508,3 +508,15 @@ def test_no_drive_host_means_no_backfill_calls(sp):
     sp.calls.clear()
     crawl.crawl_sharepoint(sp.sid)
     assert not [c for c in sp.calls if c.endswith(("/items/f1", "/items/f2"))]
+
+
+def test_folder_link_is_retried_when_the_parent_lookup_failed_once(sp):
+    sp.files = {"f1": b"one"}
+    sp.delta[ROOT] = (200, page([linked("f1", f"{HOST}/a.docx")], delta=f"{ROOT}?token=d1"))
+    crawl.crawl_sharepoint(sp.sid)  # dir1 does not answer: the web link is stored, the folder link is not
+    assert links(sp.sid)["f1"] == (f"{HOST}/a.docx", None)
+    sp.meta["f1"] = {"webUrl": f"{HOST}/a.docx", "parentReference": {"id": "dir1"}}
+    sp.folders["dir1"] = f"{HOST}/Cases"
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([], delta=f"{ROOT}?token=d2"))
+    crawl.crawl_sharepoint(sp.sid)
+    assert links(sp.sid)["f1"] == (f"{HOST}/a.docx", f"{HOST}/Cases")

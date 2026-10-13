@@ -327,7 +327,7 @@ def crawl_sharepoint(source_id: int) -> dict:
 
         # permission changes on descendants are not in delta: re-check every live document (daily crawl)
         live = lock.execute(
-            "select external_id, web_url is null from documents where source_id=%s and deleted_at is null", (source_id,)).fetchall()
+            "select external_id, web_url is null or folder_url is null from documents where source_id=%s and deleted_at is null", (source_id,)).fetchall()
         for iid, no_link in live:
             if iid not in checked:
                 try:
