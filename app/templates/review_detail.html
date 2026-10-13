@@ -58,7 +58,7 @@
 {% for p in sec.points %}<div class="claim"><p>{{ p.value }}</p>{% if p.source_quote %}<q>{{ p.source_quote }}</q>{% endif %}{% if p.unsourced %} <span class="badge bad">unsourced</span>{% endif %}</div>{% endfor %}</details>{% endif %}</div>
 </div>{% endfor %}</div>{% endif %}
 {% if sources %}<div class="section-card"><div class="card-head"><h2>Public sources (not delivery evidence)</h2></div>
-{% for s in sources %}<div class="claim">{% if s.hidden %}<p class="muted">Withheld: names a protected client</p>{% else %}<q>{{ s.quote }}</q>
+{% for s in sources %}<div class="claim">{% if s.hidden %}<p class="muted">Withheld: names a protected client</p>{% else %}{% if s.type == "technical_note" %}<pre>{{ s.quote }}</pre>{% else %}<q>{{ s.quote }}</q>{% endif %}
 <div class="meta">{% if (s.url or "").startswith(("http://", "https://")) %}<a href="{{ s.url }}" rel="noopener noreferrer">{{ s.publisher }}</a>{% else %}<span>{{ s.publisher }}</span>{% endif %}
 <span>retrieved {{ (s.retrieved_at or "")[:10] }}</span><span class="badge neutral">{{ (s.type or "") | replace("_", " ") }}</span></div>{% endif %}
 <form method="post" action="/review/{{ id }}/sources/remove" style="margin:0"><input type="hidden" name="i" value="{{ s.n }}"><input type="hidden" name="s" value="{{ sources_v }}"><button class="btn">Remove</button></form></div>{% endfor %}</div>{% endif %}

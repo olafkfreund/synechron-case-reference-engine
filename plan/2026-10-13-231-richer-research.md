@@ -350,6 +350,23 @@ check the brief has a diagram, counts only.
   - Only real page titles are cleaned, not the host or publisher fallback.
   - Brief, library and attach-from-library store the plain()+apply() text,
     as they already stored the apply() text.
+- Phase (b), steps b4-b6:
+  - Notes also stay verbatim beyond the outputs the plan listed: the research
+    export fences them, the library and review pages show them as `<pre>`,
+    and `brand/brief.docx` is regenerated so an appendix note is mono.
+  - `fence` lives in `app/schema.py`, because `research.py` can't import
+    `render`.
+  - b6 eval (qwen3:14b, 3 queries, counts only):
+    - notes were found on every query, and no quote went over 80 words
+      (max 49)
+    - the model rated every claim relevance 3
+    - "not verbatim" drops varied widely from run to run (1 of 12 against
+      14 of 15 on the same query)
+    - one run returned the schema itself
+    - there was no baseline on main, so the PR claims nothing about quote
+      quality
+  - The eval used the compose gateway IP for `api_base`, because
+    `host.docker.internal` resolves only in `web` and `worker`.
 
 ## Tests
 

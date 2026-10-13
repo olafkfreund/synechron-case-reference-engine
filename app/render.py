@@ -5,7 +5,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from docx.shared import Mm
-from docxtpl import DocxTemplate, InlineImage
+from docxtpl import DocxTemplate, InlineImage, RichText
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import Response
 from jinja2 import Environment
@@ -14,7 +14,7 @@ from pptx import Presentation
 from app import anonymise, db, office
 from app.main import User, require, wants_html
 from app.review import PNG_HEADERS, VISIBLE, page
-from app.schema import ReferenceCase, plain, vague_metric
+from app.schema import ReferenceCase, fence, plain, vague_metric
 
 router = APIRouter()
 TEMPLATE = Path(__file__).resolve().parent.parent / "brand" / "reference.docx"
@@ -39,7 +39,8 @@ SOURCES_HEADING = "Best practice and public sources"
 APPROACH_HEADING = "Approach and industry practice"  # a case study: after our delivery sections, under the disclaimer
 INDUSTRY_DISCLAIMER = f"These are public statements by third parties, not {COMPANY} delivery evidence."
 # the type filters claims; it never reaches an output (#23)
-CLAIM_TYPES = frozenset({"out_of_the_box", "configuration", "industry_practice", "vendor_claim"})
+CLAIM_TYPES = frozenset({"out_of_the_box", "configuration", "industry_practice", "vendor_claim", "technical_note"})
+NOTE = "technical_note"  # code or steps copied verbatim: shown monospace, never passed through plain()
 SLIDE_ITEMS = 5
 
 
@@ -59,7 +60,8 @@ def industry_section(claims: list[dict], clients, heading=INDUSTRY_HEADING, page
         if c.get("type") not in CLAIM_TYPES:
             continue
         # only quote and title are anonymised: rewriting a publisher or URL would forge the citation
-        pl = (lambda t: t) if c.get("type") == "technical_note" else plain  # a note's code stays exact
+        note = c.get("type") == NOTE
+        pl = (lambda t: t) if note else plain  # a note's code stays exact
         title = pl(str(c.get("title") or page_titles.get(c.get("url")) or "")) or _host(c.get("url", "")) or c.get("publisher", "")
         safe = {k: CTRL.sub("", str(v)) for k, v in
                 {"quote": pl(str(c.get("quote", ""))), "title": title, "publisher": c.get("publisher", ""), "url": c.get("url", ""),
@@ -75,12 +77,14 @@ def industry_section(claims: list[dict], clients, heading=INDUSTRY_HEADING, page
                                    "source": {"n": len(order), "title": safe["title"], "publisher": safe["publisher"],
                                               "url": safe["url"], "date": safe["date"]}}
         g = groups[safe["url"]]
-        g["quotes"].append({"quote": safe["quote"], "n": g["source"]["n"]})
+        g["quotes"].append({"quote": safe["quote"], "n": g["source"]["n"], "mono": note})
     if not groups and not omitted:
         return None
     gl = [groups[u] for u in order]
     sources = [g["source"] for g in gl]
-    statements = [{"text": t} for g in gl for t in [g["title"], *(f"\u201c{q['quote']}\u201d [{q['n']}]" for q in g["quotes"])]]
+    first = lambda q: f"{q['quote'].splitlines()[0]} (see source [{q['n']}])" if q["quote"].strip() else ""  # noqa: E731
+    statements = [{"text": t} for g in gl for t in [g["title"], *(first(q) if q["mono"] else f"\u201c{q['quote']}\u201d [{q['n']}]"
+                                                                   for q in g["quotes"])]]
     if sources:
         statements.append({"text": "Sources: " + "; ".join(f"[{x['n']}] {x['title']}, {x['publisher']}, {x['url']}, retrieved {x['date']}"
                                                           for x in sources)})
@@ -98,7 +102,8 @@ def brief_section(body: dict, quotes: list[dict], clients) -> dict:
     clean = lambda t: anonymise.apply(CTRL.sub("", str(t or "")), clients)  # noqa: E731
     omitted, dead, sources, appendix = 0, set(), [], []
     for n, q in enumerate(quotes[:brief.MAX_QUOTES], 1):
-        item = {"n": n, "quote": clean(plain(str(q.get("quote") or ""))),
+        note = q.get("type") == NOTE
+        item = {"n": n, "quote": clean(q.get("quote")) if note else clean(plain(str(q.get("quote") or ""))),
                 "title": clean(plain(str(q.get("title") or "")) or _host(q.get("url")) or q.get("publisher")),
                 "publisher": CTRL.sub("", str(q.get("publisher") or "")), "url": CTRL.sub("", str(q.get("url") or "")),
                 "date": CTRL.sub("", str(q.get("retrieved_at") or ""))[:10]}
@@ -107,7 +112,7 @@ def brief_section(body: dict, quotes: list[dict], clients) -> dict:
             omitted += 1
             continue
         sources.append({k: item[k] for k in ("n", "title", "publisher", "url", "date")})
-        appendix.append({"n": n, "quote": item["quote"]})
+        appendix.append({"n": n, "quote": item["quote"], "mono": note})
 
     def prose(text):  # the sentences that survive, joined again
         nonlocal omitted
@@ -144,6 +149,7 @@ BRIEF_TEMPLATE = TEMPLATE.with_name("brief.docx")
 
 def to_brief_docx(sec: dict) -> bytes:
     tpl = DocxTemplate(BRIEF_TEMPLATE)
+    sec = {**sec, "appendix": [{**q, "rich": _mono(q)} if q.get("mono") else q for q in sec["appendix"]]}
     tpl.render({"brief": sec}, autoescape=True)
     props = tpl.docx.core_properties  # never ship the template's own metadata
     props.title, props.author, props.last_modified_by = "Best practice brief", "Reference Engine", "Reference Engine"
@@ -161,8 +167,13 @@ def slide_statements(ind: dict) -> list[str]:
     """Every slide line starts with its source and keeps the verbatim quote next to it, so a reader can
     check it. The omitted-statements note (if any) comes last, as in
     Word and Markdown (#123)."""
-    lines = [f"{g['lead']} \u201c{excerpt(g['quotes'][0]['quote'], SLIDE_QUOTE)}\u201d [{g['quotes'][0]['n']}]"
-             for g in ind["groups"]]
+    def line(g):  # a model claim if the page has one; a note shows its first line only
+        q = next((q for q in g["quotes"] if not q["mono"]), g["quotes"][0])
+        if q["mono"]:
+            first = next(x.strip() for x in q["quote"].splitlines() if x.strip())  # industry_section drops blank notes
+            return f"{g['lead']} {excerpt(first, SLIDE_QUOTE)} (see source [{q['n']}])"
+        return f"{g['lead']} \u201c{excerpt(q['quote'], SLIDE_QUOTE)}\u201d [{q['n']}]"
+    lines = [line(g) for g in ind["groups"]]
     # a library brief is one line (its title and takeaways, no source numbers); briefs come first so they are not cut by the quotes
     from app.brief import CITE  # a brief's [n] points at its own sources, which the slide does not list
     nocite = lambda t: re.sub(r"\s+([.,;:])", r"\1", " ".join(CITE.sub("", t).split()))  # noqa: E731
@@ -232,11 +243,21 @@ def protect(sections: list[dict], clients) -> list[dict]:
     return out
 
 
+def _mono(q: dict) -> RichText:
+    rt = RichText()
+    rt.add(q["quote"], font="Consolas")
+    rt.add(f" [{q['n']}]")
+    return rt
+
+
 def to_docx(sections: list[dict], industry: dict | None = None, images: dict[int, bytes] = {}, template=None) -> bytes:
     tpl = DocxTemplate(template or TEMPLATE)
     # images are added after protect(): an InlineImage is not a string; one missing from `images` is skipped
     sections = [{**s, "diagrams": [{**d, "image": InlineImage(tpl, BytesIO(images[d["id"]]), width=Mm(min(160, d["width"] * 25.4 / 96)))}
                                    for d in s["diagrams"] if d["id"] in images]} for s in sections]
+    if industry:  # a note is Consolas, line by line, in a run of its own (the template checks q.mono)
+        industry = {**industry, "groups": [{**g, "quotes": [{**q, "rich": _mono(q)} if q.get("mono") else q for q in g["quotes"]]}
+                                           for g in industry["groups"]]}
     tpl.render({"cases": sections, "industry": industry}, autoescape=True)  # autoescape: & and < must not break the XML
     props = tpl.docx.core_properties  # never ship the template's own metadata
     props.title, props.author, props.last_modified_by = "Reference cases", "Reference Engine", "Reference Engine"
@@ -387,6 +408,7 @@ def link(url: str) -> str:
 _env = Environment(autoescape=False, trim_blocks=True, lstrip_blocks=True)  # Markdown, not HTML
 _env.filters["md"] = md
 _env.filters["link"] = link
+_env.filters["fence"] = fence
 MD = _env.from_string("""\
 {% for c in cases %}
 # {{ c.title | md }}
@@ -446,8 +468,15 @@ MD = _env.from_string("""\
 *{{ g.lead | md }}*
 
 {% for q in g.quotes %}
+{% if q.mono %}
+{{ q.quote | fence }}
+
+Source [{{ q.n }}]
+
+{% else %}
 > \u201c{{ q.quote | md }}\u201d [{{ q.n }}]
 
+{% endif %}
 {% endfor %}
 {% endfor %}
 {% if industry.sources %}
@@ -526,8 +555,15 @@ BRIEF_MD = _env.from_string("""\
 ## Quotes
 
 {% for q in b.appendix %}
+{% if q.mono %}
+{{ q.quote | fence }}
+
+Source [{{ q.n }}]
+
+{% else %}
 > \u201c{{ q.quote | md }}\u201d [{{ q.n }}]
 
+{% endif %}
 {% endfor %}
 {% endif %}
 {% if b.note %}

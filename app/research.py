@@ -23,7 +23,7 @@ from app import anonymise, db, ingest
 from app.llm import MAX_TOKENS, complete_json, profile
 from app.main import User, require
 from app.review import VISIBLE, page, reviewable_cases
-from app.schema import ReferenceCase, llm_schema, numbers, plain, quote_in
+from app.schema import ReferenceCase, fence, llm_schema, numbers, plain, quote_in
 from app.search import clean
 
 router = APIRouter()
@@ -236,7 +236,9 @@ def _csv_safe(v) -> str:
 
 def _export_md(claims) -> str:
     one = lambda v: " ".join(str(v or "").split())  # noqa: E731  a newline would break the list
-    quotes = "\n".join(f"{i}. \u201c{one(c['quote'])}\u201d [{i}]" for i, c in enumerate(claims, 1))
+    # a technical note keeps its lines, in a fence after its list item
+    quotes = "\n".join(f"{i}. Technical note [{i}]:\n\n{fence(c['quote'])}\n" if c.get("type") == "technical_note"
+                       else f"{i}. \u201c{one(c['quote'])}\u201d [{i}]" for i, c in enumerate(claims, 1))
     sources = "\n".join(f"{i}. {one(c.get('publisher'))}, {one(c.get('url'))}, retrieved {one((c.get('retrieved_at') or '')[:10])}"
                         for i, c in enumerate(claims, 1))
     return f"## Quotes\n\n{quotes}\n\n## Sources\n\n{sources}\n"
