@@ -495,6 +495,14 @@ must exist on `main`.
     against all the picked quotes.
   - `quote_texts()` gives step 14 the same texts the model saw.
   - No 'running' status: `briefs.status` allows queued, done and failed.
+- Step 15:
+  - Briefs number sources per quote, matching the `[n]` the model cites,
+    unlike phase 2's per-page numbering. Numbers stay put when a quote is
+    dropped.
+  - `brand/brief.docx` is a second generated template.
+  - The disclaimer reuses `INDUSTRY_DISCLAIMER`.
+  - At render, a sentence or quote naming a protected client is dropped and
+    counted, and a final `blocked()` withholds the download (409).
 
 ## Tests
 

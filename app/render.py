@@ -94,6 +94,68 @@ def industry_section(claims: list[dict], clients, heading=INDUSTRY_HEADING, page
             "statements": statements, "note": note}
 
 
+def brief_section(body: dict, quotes: list[dict], clients) -> dict:
+    """A brief for output: apply() on every string, then blocked() PER SENTENCE and per quote. What still names a
+    protected client is dropped and counted, as in industry_section. Numbers [n] are the quote numbers the brief cites."""
+    from app import brief  # brief imports render's neighbours; import here to keep render importable on its own
+    clean = lambda t: anonymise.apply(CTRL.sub("", str(t or "")), clients)  # noqa: E731
+    omitted, dead, sources, appendix = 0, set(), [], []
+    for n, q in enumerate(quotes[:brief.MAX_QUOTES], 1):
+        item = {"n": n, "quote": clean(q.get("quote")), "title": clean(q.get("title") or _host(q.get("url")) or q.get("publisher")),
+                "publisher": CTRL.sub("", str(q.get("publisher") or "")), "url": CTRL.sub("", str(q.get("url") or "")),
+                "date": CTRL.sub("", str(q.get("retrieved_at") or ""))[:10]}
+        if anonymise.blocked("\n".join(str(v) for v in item.values()), clients):
+            dead.add(n)
+            omitted += 1
+            continue
+        sources.append({k: item[k] for k in ("n", "title", "publisher", "url", "date")})
+        appendix.append({"n": n, "quote": item["quote"]})
+
+    def prose(text):  # the sentences that survive, joined again
+        nonlocal omitted
+        kept = []
+        for sent in brief.sentences(str(text or "")):
+            c = clean(sent)
+            if anonymise.blocked(c, clients) or dead & {int(x) for x in brief.CITE.findall(c)}:
+                omitted += 1
+            else:
+                kept.append(c)
+        return " ".join(kept)
+
+    title = clean(body.get("title"))
+    if not title or anonymise.blocked(title, clients):
+        title = "Best practice brief"
+    themes = []
+    for t in body.get("themes", []):
+        heading = clean(t.get("heading"))
+        if anonymise.blocked(heading, clients):
+            omitted += 1
+        elif text := prose(t.get("text")):
+            themes.append({"heading": heading, "text": text})
+    out = {"title": title, "disclaimer": INDUSTRY_DISCLAIMER, "takeaways": [x for x in map(prose, body.get("takeaways", [])) if x],
+           "themes": themes, "sources": sources, "appendix": appendix,
+           "note": (f"{omitted} statement{'s' if omitted != 1 else ''} omitted: "
+                    f"{'they' if omitted != 1 else 'it'} named a protected client") if omitted else ""}
+    if anonymise.blocked("\n".join(_strings(out)), clients):
+        raise Withheld(WITHHELD)
+    return out
+
+
+BRIEF_TEMPLATE = TEMPLATE.with_name("brief.docx")
+
+
+def to_brief_docx(sec: dict) -> bytes:
+    tpl = DocxTemplate(BRIEF_TEMPLATE)
+    tpl.render({"brief": sec}, autoescape=True)
+    props = tpl.docx.core_properties  # never ship the template's own metadata
+    props.title, props.author, props.last_modified_by = "Best practice brief", "Reference Engine", "Reference Engine"
+    props.comments = props.subject = props.keywords = props.category = ""
+    props.created = props.modified = datetime.now(timezone.utc).replace(tzinfo=None)
+    buf = BytesIO()
+    tpl.save(buf)
+    return buf.getvalue()
+
+
 SLIDE_QUOTE = 140
 
 
@@ -418,6 +480,44 @@ MD = _env.from_string("""\
 
 {{ industry.note | md }}
 {% endif %}
+{% endif %}
+""")
+
+BRIEF_MD = _env.from_string("""\
+# {{ b.title | md }}
+
+*{{ b.disclaimer | md }}*
+
+{% if b.takeaways %}
+## Key takeaways
+
+{% for t in b.takeaways %}
+- {{ t | md }}
+{% endfor %}
+
+{% endif %}
+{% for t in b.themes %}
+## {{ t.heading | md }}
+
+{{ t.text | md }}
+
+{% endfor %}
+{% if b.sources %}
+## Sources
+
+{% for s in b.sources %}
+{{ s.n }}. {{ s.title | md }}, {{ s.publisher | md }}, {{ s.url | link }}, retrieved {{ s.date | md }}
+{% endfor %}
+
+## Quotes
+
+{% for q in b.appendix %}
+> \u201c{{ q.quote | md }}\u201d [{{ q.n }}]
+
+{% endfor %}
+{% endif %}
+{% if b.note %}
+{{ b.note | md }}
 {% endif %}
 """)
 

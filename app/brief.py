@@ -2,7 +2,7 @@
 import re
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from psycopg.types.json import Jsonb
 
 from app import anonymise, db, research
@@ -156,12 +156,30 @@ def save(bid: int, title: str = Form(), takeaways: str = Form(""), heading: list
 
 @router.post("/briefs/{bid}/download")
 def download(bid: int, format: str = Form(), user: User = Depends(require("user"))):
+    from app import render  # here: render imports this module's neighbours
     if format not in ("docx", "pdf_docx", "md"):
         raise HTTPException(400, "unknown format")
     with db.connect() as conn:
-        status, _, _, _, body = owned(conn, bid, user)
-    if status != "done":
-        raise HTTPException(409, "the brief is not ready")
-    if body.get("flags"):
-        raise HTTPException(409, "fix the flagged sentences first")
-    raise HTTPException(501, "the brief output is not built yet")  # plan #214 step 15
+        status, _, _, quotes, body = owned(conn, bid, user)
+        if status != "done":
+            raise HTTPException(409, "the brief is not ready")
+        if body.get("flags"):
+            raise HTTPException(409, "fix the flagged sentences first")
+        try:
+            sec = render.brief_section(body, quotes, anonymise.load_clients(conn))  # re-checked now: a client may be protected since
+        except render.Withheld as e:
+            raise HTTPException(409, str(e)) from None
+        try:
+            if format == "md":
+                data, mime = render.BRIEF_MD.render(b=sec).encode(), "text/markdown; charset=utf-8"
+            elif format == "docx":
+                data, mime = render.to_brief_docx(sec), render.OFFICE + "wordprocessingml.document"
+            else:
+                data, mime = render.to_pdf(render.to_brief_docx(sec), ".docx"), "application/pdf"
+        except render.PdfError as e:
+            raise HTTPException(503, str(e)) from None
+        conn.execute("insert into generations(user_id, format, research_id) "
+                     "select %s, %s, research_id from briefs where id=%s", (user.sub, f"brief-{format}", bid))
+    ext = {"md": "md", "docx": "docx", "pdf_docx": "pdf"}[format]
+    return Response(data, media_type=mime, headers={"Content-Disposition": f'attachment; filename="brief-{bid}.{ext}"',
+                                                    "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})

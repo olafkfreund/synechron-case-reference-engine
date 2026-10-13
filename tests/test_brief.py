@@ -143,7 +143,8 @@ def test_an_edit_reruns_the_checks_and_a_flag_blocks_the_download(made):
     c.post(f"/briefs/{bid}", data={**bad, "takeaways": "Entra supports passwordless sign in [1]."})
     with db.connect() as conn:
         assert conn.execute("select body->'flags' from briefs where id=%s", (bid,)).fetchone()[0] == []
-    assert c.post(f"/briefs/{bid}/download", data={"format": "md"}).status_code not in (404, 409)
+    r = c.post(f"/briefs/{bid}/download", data={"format": "md"})
+    assert r.status_code == 200 and "Passwordless sign in" in r.text
 
 
 def test_a_queued_brief_cannot_be_edited_or_downloaded(made):
@@ -152,3 +153,68 @@ def test_a_queued_brief_cannot_be_edited_or_downloaded(made):
     assert c.post(f"/briefs/{bid}", data={"title": "x"}).status_code == 409
     assert c.post(f"/briefs/{bid}/download", data={"format": "md"}).status_code == 409
     assert "refresh" in c.get(f"/briefs/{bid}").text
+
+
+# ---- output ----
+
+import io  # noqa: E402
+import zipfile  # noqa: E402
+
+from docx import Document  # noqa: E402
+
+from app import render  # noqa: E402
+from tests.test_render import pdf_text  # noqa: E402
+
+DISCLAIMER = "public statements by third parties, not Synechron delivery evidence"
+
+
+def test_every_format_has_the_brief_the_disclaimer_the_sources_and_the_quotes(made):
+    bid = made()
+    c = as_user("u1")
+    r = c.post(f"/briefs/{bid}/download", data={"format": "md"})
+    t = r.text.replace("\\", "")
+    assert r.status_code == 200 and 'filename="brief-%d.md"' % bid in r.headers["content-disposition"]
+    for want in ("# Passwordless sign in", DISCLAIMER, "Entra supports passwordless sign in [1]", "## Setup", "## Sources",
+                 "1. v.example, v.example, <https://v.example/0>, retrieved", f"> “{Q[1]}” [2]"):
+        assert want in t, want
+    d = c.post(f"/briefs/{bid}/download", data={"format": "docx"})
+    doc = Document(io.BytesIO(d.content))
+    text = "\n".join(p.text for p in doc.paragraphs)
+    for want in ("Passwordless sign in", DISCLAIMER, "Entra supports passwordless sign in [1]", "Setup", "Sources",
+                 "[1] v.example, v.example, https://v.example/0", f"“{Q[1]}” [2]"):
+        assert want in text, want
+    assert "{{" not in text and "{%" not in text
+    assert (doc.core_properties.title, doc.core_properties.author) == ("Best practice brief", "Reference Engine")
+    pdf = c.post(f"/briefs/{bid}/download", data={"format": "pdf_docx"})
+    assert pdf.content.startswith(b"%PDF") and "Passwordless sign in" in " ".join(pdf_text(pdf.content)[0].split())
+    with db.connect() as conn:
+        fmts = [r[0] for r in conn.execute("select format from generations where user_id='u1' order by id desc limit 3").fetchall()]
+    assert fmts == ["brief-pdf_docx", "brief-docx", "brief-md"]
+
+
+def test_the_output_is_escaped_and_only_a_plain_url_is_a_link(made):
+    evil = "<script>alert(1)</script> & more"
+    bid = made({"title": evil, "takeaways": [f"{evil} [1]."], "themes": [], "flags": []})
+    with db.connect() as conn:
+        conn.execute("update briefs set quotes=%s where id=%s", (json.dumps([{**QUOTES[0], "url": "https://x/a>[c](javascript:alert(1))"}]), bid))
+    c = as_user("u1")
+    md = c.post(f"/briefs/{bid}/download", data={"format": "md"}).text
+    assert "<script>" not in md and "<https://x/a>" not in md
+    xml = zipfile.ZipFile(io.BytesIO(c.post(f"/briefs/{bid}/download", data={"format": "docx"}).content)).read("word/document.xml").decode()
+    assert "<script>" not in xml and "&lt;script&gt;" in xml
+
+
+def test_a_protected_client_is_replaced_or_dropped_at_render(reg, made, monkeypatch):
+    clients = render.anonymise.load_clients()
+    quotes = [{**QUOTES[0], "quote": f"{reg} runs passwordless sign in out of the box"}, QUOTES[1]]
+    b = {"title": "Passwordless sign in", "takeaways": [f"{reg} runs passwordless sign in [1].", "A policy is needed first [2]."],
+         "themes": []}
+    sec = render.brief_section(b, quotes, clients)
+    assert reg not in str(sec) and sec["takeaways"][0].startswith("a retailer runs") and sec["note"] == ""
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)  # apply() misses: blocked() alone must still guard
+    sec = render.brief_section(b, quotes, clients)
+    assert reg not in str(sec) and sec["takeaways"] == ["A policy is needed first [2]."]
+    assert [s["n"] for s in sec["sources"]] == [2] and [a["n"] for a in sec["appendix"]] == [2]  # numbers stay put
+    assert sec["note"] == "2 statements omitted: they named a protected client" and sec["disclaimer"]
+    bid = made({**b, "flags": []})
+    assert as_user("u1").post(f"/briefs/{bid}/download", data={"format": "md"}).status_code == 200
