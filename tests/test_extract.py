@@ -436,3 +436,85 @@ def test_check_ignores_by_reviewer_on_other_fields():
     c = ReferenceCase(title=Sourced[str](value="Made up", by_reviewer=True))
     ex.check(c, "some document text")
     assert c.title.unsourced is True
+
+
+def test_chunks_cut_at_blank_lines_and_overlap():
+    t = "\n\n".join(f"para {i} " + "x" * 90 for i in range(30))
+    parts = ex.chunks(t, 500, overlap=120)
+    assert len(parts) > 1 and all(len(p) <= 500 for p in parts)
+    assert parts[0].endswith("\n\n") and parts[1][:100] in t[len(parts[0]) - 120:]
+    assert ex.chunks("short", 500) == ["short"]
+    assert len(ex.chunks("y" * 1200, 500, overlap=100)) == 3  # no blank line: hard cut
+
+
+def test_chunk_chars(monkeypatch):
+    monkeypatch.setattr(ex, "profile", lambda a: {"num_ctx": 24576})
+    assert ex.chunk_chars() == (24576 - ex.MAX_TOKENS - 2000) * 3
+    monkeypatch.setattr(ex, "profile", lambda a: {})
+    assert ex.chunk_chars() is None
+
+
+def test_build_reads_long_text_in_parts_and_keeps_points(monkeypatch):
+    text = "\n\n".join(f"Part {i}: the bank migrated system {i} in {i + 2} weeks." for i in range(40))
+    monkeypatch.setattr(ex, "chunk_chars", lambda: 400)
+    seen = []
+
+    def fake(alias, system, user, model, **k):
+        seen.append(user)
+        i = len(seen)
+        q = f"the bank migrated system {i} in {i + 2} weeks"
+        return Extraction(items=[Item(field="title", value="T", quote=q),
+                                 Item(field="solution", value=f"migrated {i}", quote=q)],
+                          summary=f"Done in {i + 2} weeks." if i == 2 else "")
+    monkeypatch.setattr(ex, "complete_json", fake)
+    c = ex.build(text, "internal")
+    n = len(seen)
+    assert n > 2 and f"read in {n} parts" in c.needs_attention
+    assert len(c.points["solution"]) == n and c.solution.value == "migrated 1"
+    assert c.summary == "Done in 4 weeks."  # first summary its items vouch for
+    assert all(not p.unsourced for p in c.points["solution"])
+
+
+def test_check_marks_points_like_their_field():
+    c = ReferenceCase(title=Sourced[str]())
+    c.points = {"solution": [Sourced[str](value="made up", source_quote="not in the document at all")],
+                "implementation": [Sourced[str](value="Reviewer text", by_reviewer=True)],
+                "challenge": [Sourced[str](value="Slow", source_quote="cut customer onboarding from 12 days")]}
+    ex.check(c, DOC)
+    s, i, ch = c.points["solution"][0], c.points["implementation"][0], c.points["challenge"][0]
+    assert s.unsourced and not i.unsourced and not ch.unsourced
+    c.summary = "Fell by 99 percent."
+    assert c.summary_sourced() is False  # an unsourced point's quote vouches for nothing
+
+
+def test_strip_commercial_filters_points():
+    c = ReferenceCase(title=Sourced[str]())
+    c.points = {"solution": [Sourced[str](value="Fixed scope", source_quote="fees of £1,200 per day apply"),
+                             Sourced[str](value="Migrate the ledger", source_quote="migrate the ledger to the cloud")]}
+    assert ex.strip_commercial(c) == 1
+    assert [p.value for p in c.points["solution"]] == ["Migrate the ledger"]
+
+
+def test_chunk_chars_refuses_a_context_too_small_to_step(monkeypatch):
+    monkeypatch.setattr(ex, "profile", lambda a: {"num_ctx": ex.MAX_TOKENS + 2000})
+    with pytest.raises(ValueError, match="num_ctx too small"):
+        ex.chunk_chars()
+
+
+def test_build_summary_not_vouched_by_an_unsourced_quote(monkeypatch):
+    text = "\n\n".join(f"Part {i}: the bank migrated system {i} in {i + 2} weeks." for i in range(40))
+    monkeypatch.setattr(ex, "chunk_chars", lambda: 400)
+    seen = []
+
+    def fake(alias, system, user, model, **k):
+        seen.append(user)
+        if len(seen) == 1:  # a fabricated quote carries 99; the first summary leans on it
+            return Extraction(items=[Item(field="title", value="T", quote="the bank migrated system 0 in 2 weeks"),
+                                     Item(field="solution", value="x", quote="saved 99 percent of cost overnight")],
+                              summary="Saved 99 percent.")
+        q = "the bank migrated system 1 in 3 weeks"
+        return Extraction(items=[Item(field="solution", value="y", quote=q)],
+                          summary="Done in 3 weeks." if len(seen) == 2 else "")
+    monkeypatch.setattr(ex, "complete_json", fake)
+    c = ex.build(text, "internal")
+    assert c.points["solution"][0].unsourced and c.summary == "Done in 3 weeks."

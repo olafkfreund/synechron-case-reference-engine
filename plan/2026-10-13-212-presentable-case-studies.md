@@ -594,6 +594,15 @@ client. Run the full suite, then PR 4.
 - Full suite, then PR 5.
 - Traps: none.
 
+## Deviations (implementation)
+
+- A2: the summary is chosen after `check()`, on a trial case, so an
+  unsourced quote can't vouch for it. The first non-empty chunk summary that
+  passes wins, else the first, which is then blanked with a note.
+  `chunk_chars()` raises when the context leaves at most 2 x `OVERLAP`,
+  rather than looping. `CONTRACT_SYSTEM` asks for one item per need or
+  deliverable, and one per phase or configuration.
+
 ## Tests
 
 After each phase:
