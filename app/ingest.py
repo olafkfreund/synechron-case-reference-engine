@@ -149,6 +149,7 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
     return "updated" if row else "new"
 
 
+IMAGES_LOCK = 234  # first key of the advisory lock that serialises store_images per document
 IMAGES_VERSION = 2  # 2: EMF/WMF drawings are converted (#234)
 
 
@@ -157,22 +158,29 @@ def store_images(doc_id: int, data: bytes, name: str, wanted: bool, add_only: bo
     decoding can take seconds, and a failure here must never fail the ingest. `add_only` (the backfill of an
     unchanged document) deletes nothing and skips a PNG already stored, so an image the reviewer used or
     dismissed keeps its id. A failure leaves images_version as it was, so the next crawl tries again."""
+    meta: dict = {}
     try:
         if wanted:
             with db.connect() as conn:
                 clients = anonymise.load_clients(conn)
-            images = document_images_from(data, name, clients)  # hints are anonymised here, once
+            images = document_images_from(data, name, clients, meta)  # hints are anonymised here, once
         else:
             images = []  # a document that gets no case gets no candidates
+        hashes = meta.get("src_hashes") or [None] * len(images)
         with db.connect() as conn:
+            # two runs on one document (an upload and a crawl, two workers) must not both add the same image
+            conn.execute("select pg_advisory_xact_lock(%s::int, %s::int)", (IMAGES_LOCK, doc_id & 0x7FFFFFFF))
             if not add_only:
                 conn.execute("delete from document_images where document_id=%s", (doc_id,))
-            for png, w, h, hint in images:
-                conn.execute("insert into document_images(document_id, png, width, height, hint) "
-                             "select %s::bigint,%s::bytea,%s::int,%s::int,%s::text where not exists "
-                             "(select 1 from document_images where document_id=%s::bigint and md5(png)=md5(%s::bytea))",
-                             (doc_id, png, w, h, hint, doc_id, png))  # same PNG bytes: _decode is deterministic
-            conn.execute("update documents set images_version=%s where id=%s", (IMAGES_VERSION, doc_id))
+            for (png, w, h, hint), src in zip(images, hashes):
+                # the same source entry, or (older rows have no src_hash) the same PNG bytes
+                conn.execute("insert into document_images(document_id, png, width, height, hint, src_hash) "
+                             "select %s::bigint,%s::bytea,%s::int,%s::int,%s::text,%s::text where not exists "
+                             "(select 1 from document_images where document_id=%s::bigint "
+                             "and (src_hash = %s::text or md5(png)=md5(%s::bytea)))",
+                             (doc_id, png, w, h, hint, src, doc_id, src, png))
+            if not meta.get("vector_failed"):  # a failed conversion leaves the version, so the next crawl tries again
+                conn.execute("update documents set images_version=%s where id=%s", (IMAGES_VERSION, doc_id))
     except Exception as e:  # noqa: BLE001 - the class only: a message could echo document text
         print(f"document {doc_id} images not stored: {type(e).__name__}", flush=True)
 

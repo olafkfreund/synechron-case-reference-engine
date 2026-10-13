@@ -1,4 +1,5 @@
 import shutil
+from pathlib import Path
 import subprocess
 import uuid
 from io import BytesIO
@@ -344,7 +345,7 @@ def test_emf_and_wmf_are_found_by_magic_cropped_and_svg_never_converted(monkeypa
     z = pack({"word/media/a.bin": EMF, "word/media/b.dat": WMF, "word/media/fake.emf": noise_png(450)[:60] + b"\0" * 3000,
               "word/media/c.svg": b"<svg/>" + b" " * 3000})
     got = diagrams.document_images_from(z, "x.docx")
-    assert len(calls) == 1 and sorted(calls[0][0]) == ["v0.emf", "v1.wmf"] or sorted(calls[0][0]) == ["v0.wmf", "v1.emf"]
+    assert len(calls) == 1 and sorted(calls[0][0]) == ["v0.emf", "v1.wmf"]  # the larger entry first
     assert calls[0][1:] == ("png", diagrams.VEC_TIMEOUT, diagrams.VEC_WAIT, diagrams.MAX_BYTES)
     assert len(got) == 2 and all((w, h) == (616, 616) for _, w, h, _ in got)  # 600 px of drawing + 8 px margin a side
 
@@ -427,9 +428,13 @@ def test_a_slow_office_is_killed_and_leaves_no_child(tmp_path, monkeypatch):
     script.write_text("#!/bin/sh\nsleep 30 &\nsleep 30\n")
     script.chmod(0o755)
     monkeypatch.setattr(office, "SOFFICE", str(script))
+    made = []
+    real = office.tempfile.mkdtemp
+    monkeypatch.setattr(office.tempfile, "mkdtemp", lambda **k: made.append(Path(real(**k))) or str(made[-1]))
     with pytest.raises(RuntimeError, match="timeout"):
         office.convert({"a.emf": EMF}, "png", 0.5, 1)
     assert subprocess.run(["pgrep", "-f", "sleep 30"], capture_output=True).returncode == 1
+    assert office.SLOTS._value == 2 and not made[0].exists()  # the slot is back and the temp dir is gone
 
 
 @pytest.mark.skipif(not shutil.which("soffice"), reason="needs LibreOffice")
@@ -439,3 +444,37 @@ def test_malformed_and_truncated_emf_fail_safely_and_keep_the_rasters():
            "word/media/c.wmf": WMF[:200] + b"\xff" * 2500}  # truncated placeholder header, junk body
     got = diagrams.document_images_from(pack({"word/media/r.png": noise_png(450)} | bad), "x.docx")
     assert [g[1] for g in got] == [450]
+
+
+def test_a_failed_conversion_is_reported_apart_from_no_vectors(monkeypatch):
+    z = pack({"word/media/r.png": noise_png(450), "word/media/v.emf": EMF})
+    for err in ("busy", "timeout", "exit 1"):
+        def boom(*a, **k):
+            raise RuntimeError(err)
+        monkeypatch.setattr(diagrams.office, "convert", boom)
+        meta = {}
+        assert [g[1] for g in diagrams.document_images_from(z, "x.docx", meta=meta)] == [450]
+        assert meta["vector_failed"] is True and len(meta["src_hashes"]) == 1
+    fake_convert(monkeypatch, page_png())
+    meta = {}
+    got = diagrams.document_images_from(z, "x.docx", meta=meta)
+    assert meta["vector_failed"] is False and len(meta["src_hashes"]) == len(got) == 2 and all(len(h) == 64 for h in meta["src_hashes"])
+    meta = {}
+    diagrams.document_images_from(pack({"word/media/r.png": noise_png(450)}), "x.docx", meta=meta)
+    assert meta["vector_failed"] is False  # nothing to convert is not a failure
+
+
+def test_office_limit_drops_an_oversized_output_and_to_pdf_passes_none(tmp_path, monkeypatch):
+    script = tmp_path / "fake.sh"
+    script.write_text('#!/bin/sh\nwhile [ "$1" != "--outdir" ]; do shift; done\nout=$2; shift 2\nmkdir -p "$out"\n'
+                      'for f in "$@"; do b=$(basename "$f"); b=${b%.*}\n'
+                      'case $b in big*) n=100;; *) n=10;; esac\nhead -c $n /dev/zero > "$out/$b.png"; done\n')
+    script.chmod(0o755)
+    monkeypatch.setattr(office, "SOFFICE", str(script))
+    files = {"big.x": b"1", "small.x": b"1"}
+    assert sorted(office.convert(files, "png", 10, 1, limit=50)) == ["small.x"]
+    assert sorted(office.convert(files, "png", 10, 1)) == ["big.x", "small.x"]
+    seen = []
+    monkeypatch.setattr(office, "convert", lambda *a, **k: seen.append((a, k)) or {"in.docx": b"%PDF"})
+    from app import render
+    assert render.to_pdf(b"x", ".docx") == b"%PDF" and "limit" not in seen[0][1] and len(seen[0][0]) == 4

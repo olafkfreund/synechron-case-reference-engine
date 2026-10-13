@@ -240,6 +240,8 @@ create table if not exists document_images (
   created_at timestamptz not null default now()
 );
 create index if not exists document_images_document_idx on document_images (document_id);
+-- sha256 of the original entry: the re-encoded PNG can change with a library upgrade, the source does not (null for older rows)
+alter table document_images add column if not exists src_hash text;
 
 alter table documents add column if not exists updated_at timestamptz;
 update documents set updated_at = created_at where updated_at is null;  -- keep the real age of existing documents

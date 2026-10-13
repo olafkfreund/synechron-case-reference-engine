@@ -2,6 +2,7 @@
 
 The web task only stores a raw upload; process() decodes it. document_images_from() is worker-only (it decodes).
 """
+import hashlib
 import posixpath
 import re
 import xml.etree.ElementTree as ET
@@ -204,8 +205,9 @@ def _crop(raw: bytes) -> bytes | None:
         return None
 
 
-def _vector_candidates(zf, infos, prefix: str) -> list[tuple]:
-    """[(info, png, w, h)] from the EMF/WMF entries, converted in one soffice run. Any failure gives []."""
+def _vector_candidates(zf, infos, prefix: str) -> list[tuple] | None:
+    """[(info, png, w, h, sha256 of the entry)] from the EMF/WMF entries, converted in one soffice run.
+    [] when there are none; None when the conversion failed (busy, timeout, exit, anything): worth trying again."""
     try:
         eligible = sorted((i for i in infos if i.filename.startswith(prefix) and not i.is_dir()
                            and VEC_MIN_BYTES <= i.file_size <= MAX_BYTES), key=lambda i: -i.file_size)[:VEC_SCAN]
@@ -215,11 +217,15 @@ def _vector_candidates(zf, infos, prefix: str) -> list[tuple]:
                 break
             with zf.open(info) as f:
                 ext = _vector_ext(f.read(48))
-            raw = zf.open(info).read(MAX_BYTES + 1) if ext else b""  # bounded whatever the declared size said
+            if ext:
+                with zf.open(info) as f:
+                    raw = f.read(MAX_BYTES + 1)  # bounded whatever the declared size said
+            else:
+                raw = b""
             if ext and len(raw) <= MAX_BYTES:
                 key = f"v{len(files)}"  # distinct stems: soffice names the output <stem>.png
                 files[f"{key}.{ext}"] = raw
-                by_name[f"{key}.{ext}"] = info
+                by_name[f"{key}.{ext}"] = (info, hashlib.sha256(raw).hexdigest())
         if not files:
             return []
         outs = office.convert(files, "png", VEC_TIMEOUT, VEC_WAIT, limit=MAX_BYTES)
@@ -228,18 +234,21 @@ def _vector_candidates(zf, infos, prefix: str) -> list[tuple]:
             cropped = _crop(png_raw)
             png, w, h, _ = _decode(cropped) if cropped else (None, 0, 0, "")
             if png and min(w, h) >= MIN_SIDE:
-                found.append((by_name[fname], png, w, h))
+                found.append((by_name[fname][0], png, w, h, by_name[fname][1]))
         return found
     except Exception as e:  # noqa: BLE001 - the raster candidates stay; the class only is logged
         print(f"vector diagrams skipped: {type(e).__name__}", flush=True)
-        return []
+        return None
 
 
-def document_images_from(data: bytes, name: str, clients=()) -> list[tuple[bytes, int, int, str]]:
+def document_images_from(data: bytes, name: str, clients=(), meta: dict | None = None) -> list[tuple[bytes, int, int, str]]:
     """Candidate diagrams inside a .docx or .pptx: [(png, width, height, hint)], largest first, at most MAX_FOUND.
 
     Never raises: a bad zip gives []. `clients` anonymises the hint (alt text can name a client).
+    `meta`, if given, is filled in: "src_hashes" (sha256 of each image's original entry, parallel to the result)
+    and "vector_failed" (the EMF/WMF conversion failed, so the caller should read the document again later).
     """
+    meta = {} if meta is None else meta
     ext = posixpath.splitext(name.lower())[1]
     prefix = {".docx": "word/media/", ".pptx": "ppt/media/"}.get(ext)
     if not prefix:
@@ -257,19 +266,23 @@ def document_images_from(data: bytes, name: str, clients=()) -> list[tuple[bytes
                 if len(found) >= MAX_FOUND:
                     break  # enough: the rest is not decoded
                 try:
-                    raw = zf.open(info).read(MAX_BYTES + 1)  # bounded whatever the declared size said
+                    with zf.open(info) as f:
+                        raw = f.read(MAX_BYTES + 1)  # bounded whatever the declared size said
                     if len(raw) > MAX_BYTES or not raw.startswith(MAGIC):
                         continue
                     png, w, h, _ = _decode(raw)
                 except Exception:  # noqa: BLE001 - one bad entry (a lying size, a bad CRC) loses only itself
                     continue
                 if png and min(w, h) >= MIN_SIDE:
-                    found.append((info, png, w, h))
+                    found.append((info, png, w, h, hashlib.sha256(raw).hexdigest()))
             if len(found) < MAX_FOUND:
-                found = sorted(found + _vector_candidates(zf, infos, prefix), key=lambda f: -f[2] * f[3])
+                vectors = _vector_candidates(zf, infos, prefix)
+                meta["vector_failed"] = vectors is None
+                found = sorted(found + (vectors or []), key=lambda f: -f[2] * f[3])
             hints = _hints(zf, ext) if found else {}
         out = []
-        for info, png, w, h in found[:MAX_FOUND]:
+        meta["src_hashes"] = [f[4] for f in found[:MAX_FOUND]]
+        for info, png, w, h, _ in found[:MAX_FOUND]:
             # control and invisible characters go first: a zero-width space inside a name would hide it from the anonymiser
             hint = "".join(c for c in " ".join(hints.get(info.filename, "").split()) if c.isprintable())
             hint = (anonymise.apply(hint, clients) if clients else hint)[:MAX_CAPTION].strip()

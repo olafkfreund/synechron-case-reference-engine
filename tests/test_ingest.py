@@ -762,7 +762,7 @@ def test_image_candidates_are_stored_with_the_registry_and_replaced_on_a_new_ver
     _, sid = env
     seen = []
 
-    def fake(data, name, clients=()):
+    def fake(data, name, clients=(), meta=None):
         seen.append((name, [c["name"] for c in clients]))
         return [(b"png-" + data, 500, 400, f"hint {data.decode()}")]
     monkeypatch.setattr(ing, "document_images_from", fake)
@@ -870,6 +870,58 @@ def test_a_failed_backfill_keeps_the_old_version_so_the_next_crawl_tries_again(e
     monkeypatch.setattr(ing, "document_images_from", lambda *a, **k: [(b"p", 500, 400, ""), (b"q", 500, 400, "")])
     ing.ingest(sid, "a", "a.docx", b"one")
     assert version_of(did) == ing.IMAGES_VERSION and len(image_ids(sid)) == 2
+
+
+def test_a_failed_vector_conversion_stores_the_rasters_but_keeps_the_version(env, monkeypatch):
+    _, sid = env
+    state = {"fail": True}
+
+    def fake(data, name, clients=(), meta=None):
+        meta["vector_failed"] = state["fail"]
+        meta["src_hashes"] = ["h-r", "h-v"][:1 if state["fail"] else 2]
+        return [(b"raster", 500, 400, "")] + ([] if state["fail"] else [(b"vector", 600, 600, "")])
+    monkeypatch.setattr(ing, "document_images_from", fake)
+    ing.ingest(sid, "a", "a.docx", b"one")
+    did = old_version(sid)
+    assert version_of(did) == 1 and len(image_ids(sid)) == 1
+    ing.ingest(sid, "a", "a.docx", b"one")  # still failing
+    assert version_of(did) == 1 and len(image_ids(sid)) == 1
+    state["fail"] = False
+    ing.ingest(sid, "a", "a.docx", b"one")
+    assert version_of(did) == ing.IMAGES_VERSION and [p for _, p in image_ids(sid)] == [b"raster", b"vector"]
+
+
+def test_a_changed_re_encoding_of_the_same_source_is_not_added_again(env, monkeypatch):
+    _, sid = env
+    out = {"png": b"enc-1"}
+
+    def fake(data, name, clients=(), meta=None):
+        meta["src_hashes"] = ["src-1"]
+        return [(out["png"], 500, 400, "")]
+    monkeypatch.setattr(ing, "document_images_from", fake)
+    ing.ingest(sid, "a", "a.docx", b"one")
+    did = old_version(sid)
+    out["png"] = b"enc-2"  # a Pillow or zlib upgrade encodes the same entry differently
+    ing.ingest(sid, "a", "a.docx", b"one")
+    assert [p for _, p in image_ids(sid)] == [b"enc-1"] and version_of(did) == ing.IMAGES_VERSION
+    with db.connect() as c:  # an older row has no src_hash: the PNG bytes still match it
+        c.execute("update document_images set src_hash=null")
+        c.execute("update documents set images_version=1 where id=%s", (did,))
+    out["png"] = b"enc-1"
+    ing.ingest(sid, "a", "a.docx", b"one")
+    assert len(image_ids(sid)) == 1
+
+
+def test_a_new_version_resets_images_version_until_the_images_are_stored(env, monkeypatch):
+    _, sid = env
+    monkeypatch.setattr(ing, "document_images_from", lambda *a, **k: [(b"p", 500, 400, "")])
+    ing.ingest(sid, "a", "a.docx", b"one")
+    did = old_version(sid)
+    with db.connect() as c:
+        c.execute("update documents set images_version=%s where id=%s", (ing.IMAGES_VERSION, did))
+    monkeypatch.setattr(ing, "store_images", lambda *a, **k: None)  # the store step fails or has not run
+    ing.ingest(sid, "a", "a.docx", b"two")
+    assert version_of(did) == 1
 
 
 def test_a_document_with_no_usable_image_is_read_once_then_left_alone(env, monkeypatch):

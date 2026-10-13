@@ -198,6 +198,16 @@ dismissed (`dismissed_images`) would be offered again. So:
   - Eval: candidates went from 13 to 16 across the trial documents (lines 3
     and 4 gained 1 and 2). Six documents with EMF/WMF gained none, probably
     because of the size or blank-page filters; not investigated.
+- Review fixes:
+  - A failed vector conversion leaves `images_version` at 1, so it is
+    retried; the rasters are still stored.
+  - Dedupe uses `document_images.src_hash` (sha256 of the source entry),
+    falling back to the PNG md5 for old rows.
+  - `store_images` takes a per-document advisory lock.
+  - Also: tests for limits, slot release and temp-dir cleanup, and
+    `with zf.open`.
+  - Accepted and recorded: `VEC_SCAN = 100` largest media entries; soffice
+    disk use is bounded only by the timeout.
 
 ## Tests
 
