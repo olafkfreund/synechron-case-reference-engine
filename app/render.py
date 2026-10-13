@@ -604,9 +604,10 @@ def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: 
             body = make(sections, industry, images=images)  # before the audit row: a broken template must not log a generation
         except PdfError as e:
             raise HTTPException(503, str(e)) from None
-        conn.execute("insert into generations(user_id, format, case_ids, anonymised, industry_context_ack, research_id) "
-                     "values (%s,%s,%s,%s,%s,%s)", (user.sub, format, ids, anonymised, industry_context_ack and not ids,
-                                                    research_id if (industry and claims) else None))
+        library_used: list[int] = []  # step 8 fills this with the library items that were rendered
+        conn.execute("insert into generations(user_id, format, case_ids, anonymised, industry_context_ack, research_id, library_ids) "
+                     "values (%s,%s,%s,%s,%s,%s,%s)", (user.sub, format, ids, anonymised, industry_context_ack and not ids,
+                                                       research_id if (industry and claims) else None, library_used or None))
     return Response(body, media_type=mime, headers={
         "Content-Disposition": f'attachment; filename="{'case-study' if format.startswith('case_study') else 'reference-cases'}.{'pdf' if 'pdf' in format else format.rsplit('_', 1)[-1]}"', "X-Content-Type-Options": "nosniff"})
 

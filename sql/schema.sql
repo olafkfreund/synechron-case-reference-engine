@@ -167,6 +167,8 @@ create table if not exists generations (
 );
 -- which research (if any) fed an output's industry context: part of what was generated and for whom
 alter table generations add column if not exists research_id bigint references research(id) on delete set null;
+-- which library items (#235) went into an output
+alter table generations add column if not exists library_ids bigint[];
 
 -- how sensitive a source's documents are: decides which models may read them (app/llm.py)
 alter table sources add column if not exists data_class text not null default 'confidential';
