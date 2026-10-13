@@ -7,6 +7,7 @@ from app import db, writeup
 from app.llm import MAX_TOKENS, complete_json, profile
 from app.schema import FIELDS, POINT_FIELDS, Extraction, Period, Prose, ReferenceCase, Sourced, assemble, quote_in, sourced, vague_metric
 
+EXTRACTION_VERSION = 2  # #212 phases A and B; every PR that changes extraction output bumps it (#222)
 MAX_CHARS = 400_000  # budget: longer documents are cut; chunks fit the model's context
 
 SYSTEM = (
@@ -204,6 +205,7 @@ def build(full_text: str, data_class: str, basis: str = "delivered", basis_reaso
     if not case.summary_sourced():
         case.summary = ""
         notes.append("summary used numbers absent from the sourced quotes; blanked")
+    case.extraction_version = EXTRACTION_VERSION
     case.needs_attention = notes
     return case
 
@@ -232,6 +234,8 @@ def extract(document_id: int, basis: str = "delivered", basis_reason: str = "", 
         # a reviewer's own text survives a re-extraction (#198); the cases lock comes last in the lock order
         old = conn.execute("select data from cases where document_id=%s for update", (document_id,)).fetchone()
         if old:
+            if old[0].get("extraction_version", 1) < EXTRACTION_VERSION:
+                case.needs_attention.append("Re-extracted with richer extraction: check and approve again")
             for f, label in (("implementation", "Implementation approach"), ("configuration", "Configuration and integration"),
                              ("lessons_learned", "Lessons learned")):
                 prev = Sourced[str].model_validate(old[0].get(f) or {})
