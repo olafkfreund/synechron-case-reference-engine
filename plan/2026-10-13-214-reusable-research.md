@@ -514,6 +514,16 @@ must exist on `main`.
   - Quotes are cleaned of `<quotes>` tags and whitespace for both the model
     and `save()`.
   - The user's title becomes the brief title, and is still checked.
+- Steps 19-21 (built together):
+  - `picked_claims(strict=True)` refuses a save that would drop a protected
+    quote.
+  - File building moved to `research.export_file` and `brief.make_output`
+    for reuse.
+  - `body.rechecks` maps a user to a re-check research id, with no new
+    column.
+  - `finalize()` lowercases topics.
+  - Any user may mark an item re-checked.
+  - The re-check test completes the research row by hand.
 
 ## Tests
 
