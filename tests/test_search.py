@@ -269,3 +269,80 @@ def test_pick_leaves_out_a_candidate_with_a_name_apply_missed(monkeypatch):  # #
     monkeypatch.setattr(sr, "complete_json", lambda m, s, user, *a, **k: seen.append(user) or sr.Picks(picks=[]))
     sr.pick("onboarding", cands, reg)
     assert "case_id 2 " in seen[0] and "case_id 1 " not in seen[0] and "Ｚｏｒｐ" not in seen[0]
+
+
+# browse (#215)
+GUEST = [USER, DOCS]
+
+
+def no_model(monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("browse must not call a model")
+    monkeypatch.setattr(sr, "complete_json", boom)
+
+
+def stamp(cid, days):
+    with db.connect() as c:
+        c.execute("update cases set approved_at = now() - make_interval(days => %s) where id=%s", (days, cid))
+
+
+def test_get_lists_visible_cases_newest_first_without_a_model(approved, monkeypatch):
+    no_model(monkeypatch)
+    old, mid, new = (approved(data(title=t)) for t in ("Old case", "Mid case", "New case"))
+    for cid, d in ((old, 30), (mid, 20), (new, 10)):
+        stamp(cid, d)
+    approved(data(title="Hidden case"), acl=("g-other",))
+    text = client(GUEST).get("/search").text
+    assert text.index("New case") < text.index("Mid case") < text.index("Old case")
+    assert "Hidden case" not in text and "Approved " in text and "Kubernetes" in text
+
+
+def test_paging(approved):
+    for i in range(21):
+        stamp(approved(data(title=f"Case {i:02d}")), 100 - i)  # Case 20 is the newest
+    c = client(GUEST)
+    p1, p2 = c.get("/search").text, c.get("/search?page=2").text
+    assert p1.count('class="section-card stack result"') == 20 and "Case 00" not in p1
+    assert 'Next</a>' in p1 and 'Previous</a>' not in p1 and "page=2" in p1
+    assert p2.count('class="section-card stack result"') == 1 and "Case 00" in p2
+    assert 'Previous</a>' in p2 and 'Next</a>' not in p2
+
+
+def test_kind_and_sort(approved):
+    d = approved(data(title="Zeta delivered"))
+    e = approved(data(title="Alpha engagement"))
+    set_basis(e, "engagement")
+    c = client(GUEST)
+    t = c.get("/search?kind=engagement").text
+    assert "Alpha engagement" in t and "Zeta delivered" not in t
+    t = c.get("/search?sort=title").text
+    assert t.index("Alpha engagement") < t.index("Zeta delivered")
+    assert d != e
+
+
+def test_facets_count_and_hide_protected(approved, reg):
+    name, _ = reg("Zorp", "a retailer")
+    approved(data(industry="Banking"))
+    approved(data(industry="Banking"))
+    approved(data(industry="Insurance"))
+    approved(data(industry=f"Banking for {name}"))
+    f = sr.facets(ME)
+    assert ("Banking", 2) in f["industry"] and ("Insurance", 1) in f["industry"]
+    assert [v for v, _ in f["industry"]] == ["Banking", "Insurance"]  # the value naming a client is not offered
+    assert ("Kubernetes", 4) in f["tech"]
+    assert name not in client(GUEST).get("/search").text
+
+
+def test_post_with_only_filters_calls_no_model(approved, monkeypatch):
+    no_model(monkeypatch)
+    approved(data(title="Banking case"))
+    r = client(GUEST).post("/search", data={"bid_text": "  ", "industry": "bank"})
+    assert r.status_code == 200 and "Banking case" in r.text
+
+
+def test_off_list_filter_is_shown_selected_and_escaped(approved):
+    approved()
+    t = client(GUEST).get("/search?industry=<b>x").text
+    assert '<option value="&lt;b&gt;x" selected>&lt;b&gt;x (filtered)</option>' in t
+    assert "<b>x" not in t
+    assert "No approved cases match these filters" in t

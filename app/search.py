@@ -172,8 +172,8 @@ def facets(user: User) -> dict[str, list[tuple[str, int]]]:
     with db.connect() as conn:  # shortcut: facet group-by scans approved cases; cache per minute if search gets slow
         for k, q in queries.items():
             rows = conn.execute(q, [list(user.groups)]).fetchall()
-            cleaned = [(clean(v, clients, None), n) for v, n in rows]
-            out[k] = [(v, n) for v, n in cleaned if v]
+            # a value clean() changes or withholds is never offered: its cleaned form would not match the stored one
+            out[k] = [(v, n) for v, n in rows if clean(v, clients, None) == v]
     return out
 
 
