@@ -93,6 +93,10 @@ Branch `fix/206-sharepoint-raised-cap`, worktree `../refs-engine-206`.
    passes.
    Traps: the fake keys delta pages by full URL with `?token=`. Chain d1 → d2
    → d3 as the existing cap test does.
+   Deviation: the tests share a `skip_f1` helper. The deleted test also asserts
+   no `/items/f1` fetch, and the 404 test asserts the lookup happened, so each
+   one fails if its own branch breaks. Without the carry loop, the raised-cap,
+   same-cap and small-raise tests fail.
 
 3. **`app/crawl.py`, `crawl_confluence`: remember and re-crawl the page.**
    - `:374`: add `too_large = {}` to the per-run state, as
