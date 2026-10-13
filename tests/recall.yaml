@@ -11,7 +11,7 @@
 # Run (inside the app container, with the groups of a user who may see the documents):
 #   python scripts/recall.py --groups g-docs [--file tests/recall.yaml] [--min 0.90]
 # It measures retrieval only (full-text search + filters, top 20): the LLM pick is not involved.
-# Replace the samples with the bid team's 50 real queries before rollout. Below 90% top-3: add pgvector on `summary`.
+# Replace the samples with the bid team's 50 real queries before rollout. Below 90% top-20: add pgvector on `summary`.
 queries:
   - id: sample-kyc-bank
     sample: true
