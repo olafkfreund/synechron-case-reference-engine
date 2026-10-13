@@ -320,3 +320,56 @@ def test_architecture_hidden_from_llm_schema_old_json_loads_and_searchable():
     c = ReferenceCase.model_validate(d)
     assert "Ledger" in c.search_text() and "Solution architecture" in c.search_text()
     assert ReferenceCase.model_validate_json(c.model_dump_json()) == c
+
+
+# --- check_architecture (#246 A6) ---
+def _checked(**arch):
+    from app.schema import Architecture, check_architecture
+    pts = {"solution": [Sourced[str](value="An intake API for web and mobile", source_quote="An intake API accepts claims from the web and mobile app")],
+           "configuration": [Sourced[str](value="Kafka carries events", source_quote="Kafka carries the claim events, 30 days")]}
+    c = ReferenceCase(title=Sourced[str](value="T", source_quote="T"), points=pts,
+                      tech_stack=[Sourced[str](value="Kafka", source_quote="Kafka carries the claim events")],
+                      outcomes=[Outcome(metric="handling time", value="11 days to 4 days", source_quote="fell from 11 days to 4 days")])
+    base = {"components": [{"id": "a", "name": "Intake API", "role": "Accepts claims", "zone": "integration", "kind": "service", "cite": "solution 1"},
+                           {"id": "k", "name": "Kafka events", "role": "Carries claim events", "zone": "data", "kind": "queue", "cite": "configuration 1"}],
+            "flows": [{"src": "a", "dst": "k", "label": "Publish claim", "mode": "event", "cite": "configuration 1"}],
+            "callouts": [{"text": "Handling from 11 days to 4", "outcome": 0}]}
+    base.update(arch)
+    c.architecture = Architecture.model_validate(base)
+    return c, check_architecture
+
+
+def test_a_clean_architecture_passes_and_none_is_clean():
+    c, check = _checked()
+    assert check(c) == []
+    c.architecture = None
+    assert check(c) == []
+
+
+def test_architecture_unsourced_name_number_price_and_cite_are_flagged():
+    def comp(**kw):
+        return {"id": "a", "name": "Intake API", "role": "Accepts claims", "zone": "core", "kind": "app", "cite": "solution 1", **kw}
+    c, check = _checked(components=[comp(name="Snowflake store")], flows=[], callouts=[])
+    assert any("Snowflake" in f for f in check(c))  # a name no quote supports
+    c, check = _checked(components=[comp(role="Handles 99 claims a day")], flows=[], callouts=[])
+    assert any("number 99" in f for f in check(c))
+    c, check = _checked(components=[comp(role="Costs EUR 50,000 per year")], flows=[], callouts=[])
+    assert any("price" in f for f in check(c))
+    c, check = _checked(components=[comp(cite="solution 9")], flows=[], callouts=[])
+    assert any("no sourced point" in f for f in check(c))
+    c, check = _checked(callouts=[{"text": "Handling from 11 days to 3", "outcome": 0}])
+    assert any("number 3" in f for f in check(c))  # a callout's number must match its outcome
+    c, check = _checked(callouts=[{"text": "Fewer days", "outcome": 4}])
+    assert any("outcome 4" in f for f in check(c))
+
+
+def test_a_tech_stack_match_is_accepted_without_a_cite_and_a_bare_name_is_not():
+    from app.schema import prune_architecture
+    def comp(i, name, cite):
+        return {"id": i, "name": name, "role": "x", "zone": "core", "kind": "app", "cite": cite}
+    c, check = _checked(components=[comp("k", "Kafka cluster", ""), comp("m", "Mystery box", "")],
+                        flows=[{"src": "k", "dst": "m", "label": "x", "mode": "api", "cite": "configuration 1"}], callouts=[])
+    flags = check(c)
+    assert any("Mystery box" in f and "no cite" in f for f in flags) and not any("Kafka cluster" in f for f in flags)
+    prune_architecture(c)
+    assert [x.id for x in c.architecture.components] == ["k"] and c.architecture.flows == []

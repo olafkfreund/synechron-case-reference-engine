@@ -313,3 +313,15 @@ code ignores it. The demo can be re-seeded.
     diagrams is now "Diagrams", under the new Architecture block.
   - Mermaid escaping also covers backticks and newlines.
   - `.paper svg` CSS is added.
+- A6:
+  - `check_architecture` uses `check_prose(..., heading=True)`, so a
+    capitalised first word isn't flagged.
+  - Pruning is a separate `prune_architecture()`; the checker never changes
+    the case.
+- A7:
+  - Each of the 9 approved demo cases has an architecture with 8–10
+    components, 7–10 flows and 2 callouts.
+  - `validate()` runs `check_architecture` before any write.
+  - `refresh_architecture()` updates only the architecture and the search
+    text of unchanged documents.
+  - Litware goes from 6/9 to 7/9 complete. The others were already 9/9.

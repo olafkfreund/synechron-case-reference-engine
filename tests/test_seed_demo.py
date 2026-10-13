@@ -227,12 +227,17 @@ def _planted_outside_region(d):  # only region may carry the planted unsourced e
     d["cases"][1]["case"]["industry"]["source_quote"] = "Not in the document at all."
 
 
+def _unsupported_architecture(d):  # a name no point supports
+    d["cases"][1]["case"]["architecture"]["components"][0]["name"] = "Zorblax store"
+
+
 def _too_few_technologies(d):  # case 0 has a diagram and a candidate image to draw
     d["cases"][0]["case"]["tech_stack"] = d["cases"][0]["case"]["tech_stack"][:1]
 
 
 @pytest.mark.parametrize("mutate,word", [(_bad_quote, "title"), (_reviewer_flag, "999"), (_unexpected_flag, "Zorblax"),
                                          (_flag_expected_but_clean, "expect_flag"), (_planted_outside_region, "industry"),
+                                         (_unsupported_architecture, "Zorblax"),
                                          (_too_few_technologies, "tech_stack")])
 def test_failed_validation_writes_nothing(env, tmp_path, monkeypatch, capsys, mutate, word):
     demo = subset()
@@ -248,8 +253,7 @@ def test_failed_validation_writes_nothing(env, tmp_path, monkeypatch, capsys, mu
 
 def test_completeness_mix(env):
     assert seed.main() == 0
-    # no demo case has a diagram until #246 draws real ones: a missing diagram beats a chain of boxes
-    want = {i: (8, 9) for i in (0, 1, 2, 3, 5, 6, 7, 8)} | {4: (6, 9), 10: (8, 9), 11: (8, 9)}
+    want = {i: (9, 9) for i in (0, 1, 2, 3, 5, 6, 7, 8)} | {4: (7, 9), 10: (8, 9), 11: (8, 9)}  # 4 has no picture: its architecture meets "diagram"
     with db.connect() as c:
         rows = {r[0]: ReferenceCase.model_validate(r[1]) for r in c.execute(
             "select d.title, c.data from cases c join documents d on d.id=c.document_id join sources s on s.id=d.source_id "
@@ -266,3 +270,42 @@ def test_completeness_mix(env):
             n = c.execute("select count(*) from diagrams where case_id=%s and created_by='demo-seed'", (ids[e["file"]],)).fetchone()[0]
             assert n == (1 if e.get("diagram") else 0), e["file"]
         assert c.execute("select count(*) from case_approval_overrides where case_id = any(%s)", (list(ids.values()),)).fetchone()[0] == 1
+
+
+def test_every_approved_demo_case_has_a_checked_architecture(env):
+    from app.schema import check_architecture
+    assert seed.main() == 0
+    with db.connect() as c:
+        rows = {r[0]: ReferenceCase.model_validate(r[1]) for r in c.execute(
+            "select d.title, c.data from cases c join documents d on d.id=c.document_id join sources s on s.id=d.source_id "
+            "where s.name like 'Demo: %' and c.status='approved'").fetchall()}
+    assert len(rows) == 9
+    for name, case in rows.items():
+        a = case.architecture
+        assert a and 6 <= len(a.components) <= 10 and 6 <= len(a.flows) <= 12 and 1 <= len(a.callouts) <= 2, name
+        assert check_architecture(case) == [] and not a.flags, name
+        assert a.title in case.search_text()
+
+
+def test_seed_refreshes_only_the_architecture_of_an_unchanged_document(env, tmp_path, monkeypatch, capsys):
+    demo = subset()
+    use(tmp_path, monkeypatch, demo)
+    assert seed.main() == 0
+    q = ("select d.updated_at, c.id, c.data from documents d join cases c on c.document_id=d.id join sources s on s.id=d.source_id "
+         "where s.name like 'Demo: %%' and d.title=%s")
+    with db.connect() as c:
+        first = c.execute(q, (demo["cases"][0]["file"],)).fetchone()
+        other = c.execute(q, (demo["cases"][1]["file"],)).fetchone()
+        c.execute("update cases set data = jsonb_set(data, '{summary}', '\"hand edited\"') where id=%s", (first[1],))
+    demo["cases"][0]["case"]["architecture"]["title"] = "Claims intake, refreshed"
+    use(tmp_path, monkeypatch, demo)
+    capsys.readouterr()
+    assert seed.main() == 0
+    assert "1 architecture(s) refreshed" in capsys.readouterr().out
+    with db.connect() as c:
+        again = c.execute(q, (demo["cases"][0]["file"],)).fetchone()
+        assert again[0] == first[0] and again[1] == first[1]  # the document is untouched
+        assert again[2]["architecture"]["title"] == "Claims intake, refreshed" and again[2]["summary"] == "hand edited"
+        assert "refreshed" in c.execute("select search_text from cases where id=%s", (first[1],)).fetchone()[0]
+        assert c.execute(q, (demo["cases"][1]["file"],)).fetchone() == other
+    assert seed.main() == 0 and "refreshed" not in capsys.readouterr().out  # nothing left to refresh
