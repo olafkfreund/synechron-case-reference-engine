@@ -300,6 +300,8 @@ def test_suggest_needs_two_words_ignores_the_stoplist_and_caps_at_five(reg, lib,
         put("t", f"{w1} {w2} more")
     assert len(L.suggest(f"{w1} {w2}", {}, [])) == L.SUGGEST_MAX
     assert not calls                                               # no model was called
+    sub = put("t", f"{w1}x {w2}x")                                 # a longer word does not contain the keyword
+    assert sub not in [i["id"] for i in L.suggest(f"{w1} {w2} {w3}", {}, [])]
 
 
 def test_suggest_never_sees_text_hidden_after_saving(reg, lib):
@@ -319,14 +321,18 @@ def test_suggest_never_sees_text_hidden_after_saving(reg, lib):
             conn.execute("delete from clients where id=%s", (cid,))
 
 
-def test_search_post_shows_the_card_the_get_does_not_and_the_bid_stays_out_of_urls_and_logs(reg, lib, caplog):
+def test_search_post_shows_the_card_the_get_does_not_and_the_bid_stays_out_of_logs(reg, lib, caplog, monkeypatch):
+    import logging
+    caplog.set_level(logging.DEBUG)
     w1, w2 = rword("zyxd"), rword("zyxe")
     lid = put(f"{w1} topic", f"{w2} is here")
     c = as_user("u1")
     r = c.post("/search", data={"bid_text": f"{w1} {w2}"}, follow_redirects=False)
     assert r.status_code == 200 and "From the library" in r.text and f"/library/{lid}" in r.text
-    assert w1 not in str(r.url) and f"{w1}" not in "".join(m for m in caplog.messages)
-    assert "From the library" not in c.get("/search").text
+    assert w1 not in caplog.text and w2 not in caplog.text            # the bid text is in no log line
+    calls = []
+    monkeypatch.setattr("app.library.suggest", lambda *a, **k: calls.append(a) or [])
+    assert "From the library" not in c.get("/search").text and not calls  # browsing never calls suggest()
 
 
 def test_chips_filters_and_saved_by(reg, lib):
@@ -344,6 +350,17 @@ def test_chips_filters_and_saved_by(reg, lib):
     t = c.get("/library?due=1").text
     assert f"/library/{other}" in t and f"/library/{a}" not in t
     assert "saved by Ann" in c.get(f"/library/{a}").text and "saved by a colleague" in c.get(f"/library/{b}").text
+    assert f"/library/{a}" in c.get("/library?kind=nonsense").text   # an unknown kind means all
+    word = rword("Wibble")
+    hid = put(f"{word} platform", "delta four")
+    with db.connect() as conn:
+        cid = conn.execute("insert into clients(name, anonymised_label) values (%s,'a retailer') returning id", (word,)).fetchone()[0]
+    try:
+        t = c.get("/library").text
+        assert word not in t and "[withheld] (" not in t and f"/library/{hid}" in t
+    finally:
+        with db.connect() as conn:
+            conn.execute("delete from clients where id=%s", (cid,))
 
 
 def test_suggest_is_fast_on_300_items(reg, lib):
@@ -360,4 +377,4 @@ def test_suggest_is_fast_on_300_items(reg, lib):
     L.suggest(bid, {"industry": "Banking"}, [])
     took = time.perf_counter() - t0
     print(f"suggest() with 300 saved items: {took * 1000:.0f} ms")
-    assert took < 0.15
+    assert took < 0.5  # the 150-candidate cap measured about 63 ms; this only catches a collapse

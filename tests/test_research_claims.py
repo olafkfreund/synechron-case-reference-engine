@@ -404,3 +404,14 @@ def test_save_without_a_topic_uses_the_brief_title_or_a_placeholder_and_errors_a
     assert r.status_code == 400 and "text/html" in r.headers["content-type"] and "pick at least one" in r.text and f'href="/research/{rid}"' in r.text
     assert c.post("/library/save", data={"research_id": rid, "topic": "x"}).json()["detail"].startswith("pick at least one")  # API keeps JSON
     assert c.post("/library/save", data={"research_id": 999999999, "n": [0]}).status_code == 404
+
+
+def test_save_falls_back_to_untitled_research_and_never_stores_an_email_as_the_name(reg):
+    c = as_user("u1")
+    with db.connect() as conn:
+        bid = conn.execute("insert into briefs(created_by, title, quotes, body, status) values ('u1','',%s,%s,'done') returning id", (
+            json.dumps([{"quote": "q q q", "publisher": "v.example", "url": "https://v.example/0"}]),
+            json.dumps({"title": "", "takeaways": ["Fine [1]."], "themes": [], "flags": []}))).fetchone()[0]
+    lid = int(c.post("/library/save", data={"brief_id": bid}, follow_redirects=False).headers["location"].rsplit("/", 1)[1])
+    with db.connect() as conn:
+        assert conn.execute("select topic, created_by_name from library_items where id=%s", (lid,)).fetchone() == ("Untitled research", "")  # name == sub: no real name

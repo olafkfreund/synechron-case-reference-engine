@@ -196,6 +196,17 @@ Branch `feat/235-library-in-bids`, worktree `../refs-engine-235`. Two PRs.
     to library, then "Download all".
   - `/library/save` errors render an HTML message page (`message.html`)
     for browsers.
+- The research page's topic box uses a placeholder ("defaults to the
+  search"), not a prefilled value; the server applies the default when
+  saving.
+- PR 1 review fixes:
+  - Tests that can fail: DEBUG logs, no `suggest()` call on GET, a
+    whole-word substring case, protected topic chips, "Untitled research".
+  - The timing limit is 0.5 s, with the time printed.
+  - `kind` is validated.
+  - POST filters are capped like GET.
+  - Saved-by is "" when the display name equals the sub (never an email or
+    UPN).
 
 ## Tests
 

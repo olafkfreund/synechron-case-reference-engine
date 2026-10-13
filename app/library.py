@@ -115,7 +115,7 @@ def save(request: Request, research_id: int | None = Form(None), brief_id: int |
         if any(anonymise.blocked(x, clients) for x in (t, query, *_strings(body))):  # each field alone: a join could hide a name
             return refuse(400, "the item names a protected client; it cannot be saved")
         lid = conn.execute("insert into library_items(topic, kind, query, body, created_by, created_by_name) values (%s,%s,%s,%s,%s,%s) returning id",
-                           (t, kind, query, Jsonb(body), user.sub, user.name)).fetchone()[0]
+                           (t, kind, query, Jsonb(body), user.sub, "" if user.name.strip() in ("", user.sub) else user.name)).fetchone()[0]
     return RedirectResponse(f"/library/{lid}", status_code=303)
 
 
@@ -167,6 +167,7 @@ def suggest(bid_text: str, filters: dict, clients) -> list[dict]:
 def index(request: Request, q: str = Query("", max_length=200), topic: str = Query("", max_length=200),
           kind: str = Query("", max_length=10), due: int = Query(0, ge=0, le=1), user: User = Depends(require("user"))):
     q = q.strip()
+    kind = kind if kind in ("brief", "quotes") else ""
     with db.connect() as conn:
         clients = anonymise.load_clients(conn)
         # a search naming a protected client finds nothing: it must not confirm that a name is in the library
