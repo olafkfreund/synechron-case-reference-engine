@@ -74,7 +74,8 @@ def reopen_merged(conn, doc_ids: list[int]) -> None:
                  (doc_ids,))
 
 
-def ingest(source_id: int, external_id: str, title: str, data: bytes, source_version: str | None = None) -> str:
+def ingest(source_id: int, external_id: str, title: str, data: bytes, source_version: str | None = None,
+           links: tuple[str | None, str | None] = (None, None)) -> str:
     """Returns 'skipped' (same bytes), 'updated' (new version) or 'new'."""
     checksum = hashlib.sha256(data).hexdigest()
     missing = None  # set when the bytes are unchanged: does the document still need its image candidates?
@@ -86,8 +87,9 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
             # same bytes; ACLs may still have changed, a reappeared file is not deleted,
             # and a renamed file shows its new name (#162)
             conn.execute("update documents set acl_groups=(select acl_groups from sources where id=%s for share), "
-                         "deleted_at=null, source_version=%s, title=%s where id=%s",
-                         (source_id, source_version, title, row[0]))
+                         "deleted_at=null, source_version=%s, title=%s, web_url=coalesce(%s, web_url), "
+                         "folder_url=coalesce(%s, folder_url) where id=%s",
+                         (source_id, source_version, title, *links, row[0]))
             # a document ingested before images were read gets its candidates once: it has a case and no rows yet.
             # shortcut: a document with no usable image is scanned again on each crawl, which reads the zip but decodes nothing
             missing = conn.execute(
@@ -122,13 +124,14 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
         # upsert: an upload and a crawl of the same item may race past the select above
         # the groups are read from the source here, under for share, so a concurrent save is never overwritten
         got = conn.execute(
-            "insert into documents(source_id, external_id, title, checksum, s3_key, text, kind, source_version, acl_groups) "
-            "select %s,%s,%s,%s,%s,%s,%s,%s, s.acl_groups from (select acl_groups from sources where id=%s for share) s "
+            "insert into documents(source_id, external_id, title, checksum, s3_key, text, kind, source_version, web_url, folder_url, acl_groups) "
+            "select %s,%s,%s,%s,%s,%s,%s,%s,%s,%s, s.acl_groups from (select acl_groups from sources where id=%s for share) s "
             "on conflict (source_id, external_id) do update set "
             "title=excluded.title, checksum=excluded.checksum, s3_key=excluded.s3_key, text=excluded.text, "
             "kind=excluded.kind, source_version=excluded.source_version, acl_groups=excluded.acl_groups, "
+            "web_url=coalesce(excluded.web_url, documents.web_url), folder_url=coalesce(excluded.folder_url, documents.folder_url), "
             "updated_at=now(), deleted_at=null returning id",
-            (source_id, external_id, title, checksum, key, text, triage.kind, source_version, source_id)).fetchone()
+            (source_id, external_id, title, checksum, key, text, triage.kind, source_version, *links, source_id)).fetchone()
         if not got:
             raise LookupError(f"source {source_id} no longer exists")
         doc_id = got[0]
@@ -165,10 +168,12 @@ def store_images(doc_id: int, data: bytes, name: str, wanted: bool) -> None:
         print(f"document {doc_id} images not stored: {type(e).__name__}", flush=True)
 
 
-def skip_unchanged(source_id: int, external_id: str, source_version: str, title: str) -> bool:
+def skip_unchanged(source_id: int, external_id: str, source_version: str, title: str,
+                   links: tuple[str | None, str | None] = (None, None)) -> bool:
     """The checksum skip without the download: same source version, so un-withdraw, refresh the groups and the title."""
     with db.connect() as conn:
         return conn.execute(
-            "update documents set acl_groups=(select acl_groups from sources where id=%s for share), deleted_at=null, title=%s "
+            "update documents set acl_groups=(select acl_groups from sources where id=%s for share), deleted_at=null, title=%s, "
+            "web_url=coalesce(%s, web_url), folder_url=coalesce(%s, folder_url) "
             "where source_id=%s and external_id=%s and source_version=%s returning id",
-            (source_id, title, source_id, external_id, source_version)).fetchone() is not None
+            (source_id, title, *links, source_id, external_id, source_version)).fetchone() is not None
