@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 218
 spec: spec/2026-10-13-218-retriage-label.md
 ---
