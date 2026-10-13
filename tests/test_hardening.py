@@ -73,6 +73,13 @@ def test_audit_log_tables_are_append_only_for_the_app(app_role):
             with as_app("pw-1") as a:
                 with pytest.raises(psycopg.errors.InsufficientPrivilege):
                     a.execute(stmt)
+    for stmt in ("update tool_calls set tool='x'", "delete from tool_calls"):  # MCP audit (#249)
+        with as_app("pw-1") as a:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                a.execute(stmt)
+    with as_app("pw-1") as a:  # insert and select are what the app needs
+        a.execute("insert into tool_calls (user_key, tool, outcome, ms) values ('t-hardening', 'x', 'ok', 1)")
+        a.execute("select count(*) from tool_calls")
 
 
 def test_tables_created_later_are_covered_by_default_privileges(app_role):

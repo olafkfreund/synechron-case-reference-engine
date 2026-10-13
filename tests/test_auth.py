@@ -307,7 +307,7 @@ def test_revoke_sessions_command(env):
 def seed_rows(sub):
     with db.connect() as conn:
         conn.execute("insert into research (query, created_by) values ('q', %s)", (sub,))
-        conn.execute("insert into library_items (topic, kind, body, created_by) values ('t', 'quotes', '[]', %s)", (sub,))
+        conn.execute("insert into library_items (topic, kind, body, created_by) values ('t', 'quotes', '{\"quotes\": []}', %s)", (sub,))
         conn.execute("insert into briefs (created_by, title, quotes) values (%s, 't', '[]')", (sub,))
         conn.execute("insert into generations (user_id, format) values (%s, 'md')", (sub,))
 

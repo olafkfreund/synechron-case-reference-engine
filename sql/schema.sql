@@ -224,6 +224,19 @@ create table if not exists user_keys (
 );
 create index if not exists user_keys_oid_idx on user_keys (oid);
 
+-- one row per MCP tool call (#249), append-only for the app. Never the arguments, the text or a token.
+create table if not exists tool_calls (
+  id bigserial primary key,
+  user_key text not null,
+  client_id text not null default '',
+  tool text not null,
+  object_ids bigint[] not null default '{}',
+  outcome text not null check (outcome in ('ok','denied','not_found','error','rate_limited')),
+  ms int not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists tool_calls_user_idx on tool_calls (user_key, created_at);
+
 -- documents carry a copy of their source's groups; repair any copy a crawl wrote back before #58
 -- (idempotent; re-run the migration once old worker tasks have stopped after a deploy)
 -- for share, as every other write: an unlocked read could write back groups a concurrent save replaced

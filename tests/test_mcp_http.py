@@ -50,7 +50,7 @@ def test_tools_list_both_protocol_versions(env, version):
         meta = {"io.modelcontextprotocol/protocolVersion": version, "io.modelcontextprotocol/clientCapabilities": {}}
         r = rpc(c, "tools/list", version, {"_meta": meta} if version == "2026-07-28" else {}, token())
         assert r.status_code == 200, r.text
-        assert "ping" in r.text
+        assert "search_references" in r.text and "outputSchema" in r.text
 
 
 def test_no_token_gets_challenge_and_prm_resolves(env):
@@ -217,8 +217,8 @@ def test_session_cutoff_refuses_older_tokens_only(env):
 def test_tool_call_runs_as_the_token_user(env):
     db.init()
     with TestClient(main.create_app()) as c:
-        r = rpc(c, "tools/call", "2025-06-18", {"name": "ping", "arguments": {}}, tok=token(oid=fresh()))
-        assert r.status_code == 200 and "pong" in r.text and "isError\":true" not in r.text
+        r = rpc(c, "tools/call", "2025-06-18", {"name": "list_latest", "arguments": {}}, tok=token(oid=fresh()))
+        assert r.status_code == 200 and "isError\":true" not in r.text and "\"rows\"" in r.text
 
 
 def test_session_cookie_alone_gets_no_access_to_mcp(env):
