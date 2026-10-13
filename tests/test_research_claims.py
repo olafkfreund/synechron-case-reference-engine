@@ -334,3 +334,21 @@ def test_quote_must_be_within_what_the_model_saw(monkeypatch):
     monkeypatch.setattr(rs, "complete_json", lambda *a, **k: rs.Claims(claims=[
         claim("Past the cut.", quote="this sentence is past the cut")]))
     assert rs.extract_claims("q", pages)[0] == []
+
+
+def test_research_is_not_refused_by_the_extraction_guard(monkeypatch):
+    """The research worst case (8 pages of PAGE_CHARS, schema in the prompt) must clear the overflow guard (#212 G1); its real overflow is tracked in #217."""
+    from types import SimpleNamespace
+
+    from app import llm
+    monkeypatch.setenv("DRAFT_MODEL", "ollama_chat/qwen3:14b")
+    monkeypatch.setenv("DRAFT_MODEL_OPTIONS", json.dumps({"num_ctx": 24576}))
+    sent = []
+
+    def completion(**kw):
+        sent.append(kw)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"claims": []}'), finish_reason="stop")])
+    monkeypatch.setattr(llm.litellm, "completion", completion)
+    pages = [dict(PAGES[0], markdown="x" * rs.PAGE_CHARS) for _ in range(8)]
+    claims, note = rs.extract_claims("q", pages)
+    assert sent and note is None and claims == []

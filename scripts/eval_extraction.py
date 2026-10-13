@@ -19,7 +19,7 @@ import httpx
 
 from app import extract, ingest
 from app.llm import PolicyError, profile
-from app.schema import vague_metric
+from app.schema import POINT_FIELDS, vague_metric
 
 ROOT = Path(__file__).resolve().parents[1]
 SUFFIXES = {".docx", ".pptx", ".pdf"}
@@ -104,9 +104,11 @@ def main(argv: list[str] | None = None) -> int:
             vram = ps[0].get("size_vram", 0) / 1e9 if ps else 0
             secs = time.time() - t
             bad = sum(vague_metric(o) for o in case.outcomes)
+            pts = {f: len(case.points.get(f, [])) for f in POINT_FIELDS}  # counts only
             rows.append((sourced, len(items), secs, vram, bad))
             print(f"{model} {p.name[:30]} kind={tri.kind} executed={tri.executed} basis={basis} sourced={sourced}/{len(items)} caps={len(case.capabilities)} "
-                  f"tech={len(case.tech_stack)} outcomes={len(case.outcomes)} bad_metrics={bad} notes={case.needs_attention} "
+                  f"tech={len(case.tech_stack)} outcomes={len(case.outcomes)} points={pts} "
+                  f"parts={len(extract.split(text[:extract.MAX_CHARS]))} summary={'kept' if case.summary else 'blank'} bad_metrics={bad} notes={case.needs_attention} "
                   f"{secs:.0f}s vram={vram:.1f}GB\n    fields: {filled}", flush=True)
         if rows:
             n = len(rows)

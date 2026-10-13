@@ -436,3 +436,150 @@ def test_check_ignores_by_reviewer_on_other_fields():
     c = ReferenceCase(title=Sourced[str](value="Made up", by_reviewer=True))
     ex.check(c, "some document text")
     assert c.title.unsourced is True
+
+
+def test_chunks_cut_at_blank_lines_and_overlap():
+    t = "\n\n".join(f"para {i} " + "x" * 90 for i in range(30))
+    parts = ex.chunks(t, 500, overlap=120)
+    assert len(parts) > 1 and all(len(p) <= 500 for p in parts)
+    assert parts[0].endswith("\n\n") and parts[1][:100] in t[len(parts[0]) - 120:]
+    assert ex.chunks("short", 500) == ["short"]
+    assert len(ex.chunks("y" * 1200, 500, overlap=100)) == 3  # no blank line: hard cut
+
+
+def test_chunk_chars(monkeypatch):
+    monkeypatch.setenv("EXTRACT_MODEL", "ollama_chat/m")
+    monkeypatch.setattr(ex, "profile", lambda a: {"num_ctx": 24576})
+    assert ex.chunk_chars() == (24576 - ex.MAX_TOKENS - 2000) * 3
+    monkeypatch.setattr(ex, "profile", lambda a: {})
+    assert ex.chunk_chars() is None
+
+
+def test_build_reads_long_text_in_parts_and_keeps_points(monkeypatch):
+    text = "\n\n".join(f"Part {i}: the bank migrated system {i} in {i + 2} weeks." for i in range(40))
+    monkeypatch.setattr(ex, "chunk_chars", lambda: 400)
+    seen = []
+
+    def fake(alias, system, user, model, **k):
+        seen.append(user)
+        i = len(seen)
+        q = f"the bank migrated system {i} in {i + 2} weeks"
+        return Extraction(items=[Item(field="title", value="T", quote=q),
+                                 Item(field="solution", value=f"migrated {i}", quote=q)],
+                          summary=f"Done in {i + 2} weeks." if i == 2 else "")
+    monkeypatch.setattr(ex, "complete_json", fake)
+    c = ex.build(text, "internal")
+    n = len(seen)
+    assert n > 2 and f"read in {n} parts" in c.needs_attention
+    assert len(c.points["solution"]) == n and c.solution.value == "migrated 1"
+    assert c.summary == "Done in 4 weeks."  # first summary its items vouch for
+    assert all(not p.unsourced for p in c.points["solution"])
+
+
+def test_check_marks_points_like_their_field():
+    c = ReferenceCase(title=Sourced[str]())
+    c.points = {"solution": [Sourced[str](value="made up", source_quote="not in the document at all")],
+                "implementation": [Sourced[str](value="Reviewer text", by_reviewer=True)],
+                "challenge": [Sourced[str](value="Slow", source_quote="cut customer onboarding from 12 days")]}
+    ex.check(c, DOC)
+    s, i, ch = c.points["solution"][0], c.points["implementation"][0], c.points["challenge"][0]
+    assert s.unsourced and not i.unsourced and not ch.unsourced
+    c.summary = "Fell by 99 percent."
+    assert c.summary_sourced() is False  # an unsourced point's quote vouches for nothing
+
+
+def test_strip_commercial_filters_points():
+    c = ReferenceCase(title=Sourced[str]())
+    c.points = {"solution": [Sourced[str](value="Fixed scope", source_quote="fees of £1,200 per day apply"),
+                             Sourced[str](value="Migrate the ledger", source_quote="migrate the ledger to the cloud")]}
+    assert ex.strip_commercial(c) == 1
+    assert [p.value for p in c.points["solution"]] == ["Migrate the ledger"]
+
+
+def test_chunk_chars_refuses_a_context_too_small_to_step(monkeypatch):
+    monkeypatch.setenv("EXTRACT_MODEL", "ollama_chat/m")
+    monkeypatch.setattr(ex, "profile", lambda a: {"num_ctx": ex.MAX_TOKENS + 2000})
+    with pytest.raises(ValueError, match="num_ctx too small"):
+        ex.chunk_chars()
+
+
+def test_build_summary_not_vouched_by_an_unsourced_quote(monkeypatch):
+    text = "\n\n".join(f"Part {i}: the bank migrated system {i} in {i + 2} weeks." for i in range(40))
+    monkeypatch.setattr(ex, "chunk_chars", lambda: 400)
+    seen = []
+
+    def fake(alias, system, user, model, **k):
+        seen.append(user)
+        if len(seen) == 1:  # a fabricated quote carries 99; the first summary leans on it
+            return Extraction(items=[Item(field="title", value="T", quote="the bank migrated system 0 in 2 weeks"),
+                                     Item(field="solution", value="x", quote="saved 99 percent of cost overnight")],
+                              summary="Saved 99 percent.")
+        q = "the bank migrated system 1 in 3 weeks"
+        return Extraction(items=[Item(field="solution", value="y", quote=q)],
+                          summary="Done in 3 weeks." if len(seen) == 2 else "")
+    monkeypatch.setattr(ex, "complete_json", fake)
+    c = ex.build(text, "internal")
+    assert c.points["solution"][0].unsourced and c.summary == "Done in 3 weeks."
+
+
+def test_three_chunks_via_num_ctx_source_a_quote_only_in_the_last(monkeypatch):
+    monkeypatch.setenv("EXTRACT_MODEL", "ollama_chat/m")
+    monkeypatch.setenv("EXTRACT_MODEL_OPTIONS", json.dumps({"num_ctx": 12000}))
+    size = ex.chunk_chars()
+    paras = [f"Filler paragraph {i}. " + "lorem ipsum " * 60 for i in range(14)]  # ~10k characters: 3 pieces of ~5.4k
+    text = "\n\n".join(paras) + "\n\nThe bank retired the legacy ledger in 7 weeks."
+    seen = []
+
+    def fake(alias, system, user, model, **k):
+        seen.append(user)
+        if "retired the legacy ledger" in user:
+            return Extraction(items=[Item(field="solution", value="Ledger retired", quote="retired the legacy ledger in 7 weeks")])
+        return Extraction()
+    monkeypatch.setattr(ex, "complete_json", fake)
+    c = ex.build(text, "internal")
+    assert len(seen) == 3 and "read in 3 parts" in c.needs_attention
+    assert not c.points["solution"][0].unsourced
+
+
+def test_engagement_keeps_points_and_drops_lessons(monkeypatch):
+    q = "the bank migrated system 1 in 3 weeks"
+    text = f"Scope: {q}. Fees of £1,200 per day apply to the migration work."
+    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: Extraction(items=[
+        Item(field="solution", value="Migrate system 1", quote=q),
+        Item(field="solution", value="Migrate system 2", quote=q),
+        Item(field="solution", value="Priced work", quote="Fees of £1,200 per day apply"),
+        Item(field="lessons_learned", value="Start earlier", quote=q)]))
+    c = ex.build(text, "internal", "engagement", "executed contract")
+    assert [p.value for p in c.points["solution"]] == ["Migrate system 1", "Migrate system 2"]
+    assert c.lessons_learned.value is None
+
+
+def test_chunks_ignore_a_blank_line_near_the_start():
+    t = "head\n\n" + "z" * 1200  # the only blank line is at the start
+    parts = ex.chunks(t, 500, overlap=100)
+    assert len(parts[0]) == 500 and all(len(p) >= 400 for p in parts[:-1])
+    t = "head\n\n" + ("y" * 90 + "\n") * 14  # no usable blank line, but newlines in the second half
+    assert ex.chunks(t, 500, overlap=100)[0].endswith("\n")
+
+
+def test_blanked_note_when_only_a_later_chunk_has_a_failing_summary(monkeypatch):
+    text = "\n\n".join(f"Part {i}: the bank migrated system {i} in {i + 2} weeks." for i in range(40))
+    monkeypatch.setattr(ex, "chunk_chars", lambda: 400)
+    n = []
+
+    def fake(alias, system, user, model, **k):
+        n.append(1)
+        q = "the bank migrated system 1 in 3 weeks"
+        return Extraction(items=[Item(field="title", value="T", quote=q)],
+                          summary="Saved 99 percent." if len(n) == 2 else "")
+    monkeypatch.setattr(ex, "complete_json", fake)
+    c = ex.build(text, "internal")
+    assert c.summary == "" and any("summary used numbers absent" in x for x in c.needs_attention)
+
+
+def test_bedrock_is_never_chunked(monkeypatch):
+    monkeypatch.setenv("EXTRACT_MODEL", "bedrock/m")
+    monkeypatch.setenv("EXTRACT_MODEL_OPTIONS", json.dumps({"num_ctx": 12000}))
+    assert ex.chunk_chars() is None and ex.split("x" * 100_000) == ["x" * 100_000]
+    monkeypatch.setenv("EXTRACT_MODEL", "ollama_chat/m")
+    assert ex.chunk_chars() == (12000 - ex.MAX_TOKENS - 2000) * 3
