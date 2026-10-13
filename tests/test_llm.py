@@ -182,3 +182,19 @@ def test_db_outage_blocks_the_call(monkeypatch):
     with pytest.raises(Exception):
         llm.complete_json("EXTRACT_MODEL", "s", "SECRET", ReferenceCase, data_class="confidential")
     assert sent == []
+
+
+def test_prompt_that_overflows_num_ctx_is_refused_before_the_call(monkeypatch):
+    with pytest.raises(ValueError, match=r"does not fit num_ctx=9000") as e:
+        run(monkeypatch, "{}", model="ollama_chat/m", opts={"num_ctx": 9000}, dc="public")
+    assert "usr" not in str(e.value)  # size only, never content
+    calls = []
+    monkeypatch.setattr(llm.litellm, "completion", fake("{}", calls))
+    with pytest.raises(ValueError):
+        llm.complete_json("EXTRACT_MODEL", "s" * 3000, "u" * 3000, ReferenceCase, data_class="public")
+    assert calls == []
+
+
+def test_overflow_guard_covers_extraction_only(monkeypatch):
+    # research's worst case sits right at the context limit (#212 G1), so only extraction is guarded
+    run(monkeypatch, '{"title": {}}', "DRAFT_MODEL", model="ollama_chat/m", opts={"num_ctx": 100}, dc="public")

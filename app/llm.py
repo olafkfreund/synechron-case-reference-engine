@@ -96,6 +96,10 @@ def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: t
         # not OLLAMA_API_KEY: LiteLLM reads that one itself and sends it to every Ollama host
         if _ollama_cloud(effective_base(model, opts)) and os.environ.get("OLLAMA_CLOUD_KEY"):
             extra["api_key"] = os.environ["OLLAMA_CLOUD_KEY"]
+    if ollama and alias == "EXTRACT_MODEL" and "num_ctx" in opts:  # Ollama drops the start of a prompt that overflows its context, without an error
+        est = (len(system) + len(user)) // 3  # characters per token; the size only, never content
+        if est + MAX_TOKENS > opts["num_ctx"]:
+            raise ValueError(f"{alias} prompt (~{est} tokens) does not fit num_ctx={opts['num_ctx']}")
     resp = litellm.completion(
         model=model,
         messages=[

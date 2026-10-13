@@ -602,6 +602,12 @@ client. Run the full suite, then PR 4.
   `chunk_chars()` raises when the context leaves at most 2 x `OVERLAP`,
   rather than looping. `CONTRACT_SYSTEM` asks for one item per need or
   deliverable, and one per phase or configuration.
+- A3: the overflow guard covers Ollama `EXTRACT_MODEL` calls only (G1).
+  Research's worst case (8 pages x 6,000 characters to `DRAFT_MODEL`) is
+  estimated at 16,447 + 8,192 tokens, 63 over `num_ctx` 24,576. Guarding it
+  would turn every such research into "claims could not be extracted". A
+  Bedrock `num_ctx` stays ignored, as before. Research's own overflow is a
+  follow-up issue.
 
 ## Tests
 
