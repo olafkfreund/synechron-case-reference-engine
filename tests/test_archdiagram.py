@@ -165,7 +165,7 @@ def test_barycentre_puts_connected_cards_level():
 # --- renderers ---------------------------------------------------------------------------------
 def test_svg_parses_and_is_inert():
     a = Architecture.model_validate({"title": "Pay <&> \"go\"", "components": [{"id": "a", "name": "A<script>", "zone": "core", "kind": "app"}]})
-    svg = to_svg(layout(a, "Source: x & y"), a.title)
+    svg = to_svg(layout(a, "Source: x & y"), a.title, crop=False)
     root = ElementTree.fromstring(svg)
     assert root.get("viewBox") == "0 0 1600 900" and root.get("width") is None
     low = svg.lower()
@@ -176,7 +176,7 @@ def test_svg_parses_and_is_inert():
 @pytest.mark.parametrize("name", SAMPLES)
 def test_png_is_2x_and_text_is_drawn_in_every_card(name):
     sc = layout(SAMPLES[name], "Source: Demo")
-    im = Image.open(io.BytesIO(to_png(sc))).convert("RGB")
+    im = Image.open(io.BytesIO(to_png(sc, crop=False))).convert("RGB")
     assert im.size == (3200, 1800)
     for c in cards(sc):
         box = im.crop((int(c.x * 2) + 6, int(c.y * 2) + 6, int((c.x + c.w) * 2) - 6, int((c.y + c.h) * 2) - 6))
@@ -232,3 +232,38 @@ def test_body_is_scaled_to_fill_the_area_and_zones_are_aligned(name):
         assert max((x1 - x0) / (ax1 - ax0), (y1 - y0) / (ay1 - ay0)) >= 0.75
     cols = [z for z in sc.zones if z.ref != "platform"]
     assert len({(round(z.y, 1), round(z.h, 1)) for z in cols}) <= 1
+
+
+@pytest.mark.parametrize("name", SAMPLES)
+def test_documents_are_cropped_to_the_content_and_pptx_keeps_the_canvas(name):
+    sc = layout(SAMPLES[name], "Source: Demo")
+    bx0, by0, bx1, by1 = sc.body
+    content = sc.area[1] + (by1 - by0) + (H - sc.area[3])  # header band + body + footer band
+    im = Image.open(io.BytesIO(to_png(sc)))
+    assert im.size[0] <= 2 * W and im.size[1] <= 2 * (content + 64) + 2 and im.size[1] < 2 * H
+    root = ElementTree.fromstring(to_svg(sc))
+    vw, vh = map(float, root.get("viewBox").split()[2:])
+    assert (vw * 2, vh * 2) == im.size  # the preview and the documents show the same picture
+    assert sc.height == H and sc.width == W  # the scene itself, which the pptx slide fills, is unchanged
+    assert Image.open(io.BytesIO(to_png(sc, crop=False))).size == (3200, 1800)
+
+
+def test_cropping_keeps_every_card_and_pill_inside_the_picture():
+    from app.archdiagram import cropped
+    sc = cropped(layout(SAMPLES["typical"], "Source: Demo"))
+    for b in [*sc.zones, *sc.boxes]:
+        assert 0 <= b.x and b.x + b.w <= sc.width and 0 <= b.y and b.y + b.h <= sc.height, b
+    assert len(cards(sc)) == len(SAMPLES["typical"].components)
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_cards_in_a_row_share_a_height_that_fits_their_text(name):
+    sc = layout(CASES[name])
+    rows = {}
+    for c in cards(sc):
+        z = next((z for z in sc.zones if z.x <= c.x < z.x + z.w and z.y <= c.y < z.y + z.h and z.ref != "platform"), None)
+        if z:
+            rows.setdefault((z.ref, round(c.y, 1)), set()).add(round(c.h, 1))
+    assert all(len(h) == 1 for h in rows.values())
+    if name == "sample-small":
+        assert min(c.h / sc.scale for c in cards(sc)) < 78  # one-line roles no longer leave a fixed 78 px

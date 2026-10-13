@@ -325,3 +325,8 @@ code ignores it. The demo can be re-seeded.
   - `refresh_architecture()` updates only the architecture and the search
     text of unchanged documents.
   - Litware goes from 6/9 to 7/9 complete. The others were already 9/9.
+- Polish:
+  - Documents and the preview crop to the content (`cropped()` closes the
+    empty bands); pptx keeps the 16:9 canvas.
+  - Row heights fit their tallest card (minimum 46), so cards in a row are
+    equal.

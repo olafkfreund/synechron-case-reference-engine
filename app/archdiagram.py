@@ -30,7 +30,7 @@ ZONES = ["channels", "experience", "integration", "core", "data", "external"]  #
 
 M = 24
 SPAN = W - 2 * M
-CARD_MIN_H, ROW_GAP, SUB_GAP, PAD, LABEL_H = 78, 22, 16, 14, 28
+CARD_MIN_H, ROW_GAP, SUB_GAP, PAD, LABEL_H = 46, 22, 16, 14, 28
 GMIN, GMAX, BAND_GAP, PILL_H, GRID = 80, 150, 30, 18, 8
 
 
@@ -87,6 +87,7 @@ class Scene:
     texts: list[Text] = field(default_factory=list)
     area: tuple = (M, 0, W - M, H)  # where the diagram body was fitted
     scale: float = 1.0  # how far the body was scaled to fill it
+    body: tuple = (0, 0, 0, 0)  # the fitted body's bounding box; header above it, footer below
 
 
 # --- text ------------------------------------------------------------------------------------
@@ -309,12 +310,14 @@ def _config(comp, order, cols, rsize, w, subs, limits):
     lines = {i: (wrap(comp[i].name, "name", w - 52), wrap(comp[i].role, rstyle, w - 52)) for z in cols for i in order[z]}
     if limits and any(len(n) > 2 or len(r) > 3 for n, r in lines.values()):
         return None
-    hc = max([CARD_MIN_H] + [10 + 18 * len(n) + LINE_H[rstyle] * len(r) + 10 for n, r in lines.values()])
     rows = {z: ceil(len(order[z]) / subs[z]) for z in cols}
-    zh = {z: LABEL_H + rows[z] * hc + (rows[z] - 1) * ROW_GAP + PAD for z in cols}
+    # a row is as tall as its tallest card's text, and every card in that row (in any zone) has that height
+    rowh = [max([CARD_MIN_H] + [10 + 18 * len(lines[i][0]) + LINE_H[rstyle] * len(lines[i][1]) + 10
+                                for z in cols for n, i in enumerate(order[z]) if n % rows[z] == r]) for r in range(max(rows.values(), default=0))]
+    zh = {z: LABEL_H + sum(rowh[:rows[z]]) + (rows[z] - 1) * ROW_GAP + PAD for z in cols}
     colw = {z: subs[z] * w + (subs[z] - 1) * SUB_GAP + 2 * PAD for z in cols}
     k = len(cols)
-    return dict(w=w, rstyle=rstyle, hc=hc, subs=subs, rows=rows, zh=zh, colw=colw, lines=lines, band_h=max(zh.values(), default=0),
+    return dict(w=w, rstyle=rstyle, rowh=rowh, subs=subs, rows=rows, zh=zh, colw=colw, lines=lines, band_h=max(zh.values(), default=0),
                 G=min(GMAX, max(0, (SPAN - sum(colw.values())) / (k - 1))) if k > 1 else 0)
 
 
@@ -389,6 +392,7 @@ def _fit_body(sc: Scene, i0: tuple, area: tuple, cap: float = 1.6) -> None:
         t.x, t.y = tr(t.x, t.y)
         t.k = s
     sc.area, sc.scale = area, s
+    sc.body = (area[0] + ((area[2] - area[0]) - (bx1 - bx0) * s) / 2, oy + by0 * s, area[2] - ((area[2] - area[0]) - (bx1 - bx0) * s) / 2, oy + by1 * s)
 
 
 def _build(arch: Architecture, footer: str, reserve: list) -> tuple[Scene, list]:
@@ -452,7 +456,7 @@ def _build(arch: Architecture, footer: str, reserve: list) -> tuple[Scene, list]
     if cfg is None:  # nothing fits: the smallest cards, in as many sub-columns as the height needs
         subs = {z: max(1, ceil(len(order[z]) / 3)) for z in cols}
         cfg = _config(comp, order, cols, 11, 130, subs, False) or _config(comp, order, cols, 11, 130, {z: 1 for z in cols}, False)
-    w, hc, G, rstyle = cfg["w"], cfg["hc"], cfg["G"], cfg["rstyle"]
+    w, G, rstyle = cfg["w"], cfg["G"], cfg["rstyle"]
     y0 = head + max(0, (bottom - head - (res_top + cfg["band_h"] + gap + plat_h)) / 2)
     band_y = y0 + res_top
     plat_y = band_y + cfg["band_h"] + gap
@@ -465,7 +469,7 @@ def _build(arch: Architecture, footer: str, reserve: list) -> tuple[Scene, list]
         sc.texts.append(Text(x + PAD, zy + 8, z.upper(), "zone"))
         for n, i in enumerate(order[z]):
             s, r = divmod(n, cfg["rows"][z])
-            card[i] = Box(x + PAD + s * (w + SUB_GAP), zy + LABEL_H + r * (hc + ROW_GAP), w, hc, f"card-{comp[i].kind}", i)
+            card[i] = Box(x + PAD + s * (w + SUB_GAP), zy + LABEL_H + sum(cfg["rowh"][:r]) + r * ROW_GAP, w, cfg["rowh"][r], f"card-{comp[i].kind}", i)
             sub_of[i] = (s, r)
         x += cfg["colw"][z] + G
     pbox = None
@@ -669,8 +673,59 @@ def _tok(tok, kind):
     return {"w": WHITE, "bg": KIND.get(kind, INK)}.get(tok)
 
 
-def to_svg(sc: Scene, title: str = "Solution architecture") -> str:
+def _text_box(t: Text):
+    w = measure(t.text, t.style) * t.k
+    x0 = t.x - w / 2 if t.anchor == "middle" else t.x
+    return x0, t.y, x0 + w, t.y + TEXT[t.style][0] * 1.3 * t.k
+
+
+def cropped(sc: Scene, margin: int = 32) -> Scene:
+    """A copy for documents and the preview: the empty bands around the body are cut out (the footer moves up under it) and the
+    canvas is trimmed to the content plus `margin`. The scene itself keeps the full 16:9 canvas, which the pptx slide fills."""
+    import copy
+    sc = copy.deepcopy(sc)
+    top, bottom = sc.area[1], sc.area[3]
+    if sc.body[3] > sc.body[1]:
+        up = sc.body[1] - top  # the gap between the header and the body
+        foot = up + (bottom - sc.body[3])  # and the one between the body and the footer
+        def shift(y):  # a y below the body area belongs to the footer; one above the header stays
+            return y - (foot if y >= bottom else up if y >= top else 0)
+        for b in sc.zones + sc.boxes:
+            b.y = shift(b.y)
+        for t in sc.texts:
+            t.y = shift(t.y)
+        for ln in sc.lines:
+            ln.points = [(x, shift(y)) for x, y in ln.points]
+        for sp in sc.shapes:
+            sp.geom = [(x, shift(y)) for x, y in sp.geom] if sp.op == "p" else [sp.geom[0], shift(sp.geom[1]), *sp.geom[2:]]
+    xs, ys = [], []
+    for b in sc.zones + sc.boxes:
+        xs += [b.x, b.x + b.w]
+        ys += [b.y, b.y + b.h]
+    for ln in sc.lines:
+        xs += [p[0] for p in ln.points]
+        ys += [p[1] for p in ln.points]
+    for t in sc.texts:
+        x0, y0, x1, y1 = _text_box(t)
+        xs += [x0, x1]
+        ys += [y0, y1]
+    x0, y0 = max(0, min(xs) - margin), max(0, min(ys) - margin)
+    x1, y1 = min(sc.width, max(xs) + margin), min(sc.height, max(ys) + margin)
+    for b in sc.zones + sc.boxes:
+        b.x, b.y = b.x - x0, b.y - y0
+    for t in sc.texts:
+        t.x, t.y = t.x - x0, t.y - y0
+    for ln in sc.lines:
+        ln.points = [(x - x0, y - y0) for x, y in ln.points]
+    for sp in sc.shapes:
+        sp.geom = [(x - x0, y - y0) for x, y in sp.geom] if sp.op == "p" else [sp.geom[0] - x0, sp.geom[1] - y0, *sp.geom[2:]]
+    sc.width, sc.height = math.ceil(x1 - x0), math.ceil(y1 - y0)
+    return sc
+
+
+def to_svg(sc: Scene, title: str = "Solution architecture", crop: bool = True) -> str:
     from xml.sax.saxutils import escape
+    sc = cropped(sc) if crop else sc
     f = lambda v: f"{v:.1f}".rstrip("0").rstrip(".")
     pp = lambda pts: " ".join(f"{f(x)},{f(y)}" for x, y in pts)
     o = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {sc.width} {sc.height}" role="img" '
@@ -715,8 +770,9 @@ def to_svg(sc: Scene, title: str = "Solution architecture") -> str:
     return "".join(o)
 
 
-def to_png(sc: Scene, scale: int = 2) -> bytes:
+def to_png(sc: Scene, scale: int = 2, crop: bool = True) -> bytes:
     import io
+    sc = cropped(sc) if crop else sc
     from PIL import Image, ImageDraw
     im = Image.new("RGB", (sc.width * scale, sc.height * scale), WHITE)
     d = ImageDraw.Draw(im)
