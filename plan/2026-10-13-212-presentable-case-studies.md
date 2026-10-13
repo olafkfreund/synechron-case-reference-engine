@@ -659,6 +659,12 @@ client. Run the full suite, then PR 4.
   - Points sit inside `<points>` tags, and stray tags are removed.
   - A merge prefers sourced copies.
   - Kept reviewer prose has its flags recomputed.
+- C2: `document_images_from(data, name, clients=())` anonymises hints
+  itself. The review template's diagram cap comes from `max_diagrams`, so
+  `MAX_PER_CASE` = 8 applies in one place. An alt text that is only a file
+  name counts as no alt text. XML parts with DOCTYPE or ENTITY are refused,
+  zips over 5,000 entries are refused, and entries are filtered by declared
+  size before any read.
 
 ## Tests
 

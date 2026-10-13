@@ -1035,7 +1035,7 @@ def test_upload_diagram_queues_job_and_shows_processing(make, jobs):
         assert c.execute("select payload from jobs where kind='diagram'").fetchall() == [({"diagram_id": e["id"]},)]
 
 
-def test_upload_diagram_refuses_svg_gif_wrong_magic_oversize_and_sixth(make, jobs):
+def test_upload_diagram_refuses_svg_gif_wrong_magic_oversize_and_the_one_over_the_cap(make, jobs):
     cid = make()
     svg, gif = b"<svg xmlns='http://www.w3.org/2000/svg'/>", b"GIF89a" + b"x" * 20
     assert [add_diagram(cid, d).status_code for d in (svg, gif, b"", b"x" * 20)] == [400] * 4
@@ -1043,11 +1043,12 @@ def test_upload_diagram_refuses_svg_gif_wrong_magic_oversize_and_sixth(make, job
     assert add_diagram(cid, caption="  ").status_code == 400
     assert add_diagram(cid, caption="x" * 201).status_code == 400
     assert entries(cid) == []
-    for _ in range(5):
+    from app.diagrams import MAX_PER_CASE
+    for _ in range(MAX_PER_CASE):
         assert add_diagram(cid).status_code == 303
-    assert add_diagram(cid).status_code == 400 and len(entries(cid)) == 5
+    assert add_diagram(cid).status_code == 400 and len(entries(cid)) == MAX_PER_CASE
     with db.connect() as c:
-        assert c.execute("select count(*) from jobs where kind='diagram'").fetchone()[0] == 5
+        assert c.execute("select count(*) from jobs where kind='diagram'").fetchone()[0] == MAX_PER_CASE
 
 
 def test_upload_diagram_refuses_caption_naming_protected_client(make, acme, jobs):

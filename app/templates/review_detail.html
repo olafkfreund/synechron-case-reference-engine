@@ -64,7 +64,7 @@
 <form method="post" action="/review/{{ id }}/sources/remove" style="margin:0"><input type="hidden" name="i" value="{{ s.n }}"><input type="hidden" name="s" value="{{ sources_v }}"><button class="btn">Remove</button></form></div>{% endfor %}</div>{% endif %}
 
 
-{% if diagrams or (reviewable and diagrams | length < 5) %}<div class="section-card" id="diagrams"><div class="card-head"><h2>Diagrams</h2></div>
+{% if diagrams or (reviewable and diagrams | length < max_diagrams) %}<div class="section-card" id="diagrams"><div class="card-head"><h2>Diagrams</h2></div>
 {% for d in diagrams %}<div class="field-row">
 <div class="fname">Diagram #{{ loop.index }} <span class="badge {{ "ok" if d.status == "ready" else "bad" if d.status == "rejected" else "neutral" }}">{{ d.status }}</span></div>
 <div>{% if d.status == "ready" %}<img src="/review/{{ id }}/diagrams/{{ d.id }}.png" alt="{{ d.caption }}" width="{{ [d.width, 480] | min }}">
@@ -74,7 +74,7 @@
 <label for="dc-{{ d.id }}" class="mini-label">Caption</label><input type="text" id="dc-{{ d.id }}" name="caption" maxlength="200" required value="{{ d.caption }}"><button class="btn">Save caption</button></form>
 <form method="post" action="/review/{{ id }}/diagrams/{{ d.id }}/remove"><input type="hidden" name="v" value="{{ v }}"><button class="btn" aria-label="Remove diagram #{{ loop.index }}">Remove</button></form>{% else %}{{ d.caption }}{% endif %}</div>
 </div>{% endfor %}
-{% if reviewable and diagrams | length < 5 %}<form method="post" action="/review/{{ id }}/diagrams" enctype="multipart/form-data" class="row"><input type="hidden" name="v" value="{{ v }}">
+{% if reviewable and diagrams | length < max_diagrams %}<form method="post" action="/review/{{ id }}/diagrams" enctype="multipart/form-data" class="row"><input type="hidden" name="v" value="{{ v }}">
 <label for="d-file" class="mini-label">Image (PNG or JPEG, up to 5 MB)</label><input type="file" id="d-file" name="file" accept="image/png,image/jpeg" required>
 <label for="d-caption" class="mini-label">Caption</label><input type="text" id="d-caption" name="caption" maxlength="200" required>
 <button class="btn primary">Add diagram</button></form>{% endif %}

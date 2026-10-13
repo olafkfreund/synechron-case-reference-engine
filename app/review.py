@@ -227,7 +227,7 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
                 for f in POINT_FIELDS if case.points.get(f) or f in case.prose]
     checks = checklist(case)
     return page(request, "review_detail.html", user, id=cid, checks=checks, minimum=meets_minimum(checks), rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
-                sections=sections,
+                sections=sections, max_diagrams=diagrams.MAX_PER_CASE,
                 unlisted=unlisted, diagrams=case.diagrams, members=members, cands=cands, remerge=remerge,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
                 external_id=r[3], source=r[4], merged=bool(members),
