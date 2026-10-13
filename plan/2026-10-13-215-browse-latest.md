@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 215
 spec: spec/2026-10-13-215-browse-latest.md
 ---
