@@ -29,10 +29,10 @@ def rows(env):  # noqa: F811
     db.init()
     made = []
 
-    def add(claims, by="u1", status="done", case_id=None):
+    def add(claims, by="u1", status="done", case_id=None, pages=()):
         with db.connect() as c:
             made.append(c.execute("insert into research(query, created_by, status, results, case_id) values ('q',%s,%s,%s,%s) returning id",
-                                  (by, status, json.dumps({"pages": [], "skipped": [], "claims": claims}), case_id)).fetchone()[0])
+                                  (by, status, json.dumps({"pages": list(pages), "skipped": [], "claims": claims}), case_id)).fetchone()[0])
         return made[-1]
     yield add
     with db.connect() as c:
@@ -80,8 +80,12 @@ def test_markdown_section_wording(rows, approved):
     sec = t[t.index("# Industry context (public sources)"):]
     assert render.INDUSTRY_DISCLAIMER.replace("_", "\\_") in sec
     assert not [p for p in OLD if p in sec]
-    assert "docs.vendor.io states:" in sec
-    assert f"learn.microsoft.com states: “{Q1}” — https://learn.microsoft.com/entra, retrieved 2026-10-01" in sec.replace("\\", "")
+    plain = sec.replace("\\", "")
+    assert "docs.vendor.io states:" in sec and "## learn.microsoft.com" in plain  # no title: the host heads the group
+    assert f"> “{Q1}” [1]" in plain and f"> “{Q2}” [2]" in plain
+    body, sources = plain.split("## Sources")
+    assert "1. learn.microsoft.com, learn.microsoft.com, <https://learn.microsoft.com/entra>, retrieved 2026-10-01" in sources
+    assert "https://" not in body  # URLs leave the body
     assert "AI summary" not in t
     assert not re.search(r"\b(we|our|ours|delivered)\b", sec.replace(Q1, ""), re.I), sec  # fixed wording only
 
@@ -95,12 +99,13 @@ def test_every_fixed_string_avoids_first_person_and_delivery_wording():
 def test_docx_and_pdf_have_the_quote_and_source(rows, approved):
     rid, cid = rows([claim()]), approved()
     t = doc_text(gen(rid, [cid], "docx").content)
-    for want in (render.INDUSTRY_HEADING, render.INDUSTRY_DISCLAIMER, "learn.microsoft.com states:", Q1, "retrieved 2026-10-01", "Faster onboarding"):
+    for want in (render.INDUSTRY_HEADING, render.INDUSTRY_DISCLAIMER, "learn.microsoft.com states:", f"{Q1}” [1]", "Sources",
+                 "[1] learn.microsoft.com, learn.microsoft.com, https://learn.microsoft.com/entra, retrieved 2026-10-01", "Faster onboarding"):
         assert want in t, want
     text = " ".join(pdf_text(gen(rid, [cid], "pdf_docx").content)[0].split())  # the PDF wraps lines
     assert render.INDUSTRY_HEADING in text and Q1 in text and "learn.microsoft.com" in text
     assert "{{" not in t and "{%" not in t
-    assert t.count("learn.microsoft.com") == 2  # "states:" and the URL: the publisher is not repeated
+    assert t.count("https://learn.microsoft.com/entra") == 1  # the URL only in the source list, not in the body
     assert not [p for p in OLD if p in t]
 
 
@@ -136,14 +141,14 @@ def test_a_claim_naming_a_protected_client_is_replaced_or_dropped_and_counted(ro
 
 
 def test_pptx_industry_slide_shows_the_omitted_note(rows, approved, reg, monkeypatch):
-    rid = rows([claim(), claim(f"{reg.replace('o', 'ö')} runs this in production daily")])
+    rid = rows([claim(), claim(f"{reg.replace('o', 'ö')} runs this in production daily", url="https://learn.microsoft.com/other")])  # one slide line per page
     kept = slides(gen(rid, [approved()], "pptx").content)[1][1]["Statements"]  # #166: replaced, not dropped
     assert len(kept) == 2 and "omitted" not in "".join(kept)
     monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)  # apply() misses: blocked() alone must still guard
     _, out = slides(gen(rid, [approved()], "pptx").content)
     st = out[1]["Statements"]
     assert st[0].startswith("learn.microsoft.com states:") and st[-1] == "1 public statement omitted: it named a protected client"
-    many = rows([claim(f"{Q1} {i}") for i in range(render.SLIDE_ITEMS + 1)] + [claim(f"{reg.replace('o', 'ö')} runs this daily")])
+    many = rows([claim(f"{Q1} {i}", url=f"https://learn.microsoft.com/p{i}") for i in range(render.SLIDE_ITEMS + 1)] + [claim(f"{reg.replace('o', 'ö')} runs this daily")])
     st = slides(gen(many, [approved()], "pptx").content)[1][1]["Statements"]
     assert len(st) == render.SLIDE_ITEMS + 1 and st[-1].startswith("1 public statement omitted")  # the cap never cuts the note
 
@@ -169,7 +174,7 @@ def test_preview_includes_industry_and_keeps_the_ack(rows, approved):
         return as_user("u1", G).post("/preview", data=form)
     r = prev([cid])
     assert r.status_code == 200 and Q1 in r.text and "learn.microsoft.com states:" in r.text
-    assert "&mdash; https://learn.microsoft.com/entra, retrieved" in r.text  # the publisher is not repeated after the dash
+    assert f"&ldquo;{Q1}&rdquo; [1]" in r.text and r.text.count("https://learn.microsoft.com/entra") == 2  # only in the source list (href and text)
     assert f'name="research_id" value="{rid}"' in r.text
     assert prev().status_code == 400
     esc = as_user("u1", G).post("/preview", data={"case_ids": [cid], "research_id": rows([claim("<b>x</b> in the quote")])})
@@ -199,6 +204,7 @@ def test_fallback_to_case_layout_without_industry_layout(rows, approved, tmp_pat
     ind = out[1]
     assert ind["Outcomes"][0].startswith("learn.microsoft.com states:") and Q1[:40] in ind["Outcomes"][0]
     assert ind["Challenge"] == [""] and ind["Solution"] == [""]
+    assert ind["Technology"] == ["Sources: [1] learn.microsoft.com"]
 
 
 def test_fallback_layout_shows_the_omitted_note(rows, approved, reg, tmp_path, monkeypatch):
@@ -409,3 +415,69 @@ def test_review_page_lists_a_hidden_source_for_removal_without_showing_it(rows, 
     page = as_user("u1", RV).get(f"/review/{cid}").text
     assert "Withheld: names a protected client" in page and Q2 not in page and reg.lower() not in page
     assert 'name="i" value="0"' in page
+
+
+# ---- grouped layout (#214): groups, citations, sources, titles ----
+
+def section(claims, pages=()):
+    return render.industry_section(claims, render.anonymise.load_clients(), pages=pages)
+
+
+def test_section_groups_by_page_and_numbers_sources(env):
+    db.init()
+    a = {**claim(), "title": "Entra overview"}
+    b = {**claim(Q2, "configuration", "docs.vendor.io", "https://docs.vendor.io/x"), "title": "Vendor docs"}
+    s = section([a, b, {**claim("Second quote from the first page"), "title": "Entra overview"}])
+    assert [g["title"] for g in s["groups"]] == ["Entra overview", "Vendor docs"]
+    assert [q["n"] for q in s["groups"][0]["quotes"]] == [1, 1] and s["groups"][1]["quotes"][0]["n"] == 2
+    assert s["groups"][0]["lead"] == "learn.microsoft.com states:"
+    assert [(x["n"], x["url"]) for x in s["sources"]] == [(1, "https://learn.microsoft.com/entra"), (2, "https://docs.vendor.io/x")]
+    assert not any("http" in x["text"] for x in s["statements"][:-1]) and "https://docs.vendor.io/x" in s["statements"][-1]["text"]
+
+
+def test_section_title_falls_back_to_the_page_then_the_host(env):
+    db.init()
+    pages = [{"url": "https://learn.microsoft.com/entra", "title": "From the page"}]
+    assert section([claim()], pages)["groups"][0]["title"] == "From the page"
+    assert section([claim()])["groups"][0]["title"] == "learn.microsoft.com"
+
+
+def test_a_title_naming_a_protected_client_never_reaches_the_section(reg, monkeypatch):
+    name = reg
+    s = section([{**claim(), "title": f"{name} case study"}])
+    assert name not in json.dumps(s) and s["groups"][0]["title"] == "a retailer case study"
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)  # apply() misses it: blocked() must still drop the claim
+    s = section([{**claim(), "title": f"{name} case study"}, claim(Q2, url="https://x.example/y")])
+    assert name not in json.dumps(s) and "omitted" in s["note"] and len(s["groups"]) == 1
+    assert s["groups"][0]["quotes"][0]["n"] == 1 and s["sources"][0]["n"] == 1  # numbering counts only what is shown
+
+
+def test_two_quotes_from_one_page_share_a_citation_in_markdown(rows, approved):
+    t = gen(rows([claim(), claim(Q2, "configuration")]), [approved()], ack=True).text.replace("\\", "")
+    assert f"> “{Q1}” [1]" in t and f"> “{Q2}” [1]" in t and t.count("<https://learn.microsoft.com/entra>") == 1
+
+
+def test_markdown_autolink_only_for_a_plain_url(rows):
+    evil = "https://x/a>[c](javascript:alert(1))"
+    t = gen(rows([claim(url=evil)]), ack=True).text
+    assert "<https://x/a>" not in t and not re.search(r"(?<!\\)\]\(javascript", t) and not re.search(r"(?<!\\)<https?://x", t)
+    assert "<https://learn.microsoft.com/entra>" in gen(rows([claim()]), ack=True).text  # a plain URL still links
+
+
+def test_group_title_comes_from_the_stored_page_when_the_claim_has_none(rows):
+    pages = [{"url": "https://learn.microsoft.com/entra", "title": "Passwordless overview", "publisher": "learn.microsoft.com"}]
+    t = gen(rows([claim()], pages=pages), ack=True).text
+    assert "## Passwordless overview" in t and "1. Passwordless overview, learn.microsoft.com" in t
+
+
+def test_all_claims_omitted_leaves_the_note_and_no_sources_heading(reg, monkeypatch):
+    s = section([claim(publisher=f"{reg.lower()}.example", url=f"https://{reg.lower()}.example/x")])
+    assert s["sources"] == [] and s["groups"] == [] and "omitted" in s["note"]
+    assert "Sources" not in render.to_markdown([], s) and "omitted" in render.to_markdown([], s)
+    assert "Sources" not in doc_text(render.to_docx([], s)) and "omitted" in doc_text(render.to_docx([], s))
+
+
+def test_a_malformed_url_does_not_break_the_section(env):
+    db.init()
+    s = section([claim(url="http://[x")])
+    assert s["groups"][0]["title"] == "learn.microsoft.com"

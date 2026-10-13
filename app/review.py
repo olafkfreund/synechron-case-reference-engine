@@ -429,7 +429,7 @@ def reject(cid: int, v: str = Form(), user: User = Depends(require("reviewer")))
 # ---- public sources a reviewer attaches to a case (#199) ----
 
 MAX_SOURCES = 20
-SOURCE_KEYS = ("quote", "publisher", "url", "retrieved_at", "type")
+SOURCE_KEYS = ("quote", "publisher", "url", "title", "retrieved_at", "type")
 
 
 def _add_sources(old: list, new: list) -> list:

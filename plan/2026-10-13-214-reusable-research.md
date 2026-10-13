@@ -475,6 +475,19 @@ must exist on `main`.
   `apply()` and `blocked()` to `title`; `_csv_safe` looks past leading
   whitespace and covers LF and full-width `＝ ＋ － ＠`; `_export_md` collapses
   whitespace in every field.
+- Steps 6-10: the flat `statements` fallback ends with one "Sources:" line.
+  Slide lines are one per page group, without the retrieved date (it is in
+  the source list). `brand/reference.docx` was regenerated in the container
+  and copied out. Steps 8 and 9 share `app/render.py`, so they are one
+  commit. The pptx omitted-note test needed claims on different URLs, since
+  one page now gives one slide line.
+- Phase 2 review fixes:
+  - Markdown links only URLs that fully match `https?://[^\s<>]+`.
+  - The date is escaped again.
+  - No Sources heading when every claim is dropped.
+  - A malformed URL falls back to the publisher.
+  - New tests: the fallback "Sources" box, a page title through `build()`,
+    and numbering after a dropped claim.
 
 ## Tests
 

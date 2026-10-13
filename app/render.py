@@ -8,6 +8,7 @@ import threading
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import urlparse
 
 from docx.shared import Mm
 from docxtpl import DocxTemplate, InlineImage
@@ -46,27 +47,51 @@ CLAIM_TYPES = frozenset({"out_of_the_box", "configuration", "industry_practice",
 SLIDE_ITEMS = 5
 
 
-def industry_section(claims: list[dict], clients, heading=INDUSTRY_HEADING) -> dict | None:
-    """Verbatim quotes with their source, from research claims only. apply() then blocked() PER CLAIM:
-    one that still names a protected client is dropped (and counted), not the whole document."""
-    items, omitted = [], 0
+def _host(url) -> str:
+    try:
+        return urlparse(str(url)).hostname or ""
+    except ValueError:  # e.g. "http://[x"
+        return ""
+
+
+def industry_section(claims: list[dict], clients, heading=INDUSTRY_HEADING, pages=()) -> dict | None:
+    """Verbatim quotes grouped by source page, cited [n], with a numbered source list. apply() then blocked()
+    PER CLAIM: one that still names a protected client is dropped (and counted), not the whole document."""
+    page_titles = {p.get("url"): p.get("title") for p in pages}
+    groups, order, omitted = {}, [], 0  # url -> group; order = urls by first appearance
     for c in claims:
         if c.get("type") not in CLAIM_TYPES:
             continue
-        # only the quote is anonymised: rewriting a publisher or URL would forge the citation
-        safe = {k: CTRL.sub("", str(c.get(k, ""))) for k in ("quote", "publisher", "url", "retrieved_at")}
-        safe["quote"], safe["date"] = anonymise.apply(safe["quote"], clients), safe.pop("retrieved_at")[:10]
+        # only quote and title are anonymised: rewriting a publisher or URL would forge the citation
+        title = c.get("title") or page_titles.get(c.get("url")) or _host(c.get("url", "")) or c.get("publisher", "")
+        safe = {k: CTRL.sub("", str(v)) for k, v in
+                {"quote": c.get("quote", ""), "title": title, "publisher": c.get("publisher", ""), "url": c.get("url", ""),
+                 "retrieved_at": c.get("retrieved_at", "")}.items()}
+        safe["quote"], safe["title"] = anonymise.apply(safe["quote"], clients), anonymise.apply(safe["title"], clients)
+        safe["date"] = safe.pop("retrieved_at")[:10]
         if anonymise.blocked("\n".join(safe.values()), clients):  # incl. a client's own site as the source
             omitted += 1
             continue
-        phrase = f"{safe['publisher']} states"
-        items.append({**safe, "phrase": phrase,
-                      "text": f"{phrase}: \u201c{safe['quote']}\u201d \u2014 {safe['url']}, retrieved {safe['date']}"})
-    if not items and not omitted:
+        if safe["url"] not in groups:
+            order.append(safe["url"])
+            groups[safe["url"]] = {"title": safe["title"], "lead": f"{safe['publisher']} states:", "quotes": [],
+                                   "source": {"n": len(order), "title": safe["title"], "publisher": safe["publisher"],
+                                              "url": safe["url"], "date": safe["date"]}}
+        g = groups[safe["url"]]
+        g["quotes"].append({"quote": safe["quote"], "n": g["source"]["n"]})
+    if not groups and not omitted:
         return None
+    gl = [groups[u] for u in order]
+    sources = [g["source"] for g in gl]
+    statements = [{"text": t} for g in gl for t in [g["title"], *(f"\u201c{q['quote']}\u201d [{q['n']}]" for q in g["quotes"])]]
+    if sources:
+        statements.append({"text": "Sources: " + "; ".join(f"[{x['n']}] {x['title']}, {x['publisher']}, {x['url']}, retrieved {x['date']}"
+                                                          for x in sources)})
     note = (f"{omitted} public statement{'s' if omitted != 1 else ''} omitted: "
             f"{'they' if omitted != 1 else 'it'} named a protected client") if omitted else ""
-    return {"heading": heading, "disclaimer": INDUSTRY_DISCLAIMER, "statements": items, "note": note}
+    return {"heading": heading, "disclaimer": INDUSTRY_DISCLAIMER,
+            "groups": [{k: g[k] for k in ("title", "lead", "quotes")} for g in gl], "sources": sources,
+            "statements": statements, "note": note}
 
 
 SLIDE_QUOTE = 140
@@ -76,8 +101,9 @@ def slide_statements(ind: dict) -> list[str]:
     """Every slide line starts with its source and keeps the verbatim quote next to it, so a reader can
     check it. The omitted-statements note (if any) comes last, as in
     Word and Markdown (#123)."""
-    return [f"{i['phrase']}: \u201c{excerpt(i['quote'], SLIDE_QUOTE)}\u201d \u2014 {i['date']}"
-            for i in ind["statements"]][:SLIDE_ITEMS] + ([ind["note"]] if ind["note"] else [])
+    lines = [f"{g['lead']} \u201c{excerpt(g['quotes'][0]['quote'], SLIDE_QUOTE)}\u201d [{g['quotes'][0]['n']}]"
+             for g in ind["groups"]]
+    return lines[:SLIDE_ITEMS] + ([ind["note"]] if ind["note"] else [])
 
 
 def section(case: ReferenceCase, client: str) -> dict:
@@ -235,11 +261,11 @@ def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int
             _fill(prs, *own, {"Title": [industry["heading"]], "Summary": [industry["disclaimer"]],
                               "Statements": slide_statements(industry)}, INDUSTRY_PLACEHOLDERS)
         else:  # fallback: the case layout, its case-only boxes left empty
-            publishers = list(dict.fromkeys(i["publisher"] for i in industry["statements"]))
+            refs = [f"[{x['n']}] {x['publisher']}" for x in industry["sources"]]
             _fill(prs, *case_layout, {
                 "Title": [industry["heading"]], "Client": [""], "Summary": [industry["disclaimer"]],
                 "Challenge": [""], "Solution": [""], "Outcomes": slide_statements(industry),
-                "Technology": ["Sources: " + ", ".join(publishers)] if publishers else [""]}, PLACEHOLDERS)
+                "Technology": ["Sources: " + ", ".join(refs)] if refs else [""]}, PLACEHOLDERS)
     props = prs.core_properties
     props.title, props.author, props.last_modified_by = "Reference cases", "Reference Engine", "Reference Engine"
     props.comments = props.subject = props.keywords = props.category = ""
@@ -311,8 +337,14 @@ def md(s: str) -> str:
     return re.sub(r"^(\d+)([.)])|^([-+=])", lambda m: f"{m[1]}\\{m[2]}" if m[1] else f"\\{m[3]}", s)
 
 
+def link(url: str) -> str:
+    """An autolink only for a plain http(s) URL: a '>' or space would end it and let the rest become Markdown."""
+    return f"<{url}>" if re.fullmatch(r"https?://[^\s<>]+", url) else md(url)
+
+
 _env = Environment(autoescape=False, trim_blocks=True, lstrip_blocks=True)  # Markdown, not HTML
 _env.filters["md"] = md
+_env.filters["link"] = link
 MD = _env.from_string("""\
 {% for c in cases %}
 # {{ c.title | md }}
@@ -365,9 +397,23 @@ MD = _env.from_string("""\
 
 *{{ industry.disclaimer | md }}*
 
-{% for i in industry["statements"] %}
-- {{ i.phrase | md }}: \u201c{{ i.quote | md }}\u201d \u2014 {{ i.url | md }}, retrieved {{ i.date | md }}
+{% for g in industry.groups %}
+## {{ g.title | md }}
+
+*{{ g.lead | md }}*
+
+{% for q in g.quotes %}
+> \u201c{{ q.quote | md }}\u201d [{{ q.n }}]
+
 {% endfor %}
+{% endfor %}
+{% if industry.sources %}
+## Sources
+
+{% for s in industry.sources %}
+{{ s.n }}. {{ s.title | md }}, {{ s.publisher | md }}, {{ s.url | link }}, retrieved {{ s.date | md }}
+{% endfor %}
+{% endif %}
 {% if industry.note %}
 
 {{ industry.note | md }}
@@ -402,13 +448,13 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
                                      "third-party statements only, not delivery evidence")
     if fmt is not None and fmt not in OUTPUTS:  # after the input checks, as on main
         raise HTTPException(400, f"format must be one of {', '.join(OUTPUTS)}")
-    claims = []
+    claims, pages = [], []
     if research_id is not None:  # only your own, finished research
         row = conn.execute("select results from research where id=%s and created_by=%s and status='done'",
                            (research_id, user.sub)).fetchone()
         if not row:
             raise HTTPException(404, "no such research")
-        claims = row[0].get("claims", [])
+        claims, pages = row[0].get("claims", []), row[0].get("pages", [])
     # same restrictions as search: approved, in date, and the user can open the source document
     rows = conn.execute(
         "select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null, c.public_sources "
@@ -435,8 +481,8 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
         if (k := (c.get("url"), c.get("quote"))) not in seen:
             seen.add(k); merged.append(c)
     # the new heading only if an attached claim survives apply()/blocked() at render
-    cited = bool(attached) and bool((industry_section(attached, clients) or {}).get("statements"))
-    industry = industry_section(merged, clients, heading=SOURCES_HEADING if cited else INDUSTRY_HEADING) \
+    cited = bool(attached) and bool((industry_section(attached, clients, pages=pages) or {}).get("statements"))
+    industry = industry_section(merged, clients, heading=SOURCES_HEADING if cited else INDUSTRY_HEADING, pages=pages) \
         if merged else None
     if not ids and not (industry and industry["statements"]):
         raise HTTPException(400, "the research has no usable public statements")

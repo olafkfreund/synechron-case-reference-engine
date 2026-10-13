@@ -530,7 +530,7 @@ def extract_claims(query: str, pages: list[dict]) -> tuple[list[dict], str | Non
             continue
         seen.add((c.page, c.statement))
         out.append({"statement": c.statement.strip(), "quote": c.quote.strip(), "type": c.type, "url": p["url"],
-                    "publisher": p["publisher"], "retrieved_at": p["retrieved_at"], "rank": source_rank(p["publisher"])})
+                    "publisher": p["publisher"], "title": p.get("title", ""), "retrieved_at": p["retrieved_at"], "rank": source_rank(p["publisher"])})
     return sorted(out, key=lambda c: (c["rank"], CLAIM_TYPES.index(c["type"]))), None
 
 
