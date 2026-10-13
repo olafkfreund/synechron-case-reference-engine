@@ -34,6 +34,7 @@
 {% endif %}
 <form method="post" action="/generate" class="section-card generate">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}
 {% if research_id %}<input type="hidden" name="research_id" value="{{ research_id }}">{% endif %}
+{% for l in library_ids %}<input type="hidden" name="library_ids" value="{{ l }}">{% endfor %}
 {% if ack %}<input type="hidden" name="industry_context_ack" value="on">{% endif %}
 <div class="action-row"><a class="btn" href="/">Back to search</a>
 <button class="btn primary" name="format" value="docx">Download Word</button>

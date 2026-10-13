@@ -219,6 +219,10 @@ Branch `feat/235-library-in-bids`, worktree `../refs-engine-235`. Two PRs.
     (`show_head`). The withheld note always shows.
   - On the pptx slide, briefs come before quote lines, so a full set of
     quotes can't push them off. They share the `SLIDE_ITEMS` cap.
+- Step 10: the "Include" checkboxes belong to the Download all form only. An
+  HTML input has a single `form=` owner, so per-case downloads leave library
+  items out, and the card says so. With library suggestions and no case, the
+  form adds the acknowledgement checkbox.
 
 ## Tests
 

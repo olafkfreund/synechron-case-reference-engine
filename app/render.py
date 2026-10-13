@@ -648,13 +648,13 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
 def preview(request: Request, case_ids: list[int] = Form([]), research_id: int | None = Form(None),
             industry_context_ack: bool = Form(False), library_ids: list[int] = Form([]), user: User = Depends(require("user"))):
     with db.connect() as conn:  # same content and errors as /generate; nothing is logged
-        ids, sections, industry, _, _, _ = build(conn, case_ids, research_id, industry_context_ack, user, library_ids=library_ids)
+        ids, sections, industry, _, _, used = build(conn, case_ids, research_id, industry_context_ack, user, library_ids=library_ids)
         footer, retitled = "", False  # what a case-study download adds; the same code path as /generate, so the text cannot drift
         if len(ids) == 1:
             _, study, study_industry, _, _, _ = build(conn, case_ids, research_id, industry_context_ack, user, "case_study_docx", library_ids)
             footer, retitled = study[0]["footer"], bool(study_industry) and study_industry["heading"] != (industry or {}).get("heading")
     return page(request, "output_preview.html", user, cases=sections, industry=industry, ids=ids,
-                research_id=research_id, ack=industry_context_ack, footer=footer, retitled=APPROACH_HEADING if retitled else "")
+                research_id=research_id, library_ids=used, ack=industry_context_ack, footer=footer, retitled=APPROACH_HEADING if retitled else "")
 
 
 @router.post("/generate")
