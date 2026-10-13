@@ -154,9 +154,9 @@ Keeping the public best-practice statements you accept with the case, so every d
 
 **Steps**
 
-1. On the search result, press **Research this (public sources)**.
-2. On the research result, tick the claims you accept.
-3. Press **Attach to the case as public sources**. A case holds at most 20.
+1. On the search result, press **Research this (public sources)**, or open a finished research result or a library item.
+2. Tick the quotes you accept.
+3. Choose the case in "Attach the selected quotes as public sources to" (any case you may review, not only the one the research started from) and press **Attach**. A case holds at most 20.
 4. To take one off, open the case on the review page and press Remove on it under "Public sources (not delivery evidence)".
 
 **What you see**

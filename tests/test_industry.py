@@ -278,17 +278,63 @@ def test_reviewer_attaches_chosen_claims_to_the_case(rows, approved):
     assert "statement" not in item
     page = as_user("u1", RV).get(f"/review/{cid}").text
     assert "Public sources (not delivery evidence)" in page and Q2 in page and Q1 not in page
-    assert 'action="/review/%d/sources"' % cid in as_user("u1", RV).get(f"/research/{rid}").text
-    assert f'action="/review/{cid}/sources"' not in as_user("u1", G).get(f"/research/{rid}").text  # a plain user cannot attach
+    assert f'<option value="{cid}:{token(cid)}" selected>' in as_user("u1", RV).get(f"/research/{rid}").text  # the origin case leads
+    assert 'formaction="/sources/attach"' not in as_user("u1", G).get(f"/research/{rid}").text  # a plain user cannot attach
 
 
-def test_attach_refuses_research_not_yours_not_done_or_from_another_case(rows, approved):
-    cid, other = approved(), approved()
-    for rid in (rows([claim()], by="u2", case_id=cid), rows([claim()], status="running", case_id=cid),
-                rows([claim()], case_id=other), rows([claim()]), 999999999):
+def test_attach_refuses_research_not_yours_or_not_done(rows, approved):
+    cid = approved()
+    for rid in (rows([claim()], by="u2", case_id=cid), rows([claim()], status="running", case_id=cid), 999999999):
         assert attach(cid, rid, [0]).status_code == 404
     assert attach(cid, rows([claim()], case_id=cid), [0], groups=G).status_code == 403
     assert stored(cid) == []
+
+
+def test_research_from_another_case_or_none_attaches_to_any_case_the_reviewer_may_review(rows, approved):
+    cid, other = approved(), approved()
+    assert attach(cid, rows([claim()], case_id=other), [0]).status_code == 303
+    assert attach(cid, rows([Q2 and claim(Q2, "configuration")]), [0]).status_code == 303
+    assert [c["quote"] for c in stored(cid)] == [Q1, Q2] and stored(other) == []
+
+
+def test_a_case_the_reviewer_cannot_review_gets_404_and_a_stale_version_409(rows, approved):
+    hidden, cid = approved(acl=("g-other",)), approved()
+    rid = rows([claim()])
+    assert attach(hidden, rid, [0], s=token(hidden)).status_code == 404
+    assert attach(cid, rid, [0], s="stale").status_code == 409
+    assert stored(cid) == [] and stored(hidden) == []
+
+
+def test_the_picker_posts_case_and_version_together(rows, approved):
+    cid = approved()
+    rid = rows([claim()])
+    c = as_user("u1", RV)
+    assert c.post("/sources/attach", data={"target": f"{cid}:{token(cid)}", "research_id": rid, "n": [0]}, follow_redirects=False).status_code == 303
+    assert [x["research_id"] for x in stored(cid)] == [rid]
+    for bad in ("", "x:y", f"{cid}:stale", f"{cid}"):
+        assert c.post("/sources/attach", data={"target": bad, "research_id": rid, "n": [0]}).status_code in (400, 409, 422)
+    assert c.post("/sources/attach", data={"target": f"{cid}:{token(cid)}", "n": [0]}).status_code == 400            # neither source
+    both = {"target": f"{cid}:{token(cid)}", "research_id": rid, "library_id": 1, "n": [0]}
+    assert c.post("/sources/attach", data=both).status_code == 400                                                  # both sources
+    assert as_user("u1", G).post("/sources/attach", data={"target": f"{cid}:{token(cid)}", "research_id": rid, "n": [0]}).status_code == 403
+
+
+def test_a_library_item_attaches_any_users_item_and_records_library_id(approved, env):
+    cid = approved()
+    quotes = [{"quote": Q1, "publisher": "learn.microsoft.com", "url": "https://learn.microsoft.com/entra", "retrieved_at": "2026-10-01T00:00:00+00:00", "type": "out_of_the_box"},
+              {"quote": Q2, "publisher": "docs.vendor.io", "url": "https://docs.vendor.io/x", "retrieved_at": "2026-10-01T00:00:00+00:00", "type": "configuration"}]
+    with db.connect() as c:
+        lid = c.execute("insert into library_items(topic, kind, body, created_by) values ('t','quotes',%s,'u9') returning id",
+                        (json.dumps({"quotes": quotes}),)).fetchone()[0]
+    try:
+        r = as_user("u1", RV).post(f"/review/{cid}/sources", data={"library_id": lid, "n": [1, 1, 5, -1], "s": token(cid), "quote": "forged"}, follow_redirects=False)
+        assert r.status_code == 303
+        (item,) = stored(cid)
+        assert item["quote"] == Q2 and item["library_id"] == lid and "research_id" not in item and item["attached_by"] == "u1"
+        assert as_user("u1", RV).post(f"/review/{cid}/sources", data={"library_id": 999999999, "n": [0], "s": token(cid)}).status_code == 404
+    finally:
+        with db.connect() as c:
+            c.execute("delete from library_items where id=%s", (lid,))
 
 
 def test_attach_copies_from_the_row_not_the_form(rows, approved):

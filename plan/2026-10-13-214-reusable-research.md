@@ -534,6 +534,14 @@ must exist on `main`.
   - Delete is not audited: there's no generic admin log.
   - A brief whose client is protected later drops and counts the sentence
     (as `industry_section` does) instead of returning 409.
+- Step 22 (and the step 24 attach tests):
+  - Attaching research or a library item to any reviewable case doesn't
+    reopen an approved case, as in #199, because public sources aren't
+    approved content.
+  - `POST /sources/attach` takes `target="<case>:<version>"`.
+  - `picked_claims(verbatim=True)` is used, and library quotes record
+    `library_id`.
+  - The user guide is updated for the picker.
 
 ## Tests
 

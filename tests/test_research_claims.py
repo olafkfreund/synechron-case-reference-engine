@@ -256,7 +256,9 @@ def test_reviewer_view_has_attach_inside_the_pick_form(approved, reg, echo):
     t = c.get(loc).text
     form = t[t.index('<form id="pick"'):]
     form = form[:form.index("</form>")]
-    assert f'formaction="/review/{cid}/sources"' in form and 'name="s"' in form and 'name="research_id"' in form
+    assert 'formaction="/sources/attach"' in form and 'name="research_id"' in form
+    assert f'<select id="attach-to" name="target"' in form and f'<option value="{cid}:' in form and "selected" in form
+    assert 'formaction="/sources/attach"' not in as_user("u1", ["g-user", DOCS]).get(loc).text  # a plain user cannot attach
 
 
 def test_export_unknown_format_and_unfinished_research(reg):

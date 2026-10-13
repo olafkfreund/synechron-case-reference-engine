@@ -6,7 +6,7 @@
 {% if omitted %}<div class="note">{{ omitted }} quote(s) not shown: they name a protected client.</div>{% endif %}
 {% if kind == "quotes" %}
 <div class="section-card"><div class="card-head"><h2>Quotes</h2></div>
-{% for c in claims %}<div class="claim"><q>{{ c.quote }}</q>
+{% for c in claims %}<div class="claim">{% if attach_cases %}<label class="check"><input type="checkbox" name="n" value="{{ c.n }}" form="attach"> Select</label>{% endif %}<q>{{ c.quote }}</q>
 <div class="meta">{% if (c.url or "").startswith(("http://", "https://")) %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.publisher }}</a>{% else %}<span>{{ c.publisher }}</span>{% endif %}
 <span>retrieved {{ (c.retrieved_at or "")[:10] }}</span>
 {% if found is not none %}{% if found[loop.index] %}<span class="badge neutral">still on the page</span>{% else %}<span class="badge">not found again</span>{% endif %}{% endif %}</div></div>{% endfor %}
@@ -14,6 +14,7 @@
 <form method="post" action="/library/{{ lid }}/export" class="section-card"><div class="row"><span class="muted">Export:</span>
 <button class="btn" name="format" value="md">Markdown</button><button class="btn" name="format" value="csv">CSV</button><button class="btn" name="format" value="copy">Copy</button></div></form>
 {% else %}
+{% if attach_cases and sec.sources %}{% for s in sec.sources %}<input type="hidden" name="n" value="{{ s.n - 1 }}" form="attach">{% endfor %}{% endif %}
 {% if sec.note and not sec.title %}<div class="note">{{ sec.note }}</div>{% else %}
 <div class="section-card"><div class="card-head"><h2>{{ sec.title }}</h2></div><p><em>{{ sec.disclaimer }}</em></p>
 {% if sec.takeaways %}<ul>{% for t in sec.takeaways %}<li>{{ t }}</li>{% endfor %}</ul>{% endif %}
@@ -25,6 +26,9 @@
 <form method="post" action="/library/{{ lid }}/download" class="section-card"><div class="row"><label for="l-format">Format</label><select id="l-format" name="format" style="max-width:200px"><option value="docx">Word</option><option value="pdf_docx">PDF</option><option value="md">Markdown</option></select><button class="btn primary">Download</button></div></form>
 {% endif %}
 {% endif %}
+{% if attach_cases %}<form id="attach" method="post" action="/sources/attach" class="section-card"><input type="hidden" name="library_id" value="{{ lid }}">
+<div class="row"><label for="attach-to">Attach {{ "the selected quotes" if kind == "quotes" else "this brief's sources" }} as public sources to</label>
+<select id="attach-to" name="target" style="max-width:320px">{% for value, title in attach_cases %}<option value="{{ value }}">{{ title }}</option>{% endfor %}</select><button class="btn">Attach</button></div></form>{% endif %}
 {% if can_manage %}<div class="section-card"><div class="card-head"><h2>Re-check</h2></div>
 {% if can_recheck %}
 {% if again in ("queued", "running") %}<p>Running the search again&hellip; reload this page in a minute.</p>
