@@ -80,3 +80,23 @@ def test_order_follows_updated_at(make):  # noqa: F811
         c.execute("update documents set title='Newer doc' where id=%s", (doc_of(new),))
     t = client(R).get("/documents").text
     assert t.index("Newer doc") < t.index("Older doc")
+
+
+def test_landing_panels(make):  # noqa: F811
+    make(status="extracted")
+    make(status="approved", due="30 days")
+    with db.connect() as c:
+        before = c.execute("select count(*) from jobs where kind='extract' and status in ('queued','running')").fetchone()[0]
+        mine = c.execute("insert into research(query, created_by) values ('my own question', 'u1') returning id").fetchone()[0]
+        theirs = c.execute("insert into research(query, created_by) values ('someone else question', 'u2') returning id").fetchone()[0]
+        c.execute("insert into jobs(kind, payload) values ('extract', '{}')")
+    try:
+        t = client(R).get("/").text
+        assert "my own question" in t and "someone else question" not in t
+        assert "Faster onboarding" in t and "Latest approved cases" in t
+        assert f"1 cases</a>, {before + 1} documents being extracted" in t
+        assert "Waiting for review" not in client([USER]).get("/").text
+    finally:
+        with db.connect() as c:
+            c.execute("delete from research where id in (%s,%s)", (mine, theirs))
+            c.execute("delete from jobs where kind='extract' and payload = '{}'::jsonb")

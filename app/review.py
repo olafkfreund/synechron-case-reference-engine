@@ -115,7 +115,16 @@ def rows(case, docs=None):
 
 @router.get("/")
 def landing(request: Request, user: User = Depends(require("user"))):
-    return page(request, "landing.html", user)
+    from app.search import browse  # app.search imports app.review: a top-level import would be circular
+    latest = browse(user, {}, "", "newest", 1)[:5]
+    queue = waiting = None
+    with db.connect() as conn:
+        research = conn.execute("select id, query, status, retrieved_at from research where created_by=%s "
+                                "order by retrieved_at desc limit 5", (user.sub,)).fetchall()
+        if "reviewer" in user.roles:
+            queue = conn.execute(f"select count(*) from cases c where {REVIEWABLE} and {QUEUE}", (list(user.groups),)).fetchone()[0]
+            waiting = conn.execute("select count(*) from jobs where kind='extract' and status in ('queued','running')").fetchone()[0]
+    return page(request, "landing.html", user, latest=latest, research=research, queue=queue, waiting=waiting)
 
 
 @router.get("/review")
