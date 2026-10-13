@@ -23,6 +23,7 @@ Both are private until shared from their Share menu.
 
 - Crawled files larger than `S3_MAX_BYTES`, `SHAREPOINT_MAX_BYTES` or `CONFLUENCE_MAX_BYTES` (50 MB by default)
   are skipped before download and counted as `skipped_too_large` on the sources page.
+  Raising the cap brings back, on the next crawl, files skipped as too large since this was added (#206).
 - Only `docx`, `pptx` and `pdf` are read; other files are counted as `skipped_type`. For S3 and SharePoint
   sources, `include_ext` in the source config widens the list. Legacy `.doc` is not supported.
 - Uploads are capped by `UPLOAD_MAX_BYTES` (50 MB by default) and go through the S3 crawler, so keep it at or
