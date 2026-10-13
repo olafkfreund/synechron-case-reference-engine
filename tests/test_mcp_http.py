@@ -3,13 +3,14 @@ import asyncio
 import base64
 import json
 import time
+import uuid
 
 import pytest
 from fastapi.testclient import TestClient
 from joserfc import jwt
 from joserfc.jwk import OctKey, RSAKey
 
-from app import main, mcp_server
+from app import db, main, mcp_server
 
 ORIGIN = "http://testserver"
 ISS, AUD, TID = "https://login.example/tenant/v2.0", "api-app-id", "tenant"
@@ -21,7 +22,7 @@ KEY = RSAKey.generate_key(2048, parameters={"kid": "k1"})  # one signing key for
 def env(monkeypatch):
     for k, v in dict(SESSION_SECRET="test-secret", SESSION_HTTPS_ONLY="false", APP_ORIGIN=ORIGIN,
                      AWS_ACCESS_KEY_ID="x", AWS_SECRET_ACCESS_KEY="x", AWS_DEFAULT_REGION="us-east-1",
-                     MCP_ENABLED="1", MCP_ISSUER=ISS, MCP_AUDIENCE=AUD, MCP_TENANT_ID=TID).items():
+                     ROLE_USER_GROUPS="g-user", ROLE_ADMIN_GROUPS="g-admin", MCP_ENABLED="1", MCP_ISSUER=ISS, MCP_AUDIENCE=AUD, MCP_TENANT_ID=TID).items():
         monkeypatch.setenv(k, v)
 
     async def jwks(url):
@@ -31,7 +32,7 @@ def env(monkeypatch):
 
 def token(**over):
     now = int(time.time())
-    claims = {"iss": ISS, "aud": AUD, "tid": TID, "exp": now + 600, "iat": now, "scp": "refs.access", "oid": "o1",
+    claims = {"iss": ISS, "aud": AUD, "tid": TID, "exp": now + 600, "iat": now, "scp": "refs.access", "oid": "o1", "groups": ["g-user", "noise"],
               "azp": "client-1", **over}
     return jwt.encode({"alg": "RS256", "kid": "k1"}, {k: v for k, v in claims.items() if v is not None}, KEY)
 
@@ -173,3 +174,55 @@ def test_prm_is_404_when_disabled(env, monkeypatch):
     monkeypatch.delenv("MCP_ENABLED")
     with TestClient(main.create_app()) as c:
         assert c.get("/.well-known/oauth-protected-resource/mcp").status_code == 404
+
+
+def fresh():
+    return f"t-{uuid.uuid4()}"  # the test database persists: never reuse a key that may have a cutoff
+
+
+def test_user_from_token_builds_the_portal_user(env):
+    db.init()
+    u = mcp_server.user_from_token({"oid": "o1", "sub": "s1", "preferred_username": "a@b", "groups": ["g-admin", "noise"],
+                                    "iat": time.time()})
+    assert (u.sub, u.name, u.groups) == ("o1", "a@b", frozenset({"g-admin"}))
+    assert u.roles == frozenset({"user", "reviewer", "admin"})
+    assert mcp_server.user_from_token({"sub": "s1", "name": "N", "groups": "g-user", "iat": time.time()}).sub == "s1"
+
+
+@pytest.mark.parametrize("claims,status", [
+    ({"groups": ["noise"]}, 403),  # no role
+    ({"groups": None}, 403),
+    ({"_claim_names": {"groups": "src1"}}, 403),  # overage
+    ({"hasgroups": True}, 403),
+    ({"oid": None, "sub": None}, 401)])
+def test_user_refusals_through_http(env, claims, status):
+    db.init()
+    with TestClient(main.create_app()) as c:
+        r = rpc(c, "tools/list", "2025-06-18", tok=token(**{"oid": fresh(), **claims}))
+        assert r.status_code == status, r.text
+        assert ("www-authenticate" in r.headers) == (status == 401)
+
+
+def test_session_cutoff_refuses_older_tokens_only(env):
+    db.init()
+    key = fresh()
+    with db.connect() as conn:
+        main.cut_sessions(conn, key)
+    with TestClient(main.create_app()) as c:
+        assert rpc(c, "tools/list", "2025-06-18", tok=token(oid=key, iat=int(time.time()) - 5)).status_code == 401
+        time.sleep(1.1)
+        assert rpc(c, "tools/list", "2025-06-18", tok=token(oid=key)).status_code == 200
+
+
+def test_tool_call_runs_as_the_token_user(env):
+    db.init()
+    with TestClient(main.create_app()) as c:
+        r = rpc(c, "tools/call", "2025-06-18", {"name": "ping", "arguments": {}}, tok=token(oid=fresh()))
+        assert r.status_code == 200 and "pong" in r.text and "isError\":true" not in r.text
+
+
+def test_session_cookie_alone_gets_no_access_to_mcp(env):
+    from tests.test_auth import client as portal_client
+    c = portal_client(["g-user"])
+    assert c.cookies.get("session") and c.get("/me").status_code == 200  # a real, valid portal session
+    assert rpc(c, "tools/list", "2025-06-18").status_code == 401

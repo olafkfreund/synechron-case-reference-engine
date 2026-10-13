@@ -9,11 +9,15 @@ from urllib.parse import urlsplit
 import httpx
 from joserfc import jwt
 from joserfc.jwk import KeySet
+from mcp.server.auth.middleware.auth_context import get_access_token
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from mcp.server.auth.provider import AccessToken
-from mcp.server.auth.routes import create_protected_resource_routes
+from mcp.server.auth.routes import build_resource_metadata_url, create_protected_resource_routes
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.concurrency import run_in_threadpool
+from starlette.responses import JSONResponse
 
 JWKS_TTL = 3600
 REFETCH_UNKNOWN_KID = 300  # an unknown kid is unauthenticated input: it may not trigger a fetch per request
@@ -79,6 +83,57 @@ class EntraVerifier:
             subject=str(claims.get("oid") or claims.get("sub") or ""), claims=claims)
 
 
+class Refused(Exception):
+    def __init__(self, status: int, detail: str):
+        self.status, self.detail = status, detail
+
+
+def user_from_token(claims: dict):
+    """The same `User` /auth builds, from a validated access token's claims; Refused carries the HTTP status."""
+    from app import db, main  # here: main imports this module
+    key = claims.get("oid") or claims.get("sub")
+    if not isinstance(key, str) or not key:
+        raise Refused(401, "token has no subject")
+    claim = os.environ.get("OIDC_GROUPS_CLAIM", "groups")
+    if claim in (claims.get("_claim_names") or {}) or claims.get("hasgroups"):  # Entra groups overage
+        raise Refused(403, "too many groups in the token; assign groups to the application in the IdP")
+    groups = claims.get(claim, [])
+    groups = {groups} if isinstance(groups, str) else set(groups)
+    with db.connect() as conn:
+        row = conn.execute("select valid_after from session_cutoffs where sub = %s", (key,)).fetchone()
+    if row and claims["iat"] <= row[0].timestamp():
+        raise Refused(401, "session ended; get a new token")
+    groups = sorted(groups & main.known_groups())
+    roles = main.roles_for(groups)
+    if "user" not in roles:
+        raise Refused(403, "no role for this application")
+    name = claims.get("name") or claims.get("preferred_username") or key
+    return main.User(key, name, frozenset(groups), roles)
+
+
+def mcp_user():
+    """The signed-in user of the current tool call. Never the portal session: /mcp skips the CSRF check."""
+    return get_access_token().claims["_user"]
+
+
+class UserGate:
+    """Runs after the bearer check: builds the User once per request, or refuses with its status."""
+
+    def __init__(self, app, resource_metadata: str):
+        self.app, self.challenge = app, f'Bearer error="invalid_token", resource_metadata="{resource_metadata}"'
+
+    async def __call__(self, scope, receive, send):
+        who = scope.get("user")
+        if isinstance(who, AuthenticatedUser):  # anyone else goes on to the SDK's 401
+            try:
+                who.access_token.claims["_user"] = await run_in_threadpool(user_from_token, who.access_token.claims)
+            except Refused as e:
+                hdr = {"WWW-Authenticate": self.challenge} if e.status == 401 else {}
+                return await JSONResponse({"error": "access_denied", "error_description": e.detail},
+                                          status_code=e.status, headers=hdr)(scope, receive, send)
+        await self.app(scope, receive, send)
+
+
 def enabled() -> bool:
     return os.environ.get("MCP_ENABLED") == "1"
 
@@ -100,6 +155,7 @@ def build(origin: str):
     @server.tool()
     def ping() -> str:
         """Check that the server is up."""
+        mcp_user()
         return "pong"
 
     # Host and Origin checks (DNS rebinding); a request with no Origin is allowed
@@ -108,6 +164,8 @@ def build(origin: str):
     hosts = sorted({u.netloc, u.hostname, f"{u.hostname}:{port}"} if port in (80, 443) else {u.netloc})
     security = TransportSecuritySettings(allowed_hosts=hosts, allowed_origins=[origin.lower()])
     app = server.streamable_http_app(streamable_http_path="/", stateless_http=True, transport_security=security)
+    route = next(r for r in app.routes if getattr(r, "path", None) == "/")
+    route.app = UserGate(route.app, str(build_resource_metadata_url(resource)))
     # the SDK registers the PRM inside the mount (/mcp/.well-known/...); the challenge names the root path
     prm = create_protected_resource_routes(resource, [issuer], [f"{audience}/{scope}"])  # full Entra form, as a client requests it
     return app, server.session_manager, prm
