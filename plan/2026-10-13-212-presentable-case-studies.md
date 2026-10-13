@@ -702,6 +702,24 @@ client. Run the full suite, then PR 4.
     part".
   - Tests now cover: data_class reaching the model, every part being read,
     old fakes, and the merge preferring a sourced copy.
+- Phase E:
+  - The placeholder metric is hidden in outputs and on search cards (it
+    went into the E1 commit, and the search card fix is its own commit).
+  - A preview of one case notes the case-study footer separately, so bid
+    sections match their downloads.
+  - A case-study with no approval date omits the date.
+  - E4 needed no UI beyond E3.
+  - The demo hand check is done by the session after merge.
+- Phase E review fixes:
+  - Only approved prose is split into paragraphs; a headline fallback is
+    one unchanged paragraph, so cases without prose render as before.
+  - The `by_reviewer` branch is tested.
+  - Accepted:
+    - The case-study docx orders its sections differently from the preview
+      (the bid docx matches the preview exactly).
+    - A single-case preview builds twice to get the footer.
+    - For engagement cases, prose can still describe results; only the
+      quote checks guard this, a known limit.
 
 ## Tests
 

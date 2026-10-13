@@ -387,3 +387,26 @@ def test_bid_results_top_and_others_carry_the_score(approved, monkeypatch):
     assert all(x["score"] == (1, 9) for x in top + others)
     text = client(GUEST).post("/search", data={"bid_text": "onboarding"}).text
     assert text.count("Partial · 1/9") >= 2
+
+
+def test_placeholder_metric_outcome_is_value_only(approved, monkeypatch):
+    a = approved(data().model_copy(update={"outcomes": [Outcome(metric="metric", value="cut by half", source_quote="q")]}))
+    picks_reply(monkeypatch, sr.Pick(case_id=a, reason="fits", tailored=""))
+    top, _, _ = sr.results(ME, "onboarding", {})
+    assert top[0]["outcomes"] == ["cut by half"]
+
+
+def test_search_card_has_case_study_buttons_for_one_case(approved, monkeypatch):
+    a = approved(data())
+    monkeypatch.setattr(sr, "complete_json", lambda *a_, **k: sr.Picks(picks=[sr.Pick(case_id=a, reason="", tailored="x")]))
+    t = client([USER, DOCS]).post("/search", data={"bid_text": "onboarding"}).text
+    assert 'value="case_study_docx"' in t and 'value="case_study_pdf"' in t
+
+
+def test_download_all_row_has_no_case_study_buttons(approved, monkeypatch):
+    a, b = approved(data()), approved(data(title="Other onboarding"))
+    monkeypatch.setattr(sr, "complete_json", lambda *a_, **k: sr.Picks(picks=[sr.Pick(case_id=a, reason="", tailored="x"),
+                                                                                sr.Pick(case_id=b, reason="", tailored="y")]))
+    t = client([USER, DOCS]).post("/search", data={"bid_text": "onboarding"}).text
+    all_row = t[t.index("Download all"):]
+    assert 'value="case_study' not in all_row and t.count('value="case_study_docx"') == 2

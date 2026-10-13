@@ -7,7 +7,7 @@ import pytest
 from docx import Document
 
 from app import db, render
-from app.schema import Outcome, Sourced
+from app.schema import Outcome, ReferenceCase, Sourced
 from tests.test_auth import client, env  # noqa: F401
 from tests.test_review import DOCS, make  # noqa: F401
 from tests.test_search import approved, data, link, reg  # noqa: F401
@@ -630,3 +630,100 @@ def test_a_reference_naming_a_protected_client_is_anonymised_or_withheld(approve
     monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)  # a missed replacement must withhold
     r = gen([cid], "md")
     assert r.status_code == 409 and name not in r.text
+
+
+def test_section_prose_replaces_value_only_when_clean():
+    from app.schema import Prose, ReferenceCase
+    c = ReferenceCase.model_validate({"title": Sourced[str](value="T", source_quote="T").model_dump()})
+    c.challenge = Sourced[str](value="one line", source_quote="one line")
+    c.solution = Sourced[str](value="sol line", source_quote="sol line")
+    c.prose = {"challenge": Prose(text="A\n\n\nB\n\n"), "solution": Prose(text="X", flags=["number"])}
+    b = {x["heading"]: x for x in render.section(c, "C")["blocks"]}
+    assert b["Challenge"]["paragraphs"] == ["A", "B"]
+    assert b["Solution"]["text"] == "sol line" and b["Solution"]["paragraphs"] == ["sol line"]
+
+
+def test_placeholder_metric_is_hidden_in_outputs():
+    from app.schema import ReferenceCase
+    c = ReferenceCase(title=Sourced[str](value="T", source_quote="T"), outcomes=[
+        Outcome(metric="metric", value="flagged 17 percent more", source_quote="q"),
+        Outcome(metric="Fraud", value="up 17%", source_quote="q")])
+    out = render.section(c, "C")["lists"][0]["bullets"]
+    assert out == ["flagged 17 percent more", "Fraud: up 17%"]
+
+
+def test_docx_templates_loop_paragraphs():
+    from docxtpl import DocxTemplate
+    sec = {"title": "T", "client": "C", "summary": "S", "note": "", "details": [], "lists": [], "diagrams": [],
+           "blocks": [{"heading": "Challenge", "text": "A\n\nB", "paragraphs": ["A", "B"]}]}
+    for path in (render.TEMPLATE, render.TEMPLATE.with_name("case_study.docx")):
+        tpl = DocxTemplate(path)
+        tpl.render({"cases": [{**sec, "footer": "F"}], "industry": None}, autoescape=True)
+        buf = BytesIO()
+        tpl.save(buf)
+        paras = [p.text for p in Document(buf).paragraphs]
+        assert "A" in paras and "B" in paras, path
+
+
+def test_case_study_docx_pdf_footer_and_one_case(approved, reg):
+    name, label_id = reg("Zorp", "a UK retailer")
+    c = approved(full().model_copy(update={"challenge": Sourced[str](value=f"Built for {name}", source_quote="q")}))
+    link(c, label_id)
+    r = gen([c], "case_study_docx")
+    assert r.status_code == 200 and r.headers["content-disposition"].endswith('case-study.docx"')
+    t = doc_text(r.content)
+    assert "Faster onboarding" in t and "At a glance" in t and "Based on 1 source document reviewed" in t
+    assert name not in t and "{{" not in t and "{%" not in t
+    assert [p.text for p in Document(BytesIO(r.content)).paragraphs] and Document(BytesIO(r.content)).core_properties.author == "Reference Engine"
+    pdf = gen([c], "case_study_pdf")
+    assert pdf.headers["content-disposition"].endswith('case-study.pdf"') and pdf.content.startswith(b"%PDF")
+    assert gen([c, approved(full())], "case_study_docx").status_code == 400
+    one = html.unescape(prev([c]).text)
+    note = re.search(r"Case study downloads also end with: (Based on 1 source document reviewed[^<]*)", one)
+    assert note and note[1] in t and one.count("Based on 1 source document") == 1  # the note only, not the bid section
+    assert "Case study downloads also end" not in html.unescape(prev([c, approved(full())]).text)
+
+
+def test_case_study_withheld_gives_409(approved, reg, monkeypatch):
+    c = approved(full())
+    monkeypatch.setattr(render.anonymise, "blocked", lambda *a, **k: True)
+    assert gen([c], "case_study_docx").status_code == 409
+
+
+
+def test_case_study_docx_full_and_anonymised(approved, reg):
+    from app.schema import Prose
+    name, label_id = reg("Zorp", "a UK retailer")
+    c = with_refs(f"{name} payments API v2")
+    c = c.model_copy(update={"prose": {"challenge": Prose(text=f"{name} was slow.\n\nSecond paragraph.")}})
+    cid = approved(c)
+    link(cid, label_id)
+    add_diagram(cid, f"Flow at {name}")
+    r = gen([cid], "case_study_docx")
+    assert r.status_code == 200
+    t = doc_text(r.content)
+    for want in ("Architecture", "Technical references", "a UK retailer was slow.", "Second paragraph.",
+                 "Flow at a UK retailer", "payments API v2", "Based on 1 source document"):
+        assert want in t, want
+    assert name not in t and "{{" not in t and "{%" not in t
+    assert any(n.startswith("word/media/") for n in zipfile.ZipFile(BytesIO(r.content)).namelist())
+
+
+def test_by_reviewer_prose_is_used_despite_flags_and_other_prose_is_not():
+    from app.schema import Prose, ReferenceCase
+    c = ReferenceCase.model_validate({"title": Sourced[str](value="T", source_quote="T").model_dump()})
+    c.challenge = Sourced[str](value="headline", source_quote="headline")
+    for mine, want in ((True, "my text"), (False, "headline")):
+        c.prose = {"challenge": Prose(text="my text", flags=["a name"], by_reviewer=mine)}
+        assert render.section(c, "C")["blocks"][0]["text"] == want
+
+
+def test_headline_value_is_one_unsplit_paragraph_in_md_and_docx(approved):
+    value = "  first part\n\nsecond part  "
+    cid = approved(full().model_copy(update={"challenge": Sourced[str](value=value, source_quote="q")}))
+    c = ReferenceCase.model_validate(db.connect().execute("select data from cases where id=%s", (cid,)).fetchone()[0])
+    assert render.section(c, "C")["blocks"][0]["paragraphs"] == [c.challenge.value]
+    assert "first part second part" in gen([cid], "md").text  # md() folds whitespace, as on main
+    paras = [p.text for p in Document(BytesIO(gen([cid], "docx").content)).paragraphs]
+    assert not {"first part", "second part"} & {p.strip() for p in paras}
+    assert any("first part" in p and "second part" in p for p in paras)
