@@ -80,11 +80,11 @@ def test_age_and_the_recheck_badge(reg, lib):
     c = as_user("u1")
     _, lid = save(c, research_with(c, (Q2, {})))
     badge = '<span class="badge">re-check</span>'
-    assert badge not in c.get("/library").text and "0 day(s) old" in c.get("/library").text
+    assert badge not in c.get("/library").text and "today" in c.get("/library").text
     with db.connect() as conn:
         conn.execute("update library_items set checked_at = now() - interval '366 days', created_at = now() - interval '400 days' where id=%s", (lid,))
     t = c.get("/library").text
-    assert badge in t and "400 day(s) old" in t and badge in c.get(f"/library/{lid}").text
+    assert badge in t and "400 days old" in t and badge in c.get(f"/library/{lid}").text
     c.post(f"/library/{lid}/checked")
     assert badge not in c.get("/library").text and badge not in c.get(f"/library/{lid}").text
 

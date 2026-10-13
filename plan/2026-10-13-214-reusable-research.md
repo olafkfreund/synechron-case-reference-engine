@@ -542,6 +542,11 @@ must exist on `main`.
   - `picked_claims(verbatim=True)` is used, and library quotes record
     `library_id`.
   - The user guide is updated for the picker.
+- UI polish, at the user's request:
+  - The library page uses the portal's field and empty-state patterns.
+  - The age reads "today" or "N days old".
+  - Five inputs without `type=text` (in brief.html and research_view.html)
+    were unstyled, and now have the type.
 
 ## Tests
 
