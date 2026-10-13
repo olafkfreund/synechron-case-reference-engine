@@ -10,28 +10,28 @@
 {% if omitted %}<div class="note">{{ omitted }} statement(s) not shown: they named a protected client.</div>{% endif %}
 <p class="muted" style="font-size:13px">Public sources only. This is industry context, not our own delivery.</p>
 {% if claims %}
-{% if can_attach %}<form method="post" action="/review/{{ case_id }}/sources">
-<input type="hidden" name="research_id" value="{{ research_id }}"><input type="hidden" name="s" value="{{ sources_v }}">{% endif %}
-<div class="section-card"><div class="card-head"><h2>What public sources say</h2></div>
-<p class="muted" style="font-size:13px">The quote is what the source says; the summary and type are the AI's reading of it. Rely on the quote.</p>
-{% for c in claims %}<div class="claim">{% if can_attach %}<label class="check"><input type="checkbox" name="n" value="{{ c.n }}"> Attach</label>{% endif %}<q>{{ c.quote }}</q>
-<div class="meta">{% if (c.url or "").startswith(("http://", "https://")) %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.publisher }}</a>{% else %}<span>{{ c.publisher }}</span>{% endif %}
-<span>retrieved {{ (c.retrieved_at or "")[:10] }}</span><span class="badge neutral">{{ c.type | replace("_", " ") }}</span></div>
-<p>{{ c.statement }}</p></div>{% endfor %}
-{% if can_attach %}<button class="btn">Attach to the case as public sources</button>{% endif %}</div>
-{% if can_attach %}</form>{% endif %}
-<div class="section-card"><div class="card-head"><h2>Comparison</h2></div>
-<div class="table-box"><table><thead><tr><th>Who</th><th>What they say</th></tr></thead><tbody>
-{% if ours %}<tr><td><b>Our approach</b></td><td>{{ ours }}</td></tr>{% endif %}
-{% for publisher, items in groups.items() %}<tr><td>{{ publisher }}</td><td>{% for c in items %}<q>{{ c.quote }}</q> <small>({{ c.type | replace("_", " ") }})</small><br>{% endfor %}</td></tr>{% endfor %}
-</tbody></table></div></div>
 <form method="post" action="/generate" class="section-card stack">
-<div class="card-head"><h2>Download with an "Industry context" section</h2></div><input type="hidden" name="research_id" value="{{ research_id }}">
+<div class="card-head"><h2>Use these sources</h2></div><input type="hidden" name="research_id" value="{{ research_id }}">
 {% if case_id %}<label class="check"><input type="checkbox" name="case_ids" value="{{ case_id }}" checked> Include the reference case this research started from</label>{% endif %}
 <label class="check"><input type="checkbox" name="industry_context_ack"> I understand the industry context section contains public statements by third parties, not our delivery evidence (required when no case is included).</label>
 <div class="row"><label for="dl-format">Format</label><select id="dl-format" name="format" style="max-width:200px"><option value="docx">Word</option><option value="pptx">PowerPoint</option><option value="pdf_docx">PDF</option><option value="pdf_pptx">PDF slides</option><option value="md">Markdown</option></select>
 <button class="btn" formaction="/preview">Preview</button>
 <button class="btn primary">Download</button></div></form>
+<div class="row" style="margin-top:8px"><span class="muted">Selected quotes:</span><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="md">Markdown</button><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="csv">CSV</button><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="copy">Copy</button></div>
+<form id="pick" method="post">{% if can_attach %}<input type="hidden" name="research_id" value="{{ research_id }}"><input type="hidden" name="s" value="{{ sources_v }}">{% endif %}
+<div class="section-card"><div class="card-head"><h2>What public sources say</h2></div>
+<p class="muted" style="font-size:13px">The quote is the source; the reading under it is the AI's. Rely on the quote.</p>
+{% for c in claims %}<div class="claim"><label class="check"><input type="checkbox" name="n" value="{{ c.n }}" form="pick"> Select</label><q>{{ c.quote }}</q>
+<div class="meta">{% if (c.url or "").startswith(("http://", "https://")) %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.publisher }}</a>{% else %}<span>{{ c.publisher }}</span>{% endif %}
+<span>retrieved {{ (c.retrieved_at or "")[:10] }}</span></div>
+<p>AI reading: {{ c.statement }}</p></div>{% endfor %}
+{% if can_attach %}<button class="btn" formaction="/review/{{ case_id }}/sources">Attach to the case as public sources</button>{% endif %}</div>
+</form>
+<div class="section-card"><div class="card-head"><h2>Comparison</h2></div>
+<div class="table-box"><table><thead><tr><th>Who</th><th>What they say</th></tr></thead><tbody>
+{% if ours %}<tr><td><b>Our approach</b></td><td>{{ ours }}</td></tr>{% endif %}
+{% for publisher, items in groups.items() %}<tr><td>{{ publisher }}</td><td>{% for c in items %}<q>{{ c.quote }}</q><br>{% endfor %}</td></tr>{% endfor %}
+</tbody></table></div></div>
 {% endif %}
 <div class="section-card"><div class="card-head"><h2>Sources</h2></div>
 {% for p in pages %}<p style="margin:0 0 6px"><b>{{ p.publisher }}</b> &middot; <a href="{{ p.url }}" rel="noopener noreferrer">{{ p.url }}</a>
