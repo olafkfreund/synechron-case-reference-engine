@@ -1,3 +1,5 @@
+import csv
+import io
 import ipaddress
 import multiprocessing
 import os
@@ -12,7 +14,7 @@ from urllib.robotparser import RobotFileParser
 
 import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict
 
@@ -207,6 +209,56 @@ def research_view(rid: int, request: Request, user: User = Depends(require("user
                 pages=pages, skipped=skipped, omitted=omitted, claims=claims, groups=groups,
                 note=row[3].get("note"), case_id=row[4] if case else None, research_id=rid,
                 can_attach=sources_v is not None, sources_v=sources_v)
+
+
+def picked_claims(conn, rid, n, user) -> list[dict]:
+    """The user's own finished research, the picked claims by index from the stored row (never the form), through visible_claims()."""
+    row = conn.execute("select results from research where id=%s and created_by=%s and status='done'", (rid, user.sub)).fetchone()
+    if not row:
+        raise HTTPException(404, "no such research")
+    stored = row[0].get("claims", [])
+    picked = [{**stored[i], "n": i} for i in dict.fromkeys(n) if 0 <= i < len(stored)]
+    out = visible_claims(picked, anonymise.load_clients(conn))[0]
+    if not out:
+        raise HTTPException(400, "pick at least one statement")
+    return out
+
+
+def _csv_safe(v) -> str:
+    v = str(v or "")
+    return "'" + v if v[:1] in ("=", "+", "-", "@", "\t", "\r") else v  # a spreadsheet would run it as a formula
+
+
+def _export_md(claims) -> str:
+    quotes = "\n".join(f"{i}. \u201c{' '.join(c['quote'].split())}\u201d [{i}]" for i, c in enumerate(claims, 1))
+    sources = "\n".join(f"{i}. {c.get('publisher', '')}, {c.get('url', '')}, retrieved {(c.get('retrieved_at') or '')[:10]}"
+                        for i, c in enumerate(claims, 1))
+    return f"## Quotes\n\n{quotes}\n\n## Sources\n\n{sources}\n"
+
+
+@router.post("/research/{rid}/export")
+def research_export(rid: int, request: Request, format: str = Form(), n: list[int] = Form([]),
+                    user: User = Depends(require("user"))):
+    if format not in ("md", "csv", "copy"):
+        raise HTTPException(400, "unknown format")
+    with db.connect() as conn:
+        claims = picked_claims(conn, rid, n, user)
+        conn.execute("insert into generations(user_id, format, research_id) values (%s,%s,%s)", (user.sub, f"export-{format}", rid))
+    md = _export_md(claims)
+    if format == "copy":
+        return page(request, "research_export.html", user, text=md, research_id=rid)
+    if format == "md":
+        body = md
+    else:
+        out = io.StringIO()
+        w = csv.writer(out)
+        w.writerow(["quote", "publisher", "title", "url", "retrieved"])
+        for c in claims:
+            w.writerow([_csv_safe(c.get(k)) for k in ("quote", "publisher", "title", "url")] + [_csv_safe((c.get("retrieved_at") or "")[:10])])
+        body = out.getvalue()
+    return Response(body, media_type="text/markdown" if format == "md" else "text/csv", headers={
+        "Content-Disposition": f'attachment; filename="research-{rid}.{format}"', "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff"})
 
 
 # --- the worker job ---------------------------------------------------------------------------------

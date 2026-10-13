@@ -462,6 +462,14 @@ must exist on `main`.
     a brief, save it, find it in the library, attach it to a case, and
     download the case study.
 
+## Deviations
+
+- Step 2: the audit row stores `format = export-md|csv|copy` and
+  `research_id`, but not the number of quotes, because `generations` has no
+  count column. `attach_sources` keeps its own loader until step 22 removes
+  its `case_id` condition. `test_view_is_private_and_escapes_claims` now
+  asserts the "vendor claim" label is gone, as step 1 removed it.
+
 ## Tests
 
 ```bash

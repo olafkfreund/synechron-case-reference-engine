@@ -172,7 +172,7 @@ def test_view_is_private_and_escapes_claims(reg):
     finish(loc, [{"statement": evil, "quote": evil, "type": "vendor_claim", "url": "https://v.example/x",
                   "publisher": evil, "retrieved_at": "2026-10-01T00:00:00+00:00", "rank": 3}])
     t = c.get(loc).text
-    assert "<script>alert" not in t and "&lt;script&gt;" in t and "vendor claim" in t
+    assert "<script>alert" not in t and "&lt;script&gt;" in t and "vendor claim" not in t
     assert as_user("u2").get(loc).status_code == 404
 
 
