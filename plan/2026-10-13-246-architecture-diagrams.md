@@ -274,3 +274,14 @@ code ignores it. The demo can be re-seeded.
     before building, and the B3 editor reports the line.
   - `cite` is a plain string.
   - `Architecture.text()` feeds `search_text()`.
+- A3:
+  - The vertical card gap is 22 (plan: 14), so an 18 px pill fits between
+    rows.
+  - Cards shrink from 230 to 130 so the gutters stay at least 96 wide.
+  - Zones with more cards than fit vertically get sub-columns, and the
+    platform band wraps.
+  - Flows that skip a column use lanes in a channel above the zones.
+  - Known gaps, to fix after the A4 pictures are reviewed:
+    - pills are dropped when there is under 48 px of room
+    - lines can run behind cards in the same zone or platform row
+    - platform-lane pills can touch
