@@ -177,8 +177,8 @@ def facets(user: User) -> dict[str, list[tuple[str, int]]]:
     return out
 
 
-def results(user: User, bid_text: str, filters: dict):
-    cands = search(user, bid_text, filters)
+def results(user: User, bid_text: str, filters: dict, kind: str = ""):
+    cands = search(user, bid_text, filters, kind)
     clients = anonymise.load_clients()
     picks, notes = pick(bid_text, cands, clients) if cands else ([], [])
     chosen = {p["id"] for p in picks}
@@ -212,6 +212,6 @@ def search_page(request: Request, bid_text: str = Form(""), industry: str = Form
     filters = dict(industry=industry, region=region, tech=tech)
     if not bid_text.strip():
         return browse_page(request, user, filters, kind, sort, 1)
-    top, others, notes = results(user, bid_text, filters)
+    top, others, notes = results(user, bid_text, filters, kind)
     return page(request, "search.html", user, bid_text=bid_text, f=filters, kind=kind, sort=sort, pageno=1, rows=[],
                 facets=facets(user), full=False, ran=True, top=top, others=others, notes=notes)

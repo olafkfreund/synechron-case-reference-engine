@@ -4,6 +4,7 @@ from app import db
 from app.review import SKIP_CONTRACT, doc_status
 from tests.test_auth import ADMIN, REV, USER, client, env  # noqa: F401
 from tests.test_review import DOCS, make  # noqa: F401
+from tests.test_search import reg  # noqa: F401
 
 R = [REV, DOCS]
 
@@ -100,3 +101,15 @@ def test_landing_panels(make):  # noqa: F811
         with db.connect() as c:
             c.execute("delete from research where id in (%s,%s)", (mine, theirs))
             c.execute("delete from jobs where kind='extract' and payload = '{}'::jsonb")
+
+
+def test_landing_withholds_a_research_query_naming_a_protected_client(reg):  # noqa: F811
+    name, _ = reg("Zorp", "a retailer")
+    with db.connect() as c:
+        rid = c.execute("insert into research(query, created_by) values (%s, 'u1') returning id", (f"how does {name} do it",)).fetchone()[0]
+    try:
+        t = client(R).get("/").text
+        assert name not in t and "[withheld]" in t
+    finally:
+        with db.connect() as c:
+            c.execute("delete from research where id=%s", (rid,))

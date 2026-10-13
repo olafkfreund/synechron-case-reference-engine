@@ -303,6 +303,16 @@ Branch `feat/215-browse-latest`, worktree `../refs-engine-215`. One PR.
   migrated yet. The filter labels became `{% call %}` bodies so
   `test_user_guide` finds them, and `docs/user-guide/bid-team.md` now names
   **Filter** and **Search with bid text**.
+- Review fixes:
+  - The home page withholds a research query that names a client protected
+    later.
+  - The no-model tests record calls, because `pick()` swallows errors.
+  - A bid search applies Kind.
+  - The sort test uses data where newest and title disagree.
+  - The migration backfills `updated_at` from `created_at`.
+
+  "Rejected in review" for a case retired by re-triage is a spec gap, filed
+  as #218.
 
 ## Tests
 

@@ -124,6 +124,8 @@ def landing(request: Request, user: User = Depends(require("user"))):
         if "reviewer" in user.roles:
             queue = conn.execute(f"select count(*) from cases c where {REVIEWABLE} and {QUEUE}", (list(user.groups),)).fetchone()[0]
             waiting = conn.execute("select count(*) from jobs where kind='extract' and status in ('queued','running')").fetchone()[0]
+    clients = anonymise.load_clients()
+    research = [(i, "[withheld]" if anonymise.blocked(q, clients) else q, st, at) for i, q, st, at in research]  # as research_view
     return page(request, "landing.html", user, latest=latest, research=research, queue=queue, waiting=waiting)
 
 

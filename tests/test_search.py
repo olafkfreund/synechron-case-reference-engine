@@ -276,9 +276,10 @@ GUEST = [USER, DOCS]
 
 
 def no_model(monkeypatch):
-    def boom(*a, **k):
-        raise AssertionError("browse must not call a model")
-    monkeypatch.setattr(sr, "complete_json", boom)
+    """Returns the list of model calls; pick() swallows exceptions, so a raising stub could not fail a test."""
+    calls = []
+    monkeypatch.setattr(sr, "complete_json", lambda *a, **k: calls.append(1))
+    return calls
 
 
 def stamp(cid, days):
@@ -287,13 +288,14 @@ def stamp(cid, days):
 
 
 def test_get_lists_visible_cases_newest_first_without_a_model(approved, monkeypatch):
-    no_model(monkeypatch)
+    calls = no_model(monkeypatch)
     old, mid, new = (approved(data(title=t)) for t in ("Old case", "Mid case", "New case"))
     for cid, d in ((old, 30), (mid, 20), (new, 10)):
         stamp(cid, d)
     approved(data(title="Hidden case"), acl=("g-other",))
     text = client(GUEST).get("/search").text
     assert text.index("New case") < text.index("Mid case") < text.index("Old case")
+    assert not calls
     assert "Hidden case" not in text and "Approved " in text and "Kubernetes" in text
 
 
@@ -312,7 +314,11 @@ def test_kind_and_sort(approved):
     d = approved(data(title="Zeta delivered"))
     e = approved(data(title="Alpha engagement"))
     set_basis(e, "engagement")
+    stamp(d, 1)
+    stamp(e, 10)  # newest and title order disagree
     c = client(GUEST)
+    t = c.get("/search").text
+    assert t.index("Zeta delivered") < t.index("Alpha engagement")
     t = c.get("/search?kind=engagement").text
     assert "Alpha engagement" in t and "Zeta delivered" not in t
     t = c.get("/search?sort=title").text
@@ -334,10 +340,10 @@ def test_facets_count_and_hide_protected(approved, reg):
 
 
 def test_post_with_only_filters_calls_no_model(approved, monkeypatch):
-    no_model(monkeypatch)
+    calls = no_model(monkeypatch)
     approved(data(title="Banking case"))
     r = client(GUEST).post("/search", data={"bid_text": "  ", "industry": "bank"})
-    assert r.status_code == 200 and "Banking case" in r.text
+    assert r.status_code == 200 and "Banking case" in r.text and not calls
 
 
 def test_off_list_filter_is_shown_selected_and_escaped(approved):
@@ -346,3 +352,15 @@ def test_off_list_filter_is_shown_selected_and_escaped(approved):
     assert '<option value="&lt;b&gt;x" selected>&lt;b&gt;x (filtered)</option>' in t
     assert "<b>x" not in t
     assert "No approved cases match these filters" in t
+
+
+def test_bid_search_applies_kind(approved, monkeypatch):
+    d = approved(data(title="Delivered onboarding"))
+    e = approved(data(title="Engagement onboarding"))
+    set_basis(e, "engagement")
+    picks_reply(monkeypatch)
+    top, others, _ = sr.results(ME, "onboarding", {}, "engagement")
+    assert {x["id"] for x in top + others} == {e}
+    assert {x["id"] for x in sr.results(ME, "onboarding", {})[0] + sr.results(ME, "onboarding", {})[1]} >= {d, e}
+    r = client(GUEST).post("/search", data={"bid_text": "onboarding", "kind": "engagement"})
+    assert "Engagement onboarding" in r.text and "Delivered onboarding" not in r.text
