@@ -660,3 +660,29 @@ def test_the_approach_heading_only_when_the_section_is_purely_the_attached_sourc
     extra = rows([claim(), claim(Q2, "configuration", "docs.vendor.io", "https://docs.vendor.io/x")])
     t = doc_text(gen(extra, [cid], "case_study_docx").content)   # ad-hoc research merged in
     assert render.APPROACH_HEADING not in t and render.SOURCES_HEADING in t and Q2 in t
+
+
+MD = "**Entra** supports [passwordless](https://x.io/a) sign in `out` of the box"
+
+
+def test_markdown_quote_is_plain_in_every_output_and_the_stored_row_stays_raw(rows, approved):
+    rid = rows([claim(MD)])
+    r = gen(rid, [approved()], ack=True)
+    assert "Entra supports passwordless sign in out of the box" in r.text
+    assert not any(x in r.text for x in ("](", "**Entra", "`out`"))
+    d = doc_text(gen(rid, [approved()], "docx", ack=True).content)
+    assert "Entra supports passwordless sign in out of the box" in d and "](" not in d and "**Entra" not in d
+    with db.connect() as c:
+        stored = c.execute("select results->'claims'->0->>'quote' from research where id=%s", (rid,)).fetchone()[0]
+    assert stored == MD
+    from app.schema import quote_in
+    assert quote_in(MD, stored)
+
+
+def test_a_client_name_split_by_markup_is_caught_on_the_page_and_in_a_download(rows, approved, reg):
+    split = f"**{reg[:4]}**{reg[4:]} runs this in production daily"
+    rid = rows([claim(split)])
+    page_ = as_user("u1", G).get(f"/research/{rid}").text
+    assert reg not in page_ and "**" not in page_ and "a retailer runs this in production daily" in page_
+    dl = gen(rid, [approved()], ack=True).text
+    assert reg not in dl and "a retailer runs this in production daily" in dl

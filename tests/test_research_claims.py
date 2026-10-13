@@ -283,7 +283,7 @@ def test_export_csv_prefixes_hidden_formulas(reg, quote):
     rid = done_row(c, quote)
     r = c.post(f"/research/{rid}/export", data={"format": "csv", "n": [0]})
     cell = list(csv.reader(io.StringIO(r.text)))[1][0]
-    assert cell == "'" + quote
+    assert cell == "'" + " ".join(quote.split())  # plain() collapses whitespace; the formula is still prefixed
 
 
 def test_export_anonymises_or_drops_a_protected_title(reg):

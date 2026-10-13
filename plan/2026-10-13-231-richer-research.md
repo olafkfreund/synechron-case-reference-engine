@@ -330,6 +330,19 @@ removes the diagram.
 Then the full suite. **Eval:** re-run the MLflow query in the demo and
 check the brief has a diagram, counts only.
 
+## Deviations
+
+- Phase (a):
+  - `plain()` collapses whitespace, so the CSV export of a quote with
+    leading whitespace or a newline is now normalised (it's still
+    formula-prefixed).
+  - Digit-only `[n][m]` citations are kept.
+  - The brief's own prose is not passed through `plain()`; only quotes and
+    titles are.
+  - A single `*` or `_` is removed only when it wraps words.
+  - Outer quote marks are removed only when the same mark doesn't also
+    appear inside the quote.
+
 ## Tests
 
 ```bash
