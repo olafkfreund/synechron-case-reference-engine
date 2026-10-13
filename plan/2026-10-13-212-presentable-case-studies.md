@@ -665,6 +665,13 @@ client. Run the full suite, then PR 4.
   name counts as no alt text. XML parts with DOCTYPE or ENTITY are refused,
   zips over 5,000 entries are refused, and entries are filtered by declared
   size before any read.
+- C3:
+  - Images are read after the document transaction commits, outside any
+    lock. A failure is logged with the class only, and ingest goes on.
+  - On the same-bytes path, a document with a case but no candidate rows
+    gets them once, so documents ingested before phase C are covered.
+  - shortcut: a document with no usable image is re-read on each ingest of
+    the same bytes, with no decode.
 
 ## Tests
 
