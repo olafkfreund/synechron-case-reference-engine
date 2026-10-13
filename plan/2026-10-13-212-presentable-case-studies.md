@@ -710,6 +710,16 @@ client. Run the full suite, then PR 4.
   - A case-study with no approval date omits the date.
   - E4 needed no UI beyond E3.
   - The demo hand check is done by the session after merge.
+- Phase E review fixes:
+  - Only approved prose is split into paragraphs; a headline fallback is
+    one unchanged paragraph, so cases without prose render as before.
+  - The `by_reviewer` branch is tested.
+  - Accepted:
+    - The case-study docx orders its sections differently from the preview
+      (the bid docx matches the preview exactly).
+    - A single-case preview builds twice to get the footer.
+    - For engagement cases, prose can still describe results; only the
+      quote checks guard this, a known limit.
 
 ## Tests
 

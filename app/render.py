@@ -179,12 +179,14 @@ def section(case: ReferenceCase, client: str) -> dict:
                ("Team size", v(case.team_size)), ("Period", period)]
     def prose(f, head):  # approved prose replaces the one-line value only when it is unflagged or the reviewer's own
         p = case.prose.get(f)
-        return p.text if p and p.text.strip() and (not p.flags or p.by_reviewer) else head
+        if p and p.text.strip() and (not p.flags or p.by_reviewer):
+            return p.text, [x.strip() for x in p.text.split("\n\n") if x.strip()]
+        return head, [head]  # the headline value goes out unchanged: one paragraph, no split
 
     blocks = [("Challenge", prose("challenge", v(case.challenge))), ("Solution", prose("solution", v(case.solution))),
               ("Implementation approach", prose("implementation", v(case.implementation))),
               ("Configuration and integration", prose("configuration", v(case.configuration))),
-              ("Lessons learned", None if case.basis == "engagement" else prose("lessons_learned", v(case.lessons_learned)))]
+              ("Lessons learned", (None, []) if case.basis == "engagement" else prose("lessons_learned", v(case.lessons_learned)))]
     lists = [("Capabilities", [v(c) for c in case.capabilities]),
              ("Technology", [v(t) for t in case.tech_stack]),
              ("Technical references", [v(t) for t in case.tech_references]),
@@ -196,7 +198,7 @@ def section(case: ReferenceCase, client: str) -> dict:
         title=v(case.title) or "", client=client, summary=case.summary,
         basis=case.basis, note=ENGAGEMENT_NOTE if engagement else "",
         details=[dict(label=a, value=str(b)) for a, b in details if b not in (None, "")],
-        blocks=[dict(heading=a, text=b, paragraphs=[x.strip() for x in b.split("\n\n") if x.strip()]) for a, b in blocks if b],
+        blocks=[dict(heading=a, text=t, paragraphs=ps) for a, (t, ps) in blocks if t],
         lists=[dict(heading=a, bullets=[str(i) for i in b if i]) for a, b in lists if any(b)],
         diagrams=[dict(id=d.id, caption=d.caption, width=d.width, height=d.height) for d in case.diagrams if d.status == "ready"])
 

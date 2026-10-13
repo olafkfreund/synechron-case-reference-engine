@@ -7,7 +7,7 @@ import pytest
 from docx import Document
 
 from app import db, render
-from app.schema import Outcome, Sourced
+from app.schema import Outcome, ReferenceCase, Sourced
 from tests.test_auth import client, env  # noqa: F401
 from tests.test_review import DOCS, make  # noqa: F401
 from tests.test_search import approved, data, link, reg  # noqa: F401
@@ -707,3 +707,23 @@ def test_case_study_docx_full_and_anonymised(approved, reg):
         assert want in t, want
     assert name not in t and "{{" not in t and "{%" not in t
     assert any(n.startswith("word/media/") for n in zipfile.ZipFile(BytesIO(r.content)).namelist())
+
+
+def test_by_reviewer_prose_is_used_despite_flags_and_other_prose_is_not():
+    from app.schema import Prose, ReferenceCase
+    c = ReferenceCase.model_validate({"title": Sourced[str](value="T", source_quote="T").model_dump()})
+    c.challenge = Sourced[str](value="headline", source_quote="headline")
+    for mine, want in ((True, "my text"), (False, "headline")):
+        c.prose = {"challenge": Prose(text="my text", flags=["a name"], by_reviewer=mine)}
+        assert render.section(c, "C")["blocks"][0]["text"] == want
+
+
+def test_headline_value_is_one_unsplit_paragraph_in_md_and_docx(approved):
+    value = "  first part\n\nsecond part  "
+    cid = approved(full().model_copy(update={"challenge": Sourced[str](value=value, source_quote="q")}))
+    c = ReferenceCase.model_validate(db.connect().execute("select data from cases where id=%s", (cid,)).fetchone()[0])
+    assert render.section(c, "C")["blocks"][0]["paragraphs"] == [c.challenge.value]
+    assert "first part second part" in gen([cid], "md").text  # md() folds whitespace, as on main
+    paras = [p.text for p in Document(BytesIO(gen([cid], "docx").content)).paragraphs]
+    assert not {"first part", "second part"} & {p.strip() for p in paras}
+    assert any("first part" in p and "second part" in p for p in paras)
