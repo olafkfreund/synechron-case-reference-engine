@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 222
 intent: intent/2026-10-13-222-complete-cases.md
 ---
@@ -81,12 +81,13 @@ Only approved cases appear there, so there's no reviewer data to leak.
 
 ### 4. Extraction version and bulk re-extraction
 
-- **Version.** `app/extract.py` gets `EXTRACTION_VERSION = 2`, where 1 means
-  everything before #212 A. `ReferenceCase` gets
-  `extraction_version: SkipJsonSchema[int] = 1`, so old rows load as 1.
-  `build()` stamps the current version. **Every PR that changes extraction
-  output bumps it.** #212 B will set 3, and that is written into #212's plan
-  as a trap.
+- **Version.** `app/extract.py` gets `EXTRACTION_VERSION = 2`. #212 phases
+  A and B are merged before #222, so 2 means "with points and the write-up",
+  and 1 means everything extracted before #222 shipped. `ReferenceCase` gets
+  `extraction_version: SkipJsonSchema[int] = 1`, so old rows load as 1, and
+  `build()` stamps the current version. **From then on, every PR that
+  changes extraction output bumps it.** #212 phases C and D set 3 and 4.
+  This rule is added to #212's plan as a trap when #222 merges.
 - **The note.** In `extract()`, when the old row's version is below the
   current one, it appends "Re-extracted with richer extraction: check and
   approve again" to `needs_attention`. Reviewer text is kept as today
