@@ -59,6 +59,8 @@ Judging whether a case suits your bid.
 
 The suggested wording is marked "not in downloads". Downloads hold the approved case record only.
 
+Each card has a collapsed "Source documents" list with **Open** and **Open folder** links to where the case came from. For a client you may not name, it shows only the number of documents. A file that was uploaded shows "stored in the engine; ask a reviewer".
+
 ## Download a case
 
 **What it's for**

@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-from app import db, search as sr
+from app import anonymise, db, search as sr
 from app.main import User
 from app.schema import Outcome, ReferenceCase, Sourced
 from tests.test_auth import USER, client, env  # noqa: F401
@@ -410,3 +410,69 @@ def test_download_all_row_has_no_case_study_buttons(approved, monkeypatch):
     t = client([USER, DOCS]).post("/search", data={"bid_text": "onboarding"}).text
     all_row = t[t.index("Download all"):]
     assert 'value="case_study' not in all_row and t.count('value="case_study_docx"') == 2
+
+
+REVIEW = User("r1", "R", frozenset([DOCS]), frozenset(["user", "reviewer"]))
+
+
+def set_links(cid, web, folder, title="Quarterly report"):
+    with db.connect() as c:
+        c.execute("update documents set web_url=%s, folder_url=%s, title=%s where id=(select document_id from cases where id=%s)",
+                  (web, folder, title, cid))
+
+
+def entries(user, cid):
+    return sr.source_docs([cid], user, anonymise.load_clients()).get(cid, [])
+
+
+def test_source_docs_titles_follow_the_referenceable_rule(approved, reg):
+    _, ref = reg("Globex", "a manufacturer", True)
+    _, anon = reg("Initech", "a software firm")
+    a, b, u = approved(), approved(data(title="Second onboarding")), approved(data(title="Third onboarding"))
+    link(a, ref)
+    link(b, anon)
+    for cid in (a, b, u):
+        set_links(cid, "https://h.example/a", "https://h.example/")
+    assert [e["label"] for e in entries(ME, a)] == ["Quarterly report"]  # referenceable and linked
+    for cid in (b, u):  # protected, or not linked to a client: count text, links kept
+        (e,) = entries(ME, cid)
+        assert e["label"].startswith("1 document in ") and e["docs"] == [dict(web="https://h.example/a", folder="https://h.example/")]
+    assert [e["label"] for e in entries(REVIEW, b)] == ["Quarterly report"]
+
+
+def test_source_docs_never_lists_withdrawn_or_invisible_documents(approved):
+    gone, other = approved(deleted=True), approved(acl=("g-other",))
+    ok = approved()
+    assert sr.source_docs([gone, other, ok], ME, []).keys() == {ok}
+
+
+def test_merged_case_lists_every_member(approved):
+    a, b = approved(), approved()
+    with db.connect() as c:
+        m = c.execute("insert into cases(document_id, member_count, status) values (null, 2, 'approved') returning id").fetchone()[0]
+        c.execute("update cases set merged_into=%s where id in (%s,%s)", (m, a, b))
+    try:
+        assert sum(len(e["docs"]) for e in entries(REVIEW, m)) == 2
+    finally:
+        with db.connect() as c:
+            c.execute("update cases set merged_into=null where id in (%s,%s)", (a, b))
+            c.execute("delete from cases where id=%s", (m,))
+
+
+def card_html(approved, web, folder, monkeypatch):
+    no_model(monkeypatch)
+    cid = approved()
+    set_links(cid, web, folder)
+    return client(GUEST).get("/search").text
+
+
+def test_card_shows_safe_links_and_never_the_url_as_text(approved, monkeypatch):
+    t = card_html(approved, 'https://h.example/a"><script>x</script>', "https://h.example/", monkeypatch)
+    assert "Source documents (1)" in t and "Open folder" in t
+    assert 'rel="noopener noreferrer"' in t and 'target="_blank"' in t
+    assert "<script>x</script>" not in t and "&#34;" in t  # the quote and angle brackets are escaped
+    assert ">https://h.example" not in t and "Quarterly report" not in t  # the URL is no link text; the title is hidden here
+
+
+def test_card_for_an_upload_says_stored_in_the_engine(approved, monkeypatch):
+    assert "stored in the engine; ask a reviewer" in card_html(approved, None, None, monkeypatch)
