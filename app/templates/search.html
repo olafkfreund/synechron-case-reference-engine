@@ -69,6 +69,10 @@
 <details class="mini"><summary class="btn-sm">Other formats</summary>
 <div class="row" style="padding-bottom:4px"><button class="btn dark" name="format" value="pptx">{{ what }} (PowerPoint)</button> <button class="btn dark" name="format" value="pdf_docx">{{ what }} (PDF)</button> <button class="btn dark" name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button class="btn dark" name="format" value="md">{{ what }} (Markdown)</button></div></details></form>{% endwith %}{% endif %}
 {% if top %}<p class="muted" style="font-size:13px">Downloads contain the approved case record only, not the suggested wording above.</p>{% endif %}
+{% if library %}<div class="section-card"><div class="card-head"><h2>From the library</h2><span class="muted">{{ library | length }}</span></div>
+{% for i in library %}<div class="other-row"><a href="/library/{{ i.id }}"><b>{{ i.topic }}</b></a>
+<span class="badge neutral">{{ "Brief" if i.kind == "brief" else "Quotes" }}</span>{% if i.stale %}<span class="badge">re-check</span>{% endif %}
+<span class="muted" style="margin-left:auto">{{ i.sources }} source{{ "" if i.sources == 1 else "s" }} &middot; {{ "today" if i.age == 0 else (i.age ~ " day" ~ ("" if i.age == 1 else "s") ~ " old") }}</span></div>{% endfor %}</div>{% endif %}
 {% if others %}<div class="section-card"><div class="card-head"><h2>Other matches</h2></div>
 {% for o in others %}<div class="other-row"><b>{{ o.title }}</b> {{ basis(o.basis) }} {{ completeness(o.score) }} <span class="muted">({{ o.label }})</span><p>{{ o.summary }}</p>{{ sources(o.sources) }}</div>{% endfor %}</div>{% endif %}
 {% endblock %}

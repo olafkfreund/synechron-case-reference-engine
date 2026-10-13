@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block body %}
 <div class="page-head"><div><h1>{{ topic }}</h1>
-<p>{{ "Brief" if kind == "brief" else "Quotes" }} &middot; saved {{ age }} day(s) ago &middot; last checked {{ checked_age }} day(s) ago{% if stale %} <span class="badge">re-check</span>{% endif %}</p></div></div>
+<p>{{ "Brief" if kind == "brief" else "Quotes" }} &middot; saved {{ age }} day(s) ago &middot; last checked {{ checked_age }} day(s) ago &middot; saved by {{ saved_by }}{% if stale %} <span class="badge">re-check</span>{% endif %}</p></div></div>
 <p class="muted" style="font-size:13px">Public sources only. This is industry context, not our own delivery. Check the source before you rely on it.</p>
 {% if omitted %}<div class="note">{{ omitted }} quote(s) not shown: they name a protected client.</div>{% endif %}
 {% if kind == "quotes" %}

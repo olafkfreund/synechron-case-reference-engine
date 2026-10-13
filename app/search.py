@@ -272,9 +272,11 @@ def search_form(request: Request, industry: str = "", region: str = "", tech: st
 @router.post("/search")
 def search_page(request: Request, bid_text: str = Form(""), industry: str = Form(""), region: str = Form(""),
                 tech: str = Form(""), kind: str = Form(""), sort: str = Form("newest"), user: User = Depends(require("user"))):
-    filters = dict(industry=industry, region=region, tech=tech)
+    filters = {k: v.strip()[:MAX_FILTER_CHARS] for k, v in dict(industry=industry, region=region, tech=tech).items()}
     if not bid_text.strip():
         return browse_page(request, user, filters, kind, sort, 1)
     top, others, notes = results(user, bid_text, filters, kind)
+    from app import library  # library imports search
+    lib = library.suggest(bid_text, filters, anonymise.load_clients())
     return page(request, "search.html", user, bid_text=bid_text, f=filters, kind=kind, sort=sort, pageno=1, rows=[],
-                facets=facets(user), full=False, ran=True, top=top, others=others, notes=notes)
+                facets=facets(user), full=False, ran=True, top=top, others=others, notes=notes, library=lib)

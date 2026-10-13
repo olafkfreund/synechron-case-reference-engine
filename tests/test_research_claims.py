@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import re
 import uuid
 
 import pytest
@@ -362,3 +363,55 @@ def test_a_markdown_quote_is_sourced_against_the_raw_page_and_stored_verbatim(mo
     reply(monkeypatch, claim(quote=raw))
     claims, _ = rs.extract_claims("passwordless", page)
     assert [c["quote"] for c in claims] == [raw]  # kept: sourced on the raw text, stored as written
+
+
+def pick_fields(t):
+    """The hidden fields inside form#pick, as a browser would post them (plus the first quote ticked)."""
+    form = t[t.index('<form id="pick"'):]
+    form = form[:form.index("</form>")]
+    return dict(re.findall(r'<input type="hidden" name="(\w+)" value="([^"]*)"', form)), form
+
+
+def test_plain_user_page_posts_what_save_export_and_brief_need(reg):
+    c = as_user("u1")
+    rid = done_row(c, "some quote text")
+    t = c.get(f"/research/{rid}").text
+    assert "Download all (industry context only)" in t and t.index("Use these sources") < t.index("Download all")
+    fields, _ = pick_fields(t)
+    assert fields.get("research_id") == str(rid)
+    posted = {**fields, "n": [0], "topic": ""}
+    r = c.post("/library/save", data=posted, follow_redirects=False)  # no topic typed: the search is the default
+    assert r.status_code == 303
+    with db.connect() as conn:
+        assert conn.execute("select topic from library_items where id=%s", (int(r.headers["location"].rsplit("/", 1)[1]),)).fetchone()[0] == "kyc automation"
+    assert c.post(f"/research/{rid}/export", data={**posted, "format": "md"}).status_code == 200
+    assert c.post(f"/research/{rid}/brief", data={**posted, "title": ""}, follow_redirects=False).status_code == 303
+
+
+def test_save_without_a_topic_uses_the_brief_title_or_a_placeholder_and_errors_are_pages(reg):
+    c = as_user("u1")
+    with db.connect() as conn:
+        bid = conn.execute("insert into briefs(created_by, title, quotes, body, status) values ('u1','t',%s,%s,'done') returning id", (
+            json.dumps([{"quote": "q q q", "publisher": "v.example", "url": "https://v.example/0"}]),
+            json.dumps({"title": "Access policy brief", "takeaways": ["Fine [1]."], "themes": [], "flags": []}))).fetchone()[0]
+    r = c.post("/library/save", data={"brief_id": bid}, follow_redirects=False)
+    assert r.status_code == 303
+    with db.connect() as conn:
+        assert conn.execute("select topic from library_items where id=%s", (int(r.headers["location"].rsplit("/", 1)[1]),)).fetchone()[0] == "access policy brief"
+    rid = done_row(c, "some quote text")
+    html = {"Accept": "text/html"}
+    r = c.post("/library/save", data={"research_id": rid, "topic": "x"}, headers=html)  # nothing picked
+    assert r.status_code == 400 and "text/html" in r.headers["content-type"] and "pick at least one" in r.text and f'href="/research/{rid}"' in r.text
+    assert c.post("/library/save", data={"research_id": rid, "topic": "x"}).json()["detail"].startswith("pick at least one")  # API keeps JSON
+    assert c.post("/library/save", data={"research_id": 999999999, "n": [0]}).status_code == 404
+
+
+def test_save_falls_back_to_untitled_research_and_never_stores_an_email_as_the_name(reg):
+    c = as_user("u1")
+    with db.connect() as conn:
+        bid = conn.execute("insert into briefs(created_by, title, quotes, body, status) values ('u1','',%s,%s,'done') returning id", (
+            json.dumps([{"quote": "q q q", "publisher": "v.example", "url": "https://v.example/0"}]),
+            json.dumps({"title": "", "takeaways": ["Fine [1]."], "themes": [], "flags": []}))).fetchone()[0]
+    lid = int(c.post("/library/save", data={"brief_id": bid}, follow_redirects=False).headers["location"].rsplit("/", 1)[1])
+    with db.connect() as conn:
+        assert conn.execute("select topic, created_by_name from library_items where id=%s", (lid,)).fetchone() == ("Untitled research", "")  # name == sub: no real name
