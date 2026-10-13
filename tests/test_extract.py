@@ -518,3 +518,34 @@ def test_build_summary_not_vouched_by_an_unsourced_quote(monkeypatch):
     monkeypatch.setattr(ex, "complete_json", fake)
     c = ex.build(text, "internal")
     assert c.points["solution"][0].unsourced and c.summary == "Done in 3 weeks."
+
+
+def test_three_chunks_via_num_ctx_source_a_quote_only_in_the_last(monkeypatch):
+    monkeypatch.setenv("EXTRACT_MODEL_OPTIONS", json.dumps({"num_ctx": 12000}))
+    size = ex.chunk_chars()
+    paras = [f"Filler paragraph {i}. " + "lorem ipsum " * 60 for i in range(14)]  # ~10k characters: 3 pieces of ~5.4k
+    text = "\n\n".join(paras) + "\n\nThe bank retired the legacy ledger in 7 weeks."
+    seen = []
+
+    def fake(alias, system, user, model, **k):
+        seen.append(user)
+        if "retired the legacy ledger" in user:
+            return Extraction(items=[Item(field="solution", value="Ledger retired", quote="retired the legacy ledger in 7 weeks")])
+        return Extraction()
+    monkeypatch.setattr(ex, "complete_json", fake)
+    c = ex.build(text, "internal")
+    assert len(seen) == 3 and "read in 3 parts" in c.needs_attention
+    assert not c.points["solution"][0].unsourced
+
+
+def test_engagement_keeps_points_and_drops_lessons(monkeypatch):
+    q = "the bank migrated system 1 in 3 weeks"
+    text = f"Scope: {q}. Fees of £1,200 per day apply to the migration work."
+    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: Extraction(items=[
+        Item(field="solution", value="Migrate system 1", quote=q),
+        Item(field="solution", value="Migrate system 2", quote=q),
+        Item(field="solution", value="Priced work", quote="Fees of £1,200 per day apply"),
+        Item(field="lessons_learned", value="Start earlier", quote=q)]))
+    c = ex.build(text, "internal", "engagement", "executed contract")
+    assert [p.value for p in c.points["solution"]] == ["Migrate system 1", "Migrate system 2"]
+    assert c.lessons_learned.value is None
