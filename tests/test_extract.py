@@ -29,7 +29,7 @@ def doc(monkeypatch):
         did = c.execute("insert into documents(source_id,external_id,checksum,text) "
                         "values (%s,'a','x',%s) returning id", (sid, DOC)).fetchone()[0]
     reply = {}
-    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: reply["v"])
+    monkeypatch.setattr(ex, "complete_json", lambda a, system, user, model, **k: References() if model is References else reply["v"])
     yield did, reply
     with db.connect() as c:
         c.execute("delete from sources where id=%s", (sid,))
@@ -550,7 +550,7 @@ def test_three_chunks_via_num_ctx_source_a_quote_only_in_the_last(monkeypatch):
 def test_engagement_keeps_points_and_drops_lessons(monkeypatch):
     q = "the bank migrated system 1 in 3 weeks"
     text = f"Scope: {q}. Fees of £1,200 per day apply to the migration work."
-    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: Extraction(items=[
+    monkeypatch.setattr(ex, "complete_json", lambda a, system, user, model, **k: References() if model is References else Extraction(items=[
         Item(field="solution", value="Migrate system 1", quote=q),
         Item(field="solution", value="Migrate system 2", quote=q),
         Item(field="solution", value="Priced work", quote="Fees of £1,200 per day apply"),
@@ -601,7 +601,7 @@ def reviewer_prose(did, f="solution", text="Our own write-up."):
 def test_build_writes_prose_from_points_and_merges_notes(monkeypatch):
     from app import writeup
     q = "cut customer onboarding from 12 days to 3 days"
-    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: case(("solution", "Faster onboarding", q)))
+    monkeypatch.setattr(ex, "complete_json", lambda a, system, user, model, **k: References() if model is References else case(("solution", "Faster onboarding", q)))
     monkeypatch.setattr(writeup, "complete_json", lambda *a, **k: writeup.Writeup(solution="Onboarding took 9 days."))
     c = ex.build(DOC, "internal")
     assert c.prose["solution"].flags == ["number 9 is in no quote"]
@@ -634,7 +634,7 @@ def test_reextract_recomputes_the_flags_of_kept_reviewer_prose(doc):
 
 
 def test_build_stamps_the_extraction_version(monkeypatch):
-    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: case())
+    monkeypatch.setattr(ex, "complete_json", lambda a, system, user, model, **k: References() if model is References else case())
     assert ex.build(DOC, "internal").extraction_version == ex.EXTRACTION_VERSION
     assert "extraction_version" not in json.dumps(llm_schema())
 
@@ -690,13 +690,13 @@ def test_main_prompts_have_no_reference_field_and_the_pass_has_its_own(monkeypat
     seen = []
 
     def fake(alias, system, user, model, **k):
-        seen.append((system, user, model))
+        seen.append((system, user, model, k["data_class"]))
         return case() if model is Extraction else References(items=[Ref(value="OAuth 2.0", quote="supports OAuth 2.0 sign in")])
     monkeypatch.setattr(ex, "complete_json", fake)
     c = ex.build("The portal supports OAuth 2.0 sign in for staff. " + DOC, "internal")
     assert [r.value for r in c.tech_references] == ["OAuth 2.0"] and not c.tech_references[0].unsourced
     refs_call = next(s for s in seen if s[2] is References)
-    assert refs_call[0] == ex.REFERENCES_SYSTEM and refs_call[1].startswith("<document>\n") and refs_call[1].endswith("\n</document>")
+    assert refs_call[3] == "internal" and refs_call[0] == ex.REFERENCES_SYSTEM and refs_call[1].startswith("<document>\n") and refs_call[1].endswith("\n</document>")
 
 
 def test_references_pass_dedupes_caps_strips_prices_and_is_literal_checked(monkeypatch):
@@ -704,8 +704,10 @@ def test_references_pass_dedupes_caps_strips_prices_and_is_literal_checked(monke
     items += [Ref(value="std 3", quote="the platform follows Std 3 closely"),   # a duplicate
               Ref(value="Rate", quote="fees of £1,200 per day apply"),           # a price
               Ref(value="", quote="empty value")]
-    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: References(items=items))
-    refs, notes = ex.extract_references(["x"], "internal")
+    classes = []
+    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: (classes.append(k["data_class"]), References(items=items))[1])
+    refs, notes = ex.extract_references(["x"], "confidential")
+    assert classes == ["confidential"]  # the points quote the document, so its class is passed through
     assert [r.value for r in refs] == [f"Std {i}" for i in range(20)] and notes == [] and len(refs) == ex.MAX_REFS
     c = ReferenceCase(title=Sourced[str]())
     c.tech_references = [Sourced[str](value="Std 1", source_quote="the platform follows Std 1 closely"),
@@ -714,18 +716,29 @@ def test_references_pass_dedupes_caps_strips_prices_and_is_literal_checked(monke
     assert [r.unsourced for r in c.tech_references] == [False, True]
 
 
-def test_references_pass_reads_every_part_and_a_failure_never_fails_the_build(monkeypatch):
-    calls = []
-
+def test_a_failing_references_pass_never_fails_the_build(monkeypatch):
     def fake(alias, system, user, model, **k):
-        calls.append(model)
         if model is References:
             raise RuntimeError("echo Zorbulon")
         return case()
     monkeypatch.setattr(ex, "complete_json", fake)
     c = ex.build(DOC, "internal")
     assert c.tech_references == [] and c.title.value == "Faster onboarding"
-    assert "technical references could not be read (RuntimeError)" in c.needs_attention
+    assert c.needs_attention == ["technical references could not be read from every part (RuntimeError)"]
     assert "Zorbulon" not in " ".join(c.needs_attention)
-    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: References(items=[Ref(value="A b c", quote="q")]))
-    assert len(ex.extract_references(["p1", "p2"], "internal")[0]) == 1  # both parts asked, the repeat dropped
+
+
+def test_references_pass_reads_every_part_and_one_failed_part_loses_only_itself(monkeypatch):
+    calls = []
+
+    def fake(alias, system, user, model, **k):
+        calls.append(user)
+        n = len(calls)
+        if n == 3:
+            raise RuntimeError("part 3 broke")
+        return References(items=[Ref(value=f"Std {n}", quote=f"follows Std {n} closely")])
+    monkeypatch.setattr(ex, "complete_json", fake)
+    refs, notes = ex.extract_references(["p1", "p2", "p3", "p4"], "internal")
+    assert len(calls) == 4 and [r.value for r in refs] == ["Std 1", "Std 2", "Std 4"]  # the other parts are still read
+    assert notes == ["technical references could not be read from every part (RuntimeError)"]  # once, not per failure
+    assert all(f"<document>\np{i}\n</document>" == u for i, u in enumerate(calls, 1))

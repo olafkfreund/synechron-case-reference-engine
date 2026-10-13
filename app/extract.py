@@ -176,19 +176,20 @@ def chunk_chars() -> int | None:
 def extract_references(parts: list[str], data_class: str) -> tuple[list[Sourced[str]], list[str]]:
     """A separate small pass: the prompt for the main extraction stays as it was, because a `reference` field there
     pulled capabilities and technologies down (#212 phase D). Never raises; (references, notes). Sourcing is checked later."""
-    try:
-        refs, seen = [], set()
-        for part in parts:
+    refs, seen, notes = [], set(), []
+    for part in parts:
+        try:  # one try per part: a failed part loses only its own references
             reply = complete_json("EXTRACT_MODEL", REFERENCES_SYSTEM, f"<document>\n{part}\n</document>", References,
                                   data_class=data_class)
-            for r in reply.items:
-                v, q = r.value.strip(), r.quote.strip()
-                if v and _norm(v) not in seen and not COMMERCIAL.search(f"{v} {q}"):
-                    seen.add(_norm(v))
-                    refs.append(Sourced[str](value=v, source_quote=q))
-        return refs[:MAX_REFS], []
-    except Exception as e:  # noqa: BLE001 - the class only: a message could echo document text
-        return [], [f"technical references could not be read ({type(e).__name__})"]
+        except Exception as e:  # noqa: BLE001 - the class only: a message could echo document text
+            notes = notes or [f"technical references could not be read from every part ({type(e).__name__})"]
+            continue
+        for r in reply.items:
+            v, q = r.value.strip(), r.quote.strip()
+            if v and _norm(v) not in seen and not COMMERCIAL.search(f"{v} {q}"):
+                seen.add(_norm(v))
+                refs.append(Sourced[str](value=v, source_quote=q))
+    return refs[:MAX_REFS], notes
 
 
 def split(text: str) -> list[str]:

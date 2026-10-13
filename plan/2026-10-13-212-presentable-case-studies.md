@@ -696,6 +696,12 @@ client. Run the full suite, then PR 4.
   - Eval: line 1 14 / 20 caps and tech with 20 refs; line 3 6 / 5 with 19
     refs. Summaries are kept and nothing is flagged. The pass adds about
     12-25 s per document.
+- Phase D review fixes:
+  - The references pass catches failures per part, so a failed part loses
+    only its own references. The note reads "could not be read from every
+    part".
+  - Tests now cover: data_class reaching the model, every part being read,
+    old fakes, and the merge preferring a sourced copy.
 
 ## Tests
 

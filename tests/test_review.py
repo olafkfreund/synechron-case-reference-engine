@@ -1478,3 +1478,16 @@ def test_merge_unions_technical_references(make, acme):
             c.execute("update cases set data=%s where id=%s", (json.dumps(d), cid))
     new = int(merge(client(R), [a, b]).headers["location"].rsplit("/", 1)[1])
     assert [r["value"] for r in _data_and_doc(new)[0]["tech_references"]] == ["Python", "REST", "SWIFT"]
+
+
+def test_merge_prefers_a_sourced_technical_reference_over_an_unsourced_copy(make, acme):
+    from app.review import combine
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    for cid, unsourced in ((a, True), (b, False)):
+        with db.connect() as c:
+            d = c.execute("select data from cases where id=%s", (cid,)).fetchone()[0]
+            d["tech_references"] = [{"value": "ISO 20022", "source_quote": "q", "unsourced": unsourced}]
+            c.execute("update cases set data=%s where id=%s", (json.dumps(d), cid))
+    docs = {cid: _data_and_doc(cid, cid)[1] for cid in (a, b)}
+    got = combine([(cid, docs[cid], ReferenceCase.model_validate(row(cid)[1])) for cid in (a, b)], {})
+    assert [(r.unsourced, r.document_id) for r in got.tech_references] == [(False, docs[b])]
