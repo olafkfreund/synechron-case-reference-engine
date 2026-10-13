@@ -262,3 +262,12 @@ ignored.
   - Later runs use the committed fixture baked into the image.
   - Library items are renamed and given a `query`, so the search page shows
     the library checkboxes and the recheck form is captured.
+- Step 2:
+  - `--input-border` is its own token (`#76848F` light, `#7D909C` dark),
+    because `--border` fails 3:1 for field edges. It is checked at 3:1.
+  - Added header tokens `--header-focus` and `--header-hover`.
+  - `--line` aliases `--border`.
+  - The nav fade mask uses `currentColor`.
+  - The image frame is `main img`.
+  - The contrast test also covers header text and `accent-hover`.
+  - All the plan's status pairs pass AA unchanged; the lowest is 5.66:1.

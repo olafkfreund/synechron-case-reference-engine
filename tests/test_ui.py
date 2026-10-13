@@ -208,3 +208,58 @@ def test_forms_post_the_same_fields(make, approved, monkeypatch, libs):  # noqa:
     if os.environ.get("REGEN_FORMS"):
         FORMS.write_text(json.dumps(got, indent=1, sort_keys=True) + "\n")
     assert got == json.loads(FORMS.read_text())
+
+
+# --- theme tokens (plan #243 step 2) ---
+CSS = Path(__file__).parent.parent / "app" / "static" / "portal.css"
+
+
+def token_blocks():
+    css = CSS.read_text()
+    m = re.search(r"/\* tokens \*/(.*?)/\* end tokens \*/", css, re.S)
+    assert m, "the token region is marked /* tokens */ ... /* end tokens */"
+    return css, m.group(1)
+
+
+def theme(block_start, region):
+    body = region[region.index(block_start):]
+    body = body[body.index("{") + 1:]
+    return dict(re.findall(r"--([\w-]+):(#[0-9A-Fa-f]{6})\b", body.split("}")[0]))
+
+
+def test_css_has_no_literal_colours():
+    css, region = token_blocks()
+    rest = css.replace(region, "")
+    assert re.findall(r"#[0-9A-Fa-f]{3,8}\b|rgba?\(", rest) == []
+    assert re.findall(r"rgb\(", region) and set(re.findall(r"(--[\w-]+):[^;]*rgb\(", region)) == {"--shadow"}
+
+
+def lum(h):
+    c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    c = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in c]
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+
+def ratio(a, b):
+    x, y = sorted((lum(a), lum(b)), reverse=True)
+    return (x + 0.05) / (y + 0.05)
+
+
+def test_theme_contrast():
+    _, region = token_blocks()
+    light = theme(":root{", region)
+    dark = {**light, **theme(':root[data-theme="dark"]', region)}
+    media = {**light, **theme(":root:not([data-theme=\"light\"])", region)}
+    assert media == dark  # the OS-dark block and the toggle block hold the same values
+    for name, t in (("light", light), ("dark", dark)):
+        for fg in ("text", "muted", "accent"):
+            for bg in ("bg", "surface", "subtle"):
+                assert ratio(t[fg], t[bg]) >= 4.5, (name, fg, bg, ratio(t[fg], t[bg]))
+        assert ratio(t["on-accent"], t["accent"]) >= 4.5, name
+        assert ratio(t["on-accent"], t["accent-hover"]) >= 4.5, name
+        for k in ("ok", "warn", "bad"):
+            assert ratio(t[f"{k}-fg"], t[f"{k}-bg"]) >= 4.5, (name, k)
+        assert ratio(t["focus"], t["surface"]) >= 3, name
+        assert ratio(t["input-border"], t["surface"]) >= 3, name  # a field's edge is a UI component
+        assert ratio(t["header-text"], t["header"]) >= 4.5 and ratio(t["header-tag"], t["header"]) >= 4.5, name
+        assert ratio(t["header-text"], t["header-hover"]) >= 4.5, name
