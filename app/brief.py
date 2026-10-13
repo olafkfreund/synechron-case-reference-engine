@@ -1,12 +1,18 @@
 """A short best-practice brief written only from picked research quotes, every sentence cited [n] (#214)."""
 import re
 
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from psycopg.types.json import Jsonb
 
-from app import anonymise, db
+from app import anonymise, db, research
 from app.llm import complete_json
+from app.main import User, require
+from app.review import SOURCE_KEYS, page
 from app.schema import _Model
 from app.writeup import check_prose
+
+router = APIRouter()
 
 MAX_QUOTES = 30  # keeps the prompt small for a local model
 
@@ -93,3 +99,69 @@ def run(brief_id: int) -> None:
         body, status, error = {}, "failed", type(e).__name__
     with db.connect() as conn:
         conn.execute("update briefs set status=%s, error=%s, body=%s where id=%s", (status, error, Jsonb(body), brief_id))
+
+
+# --- routes: a brief is private to its creator -------------------------------------------------------------
+
+MAX_THEMES = 10
+
+
+def owned(conn, bid, user):
+    row = conn.execute("select status, error, title, quotes, body from briefs where id=%s and created_by=%s",
+                       (bid, user.sub)).fetchone()
+    if not row:
+        raise HTTPException(404, "no such brief")
+    return row
+
+
+@router.post("/research/{rid}/brief")
+def start(rid: int, n: list[int] = Form([]), title: str = Form(""), user: User = Depends(require("user"))):
+    if len(set(n)) > MAX_QUOTES:
+        raise HTTPException(400, f"pick at most {MAX_QUOTES} statements")
+    with db.connect() as conn:
+        claims = research.picked_claims(conn, rid, n, user)  # indices into the stored row, then visible_claims
+        try:
+            t = research.finalize(title.strip() or "Research brief", anonymise.load_clients(conn))
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from None
+        quotes = [{k: c.get(k) for k in SOURCE_KEYS} for c in claims]  # copied: the brief outlives the research row
+        bid = conn.execute("insert into briefs(research_id, created_by, title, quotes) values (%s,%s,%s,%s) returning id",
+                           (rid, user.sub, t, Jsonb(quotes))).fetchone()[0]
+        conn.execute("insert into jobs(kind, payload) values ('brief', jsonb_build_object('brief_id', %s::bigint))", (bid,))
+    return RedirectResponse(f"/briefs/{bid}", status_code=303)
+
+
+@router.get("/briefs/{bid}")
+def view(bid: int, request: Request, user: User = Depends(require("user"))):
+    with db.connect() as conn:
+        status, error, title, _, body = owned(conn, bid, user)
+    return page(request, "brief.html", user, bid=bid, status=status, error=error, title=title, body=body)
+
+
+@router.post("/briefs/{bid}")
+def save(bid: int, title: str = Form(), takeaways: str = Form(""), heading: list[str] = Form([]), text: list[str] = Form([]),
+         user: User = Depends(require("user"))):
+    if len(heading) != len(text) or len(heading) > MAX_THEMES:
+        raise HTTPException(400, f"at most {MAX_THEMES} themes")
+    with db.connect() as conn:
+        status, _, _, quotes, old = owned(conn, bid, user)
+        if status != "done":
+            raise HTTPException(409, "the brief is not ready")
+        body = {"title": " ".join(title.split()), "takeaways": [" ".join(t.split()) for t in takeaways.splitlines() if t.strip()],
+                "themes": [{"heading": " ".join(h.split()), "text": " ".join(t.split())} for h, t in zip(heading, text) if h.strip() or t.strip()]}
+        body["flags"] = check(body, quote_texts(quotes[:MAX_QUOTES], anonymise.load_clients(conn)))
+        conn.execute("update briefs set body=%s where id=%s", (Jsonb(body), bid))
+    return RedirectResponse(f"/briefs/{bid}", status_code=303)
+
+
+@router.post("/briefs/{bid}/download")
+def download(bid: int, format: str = Form(), user: User = Depends(require("user"))):
+    if format not in ("docx", "pdf_docx", "md"):
+        raise HTTPException(400, "unknown format")
+    with db.connect() as conn:
+        status, _, _, _, body = owned(conn, bid, user)
+    if status != "done":
+        raise HTTPException(409, "the brief is not ready")
+    if body.get("flags"):
+        raise HTTPException(409, "fix the flagged sentences first")
+    raise HTTPException(501, "the brief output is not built yet")  # plan #214 step 15
