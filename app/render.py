@@ -41,9 +41,8 @@ COMPANY = "Synechron"
 INDUSTRY_HEADING = "Industry context (public sources)"
 SOURCES_HEADING = "Best practice and public sources"
 INDUSTRY_DISCLAIMER = f"These are public statements by third parties, not {COMPANY} delivery evidence."
-# fixed wording per claim type: the AI's own statement is never presented as fact
-PHRASES = {"out_of_the_box": "Supported out of the box", "configuration": "Available through configuration",
-           "industry_practice": "Common industry practice", "vendor_claim": "Vendor statement"}
+# the type filters claims; it never reaches an output (#23)
+CLAIM_TYPES = frozenset({"out_of_the_box", "configuration", "industry_practice", "vendor_claim"})
 SLIDE_ITEMS = 5
 
 
@@ -52,7 +51,7 @@ def industry_section(claims: list[dict], clients, heading=INDUSTRY_HEADING) -> d
     one that still names a protected client is dropped (and counted), not the whole document."""
     items, omitted = [], 0
     for c in claims:
-        if c.get("type") not in PHRASES:
+        if c.get("type") not in CLAIM_TYPES:
             continue
         # only the quote is anonymised: rewriting a publisher or URL would forge the citation
         safe = {k: CTRL.sub("", str(c.get(k, ""))) for k in ("quote", "publisher", "url", "retrieved_at")}
@@ -60,9 +59,9 @@ def industry_section(claims: list[dict], clients, heading=INDUSTRY_HEADING) -> d
         if anonymise.blocked("\n".join(safe.values()), clients):  # incl. a client's own site as the source
             omitted += 1
             continue
-        phrase = PHRASES[c["type"]]
+        phrase = f"{safe['publisher']} states"
         items.append({**safe, "phrase": phrase,
-                      "text": f"{phrase}: \u201c{safe['quote']}\u201d \u2014 {safe['publisher']}, {safe['url']}, retrieved {safe['date']}"})
+                      "text": f"{phrase}: \u201c{safe['quote']}\u201d \u2014 {safe['url']}, retrieved {safe['date']}"})
     if not items and not omitted:
         return None
     note = (f"{omitted} public statement{'s' if omitted != 1 else ''} omitted: "
@@ -74,10 +73,10 @@ SLIDE_QUOTE = 140
 
 
 def slide_statements(ind: dict) -> list[str]:
-    """Every slide line keeps its verbatim quote next to the phrase: the phrase comes from an AI-chosen
-    type, the quote is what lets a reader check it. The omitted-statements note (if any) comes last, as in
+    """Every slide line starts with its source and keeps the verbatim quote next to it, so a reader can
+    check it. The omitted-statements note (if any) comes last, as in
     Word and Markdown (#123)."""
-    return [f"{i['phrase']}: \u201c{excerpt(i['quote'], SLIDE_QUOTE)}\u201d \u2014 {i['publisher']}, {i['date']}"
+    return [f"{i['phrase']}: \u201c{excerpt(i['quote'], SLIDE_QUOTE)}\u201d \u2014 {i['date']}"
             for i in ind["statements"]][:SLIDE_ITEMS] + ([ind["note"]] if ind["note"] else [])
 
 
@@ -367,7 +366,7 @@ MD = _env.from_string("""\
 *{{ industry.disclaimer | md }}*
 
 {% for i in industry["statements"] %}
-- {{ i.phrase | md }}: \u201c{{ i.quote | md }}\u201d \u2014 {{ i.publisher | md }}, {{ i.url | md }}, retrieved {{ i.date | md }}
+- {{ i.phrase | md }}: \u201c{{ i.quote | md }}\u201d \u2014 {{ i.url | md }}, retrieved {{ i.date | md }}
 {% endfor %}
 {% if industry.note %}
 
