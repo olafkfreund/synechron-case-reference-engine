@@ -292,3 +292,11 @@ ignored.
   - `library_item.html` imports the `age` macro as `ago`, because `age` is
     already a page variable.
   - The `.claim` accent rule is reused.
+- Step 7:
+  - No inline colours remained.
+  - The new test also bans `<style>` blocks and `bgcolor`/`color`
+    attributes.
+  - Three `<script` assertions in `tests/test_review.py` now allow exactly
+    one script, `theme.js`.
+  - `docs/user-guide/bid-team.md` labels follow the new button text.
+  - Full suite: 1118 passed.

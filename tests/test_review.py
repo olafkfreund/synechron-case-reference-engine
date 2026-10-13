@@ -581,7 +581,7 @@ def test_candidate_form_lists_only_same_client_engagements(make, acme):
     page = client(R).get(f"/review/{a}").text
     assert f'value="{a}:{ver(a)}"' in page and f'value="{b}:{ver(b)}"' in page
     assert f'value="{other}:' not in page and f'value="{delivered}:' not in page
-    assert "<script" not in page and "onclick" not in page
+    assert page.count("<script") == 1 and "onclick" not in page
     assert "/review/merge/preview" not in client(R).get(f"/review/{other}").text  # unregistered client
 
 
@@ -592,7 +592,7 @@ def test_preview_has_one_radio_group_per_differing_field(make, acme):
     page = r.text
     assert page.count('name="pick_title"') == 2 and page.count(f'value="{a}" checked') >= 1
     assert 'name="pick_client_mention"' not in page  # identical in both
-    assert page.count(f'name="members" value="{a}:{ver(a)}"') == 1 and "<script" not in page
+    assert page.count(f'name="members" value="{a}:{ver(a)}"') == 1 and page.count("<script") == 1
     assert client(R).post("/review/merge/preview", data={"members": [f"{a}:{ver(a)}"]}).status_code == 400
 
 
@@ -619,7 +619,7 @@ def test_merged_detail_and_list_show_members(make, acme):
     new = int(merge(client(R), [a, b]).headers["location"].rsplit("/", 1)[1])
     page = client(R).get(f"/review/{new}").text
     assert "Merged from 2 contracts" in page and page.count("Source doc") >= 2
-    assert "<small>(Source doc)</small>" in page and "<script" not in page
+    assert "<small>(Source doc)</small>" in page and page.count("<script") == 1
     assert "/review/merge/preview" not in page
     assert "2 contracts" in client(R).get("/review").text
 

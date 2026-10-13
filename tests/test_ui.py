@@ -291,3 +291,15 @@ def test_library_item_has_one_toolbar_with_delete_at_the_end(make, approved, mon
         bar = t[t.index("lib-toolbar"):]
         assert "saved today" in t and "last checked today" in t and "style=" not in t
         assert bar.index("Search again") < bar.index("Mark re-checked") < bar.index("Delete this item") and "danger-ghost" in bar
+
+
+def test_templates_have_no_inline_colours():
+    bad = []
+    for f in sorted((Path(__file__).parent.parent / "app" / "templates").glob("*.html")):
+        t = f.read_text()
+        for m in re.finditer(r'style="([^"]*)"', t):
+            if re.search(r"color|background|border|outline|fill|stroke|#[0-9a-fA-F]{3,8}\b|rgba?\(", m[1]):
+                bad.append((f.name, m[0]))
+        if re.search(r"<style\b|\bbgcolor=|\bcolor=\"", t):
+            bad.append((f.name, "style block or colour attribute"))
+    assert bad == []

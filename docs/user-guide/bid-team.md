@@ -59,7 +59,7 @@ Judging whether a case suits your bid.
 
 The suggested wording is marked "not in downloads". Downloads hold the approved case record only.
 
-Each card has a collapsed "Source documents" list with **Open** and **Open folder** links to where the case came from. For a client you may not name, it shows only the number of documents. A file that was uploaded shows "stored in the engine; ask a reviewer".
+Each card has a collapsed "Source documents" list (with the number of documents) with **Open** and **Open folder** links to where the case came from. For a client you may not name, it shows only the number of documents. A file that was uploaded shows "Stored in the engine. Ask a reviewer for a copy."
 
 ## Download a case
 
@@ -71,10 +71,10 @@ Getting a case into a document for your bid.
 
 1. Press **Preview** to see the content the download will contain. The preview page has the same download buttons.
 2. On a result, press **Download Word** for a Word file.
-3. For another format, open **Other formats** and press one of **Download this case (PowerPoint)**,
-   **Download this case (PDF)**, **Download this case (PDF slides)** or **Download this case (Markdown)**.
+3. For another format, open **Other formats** and press one of **PowerPoint**,
+   **PDF**, **PDF slides** or **Markdown**.
 4. With several results, **Preview all** shows them together and **Download all (Word)** gets them in one file. Its
-   **Other formats** work the same way, for example **Download all (PDF)**.
+   **Other formats** work the same way.
 
 **What you see**
 
