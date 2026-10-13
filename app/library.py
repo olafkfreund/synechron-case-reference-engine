@@ -3,6 +3,8 @@
 An item copies its quotes and brief text, so it does not depend on the research row. Its text is never part of
 cases.search_text: the library has its own search. Every view and download runs apply() and blocked() again.
 """
+import re
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, Response
 from psycopg.types.json import Jsonb
@@ -17,6 +19,13 @@ router = APIRouter()
 STALE_DAYS = 365
 LIST_LIMIT = 200
 WITHHELD = "[withheld]"
+SUGGEST_MAX = 5
+SUGGEST_CANDIDATES = 300
+SUGGEST_KEYWORDS = 30
+SUGGEST_STOP = frozenset("""about above after again also among because been before being between both build could does doing done each
+either else ever every from have having here into just like made make many more most much must only other over same should since some
+such than that their them then there these they this those through under until upon very want were what when where which while will with
+within without would your our ours need needs needed provide provides using used uses use""".split())
 
 
 def _like(q: str) -> str:
@@ -91,6 +100,31 @@ def _visible_text(kind, topic, body, clients) -> str:
         parts += [sec.get("title"), *sec.get("takeaways", []), *(x for t in sec.get("themes", []) for x in (t["heading"], t["text"])),
                   *(a["quote"] for a in sec.get("appendix", []))]
     return "\n".join(str(x) for x in parts if x).lower()
+
+
+def suggest(bid_text: str, filters: dict, clients) -> list[dict]:
+    """Library items worth a look for a bid: whole-word keyword hits on what a reader sees now. No model, no logging of the text."""
+    words = dict.fromkeys(w for w in re.findall(r"[a-z]{4,}", bid_text.lower()) if w not in SUGGEST_STOP)
+    words |= dict.fromkeys(v.strip().lower() for v in filters.values() if v and v.strip())
+    kws = list(words)[:SUGGEST_KEYWORDS]
+    if not kws:
+        return []
+    need = 1 if len(kws) <= 2 else 2
+    pats = [re.compile(r"\b" + re.escape(k) + r"\b") for k in kws]
+    with db.connect() as conn:
+        rows = conn.execute(
+            "select id, topic, kind, body, floor(extract(epoch from now() - created_at) / 86400)::int, "
+            f"checked_at < now() - interval '{STALE_DAYS} days' from library_items order by id desc limit %s",
+            (SUGGEST_CANDIDATES,)).fetchall()
+    hits = []
+    for lid, topic, kind, body, age, stale in rows:
+        shown = WITHHELD if anonymise.blocked(topic, clients) else anonymise.apply(topic, clients)
+        text = _visible_text(kind, shown, body, clients)
+        score = sum(1 for p in pats if p.search(text))
+        if score >= need:
+            hits.append((score, {"id": lid, "topic": shown, "kind": kind, "sources": len(body["quotes"]), "age": age, "stale": stale}))
+    hits.sort(key=lambda h: -h[0])  # stable: newest first among equal scores
+    return [h[1] for h in hits[:SUGGEST_MAX]]
 
 
 @router.get("/library")
