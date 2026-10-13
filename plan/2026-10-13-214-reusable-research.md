@@ -481,6 +481,13 @@ must exist on `main`.
   and copied out. Steps 8 and 9 share `app/render.py`, so they are one
   commit. The pptx omitted-note test needed claims on different URLs, since
   one page now gives one slide line.
+- Phase 2 review fixes:
+  - Markdown links only URLs that fully match `https?://[^\s<>]+`.
+  - The date is escaped again.
+  - No Sources heading when every claim is dropped.
+  - A malformed URL falls back to the publisher.
+  - New tests: the fallback "Sources" box, a page title through `build()`,
+    and numbering after a dropped claim.
 
 ## Tests
 

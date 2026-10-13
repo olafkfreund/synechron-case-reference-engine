@@ -47,6 +47,13 @@ CLAIM_TYPES = frozenset({"out_of_the_box", "configuration", "industry_practice",
 SLIDE_ITEMS = 5
 
 
+def _host(url) -> str:
+    try:
+        return urlparse(str(url)).hostname or ""
+    except ValueError:  # e.g. "http://[x"
+        return ""
+
+
 def industry_section(claims: list[dict], clients, heading=INDUSTRY_HEADING, pages=()) -> dict | None:
     """Verbatim quotes grouped by source page, cited [n], with a numbered source list. apply() then blocked()
     PER CLAIM: one that still names a protected client is dropped (and counted), not the whole document."""
@@ -56,7 +63,7 @@ def industry_section(claims: list[dict], clients, heading=INDUSTRY_HEADING, page
         if c.get("type") not in CLAIM_TYPES:
             continue
         # only quote and title are anonymised: rewriting a publisher or URL would forge the citation
-        title = c.get("title") or page_titles.get(c.get("url")) or urlparse(str(c.get("url", ""))).hostname or c.get("publisher", "")
+        title = c.get("title") or page_titles.get(c.get("url")) or _host(c.get("url", "")) or c.get("publisher", "")
         safe = {k: CTRL.sub("", str(v)) for k, v in
                 {"quote": c.get("quote", ""), "title": title, "publisher": c.get("publisher", ""), "url": c.get("url", ""),
                  "retrieved_at": c.get("retrieved_at", "")}.items()}
@@ -330,8 +337,14 @@ def md(s: str) -> str:
     return re.sub(r"^(\d+)([.)])|^([-+=])", lambda m: f"{m[1]}\\{m[2]}" if m[1] else f"\\{m[3]}", s)
 
 
+def link(url: str) -> str:
+    """An autolink only for a plain http(s) URL: a '>' or space would end it and let the rest become Markdown."""
+    return f"<{url}>" if re.fullmatch(r"https?://[^\s<>]+", url) else md(url)
+
+
 _env = Environment(autoescape=False, trim_blocks=True, lstrip_blocks=True)  # Markdown, not HTML
 _env.filters["md"] = md
+_env.filters["link"] = link
 MD = _env.from_string("""\
 {% for c in cases %}
 # {{ c.title | md }}
@@ -394,11 +407,13 @@ MD = _env.from_string("""\
 
 {% endfor %}
 {% endfor %}
+{% if industry.sources %}
 ## Sources
 
 {% for s in industry.sources %}
-{{ s.n }}. {{ s.title | md }}, {{ s.publisher | md }}, <{{ s.url }}>, retrieved {{ s.date }}
+{{ s.n }}. {{ s.title | md }}, {{ s.publisher | md }}, {{ s.url | link }}, retrieved {{ s.date | md }}
 {% endfor %}
+{% endif %}
 {% if industry.note %}
 
 {{ industry.note | md }}

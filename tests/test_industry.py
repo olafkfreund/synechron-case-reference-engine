@@ -29,10 +29,10 @@ def rows(env):  # noqa: F811
     db.init()
     made = []
 
-    def add(claims, by="u1", status="done", case_id=None):
+    def add(claims, by="u1", status="done", case_id=None, pages=()):
         with db.connect() as c:
             made.append(c.execute("insert into research(query, created_by, status, results, case_id) values ('q',%s,%s,%s,%s) returning id",
-                                  (by, status, json.dumps({"pages": [], "skipped": [], "claims": claims}), case_id)).fetchone()[0])
+                                  (by, status, json.dumps({"pages": list(pages), "skipped": [], "claims": claims}), case_id)).fetchone()[0])
         return made[-1]
     yield add
     with db.connect() as c:
@@ -204,6 +204,7 @@ def test_fallback_to_case_layout_without_industry_layout(rows, approved, tmp_pat
     ind = out[1]
     assert ind["Outcomes"][0].startswith("learn.microsoft.com states:") and Q1[:40] in ind["Outcomes"][0]
     assert ind["Challenge"] == [""] and ind["Solution"] == [""]
+    assert ind["Technology"] == ["Sources: [1] learn.microsoft.com"]
 
 
 def test_fallback_layout_shows_the_omitted_note(rows, approved, reg, tmp_path, monkeypatch):
@@ -448,8 +449,35 @@ def test_a_title_naming_a_protected_client_never_reaches_the_section(reg, monkey
     monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)  # apply() misses it: blocked() must still drop the claim
     s = section([{**claim(), "title": f"{name} case study"}, claim(Q2, url="https://x.example/y")])
     assert name not in json.dumps(s) and "omitted" in s["note"] and len(s["groups"]) == 1
+    assert s["groups"][0]["quotes"][0]["n"] == 1 and s["sources"][0]["n"] == 1  # numbering counts only what is shown
 
 
 def test_two_quotes_from_one_page_share_a_citation_in_markdown(rows, approved):
     t = gen(rows([claim(), claim(Q2, "configuration")]), [approved()], ack=True).text.replace("\\", "")
     assert f"> “{Q1}” [1]" in t and f"> “{Q2}” [1]" in t and t.count("<https://learn.microsoft.com/entra>") == 1
+
+
+def test_markdown_autolink_only_for_a_plain_url(rows):
+    evil = "https://x/a>[c](javascript:alert(1))"
+    t = gen(rows([claim(url=evil)]), ack=True).text
+    assert "<https://x/a>" not in t and not re.search(r"(?<!\\)\]\(javascript", t) and not re.search(r"(?<!\\)<https?://x", t)
+    assert "<https://learn.microsoft.com/entra>" in gen(rows([claim()]), ack=True).text  # a plain URL still links
+
+
+def test_group_title_comes_from_the_stored_page_when_the_claim_has_none(rows):
+    pages = [{"url": "https://learn.microsoft.com/entra", "title": "Passwordless overview", "publisher": "learn.microsoft.com"}]
+    t = gen(rows([claim()], pages=pages), ack=True).text
+    assert "## Passwordless overview" in t and "1. Passwordless overview, learn.microsoft.com" in t
+
+
+def test_all_claims_omitted_leaves_the_note_and_no_sources_heading(reg, monkeypatch):
+    s = section([claim(publisher=f"{reg.lower()}.example", url=f"https://{reg.lower()}.example/x")])
+    assert s["sources"] == [] and s["groups"] == [] and "omitted" in s["note"]
+    assert "Sources" not in render.to_markdown([], s) and "omitted" in render.to_markdown([], s)
+    assert "Sources" not in doc_text(render.to_docx([], s)) and "omitted" in doc_text(render.to_docx([], s))
+
+
+def test_a_malformed_url_does_not_break_the_section(env):
+    db.init()
+    s = section([claim(url="http://[x")])
+    assert s["groups"][0]["title"] == "learn.microsoft.com"
