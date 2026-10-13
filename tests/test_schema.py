@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from app.schema import Extraction, Outcome, ReferenceCase, Sourced, llm_schema, numbers, quote_in, sourced
+from app.schema import Extraction, Outcome, ReferenceCase, Sourced, llm_schema, numbers, plain, quote_in, sourced
 
 DOC = "The bank cut onboarding from 12 days to\n3 days.  Team “Alpha” – 8 people."
 
@@ -251,3 +251,30 @@ def test_references_are_not_a_main_extraction_field_and_stay_searchable():
     assert ReferenceCase.model_validate(c.model_dump()).tech_references == c.tech_references
     r = References.model_validate_json('{"items": [{"value": null, "quote": "q", "extra": 1}]}')
     assert r.items[0].value == "" and "items" in llm_schema(References)["required"]
+
+
+@pytest.mark.parametrize("raw,want", [
+    ("**Zor**pale runs it", "Zorpale runs it"),
+    ("see [the docs](https://x.io/a_b) now", "see the docs now"),
+    ("![diagram of flow](https://x.io/i.png) shows it", "diagram of flow shows it"),
+    ("see [the docs][1] now", "see the docs now"),
+    ("cited [1][2] twice", "cited [1][2] twice"),
+    ("go to <https://x.io/a> today", "go to https://x.io/a today"),
+    ("it is __very__ fast and *really* good", "it is very fast and really good"),
+    ("set `max_conn` to 5", "set max_conn to 5"),
+    ("snake_case_name stays and 2*3*4 too", "snake_case_name stays and 2*3*4 too"),
+    ("## Heading text", "Heading text"),
+    ("> a quoted line\n> another line", "a quoted line another line"),
+    ('""Quoted"" inside text', '"Quoted" inside text'),
+    ('"A whole wrapped quote here"', "A whole wrapped quote here"),
+    ("\u201cCurly wrapped quote here\u201d", "Curly wrapped quote here"),
+    ('"One" and "two" stay', '"One" and "two" stay'),
+    ("  many \n\t spaces  ", "many spaces"),
+])
+def test_plain(raw, want):
+    assert plain(raw) == want
+
+
+def test_plain_does_not_change_what_quote_in_matches():
+    page = "We say **Zor**pale runs it, see [docs](https://x.io)."
+    assert quote_in(page, "**Zor**pale runs it, see [docs](https://x.io)") and not quote_in(page, plain("**Zor**pale runs it, see [docs](https://x.io)"))

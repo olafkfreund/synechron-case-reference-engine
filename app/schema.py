@@ -28,6 +28,29 @@ def quote_in(text: str, quote: str) -> bool:
     return q in _norm(text) or q in _norm(re.sub(r"-[ \t]*\n\s*", "", text))
 
 
+_MD = [(re.compile(p), r) for p, r in (
+    (r"!?\[([^\]]*)\]\([^)]*\)", r"\1"),         # [text](url), ![alt](url)
+    (r"\[(?!\d+\])([^\]]+)\]\[[^\]]*\]", r"\1"),  # [text][ref]; "[1][2]" citations stay
+    (r"<(https?://[^>\s]+)>", r"\1"),              # <url>
+    (r"\*\*|__|`", ""),                           # strong, code (also inside a word: **Zor**pale)
+    (r"(?<!\w)([*_])(?=\S)(.+?)(?<=\S)\1(?!\w)", r"\2"),  # single * or _ around words; snake_case stays
+    (r"(?m)^[ \t]*(?:#+|>+)[ \t]*", ""),             # heading and blockquote markers
+    (r'""(.+?)""', r'"\1"'),
+)]
+_WRAP = {'"': '"', "\u201c": "\u201d"}
+
+
+def plain(s: str) -> str:
+    """Markdown to plain text for display and render only; the stored quote and quote_in() stay verbatim.
+    Never for a technical note: code must stay exact."""
+    for rx, r in _MD:
+        s = rx.sub(r, s)
+    s = " ".join(s.split())
+    if len(s) > 1 and _WRAP.get(s[0]) == s[-1] and s[0] not in s[1:-1] and s[-1] not in s[1:-1]:
+        s = s[1:-1].strip()
+    return s
+
+
 # a comma is dropped only as a thousands separator (last group of 3 digits): "1,500" is 1500, but
 # "1,5" stays as written, so it can't license 15 (#44); every other token is read exactly as main did
 _THOUSANDS = re.compile(r"\d+(?:,\d+)*,\d{3}(?:\.\d+)?")
