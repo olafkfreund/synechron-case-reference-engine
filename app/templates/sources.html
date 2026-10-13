@@ -30,7 +30,9 @@ S3 and SharePoint: optional <code>"include_ext"</code> (default docx, pptx, pdf)
 <label class="check"><input type="checkbox" name="executed_contracts"> All contracts here are executed</label>
 <div class="action-row"><button class="btn primary">Add source</button></div>
 </form></details></div></div>
-{% if notice %}<p class="badge {{ notice[0] }}" role="status">{{ notice[1] }}{% if job %}: job {{ job }}{% if source_name %} to {{ source_name }}{% endif %}{% endif %}</p>{% endif %}
+{% if notice %}<p class="badge {{ notice[0] }}" role="status">{{ notice[1] }}{% if queued is not none %}: {{ queued }} of {{ total }}{% endif %}{% if job %}: job {{ job }}{% if source_name %} to {{ source_name }}{% endif %}{% endif %}</p>{% endif %}
+
+{% if older %}<form method="post" action="/admin/reextract" class="action-row"><button class="btn">Re-extract older cases ({{ older }}): cases go back to review</button></form>{% endif %}
 
 <div class="section-card client-list">
 <div class="card-head"><h2>Sources ({{ sources | length }})</h2></div>

@@ -133,6 +133,7 @@ class ReferenceCase(_Model):
     needs_attention: SkipJsonSchema[list[str]] = []
     diagrams: SkipJsonSchema[list[Diagram]] = []
     basis: SkipJsonSchema[Literal["delivered", "engagement"]] = "delivered"
+    extraction_version: SkipJsonSchema[int] = 1  # bump EXTRACTION_VERSION when extraction output changes
     basis_reason: SkipJsonSchema[str] = ""  # "executed contract" | "source marked executed"
 
     @field_validator("summary")

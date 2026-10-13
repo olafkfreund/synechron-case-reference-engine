@@ -7,6 +7,7 @@ from psycopg.errors import CheckViolation, UniqueViolation
 from psycopg.types.json import Jsonb
 
 from app import db
+from app.extract import EXTRACTION_VERSION
 from app.main import UPLOAD_MAGIC, User, require, upload_cap
 from app.ingest import reopen_merged
 from app.review import page
@@ -22,7 +23,20 @@ NOTICES = {  # allow-list: the query string picks a message, never supplies one
     "content": ("bad", "Upload refused: the file content does not match its extension"),
     "nosource": ("bad", "Upload refused: no enabled upload source is configured"),
     "source": ("bad", "Upload refused: that source is not an enabled upload source"),
+    "reextract": ("ok", "Older cases queued for re-extraction; they go back to review"),
 }
+# #222: cases extracted before the current EXTRACTION_VERSION; a merged parent has no document, so the join drops it
+REEXTRACT_BATCH = 25
+REEXTRACT_LOCK = 222_001  # fixed advisory-lock key for the bulk re-extract
+OLDER = """from cases c join documents d on d.id = c.document_id
+    where coalesce((c.data->>'extraction_version')::int, 1) < %s and c.status <> 'rejected' and d.deleted_at is null
+    and c.merged_into is null  -- members are re-extracted through their parent's reopen path
+    and not exists (select 1 from jobs f where f.kind='extract' and f.status='failed' and f.updated_at > now() - interval '24 hours'
+                    and (f.payload->>'document_id')::bigint = d.id)  -- a failing case must not take every batch
+    and not exists (select 1 from jobs j where j.kind='extract' and j.status in ('queued','running')
+                    and (j.payload->>'document_id')::bigint = d.id)"""
+REEXTRACT = ("insert into jobs(kind, payload) select 'extract', jsonb_build_object('document_id', d.id, 'basis', c.basis, "
+             "'basis_reason', coalesce(c.data->>'basis_reason', ''), 'checksum', d.checksum) " + OLDER + " order by c.id limit %s")
 DATA_CLASSES = ("confidential", "sanitised", "public")
 REQUIRED = {"s3": ("bucket",), "upload": ("bucket",), "sharepoint": ("tenant_id", "drive_id"),
             "confluence": ("base_url", "spaces")}
@@ -60,15 +74,26 @@ def groups(raw: str) -> list[str]:
 
 @router.get("/admin/sources")
 def sources_page(request: Request, notice: str = "", source: int | None = None,
-                 job: int | None = None, user: User = Depends(require("admin"))):
+                 job: int | None = None, queued: int | None = None, total: int | None = None, user: User = Depends(require("admin"))):
     with db.connect() as conn:
         rows = conn.execute("select id, kind, name, config, acl_groups, enabled, last_run_at, last_counts, data_class "
                             "from sources order by name").fetchall()
+        older = conn.execute("select count(*) " + OLDER, (EXTRACTION_VERSION,)).fetchone()[0]
     done = notice == "uploaded"
     return page(request, "sources.html", user, sources=rows, kinds=sorted(JOB), classes=DATA_CLASSES,
-                notice=NOTICES.get(notice), job=job if done else None,
+                notice=NOTICES.get(notice), older=older, queued=queued if notice == "reextract" else None, total=total, job=job if done else None,
                 source_name=next((r[2] for r in rows if r[0] == source and r[1] == "upload"), None) if done else None,
                 upload_cap=upload_cap(), upload_types=sorted(UPLOAD_MAGIC))
+
+
+@router.post("/admin/reextract")
+def reextract(user: User = Depends(require("admin"))):
+    with db.connect() as conn:
+        # two clicks at once would both see the same cases as unqueued and queue them twice; the lock lasts until commit
+        conn.execute("select pg_advisory_xact_lock(%s)", (REEXTRACT_LOCK,))
+        total = conn.execute("select count(*) " + OLDER, (EXTRACTION_VERSION,)).fetchone()[0]
+        queued = conn.execute(REEXTRACT, (EXTRACTION_VERSION, REEXTRACT_BATCH)).rowcount
+    return RedirectResponse(f"/admin/sources?notice=reextract&queued={queued}&total={total}", status_code=303)
 
 
 @router.post("/admin/sources")

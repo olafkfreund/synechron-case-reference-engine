@@ -205,3 +205,6 @@ alter table documents alter column updated_at set default now(), alter column up
 create index if not exists documents_updated_idx on documents (updated_at desc, id desc);
 create index if not exists cases_approved_idx on cases (approved_at desc, id desc)
   where status = 'approved' and merged_into is null;
+
+-- an approval below the completeness minimum, with the reviewer's reason (#222); no foreign key, so it survives case deletion
+create table if not exists case_approval_overrides (id bigserial primary key, case_id bigint not null, reason text not null, score text not null, approved_by text not null, approved_at timestamptz not null default now());

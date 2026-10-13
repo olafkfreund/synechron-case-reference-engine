@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Form, Query, Request
 from pydantic import BaseModel, ConfigDict
 
 from app import anonymise, db
+from app.completeness import checklist, score
 from app.llm import complete_json
 from app.main import User, require
 from app.review import VISIBLE, page
@@ -146,7 +147,7 @@ def pick(bid_text: str, candidates: list[dict], clients) -> tuple[list[dict], li
 
 def view(c, clients, **extra):
     case = c["case"]
-    return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label=clean(c["label"], clients, "a client"), basis=c["basis"], **extra)
+    return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label=clean(c["label"], clients, "a client"), basis=c["basis"], score=score(checklist(case)), **extra)
 
 
 def browse(user: User, filters: dict, kind: str = "", sort: str = "newest", page: int = 1) -> list[dict]:

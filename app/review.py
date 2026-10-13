@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from app import anonymise, db, diagrams
 from app.extract import MAX_CHARS, check
 from app.main import User, require
+from app.completeness import checklist, meets_minimum, score
 from app.schema import POINT_FIELDS, Diagram, Outcome, Period, Prose, ReferenceCase, Sourced, _norm
 from app.writeup import PRICE_FLAG, check_prose, quotes_of
 
@@ -224,7 +225,8 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
     unlisted = anonymise.unlisted([*case.organisations, case.client_mention.value or ""], registry) if r[5] else []
     sections = [dict(f=f, label=PROSE_LABELS[f], prose=case.prose.get(f), points=case.points.get(f, []))
                 for f in POINT_FIELDS if case.points.get(f) or f in case.prose]
-    return page(request, "review_detail.html", user, id=cid, rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
+    checks = checklist(case)
+    return page(request, "review_detail.html", user, id=cid, checks=checks, minimum=meets_minimum(checks), rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
                 sections=sections,
                 unlisted=unlisted, diagrams=case.diagrams, members=members, cands=cands, remerge=remerge,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
@@ -392,7 +394,7 @@ def diagram_png(cid: int, did: int, user: User = Depends(require("reviewer"))):
 
 
 @router.post("/review/{cid}/approve")
-def approve(cid: int, v: str = Form(), diagrams_checked: bool = Form(False), user: User = Depends(require("reviewer"))):
+def approve(cid: int, v: str = Form(), diagrams_checked: bool = Form(False), reason: str = Form(""), user: User = Depends(require("reviewer"))):
     with db.connect() as conn:
         case, text = load(conn, cid, user, v)
         if any(d.status == "pending" for d in case.diagrams):
@@ -419,6 +421,10 @@ def approve(cid: int, v: str = Form(), diagrams_checked: bool = Form(False), use
             case.lessons_learned = Sourced[str]()  # nor lessons (#198)
         if case.period.unsourced:
             case.period = type(case.period)()
+        items = checklist(case)  # after the drops: only what stays counts
+        below = not meets_minimum(items)
+        if below and not reason.strip():
+            raise HTTPException(400, "below the minimum: complete the case or give a reason")
         if not case.title.value:
             raise HTTPException(400, "cannot approve: the title is empty or unsourced")
         case.needs_attention = []
@@ -432,6 +438,10 @@ def approve(cid: int, v: str = Form(), diagrams_checked: bool = Form(False), use
                          "review_due=now() + interval '12 months' where id=%s", (user.sub, client_id, cid))
         except ForeignKeyViolation:  # the client was deleted after we read the registry (#84): roll back, ask to reload
             raise HTTPException(409, "client changed; reload the page") from None
+        if below:
+            ok, total = score(items)
+            conn.execute("insert into case_approval_overrides(case_id, reason, score, approved_by) values (%s,%s,%s,%s)",
+                         (cid, reason.strip()[:500], f"{ok}/{total}", user.sub))
     return RedirectResponse("/review", status_code=303)
 
 

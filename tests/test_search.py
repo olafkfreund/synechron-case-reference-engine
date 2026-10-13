@@ -364,3 +364,26 @@ def test_bid_search_applies_kind(approved, monkeypatch):
     assert {x["id"] for x in sr.results(ME, "onboarding", {})[0] + sr.results(ME, "onboarding", {})[1]} >= {d, e}
     r = client(GUEST).post("/search", data={"bid_text": "onboarding", "kind": "engagement"})
     assert "Engagement onboarding" in r.text and "Delivered onboarding" not in r.text
+
+
+def test_rows_show_complete_or_partial_badge(approved, monkeypatch):
+    from app.schema import Diagram, Period, Prose
+    no_model(monkeypatch)
+    approved(data(title="Thin case"))
+    full = data(title="Full case", tech=("a", "b", "c"), capabilities=[S("x"), S("y"), S("z")], period=Period(start="2024"),
+                diagrams=[Diagram(id=1, caption="c", status="ready")],
+                prose={f: Prose(text=" ".join(["word"] * 80), by_reviewer=True)
+                       for f in ("challenge", "solution", "implementation", "configuration")})
+    approved(full)
+    text = client(GUEST).get("/search").text
+    assert text.count("Partial · 1/9") == 1 and text.count(">Complete<") == 1
+
+
+def test_bid_results_top_and_others_carry_the_score(approved, monkeypatch):
+    a, b = approved(), approved(data(title="Other onboarding"))
+    picks_reply(monkeypatch, sr.Pick(case_id=a, reason="fits", tailored="Cut onboarding."))
+    top, others, _ = sr.results(ME, "onboarding", {})
+    assert [x["id"] for x in top] == [a] and b in [x["id"] for x in others]
+    assert all(x["score"] == (1, 9) for x in top + others)
+    text = client(GUEST).post("/search", data={"bid_text": "onboarding"}).text
+    assert text.count("Partial · 1/9") >= 2

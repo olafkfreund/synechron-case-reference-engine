@@ -30,6 +30,9 @@
 {% else %}<dl class="status-list"><dt>Document</dt><dd><b>{{ document }}</b></dd><dt>Source</dt><dd>{{ source }}</dd><dt>External id</dt><dd><code>{{ external_id }}</code></dd></dl>{% endif %}
 {% if basis_reason %}<p class="muted" style="margin:12px 0 0">{{ basis_reason }}</p>{% endif %}
 </div>
+{% set tx = "text" if sections else "fields" %}{% set anchors = {"challenge": tx, "solution": tx, "implementation": tx, "configuration": tx, "capabilities": "fields", "technologies": "fields", "results": "fields", "period": "fields", "diagram": "diagrams"} %}
+<div class="section-card"><div class="card-head"><h2>Completeness: {{ checks | selectattr("ok") | list | length }} of {{ checks | length }}</h2></div>
+<ul>{% for c in checks %}<li>{% if c.ok %}✓{% else %}✗{% endif %} {% if not c.ok and c.key in anchors %}<a href="#{{ anchors[c.key] }}">{{ c.label }}</a>{% else %}{{ c.label }}{% endif %}: {{ c.detail }}</li>{% endfor %}</ul></div>
 {% for n in notes %}<div class="note">{{ n }}</div>{% endfor %}
 {% for o in unlisted %}<div class="note">organisation not in client registry: {{ o }}
 {% if "admin" in user.roles %}<form method="post" action="/admin/clients" class="row">
@@ -40,9 +43,9 @@
 
 {% if attn.n %}<div class="section-card"><div class="card-head"><h2>Needs attention ({{ attn.n }})</h2></div>
 {% for r in rows %}{% if r.unsourced and not r.new %}{{ field_row(r, loop.index) }}{% endif %}{% endfor %}</div>{% endif %}
-<div class="section-card"><div class="card-head"><h2>Fields</h2></div>
+<div class="section-card" id="fields"><div class="card-head"><h2>Fields</h2></div>
 {% for r in rows %}{% if not (r.unsourced and not r.new) %}{{ field_row(r, loop.index) }}{% endif %}{% endfor %}</div>
-{% if sections %}<div class="section-card"><div class="card-head"><h2>Case-study text</h2></div>
+{% if sections %}<div class="section-card" id="text"><div class="card-head"><h2>Case-study text</h2></div>
 {% for sec in sections %}<div class="field-row">
 <div class="fname">{{ sec.label }}
 {% if sec.prose and sec.prose.by_reviewer %}<span class="badge ok">written by reviewer</span>{% elif sec.prose and sec.prose.flags %}<span class="badge bad">flagged</span>{% elif sec.prose %}<span class="badge neutral">generated</span>{% else %}<span class="badge empty">not written</span>{% endif %}</div>
@@ -61,7 +64,7 @@
 <form method="post" action="/review/{{ id }}/sources/remove" style="margin:0"><input type="hidden" name="i" value="{{ s.n }}"><input type="hidden" name="s" value="{{ sources_v }}"><button class="btn">Remove</button></form></div>{% endfor %}</div>{% endif %}
 
 
-{% if diagrams or (reviewable and diagrams | length < 5) %}<div class="section-card"><div class="card-head"><h2>Diagrams</h2></div>
+{% if diagrams or (reviewable and diagrams | length < 5) %}<div class="section-card" id="diagrams"><div class="card-head"><h2>Diagrams</h2></div>
 {% for d in diagrams %}<div class="field-row">
 <div class="fname">Diagram #{{ loop.index }} <span class="badge {{ "ok" if d.status == "ready" else "bad" if d.status == "rejected" else "neutral" }}">{{ d.status }}</span></div>
 <div>{% if d.status == "ready" %}<img src="/review/{{ id }}/diagrams/{{ d.id }}.png" alt="{{ d.caption }}" width="{{ [d.width, 480] | min }}">
@@ -87,6 +90,7 @@
 <button class="btn">Un-merge (the contracts go back to the queue)</button></form>{% endif %}
 <form method="post" action="/review/{{ id }}/approve" class="primary" style="margin:0"><input type="hidden" name="v" value="{{ v }}">
 {% if diagrams | selectattr("status", "equalto", "ready") | list %}<label class="check"><input type="checkbox" name="diagrams_checked" required> I have checked every diagram: no client name, logo, person or identifying detail</label><br>{% endif %}
+{% if not minimum %}<label for="reason" class="mini-label">Why approve below the minimum?</label><textarea id="reason" name="reason" rows="3" maxlength="500"></textarea><br>{% endif %}
 <button class="btn primary">Approve (unsourced fields are emptied)</button></form>
 </div></div>
 {% else %}<p class="muted">This case is not open for review.</p>

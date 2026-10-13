@@ -5,7 +5,7 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from app import db, extract as ex
-from app.schema import Extraction, Item, ReferenceCase, Sourced
+from app.schema import Extraction, Item, ReferenceCase, Sourced, llm_schema
 
 DOC = ("Acme Bank cut customer onboarding from 12 days to 3 days. "
        "The programme ran for 18 months with a team of 8 engineers, "
@@ -625,3 +625,34 @@ def test_reextract_recomputes_the_flags_of_kept_reviewer_prose(doc):
     reviewer_prose(doc[0], "solution", "It took 99 days.")  # stored with no flags
     data, *_ = run(doc, case(("solution", "Faster onboarding", Q)))
     assert data["prose"]["solution"]["by_reviewer"] is True and data["prose"]["solution"]["flags"] == ["number 99 is in no quote"]
+
+
+def test_build_stamps_the_extraction_version(monkeypatch):
+    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: case())
+    assert ex.build(DOC, "internal").extraction_version == 2
+    assert "extraction_version" not in json.dumps(llm_schema())
+
+
+def test_extraction_version_is_pinned():
+    assert ex.EXTRACTION_VERSION == 2  # a change to extraction output must bump this
+
+
+NOTE = "Re-extracted with richer extraction: check and approve again"
+
+
+def test_reextracting_an_old_row_adds_the_note_and_keeps_reviewer_prose(doc):
+    did, _ = doc
+    run(doc, case())
+    with db.connect() as c:
+        data = c.execute("select data from cases where document_id=%s", (did,)).fetchone()[0]
+        data.pop("extraction_version")
+        data["prose"] = {"challenge": {"text": "Mine", "by_reviewer": True, "flags": []}}
+        c.execute("update cases set data=%s where document_id=%s", (Jsonb(data), did))
+    data, *_ = run(doc, case())
+    assert NOTE in data["needs_attention"] and data["prose"]["challenge"]["text"] == "Mine"
+    assert data["extraction_version"] == 2
+
+
+def test_reextracting_a_current_row_has_no_note(doc):
+    run(doc, case())
+    assert NOTE not in run(doc, case())[0]["needs_attention"]
