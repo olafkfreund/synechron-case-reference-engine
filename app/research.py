@@ -20,7 +20,7 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app import anonymise, db, ingest
-from app.llm import MAX_TOKENS, complete_json, profile
+from app.llm import MAX_TOKENS, complete_json, json_cue, profile
 from app.main import User, require
 from app.review import VISIBLE, page, reviewable_cases
 from app.schema import ReferenceCase, fence, llm_schema, numbers, plain, quote_in
@@ -527,7 +527,7 @@ def page_chars() -> int:
     n = profile("DRAFT_MODEL").get("num_ctx")
     if not n or not os.environ.get("DRAFT_MODEL", "").startswith("ollama"):  # llm.py sends num_ctx to Ollama only
         return 6000
-    system = len(CLAIMS_SYSTEM) + len(json.dumps(llm_schema(Claims))) + 60  # complete_json appends the schema
+    system = len(CLAIMS_SYSTEM) + len(json_cue(llm_schema(Claims)))  # complete_json appends the cue
     size = min(6000, ((int(n) - MAX_TOKENS - 2000) * 3 - system) // MAX_RESULTS)
     if size < 500:  # a smaller page is no use, and a floor would overflow the context silently (#217)
         raise ResearchError("num_ctx too small for research")

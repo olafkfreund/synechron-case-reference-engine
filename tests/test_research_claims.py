@@ -424,7 +424,7 @@ def test_page_chars_follows_num_ctx_for_ollama_only(monkeypatch):
     monkeypatch.setenv("DRAFT_MODEL_OPTIONS", json.dumps({"num_ctx": 24576}))
     n = rs.page_chars()
     assert 4500 < n < 6000
-    system = len(rs.CLAIMS_SYSTEM) + len(json.dumps(rs.llm_schema(rs.Claims))) + 60
+    system = len(rs.CLAIMS_SYSTEM) + len(rs.json_cue(rs.llm_schema(rs.Claims)))
     assert rs.MAX_RESULTS * n + system <= (24576 - rs.MAX_TOKENS - 2000) * 3  # 8 pages fit with no silent cut (#217)
     monkeypatch.setenv("DRAFT_MODEL", "bedrock/x")
     assert rs.page_chars() == 6000  # llm.py sends num_ctx to Ollama only
