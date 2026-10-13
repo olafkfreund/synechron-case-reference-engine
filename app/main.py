@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import db, diagrams
+from app import db, diagrams, mcp_server
 
 ROLES = ("user", "reviewer", "admin")  # each implies the ones before it
 SESSION_MAX_AGE = 8 * 3600
@@ -111,10 +111,18 @@ def create_app() -> FastAPI:
     if not origin:
         raise RuntimeError("APP_ORIGIN is required (e.g. https://references.example.com), for CSRF checks")
 
+    mcp_app = mcp_manager = None
+    if mcp_server.enabled():
+        mcp_app, mcp_manager = mcp_server.build(origin)
+
     @asynccontextmanager
     async def lifespan(_):
         db.init_if_requested()
-        yield
+        if mcp_manager:  # a mounted app's own lifespan does not run
+            async with mcp_manager.run():
+                yield
+        else:
+            yield
 
     app = FastAPI(lifespan=lifespan)
 
@@ -128,14 +136,15 @@ def create_app() -> FastAPI:
     async def guard(request: Request, call_next):
         """Runs before any body is read or any route/auth dependency runs."""
         response = None
+        path = request.url.path
+        is_mcp = path == "/mcp" or path.startswith("/mcp/")  # bearer token, no cookie: nothing to forge
         if request.method not in SAFE_METHODS:
             # CSRF: SameSite=lax still sends the cookie from sibling subdomains, so check the origin
             o = request.headers.get("origin")
-            if (o or "").rstrip("/") != origin and not (o is None and request.headers.get("sec-fetch-site") == "same-origin"):
+            if not is_mcp and (o or "").rstrip("/") != origin and not (o is None and request.headers.get("sec-fetch-site") == "same-origin"):
                 response = JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
             else:
                 # size before parsing: FastAPI spools a multipart body before auth runs
-                path = request.url.path
                 cap = (upload_cap() if path == "/admin/upload"
                        else diagrams.MAX_BYTES if re.fullmatch(r"/review/\d+/diagrams", path) else BODY_CAP)
                 length = request.headers.get("content-length")
@@ -177,6 +186,8 @@ def create_app() -> FastAPI:
     app.include_router(audit.router)
     from app import models_admin
     app.include_router(models_admin.router)
+    if mcp_app:
+        app.mount("/mcp", mcp_app)
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
     oauth = OAuth()
     app.state.oauth = oauth
