@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 24
 intent: intent/2026-10-13-24-recall-gate-top20.md
 ---
