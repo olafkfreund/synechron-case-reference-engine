@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 222
 spec: spec/2026-10-13-222-complete-cases.md
 ---
