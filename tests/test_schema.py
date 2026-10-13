@@ -214,3 +214,17 @@ def test_diagrams_hidden_from_llm_schema():
     assert "diagrams" not in json.dumps(llm_schema())
     old = {"title": {"value": "T"}}  # data saved before #200 has no diagrams key
     assert ReferenceCase.model_validate(old).diagrams == []
+
+
+def test_points_keep_every_distinct_item_and_stay_hidden():
+    from app.schema import MAX_POINTS, Extraction, Item, assemble
+    its = [Item(field="challenge", value=v, quote=v) for v in ("Slow  intake", "slow intake", "Manual triage")]
+    its += [Item(field="solution", value=f"s{i}", quote=f"s{i}") for i in range(MAX_POINTS + 3)]
+    c, _ = assemble(Extraction(items=its))
+    assert c.challenge.value == "Slow  intake"  # headline: first wins
+    assert [p.value for p in c.points["challenge"]] == ["Slow  intake", "Manual triage"]
+    assert len(c.points["solution"]) == MAX_POINTS
+    assert "Manual triage" in c.quotes() and "Manual triage" in c.search_text()
+    assert "points" not in json.dumps(llm_schema())
+    assert ReferenceCase.model_validate({"title": {"value": "T"}}).points == {}
+    assert ReferenceCase.model_validate(c.model_dump()).points == c.points

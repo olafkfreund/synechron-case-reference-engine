@@ -111,6 +111,8 @@ class ReferenceCase(_Model):
     capabilities: list[Sourced[str]] = []
     tech_stack: list[Sourced[str]] = []
     outcomes: list[Outcome] = []
+    # every point the document makes per POINT_FIELDS field, beyond the one-line headline above
+    points: SkipJsonSchema[dict[str, list[Sourced[str]]]] = {}
     duration_months: Sourced[int] = Sourced[int]()
     team_size: Sourced[int] = Sourced[int]()
     period: Period = Period()
@@ -136,6 +138,7 @@ class ReferenceCase(_Model):
         items = [self.title, self.client_mention, self.industry, self.region, self.engagement_type,
                  self.challenge, self.solution, self.implementation, self.configuration,
                  self.lessons_learned, *self.capabilities, *self.tech_stack,
+                 *(p for ps in self.points.values() for p in ps),
                  self.duration_months, self.team_size, *self.outcomes, self.period]
         # an unsourced quote must not vouch for summary numbers
         return [i.source_quote for i in items if i.source_quote and not i.unsourced]
@@ -150,6 +153,7 @@ class ReferenceCase(_Model):
                  self.engagement_type.value, self.challenge.value, self.solution.value,
                  self.implementation.value, self.configuration.value, self.lessons_learned.value,
                  *(c.value for c in self.capabilities), *(t.value for t in self.tech_stack),
+                 *(p.value for ps in self.points.values() for p in ps),
                  *(f"{o.metric} {o.value}" for o in self.outcomes), self.summary]
         return " ".join(p for p in parts if p)
 
@@ -187,6 +191,8 @@ class Extraction(_Model):
 
 _TEXTS = ("title", "client_mention", "industry", "region", "engagement_type", "challenge", "solution",
           "implementation", "configuration", "lessons_learned")
+POINT_FIELDS = ("challenge", "solution", "implementation", "configuration")
+MAX_POINTS = 12
 _INTS = ("duration_months", "team_size")
 MAX_INT_CHARS = 12  # "1,000,000" fits; a longer run is a runaway reply, not a count (#131)
 FIELDS = (*_TEXTS, *_INTS, "period_start", "period_end", "capability", "technology", "outcome", "organisation")
@@ -210,6 +216,9 @@ def assemble(x: Extraction) -> tuple[ReferenceCase, list[str]]:
         elif f in _TEXTS:
             if not getattr(c, f).value:
                 setattr(c, f, Sourced[str](value=v, source_quote=q))
+            pts = c.points.setdefault(f, []) if f in POINT_FIELDS else None
+            if pts is not None and len(pts) < MAX_POINTS and _norm(v) not in {_norm(p.value) for p in pts}:
+                pts.append(Sourced[str](value=v, source_quote=q))
         elif f in ("period_start", "period_end"):
             if getattr(period, f[7:]) is None:
                 setattr(period, f[7:], v)
