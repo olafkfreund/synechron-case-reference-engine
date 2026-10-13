@@ -80,21 +80,20 @@ from general knowledge (#198). "More text" must not break that rule.
 - Existing approved cases keep working, and re-extraction must not wipe a
   reviewer's edits (#198 `by_reviewer`).
 
-## Open questions
+## Decisions (2026-10-13)
 
-1. **How "more text" stays sourced.** Option (a): extract more sourced points
-   per section and join them into paragraphs. Option (b): add a second
-   "write-up" pass that turns only approved, sourced facts into
-   customer-ready prose, which the reviewer edits and approves. (b) reads
-   better; (a) is simpler to check. The spec chooses, unless you have a
-   preference.
-2. **Standalone, add-on, or both.** Is the standalone case study a new Word
-   template from marketing (#15), or our generated layout until theirs
-   arrives?
-3. **Presale documents.** 9 of the 11 documents were skipped by design:
-   unsigned contracts and proposals are not delivery evidence. Is this work
-   only about the cases that pass triage, or should proposals also become a
-   different, clearly labelled "capability" document?
-4. **Which model counts.** Is the local model's quality the target, or is
-   Bedrock the target and the local trial only a smoke test? This decides how
-   much to tune prompts for `qwen3:14b`.
+1. **More text: both.** Extraction gathers more sourced points per section,
+   and a second "write-up" pass turns only those quoted facts into
+   customer-ready paragraphs. The write-up adds no new facts: its numbers and
+   named things must appear in the quotes. A reviewer edits and approves the
+   prose, and the quoted points stay visible next to it.
+2. **Output: both.** A standalone, multi-page case study (cover, sections,
+   diagrams, references) and an add-on section for bid documents. We use our
+   own generated layout until marketing's template (#15) arrives.
+3. **Presale documents: separate capability documents,** tracked in #213 so
+   that this issue stays on cases that pass triage. Triage is unchanged here.
+4. **Model: local must be good.** Prompts and limits are tuned so that local
+   Ollama gives presentable cases on the 11 trial documents. The spec decides
+   between `qwen3:14b` and a larger local model (for example `qwen3.8:27b`),
+   and how to fit long documents into the local context window. Bedrock
+   must work at least as well.
