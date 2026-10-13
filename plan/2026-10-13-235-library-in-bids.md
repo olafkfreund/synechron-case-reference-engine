@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 235
 spec: spec/2026-10-13-235-library-in-bids.md
 ---
