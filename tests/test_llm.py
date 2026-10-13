@@ -305,3 +305,18 @@ def test_page_chars_still_fits_with_the_longer_cue(monkeypatch):
     monkeypatch.setenv("DRAFT_MODEL", LOCAL)
     monkeypatch.setenv("DRAFT_MODEL_OPTIONS", json.dumps({"num_ctx": 24576}))
     assert research.page_chars() > 500
+
+
+def test_example_values_are_type_labels_never_literal_answers():
+    def leaves(o):
+        if isinstance(o, dict):
+            return [x for v in o.values() for x in leaves(v)]
+        return [x for v in o for x in leaves(v)] if isinstance(o, list) else [o]
+    for m in all_models():
+        s = llm.llm_schema(m)
+        vals = leaves(llm._example(s))
+        assert all(isinstance(v, str) and v.startswith("<") and v.endswith(">") for v in vals), m.__name__
+    from app.ingest import Triage
+    text = json.dumps(llm._example(llm.llm_schema(Triage)))
+    assert text.count("true") == text.count("false") == text.count("<true or false>")  # no bare boolean literal
+    assert ": true" not in text and ": false" not in text and ": 0" not in text

@@ -94,14 +94,14 @@ def _schema_echo(text: str, schema: dict) -> bool:
 
 
 def _example(schema: dict) -> object:
-    """A placeholder instance of the schema, deterministic: "…", 0, false, one array item, first enum value."""
+    """The schema's shape with a type label for every value, so none reads as a default answer (#245). Deterministic."""
     defs = schema.get("$defs", {})
 
     def build(n):
         if "$ref" in n:
             return build(defs[n["$ref"].rsplit("/", 1)[-1]])
         if "enum" in n:
-            return n["enum"][0]
+            return "<one of: " + " | ".join(str(v) for v in n["enum"]) + ">"
         for k in ("anyOf", "oneOf"):
             if k in n:
                 return build(next((b for b in n[k] if b.get("type") != "null"), n[k][0]))
@@ -110,14 +110,14 @@ def _example(schema: dict) -> object:
             return {k: build(v) for k, v in n.get("properties", {}).items()}
         if t == "array":
             return [build(n.get("items", {}))]
-        return {"string": "…", "integer": 0, "number": 0, "boolean": False}.get(t, "…")
+        return {"string": "<string>", "integer": "<number>", "number": "<number>", "boolean": "<true or false>"}.get(t, "<string>")
     return build(schema)
 
 
 def json_cue(schema: dict) -> str:
     return ("\n\nReply with one JSON object that follows this JSON Schema. The schema describes the format; do not repeat it."
             f"\nSchema: {json.dumps(schema)}"
-            f"\nExample of the shape (values are placeholders): {json.dumps(_example(schema), ensure_ascii=False)}")
+            f"\nExample of the shape (each value shows its type, not an answer): {json.dumps(_example(schema), ensure_ascii=False)}")
 
 
 def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: type[M], *, data_class: str) -> M:
