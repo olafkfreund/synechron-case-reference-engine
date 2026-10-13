@@ -3,16 +3,43 @@
 {% macro basis(x) %}<span class="badge neutral">{{ "Engagement (contracted scope)" if x == "engagement" else "Delivered case" }}</span>{% endmacro %}
 {% block body %}
 <div class="page-head"><div><h1>Find reference cases</h1><p>Paste the bid requirement; narrow by industry, region or technology if you like.</p></div></div>
+{% macro pick(id, label, name, cur, opts) %}<div class="field"><label for="{{ id }}">{{ label }}</label>
+<select id="{{ id }}" name="{{ name }}"><option value="">Any</option>{% if cur and cur not in opts | map("first") | list %}<option value="{{ cur }}" selected>{{ cur }} (filtered)</option>{% endif %}{% for v, n in opts %}<option value="{{ v }}"{{ " selected" if v == cur }}>{{ v }} ({{ n }})</option>{% endfor %}</select></div>{% endmacro %}
+<form method="get" action="/search" class="section-card" aria-label="Filter cases">
+<div class="row filters">
+{{ pick("f-industry", "Industry", "industry", f.industry, facets.industry) }}
+{{ pick("f-region", "Region", "region", f.region, facets.region) }}
+{{ pick("f-tech", "Technology", "tech", f.tech, facets.tech) }}
+<div class="field"><label for="f-kind">Kind</label>
+<select id="f-kind" name="kind">{% for v, t in [("", "Any"), ("delivered", "Delivered case"), ("engagement", "Engagement")] %}<option value="{{ v }}"{{ " selected" if v == kind }}>{{ t }}</option>{% endfor %}</select></div>
+<div class="field"><label for="f-sort">Sort</label>
+<select id="f-sort" name="sort">{% for v, t in [("newest", "Newest"), ("title", "Title"), ("industry", "Industry")] %}<option value="{{ v }}"{{ " selected" if v == sort }}>{{ t }}</option>{% endfor %}</select></div>
+<button class="btn">Filter</button></div></form>
 <form method="post" action="/search" class="section-card">
 <div class="field"><label for="bid_text">Bid context</label>
 <textarea id="bid_text" name="bid_text" rows="5" placeholder="Paste the bid requirement">{{ bid_text }}</textarea></div>
-<div class="row filters">
-<div class="field"><label for="f-industry">Industry</label><input type="text" id="f-industry" name="industry" value="{{ f.industry }}"></div>
-<div class="field"><label for="f-region">Region</label><input type="text" id="f-region" name="region" value="{{ f.region }}"></div>
-<div class="field"><label for="f-tech">Technology</label><input type="text" id="f-tech" name="tech" value="{{ f.tech }}"></div>
-<button class="btn primary">Search</button></div></form>
+<input type="hidden" name="industry" value="{{ f.industry }}"><input type="hidden" name="region" value="{{ f.region }}"><input type="hidden" name="tech" value="{{ f.tech }}"><input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="sort" value="{{ sort }}">
+<div class="row"><button class="btn primary">Search with bid text</button></div></form>
 {% for n in notes %}<div class="note">{{ n }}</div>{% endfor %}
 {% if ran and not top %}<div class="empty-state">{{ icon("search") }}<p><b>No matching approved cases</b></p><p>Try a broader bid context or remove a filter.</p></div>{% endif %}
+{% if not ran and not rows %}<div class="empty-state">{{ icon("search") }}<p><b>No approved cases match these filters</b></p></div>{% endif %}
+{% for r in rows %}
+<article class="section-card stack result">
+<div class="meta"><span class="avatar" aria-hidden="true">{{ icon("building") }}</span>
+<div class="who"><h3 style="display:inline">{{ r.title }}</h3><span>{{ r.label }}</span></div>{{ basis(r.basis) }}</div>
+<p class="muted" style="margin:0">{{ [r.industry, r.region] | select | join(" · ") }}{% if r.approved_at %} &middot; Approved {{ r.approved_at.strftime("%Y-%m-%d") }}{% endif %}</p>
+{% if r.tech %}<div class="row">{% for t in r.tech %}<span class="badge neutral">{{ t }}</span>{% endfor %}</div>{% endif %}
+<div class="action-row">
+{% with ids=[r.id], what="Download this case" %}<form method="post" action="/generate" class="generate">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}
+<button class="btn" formaction="/preview" aria-label="Preview {{ r.title }}">Preview</button>
+<button class="btn primary word" name="format" value="docx" aria-label="Download {{ r.title }} as Word">Download Word</button>
+<details class="mini"><summary class="btn-sm" aria-label="Other formats for {{ r.title }}">Other formats</summary>
+<div class="row" style="padding-bottom:4px"><button class="btn dark" name="format" value="pptx">{{ what }} (PowerPoint)</button> <button class="btn dark" name="format" value="pdf_docx">{{ what }} (PDF)</button> <button class="btn dark" name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button class="btn dark" name="format" value="md">{{ what }} (Markdown)</button></div></details></form>{% endwith %}</div>
+</article>
+{% endfor %}
+{% if not ran and (pageno > 1 or full) %}{% macro pg(n) %}{{ {"industry": f.industry, "region": f.region, "tech": f.tech, "kind": kind, "sort": sort, "page": n} | urlencode }}{% endmacro %}
+<nav class="row" aria-label="Pages">{% if pageno > 1 %}<a class="btn" href="/search?{{ pg(pageno - 1) }}">Previous</a>{% endif %}
+<span class="muted">Page {{ pageno }}</span>{% if full %}<a class="btn" href="/search?{{ pg(pageno + 1) }}">Next</a>{% endif %}</nav>{% endif %}
 {% for p in top %}
 <article class="section-card stack result">
 <div class="meta"><span class="avatar" aria-hidden="true">{{ icon("building") }}</span>
