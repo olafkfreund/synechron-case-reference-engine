@@ -228,6 +228,12 @@ Line numbers are from the #212 phase B code (PR #223, at
 - Step 4: `case_approval_overrides` is append-only for the app role
   (`sql/roles.sql` revokes update and delete), like the other audit tables.
   It has its own test.
+- Step 6:
+  - `basis_reason` is coalesced to '', and the redirect carries `total` as
+    well as `queued` ("N of M").
+  - CSRF is covered by the existing origin-check middleware for every POST.
+- Step 7: the hand check in the demo (cases 16 and 17 show a score; the
+  re-extract count) is done after merge by the session, on the rebuilt demo.
 
 ## Tests
 

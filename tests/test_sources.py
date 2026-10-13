@@ -232,3 +232,54 @@ def test_crawl_now_shown_only_on_enabled_sources(env):  # noqa: F811
     finally:
         with db.connect() as c:
             c.execute("delete from sources where id = any(%s)", ([on, off],))
+
+
+def _old_case(c, did, status="extracted", version=None):
+    data = ReferenceCase(title=Sourced[str](value="T"), **({"extraction_version": version} if version else {})).model_dump_json()
+    if version is None:  # a row stored before the stamp existed
+        import json
+        data = json.dumps({k: v for k, v in json.loads(data).items() if k != "extraction_version"})
+    return c.execute("insert into cases(document_id, status, data) values (%s,%s,%s) returning id", (did, status, data)).fetchone()[0]
+
+
+def test_reextract_queues_only_older_live_unqueued_cases(env):  # noqa: F811
+    db.init()
+    with db.connect() as c:
+        sid = _src(c, False)
+        old, rejected, gone, queued, current = (_doc(c, sid, "contract") for _ in range(5))
+        _old_case(c, old)
+        _old_case(c, rejected, "rejected")
+        c.execute("update documents set deleted_at=now() where id=%s", (gone,))
+        _old_case(c, gone)
+        _old_case(c, queued)
+        _job(c, queued)
+        _old_case(c, current, version=2)
+        c.execute("insert into cases(document_id, member_count, status, data) values (null, 2, 'extracted', %s)",
+                  (ReferenceCase(title=Sourced[str](value="M")).model_dump_json(),))  # a merged parent, no version
+    try:
+        assert client([REV]).post("/admin/reextract").status_code == 403
+        r = client([ADMIN]).post("/admin/reextract", follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"].startswith("/admin/sources?notice=reextract&queued=1&total=1")
+        with db.connect() as c:
+            assert [p["document_id"] for (p,) in _jobs(c, sid) if p.get("basis") == "delivered"] == [old]
+        page = client([ADMIN]).get(r.headers["location"]).text
+        assert "1 of 1" in page and "Older cases queued" in page
+        again = client([ADMIN]).post("/admin/reextract", follow_redirects=False)
+        assert "queued=0" in again.headers["location"]  # the job just queued blocks a duplicate
+    finally:
+        _clean(sid)
+        with db.connect() as c:
+            c.execute("delete from cases where document_id is null and member_count=2 and status='extracted'")
+
+
+def test_reextract_is_capped_per_click(env):  # noqa: F811
+    db.init()
+    with db.connect() as c:
+        sid = _src(c, False)
+        for _ in range(26):
+            _old_case(c, _doc(c, sid, "contract"))
+    try:
+        r = client([ADMIN]).post("/admin/reextract", follow_redirects=False)
+        assert "queued=25&total=26" in r.headers["location"]
+    finally:
+        _clean(sid)
