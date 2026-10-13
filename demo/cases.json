@@ -111,17 +111,33 @@
    "file": "contoso-claims-intake.docx",
    "paragraphs": [
     "Contoso claims intake project.",
-    "Contoso engaged us for its claims intake project.",
-    "Contoso operates in the insurance sector.",
-    "The programme was run for the UK market.",
-    "The old claims intake process was slow and relied on manual work.",
-    "We rebuilt the claims intake service as a modern, tested platform.",
-    "The work was delivered over 14 months.",
-    "The team had 9 engineers.",
-    "The stack used Kafka and PostgreSQL in production.",
-    "Our work covered event streaming for Contoso.",
-    "Our work covered api design for Contoso.",
-    "The new platform cut claim handling time by 38 percent."
+    "Contoso engaged us for its claims intake project. Contoso is a mid sized general insurer that sells motor and home policies to customers in the UK, and its claims team handles every claim in house.",
+    "Before the project, Contoso received claims by email, telephone and a paper form, and each channel was keyed into the policy system by hand.",
+    "Handling a simple claim took 11 days on average, and the claims team spent most of its time re-entering data rather than assessing cases.",
+    "Peak weeks after storms produced a backlog of about 4,000 open claims, and customers had no way to see the status of their claim.",
+    "Regulators expected faster first responses, so Contoso set a goal of acknowledging every claim within one working day.",
+    "Photographs and repair estimates were attached to emails that were not linked to any claim record, and documents were sometimes lost.",
+    "The scope was a single claims intake service that accepts claims from the web, the mobile app and the call centre, and creates one claim record for each.",
+    "Deliverables were an intake API, an event stream that publishes every claim change, a document store linked to the claim, and a status page for customers.",
+    "The service validates each claim against the policy at the moment it is submitted and routes simple claims to automatic acceptance.",
+    "Contoso adjusters receive a single work queue that ranks claims by severity and age, replacing the three separate mailboxes used before.",
+    "The policy administration system stayed as it was and is reached only through its existing interface, so it was outside the scope.",
+    "The work was delivered in three phases over 14 months: discovery and design, a pilot with the motor claims team, and a staged rollout to all claim types.",
+    "The team had 9 engineers, a product owner from Contoso, and two claims specialists who joined the weekly reviews.",
+    "The programme ran from January 2023 to February 2024, with the pilot live in June 2023 and the last claim type moved in February 2024.",
+    "Each phase ended with a demonstration to the claims leadership, and releases were made every two weeks behind feature flags.",
+    "Old and new intake ran side by side during the pilot, so adjusters could fall back to the old mailboxes without losing a claim.",
+    "Kafka carries the claim events, with one topic for each claim type and a retention of 30 days so that downstream systems can replay them.",
+    "PostgreSQL holds the claim records, and the document store keeps attachments in encrypted object storage linked by claim number.",
+    "The intake API sits behind an API gateway that enforces OAuth 2.0 tokens and a rate limit for each channel.",
+    "The integration with the policy system uses its existing SOAP interface, wrapped in a small adapter so the rest of the platform sees plain events.",
+    "Notifications to customers are sent by email and text message when a claim is received, assigned and settled.",
+    "The intake API is described in an OpenAPI 3.0 specification that the channel teams used to build against.",
+    "Average handling time for a simple claim fell from 11 days to 4 days, a reduction of 64 percent.",
+    "More than 70 percent of motor claims are now accepted automatically, and the open claim backlog fell to about 600 after the next storm season.",
+    "Customers now receive an acknowledgement within one working day for all claims, and the status page is used in 82 percent of follow up contacts.",
+    "Running the old and new intake side by side during the pilot gave adjusters the confidence to move, and the team would do the same again.",
+    "Agreeing the event names with the claims team early saved rework, whereas the policy system adapter took longer than planned."
    ],
    "case": {
     "title": {
@@ -130,83 +146,262 @@
     },
     "client_mention": {
      "value": "Contoso",
-     "source_quote": "Contoso engaged us for its claims intake project."
+     "source_quote": "Contoso engaged us for its claims intake project. Contoso is a mid sized general insurer that sells motor and home policies to customers in the UK, and its claims team handles every claim in house."
     },
     "industry": {
      "value": "Insurance",
-     "source_quote": "Contoso operates in the insurance sector."
+     "source_quote": "Contoso engaged us for its claims intake project. Contoso is a mid sized general insurer that sells motor and home policies to customers in the UK, and its claims team handles every claim in house."
     },
     "region": {
      "value": "UK",
-     "source_quote": "The programme was run for the UK market."
+     "source_quote": "Contoso engaged us for its claims intake project. Contoso is a mid sized general insurer that sells motor and home policies to customers in the UK, and its claims team handles every claim in house."
     },
     "engagement_type": {},
     "challenge": {
-     "value": "Manual, slow claims intake process",
-     "source_quote": "The old claims intake process was slow and relied on manual work."
+     "value": "Claims keyed by hand from email, telephone and paper",
+     "source_quote": "Before the project, Contoso received claims by email, telephone and a paper form, and each channel was keyed into the policy system by hand."
     },
     "solution": {
-     "value": "Rebuilt claims intake as a tested platform",
-     "source_quote": "We rebuilt the claims intake service as a modern, tested platform."
+     "value": "One claims intake service for all channels",
+     "source_quote": "The scope was a single claims intake service that accepts claims from the web, the mobile app and the call centre, and creates one claim record for each."
+    },
+    "implementation": {
+     "value": "Three phases over 14 months",
+     "source_quote": "The work was delivered in three phases over 14 months: discovery and design, a pilot with the motor claims team, and a staged rollout to all claim types."
+    },
+    "configuration": {
+     "value": "Kafka topics for each claim type",
+     "source_quote": "Kafka carries the claim events, with one topic for each claim type and a retention of 30 days so that downstream systems can replay them."
+    },
+    "lessons_learned": {
+     "value": "Run old and new intake side by side and agree event names early",
+     "source_quote": "Running the old and new intake side by side during the pilot gave adjusters the confidence to move, and the team would do the same again."
     },
     "capabilities": [
      {
       "value": "Event streaming",
-      "source_quote": "Our work covered event streaming for Contoso."
+      "source_quote": "Kafka carries the claim events, with one topic for each claim type and a retention of 30 days so that downstream systems can replay them."
      },
      {
       "value": "API design",
-      "source_quote": "Our work covered api design for Contoso."
+      "source_quote": "The intake API is described in an OpenAPI 3.0 specification that the channel teams used to build against."
+     },
+     {
+      "value": "Claims workflow automation",
+      "source_quote": "The service validates each claim against the policy at the moment it is submitted and routes simple claims to automatic acceptance."
      }
     ],
     "tech_stack": [
      {
       "value": "Kafka",
-      "source_quote": "The stack used Kafka and PostgreSQL in production."
+      "source_quote": "Kafka carries the claim events, with one topic for each claim type and a retention of 30 days so that downstream systems can replay them."
      },
      {
       "value": "PostgreSQL",
-      "source_quote": "The stack used Kafka and PostgreSQL in production."
+      "source_quote": "PostgreSQL holds the claim records, and the document store keeps attachments in encrypted object storage linked by claim number."
+     },
+     {
+      "value": "API gateway",
+      "source_quote": "The intake API sits behind an API gateway that enforces OAuth 2.0 tokens and a rate limit for each channel."
+     }
+    ],
+    "tech_references": [
+     {
+      "value": "OAuth 2.0",
+      "source_quote": "The intake API sits behind an API gateway that enforces OAuth 2.0 tokens and a rate limit for each channel."
+     },
+     {
+      "value": "SOAP",
+      "source_quote": "The integration with the policy system uses its existing SOAP interface, wrapped in a small adapter so the rest of the platform sees plain events."
+     },
+     {
+      "value": "OpenAPI 3.0",
+      "source_quote": "The intake API is described in an OpenAPI 3.0 specification that the channel teams used to build against."
      }
     ],
     "outcomes": [
      {
-      "metric": "claim handling time",
-      "value": "cut claim handling time by 38 percent",
-      "source_quote": "The new platform cut claim handling time by 38 percent."
+      "metric": "simple claim handling time",
+      "value": "fell from 11 days to 4 days",
+      "source_quote": "Average handling time for a simple claim fell from 11 days to 4 days, a reduction of 64 percent."
+     },
+     {
+      "metric": "automatic acceptance of motor claims",
+      "value": "more than 70 percent",
+      "source_quote": "More than 70 percent of motor claims are now accepted automatically, and the open claim backlog fell to about 600 after the next storm season."
+     },
+     {
+      "metric": "status page use in follow up contacts",
+      "value": "82 percent",
+      "source_quote": "Customers now receive an acknowledgement within one working day for all claims, and the status page is used in 82 percent of follow up contacts."
      }
     ],
+    "points": {
+     "challenge": [
+      {
+       "value": "Claims keyed by hand from email, telephone and paper",
+       "source_quote": "Before the project, Contoso received claims by email, telephone and a paper form, and each channel was keyed into the policy system by hand."
+      },
+      {
+       "value": "Simple claims took 11 days",
+       "source_quote": "Handling a simple claim took 11 days on average, and the claims team spent most of its time re-entering data rather than assessing cases."
+      },
+      {
+       "value": "Backlog of about 4,000 open claims after storms",
+       "source_quote": "Peak weeks after storms produced a backlog of about 4,000 open claims, and customers had no way to see the status of their claim."
+      },
+      {
+       "value": "Regulators expected faster first responses",
+       "source_quote": "Regulators expected faster first responses, so Contoso set a goal of acknowledging every claim within one working day."
+      },
+      {
+       "value": "Documents not linked to claim records",
+       "source_quote": "Photographs and repair estimates were attached to emails that were not linked to any claim record, and documents were sometimes lost."
+      }
+     ],
+     "solution": [
+      {
+       "value": "One claims intake service for all channels",
+       "source_quote": "The scope was a single claims intake service that accepts claims from the web, the mobile app and the call centre, and creates one claim record for each."
+      },
+      {
+       "value": "Intake API, event stream, document store and status page",
+       "source_quote": "Deliverables were an intake API, an event stream that publishes every claim change, a document store linked to the claim, and a status page for customers."
+      },
+      {
+       "value": "Validation against the policy and automatic acceptance",
+       "source_quote": "The service validates each claim against the policy at the moment it is submitted and routes simple claims to automatic acceptance."
+      },
+      {
+       "value": "Single ranked work queue for adjusters",
+       "source_quote": "Contoso adjusters receive a single work queue that ranks claims by severity and age, replacing the three separate mailboxes used before."
+      },
+      {
+       "value": "Policy system left unchanged",
+       "source_quote": "The policy administration system stayed as it was and is reached only through its existing interface, so it was outside the scope."
+      }
+     ],
+     "implementation": [
+      {
+       "value": "Three phases over 14 months",
+       "source_quote": "The work was delivered in three phases over 14 months: discovery and design, a pilot with the motor claims team, and a staged rollout to all claim types."
+      },
+      {
+       "value": "Team of 9 engineers with Contoso product owner",
+       "source_quote": "The team had 9 engineers, a product owner from Contoso, and two claims specialists who joined the weekly reviews."
+      },
+      {
+       "value": "January 2023 to February 2024 with a pilot in June 2023",
+       "source_quote": "The programme ran from January 2023 to February 2024, with the pilot live in June 2023 and the last claim type moved in February 2024."
+      },
+      {
+       "value": "Demonstrations at each phase and fortnightly releases",
+       "source_quote": "Each phase ended with a demonstration to the claims leadership, and releases were made every two weeks behind feature flags."
+      },
+      {
+       "value": "Old and new intake in parallel during the pilot",
+       "source_quote": "Old and new intake ran side by side during the pilot, so adjusters could fall back to the old mailboxes without losing a claim."
+      }
+     ],
+     "configuration": [
+      {
+       "value": "Kafka topics for each claim type",
+       "source_quote": "Kafka carries the claim events, with one topic for each claim type and a retention of 30 days so that downstream systems can replay them."
+      },
+      {
+       "value": "PostgreSQL and encrypted document store",
+       "source_quote": "PostgreSQL holds the claim records, and the document store keeps attachments in encrypted object storage linked by claim number."
+      },
+      {
+       "value": "API gateway with OAuth 2.0 and rate limits",
+       "source_quote": "The intake API sits behind an API gateway that enforces OAuth 2.0 tokens and a rate limit for each channel."
+      },
+      {
+       "value": "SOAP adapter for the policy system",
+       "source_quote": "The integration with the policy system uses its existing SOAP interface, wrapped in a small adapter so the rest of the platform sees plain events."
+      },
+      {
+       "value": "Customer notifications by email and text",
+       "source_quote": "Notifications to customers are sent by email and text message when a claim is received, assigned and settled."
+      }
+     ]
+    },
+    "prose": {
+     "challenge": {
+      "text": "Contoso received claims by email, telephone and a paper form, and each channel was keyed into the policy system by hand. A simple claim took 11 days on average, and the claims team spent most of its time re-entering data rather than assessing cases. Peak weeks after storms produced a backlog of about 4,000 open claims, and customers had no way to see the status of their claim. Regulators expected faster first responses, so Contoso set a goal of acknowledging every claim within one working day. Photographs and repair estimates were attached to emails that were not linked to any claim record, and documents were sometimes lost.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "solution": {
+      "text": "The scope was a single claims intake service that accepts claims from the web, the mobile app and the call centre, and creates one claim record for each. Deliverables were an intake API, an event stream that publishes every claim change, a document store linked to the claim, and a status page for customers. The service validates each claim against the policy when it is submitted and routes simple claims to automatic acceptance. Contoso adjusters receive a single work queue that ranks claims by severity and age. The policy administration system stayed as it was and was outside the scope.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "implementation": {
+      "text": "The work was delivered in three phases over 14 months: discovery and design, a pilot with the motor claims team, and a staged rollout to all claim types. The team had 9 engineers, a product owner from Contoso, and two claims specialists who joined the weekly reviews. The programme ran from January 2023 to February 2024, with the pilot live in June 2023. Each phase ended with a demonstration to the claims leadership, and releases were made every two weeks. Old and new intake ran side by side during the pilot, so adjusters could fall back to the old mailboxes.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "configuration": {
+      "text": "Kafka carries the claim events, with one topic for each claim type and a retention of 30 days so that downstream systems can replay them. PostgreSQL holds the claim records, and the document store keeps attachments in encrypted object storage linked by claim number. The intake API sits behind an API gateway that enforces OAuth 2.0 tokens and a rate limit for each channel. The integration with the policy system uses its existing SOAP interface, wrapped in a small adapter. Customers are notified by email and text message when a claim is received, assigned and settled.",
+      "by_reviewer": true,
+      "flags": []
+     }
+    },
     "duration_months": {
      "value": 14,
-     "source_quote": "The work was delivered over 14 months."
+     "source_quote": "The work was delivered in three phases over 14 months: discovery and design, a pilot with the motor claims team, and a staged rollout to all claim types."
     },
     "team_size": {
      "value": 9,
-     "source_quote": "The team had 9 engineers."
+     "source_quote": "The team had 9 engineers, a product owner from Contoso, and two claims specialists who joined the weekly reviews."
     },
-    "summary": "Contoso claims intake project, delivered over 14 months by 9 engineers. The new platform cut claim handling time by 38 percent.",
+    "period": {
+     "start": "2023-01",
+     "end": "2024-02",
+     "source_quote": "The programme ran from January 2023 to February 2024, with the pilot live in June 2023 and the last claim type moved in February 2024."
+    },
+    "summary": "Contoso claims intake project, delivered over 14 months by 9 engineers. Simple claim handling time fell from 11 days to 4 days.",
     "organisations": [
      "Contoso"
     ]
    },
-   "status": "approved"
+   "status": "approved",
+   "diagram": true
   },
   {
    "source": "Demo: Bid library",
    "file": "northwind-stock-forecasting.docx",
    "paragraphs": [
     "Northwind stock forecasting project.",
-    "Northwind engaged us for its stock forecasting project.",
-    "Northwind operates in the retail sector.",
-    "The programme was run for the Germany market.",
-    "The old stock forecasting process was slow and relied on manual work.",
-    "We rebuilt the stock forecasting service as a modern, tested platform.",
-    "The work was delivered over 10 months.",
-    "The team had 6 engineers.",
-    "The stack used Python and Airflow in production.",
-    "Our work covered data engineering for Northwind.",
-    "Our work covered forecasting for Northwind.",
-    "The new platform reduced stock-outs by 22 percent."
+    "Northwind engaged us for its stock forecasting project. Northwind Traders is a retail chain with 120 stores in Germany that sells groceries and household goods.",
+    "Store managers ordered stock from experience and a weekly spreadsheet, so popular items ran out while slow items piled up in the back rooms.",
+    "Fresh products were the hardest case, because Northwind wrote off 9 percent of its fresh stock each year as waste.",
+    "Promotions and local events were not reflected in orders, so a sale could empty a shelf by the second day.",
+    "Head office had no single view of stock across stores and warehouses, and planners reconciled figures by hand every Monday.",
+    "Northwind wanted forecasts for each store and product, refreshed every night, that store managers could trust and override.",
+    "The sponsor was the chief operating officer, who wanted a measurable saving in the first region before the other two regions committed to the new way of working.",
+    "The scope was a demand forecasting service that predicts daily sales for each product in each store for the coming 14 days.",
+    "Deliverables were a feature pipeline that prepares sales, price, weather and calendar data, a set of forecasting models, and an ordering dashboard for store managers.",
+    "The dashboard proposes an order quantity for every product and shows the reasons, such as an upcoming promotion, so managers can accept or change it.",
+    "The service also publishes forecasts to the warehouse planning tool, so replenishment follows the same numbers as store orders.",
+    "Pricing decisions, supplier contracts and the point of sale software were outside the scope of the project.",
+    "Stores were grouped by size and region for the pilot, so that the results could be compared fairly with stores that kept ordering in the old way.",
+    "The project ran in four phases over 10 months: data preparation, model development, a pilot in 12 stores, and a rollout to all stores.",
+    "The team had 7 people, made up of data engineers, data scientists, a front end developer and a delivery lead.",
+    "Work started in March 2023 and the rollout to all stores finished in December 2023, with the pilot running from July to September.",
+    "Forecast accuracy was measured against a hold out period of eight weeks before each phase gate, and store managers joined the pilot reviews.",
+    "Models were retrained every week and compared with the live model before replacing it.",
+    "Nightly sales and stock data lands in Azure storage and is transformed by Spark jobs into one table with a row for each store, product and day.",
+    "The forecasting models are written in Python and use gradient boosted trees, with a separate model for fresh products that is retrained every week.",
+    "Forecasts and order proposals are served by a REST service running on Kubernetes, and the dashboard calls it with OAuth 2.0 tokens issued for each store.",
+    "Weather data comes from a public weather service and the promotion calendar is read from the existing planning tool, both through scheduled imports.",
+    "The API follows the OpenAPI 3.0 specification, and the model results are stored in the MLflow registry together with the data used to train them.",
+    "Forecast error for fresh products fell from 31 percent to 18 percent, measured as weighted absolute error across all stores.",
+    "Fresh stock waste fell from 9 percent to 6 percent of fresh stock, and shelf availability for promoted items rose to 96 percent.",
+    "Planners stopped the Monday reconciliation, which saved about 20 hours of work each week at head office.",
+    "Store managers trusted the forecasts once the dashboard showed the reasons, and the override rate dropped steadily after the pilot.",
+    "Weather data helped less than expected, while the promotion calendar mattered a great deal, so data quality work should start with promotions."
    ],
    "case": {
     "title": {
@@ -215,83 +410,268 @@
     },
     "client_mention": {
      "value": "Northwind",
-     "source_quote": "Northwind engaged us for its stock forecasting project."
+     "source_quote": "Northwind engaged us for its stock forecasting project. Northwind Traders is a retail chain with 120 stores in Germany that sells groceries and household goods."
     },
     "industry": {
      "value": "Retail",
-     "source_quote": "Northwind operates in the retail sector."
+     "source_quote": "Northwind engaged us for its stock forecasting project. Northwind Traders is a retail chain with 120 stores in Germany that sells groceries and household goods."
     },
     "region": {
      "value": "Germany",
-     "source_quote": "The programme was run for the Germany market."
+     "source_quote": "Northwind engaged us for its stock forecasting project. Northwind Traders is a retail chain with 120 stores in Germany that sells groceries and household goods."
     },
     "engagement_type": {},
     "challenge": {
-     "value": "Manual, slow stock forecasting process",
-     "source_quote": "The old stock forecasting process was slow and relied on manual work."
+     "value": "Orders based on experience and a weekly spreadsheet",
+     "source_quote": "Store managers ordered stock from experience and a weekly spreadsheet, so popular items ran out while slow items piled up in the back rooms."
     },
     "solution": {
-     "value": "Rebuilt stock forecasting as a tested platform",
-     "source_quote": "We rebuilt the stock forecasting service as a modern, tested platform."
+     "value": "Daily sales forecast for each product and store for 14 days",
+     "source_quote": "The scope was a demand forecasting service that predicts daily sales for each product in each store for the coming 14 days."
+    },
+    "implementation": {
+     "value": "Four phases over 10 months",
+     "source_quote": "The project ran in four phases over 10 months: data preparation, model development, a pilot in 12 stores, and a rollout to all stores."
+    },
+    "configuration": {
+     "value": "Azure storage and Spark jobs for nightly data",
+     "source_quote": "Nightly sales and stock data lands in Azure storage and is transformed by Spark jobs into one table with a row for each store, product and day."
+    },
+    "lessons_learned": {
+     "value": "Show the reasons behind each proposal and start data quality work with promotions",
+     "source_quote": "Store managers trusted the forecasts once the dashboard showed the reasons, and the override rate dropped steadily after the pilot."
     },
     "capabilities": [
      {
-      "value": "Data engineering",
-      "source_quote": "Our work covered data engineering for Northwind."
+      "value": "Demand forecasting",
+      "source_quote": "The scope was a demand forecasting service that predicts daily sales for each product in each store for the coming 14 days."
      },
      {
-      "value": "Forecasting",
-      "source_quote": "Our work covered forecasting for Northwind."
+      "value": "Data engineering",
+      "source_quote": "Deliverables were a feature pipeline that prepares sales, price, weather and calendar data, a set of forecasting models, and an ordering dashboard for store managers."
+     },
+     {
+      "value": "Decision support dashboards",
+      "source_quote": "The dashboard proposes an order quantity for every product and shows the reasons, such as an upcoming promotion, so managers can accept or change it."
      }
     ],
     "tech_stack": [
      {
-      "value": "Python",
-      "source_quote": "The stack used Python and Airflow in production."
+      "value": "Azure",
+      "source_quote": "Nightly sales and stock data lands in Azure storage and is transformed by Spark jobs into one table with a row for each store, product and day."
      },
      {
-      "value": "Airflow",
-      "source_quote": "The stack used Python and Airflow in production."
+      "value": "Spark",
+      "source_quote": "Nightly sales and stock data lands in Azure storage and is transformed by Spark jobs into one table with a row for each store, product and day."
+     },
+     {
+      "value": "Python",
+      "source_quote": "The forecasting models are written in Python and use gradient boosted trees, with a separate model for fresh products that is retrained every week."
+     },
+     {
+      "value": "Kubernetes",
+      "source_quote": "Forecasts and order proposals are served by a REST service running on Kubernetes, and the dashboard calls it with OAuth 2.0 tokens issued for each store."
+     }
+    ],
+    "tech_references": [
+     {
+      "value": "OAuth 2.0",
+      "source_quote": "Forecasts and order proposals are served by a REST service running on Kubernetes, and the dashboard calls it with OAuth 2.0 tokens issued for each store."
+     },
+     {
+      "value": "OpenAPI 3.0",
+      "source_quote": "The API follows the OpenAPI 3.0 specification, and the model results are stored in the MLflow registry together with the data used to train them."
+     },
+     {
+      "value": "MLflow",
+      "source_quote": "The API follows the OpenAPI 3.0 specification, and the model results are stored in the MLflow registry together with the data used to train them."
      }
     ],
     "outcomes": [
      {
-      "metric": "stock-outs",
-      "value": "reduced stock-outs by 22 percent",
-      "source_quote": "The new platform reduced stock-outs by 22 percent."
+      "metric": "fresh product forecast error",
+      "value": "fell from 31 percent to 18 percent",
+      "source_quote": "Forecast error for fresh products fell from 31 percent to 18 percent, measured as weighted absolute error across all stores."
+     },
+     {
+      "metric": "fresh stock waste",
+      "value": "fell from 9 percent to 6 percent",
+      "source_quote": "Fresh stock waste fell from 9 percent to 6 percent of fresh stock, and shelf availability for promoted items rose to 96 percent."
+     },
+     {
+      "metric": "promoted item availability",
+      "value": "rose to 96 percent",
+      "source_quote": "Fresh stock waste fell from 9 percent to 6 percent of fresh stock, and shelf availability for promoted items rose to 96 percent."
+     },
+     {
+      "metric": "weekly reconciliation effort",
+      "value": "saved about 20 hours each week",
+      "source_quote": "Planners stopped the Monday reconciliation, which saved about 20 hours of work each week at head office."
      }
     ],
+    "points": {
+     "challenge": [
+      {
+       "value": "Orders based on experience and a weekly spreadsheet",
+       "source_quote": "Store managers ordered stock from experience and a weekly spreadsheet, so popular items ran out while slow items piled up in the back rooms."
+      },
+      {
+       "value": "Waste of 9 percent of fresh stock each year",
+       "source_quote": "Fresh products were the hardest case, because Northwind wrote off 9 percent of its fresh stock each year as waste."
+      },
+      {
+       "value": "Promotions not reflected in orders",
+       "source_quote": "Promotions and local events were not reflected in orders, so a sale could empty a shelf by the second day."
+      },
+      {
+       "value": "No single view of stock across stores and warehouses",
+       "source_quote": "Head office had no single view of stock across stores and warehouses, and planners reconciled figures by hand every Monday."
+      },
+      {
+       "value": "Need for trusted nightly forecasts that managers can override",
+       "source_quote": "Northwind wanted forecasts for each store and product, refreshed every night, that store managers could trust and override."
+      }
+     ],
+     "solution": [
+      {
+       "value": "Daily sales forecast for each product and store for 14 days",
+       "source_quote": "The scope was a demand forecasting service that predicts daily sales for each product in each store for the coming 14 days."
+      },
+      {
+       "value": "Feature pipeline, forecasting models and ordering dashboard",
+       "source_quote": "Deliverables were a feature pipeline that prepares sales, price, weather and calendar data, a set of forecasting models, and an ordering dashboard for store managers."
+      },
+      {
+       "value": "Dashboard proposals with reasons",
+       "source_quote": "The dashboard proposes an order quantity for every product and shows the reasons, such as an upcoming promotion, so managers can accept or change it."
+      },
+      {
+       "value": "Forecasts published to the warehouse planning tool",
+       "source_quote": "The service also publishes forecasts to the warehouse planning tool, so replenishment follows the same numbers as store orders."
+      },
+      {
+       "value": "Pricing, contracts and point of sale out of scope",
+       "source_quote": "Pricing decisions, supplier contracts and the point of sale software were outside the scope of the project."
+      }
+     ],
+     "implementation": [
+      {
+       "value": "Four phases over 10 months",
+       "source_quote": "The project ran in four phases over 10 months: data preparation, model development, a pilot in 12 stores, and a rollout to all stores."
+      },
+      {
+       "value": "Team of 7 people",
+       "source_quote": "The team had 7 people, made up of data engineers, data scientists, a front end developer and a delivery lead."
+      },
+      {
+       "value": "March 2023 to December 2023 with a pilot from July",
+       "source_quote": "Work started in March 2023 and the rollout to all stores finished in December 2023, with the pilot running from July to September."
+      },
+      {
+       "value": "Accuracy measured on an eight week hold out period",
+       "source_quote": "Forecast accuracy was measured against a hold out period of eight weeks before each phase gate, and store managers joined the pilot reviews."
+      },
+      {
+       "value": "Weekly retraining with comparison to the live model",
+       "source_quote": "Models were retrained every week and compared with the live model before replacing it."
+      }
+     ],
+     "configuration": [
+      {
+       "value": "Azure storage and Spark jobs for nightly data",
+       "source_quote": "Nightly sales and stock data lands in Azure storage and is transformed by Spark jobs into one table with a row for each store, product and day."
+      },
+      {
+       "value": "Python models with a separate fresh products model",
+       "source_quote": "The forecasting models are written in Python and use gradient boosted trees, with a separate model for fresh products that is retrained every week."
+      },
+      {
+       "value": "REST API on Kubernetes with OAuth 2.0",
+       "source_quote": "Forecasts and order proposals are served by a REST service running on Kubernetes, and the dashboard calls it with OAuth 2.0 tokens issued for each store."
+      },
+      {
+       "value": "Weather and promotion calendar imports",
+       "source_quote": "Weather data comes from a public weather service and the promotion calendar is read from the existing planning tool, both through scheduled imports."
+      }
+     ]
+    },
+    "prose": {
+     "challenge": {
+      "text": "Store managers ordered stock from experience and a weekly spreadsheet, so popular items ran out while slow items piled up in the back rooms. Fresh products were the hardest case, because Northwind wrote off 9 percent of its fresh stock each year as waste. Promotions and local events were not reflected in orders, so a sale could empty a shelf by the second day. Head office had no single view of stock across stores and warehouses, and planners reconciled figures by hand every Monday. Northwind wanted forecasts for each store and product, refreshed every night, that store managers could trust and override.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "solution": {
+      "text": "The scope was a demand forecasting service that predicts daily sales for each product in each store for the coming 14 days. Deliverables were a feature pipeline that prepares sales, price, weather and calendar data, a set of forecasting models, and an ordering dashboard for store managers. The dashboard proposes an order quantity for every product and shows the reasons, such as an upcoming promotion, so managers can accept or change it. The service also publishes forecasts to the warehouse planning tool, so replenishment follows the same numbers as store orders. Pricing decisions, supplier contracts and the point of sale software were outside the scope.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "implementation": {
+      "text": "The project ran in four phases over 10 months: data preparation, model development, a pilot in 12 stores, and a rollout to all stores. The team had 7 people, made up of data engineers, data scientists, a front end developer and a delivery lead. Work started in March 2023 and the rollout finished in December 2023, with the pilot running from July to September. Forecast accuracy was measured against a hold out period of eight weeks before each phase gate, and store managers joined the pilot reviews. Models were retrained every week and compared with the live model before replacing it.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "configuration": {
+      "text": "Nightly sales and stock data lands in Azure storage and is transformed by Spark jobs into one table with a row for each store, product and day. The forecasting models are written in Python and use gradient boosted trees, with a separate model for fresh products that is retrained every week. Forecasts and order proposals are served by a REST service running on Kubernetes, and the dashboard calls it with OAuth 2.0 tokens issued for each store. Weather data comes from a public weather service and the promotion calendar is read from the existing planning tool, both through scheduled imports.",
+      "by_reviewer": true,
+      "flags": []
+     }
+    },
     "duration_months": {
      "value": 10,
-     "source_quote": "The work was delivered over 10 months."
+     "source_quote": "The project ran in four phases over 10 months: data preparation, model development, a pilot in 12 stores, and a rollout to all stores."
     },
     "team_size": {
-     "value": 6,
-     "source_quote": "The team had 6 engineers."
+     "value": 7,
+     "source_quote": "The team had 7 people, made up of data engineers, data scientists, a front end developer and a delivery lead."
     },
-    "summary": "Northwind stock forecasting project, delivered over 10 months by 6 engineers. The new platform reduced stock-outs by 22 percent.",
+    "period": {
+     "start": "2023-03",
+     "end": "2023-12",
+     "source_quote": "Work started in March 2023 and the rollout to all stores finished in December 2023, with the pilot running from July to September."
+    },
+    "summary": "Northwind stock forecasting project, delivered over 10 months by 7 people. Fresh stock waste fell from 9 percent to 6 percent.",
     "organisations": [
      "Northwind"
     ]
    },
-   "status": "approved"
+   "status": "approved",
+   "diagram": true
   },
   {
    "source": "Demo: Delivery archive",
    "file": "woodgrove-payments-gateway.docx",
    "paragraphs": [
     "Woodgrove payments gateway project.",
-    "Woodgrove engaged us for its payments gateway project.",
-    "Woodgrove operates in the banking sector.",
-    "The programme was run for the Netherlands market.",
-    "The old payments gateway process was slow and relied on manual work.",
-    "We rebuilt the payments gateway service as a modern, tested platform.",
-    "The work was delivered over 18 months.",
-    "The team had 12 engineers.",
-    "The stack used Java and Kubernetes in production.",
-    "Our work covered cloud migration for Woodgrove.",
-    "Our work covered payments for Woodgrove.",
-    "The new platform raised payment success rate to 99.4 percent."
+    "Woodgrove engaged us for its payments gateway project. Woodgrove is a retail bank that serves consumers and small businesses in Ireland.",
+    "Woodgrove processed card and account payments through four separate systems, each with its own interface and its own release cycle.",
+    "Adding a new payment scheme took about 9 months because every system had to be changed and tested separately.",
+    "Operations staff could not see the state of a payment end to end, so a customer enquiry meant searching in up to four screens.",
+    "Nightly batch files delayed some payments to the next working day, while customers and businesses expected instant confirmation.",
+    "The old gateway ran on hardware near the end of its support life, which was a risk Woodgrove wanted to close within the year.",
+    "The programme was sponsored by the head of operations and reviewed every month by a steering group that included risk, compliance and technology leaders from the bank.",
+    "The scope was a single payments gateway that receives instructions from digital channels and routes them to the right payment scheme.",
+    "Deliverables were a common payment message model, adapters for SEPA credit transfers and card payments, a rules based router and an operations console.",
+    "Each payment is screened for sanctions and checked for duplicates before it is sent, and the result is kept with the payment.",
+    "The operations console shows every payment on one timeline, with its messages, its status and the person who last touched it.",
+    "Core account ledgers and the card processor were kept as they were, and the gateway connected to them through their existing interfaces.",
+    "The business case was reviewed by the finance and operations directors, who asked for a pilot with measured results before any wider commitment was made.",
+    "Delivery took 16 months in four phases: foundation, credit transfers, card payments and decommissioning of the old systems.",
+    "The team had 14 engineers and testers, with a Woodgrove architect and an operations lead working alongside them.",
+    "The programme started in April 2022 and the last old system was switched off in July 2023.",
+    "Every scheme was first run in shadow mode, where the new gateway processed copies of live payments and its results were compared with the old systems.",
+    "Cut over happened one scheme at a time, by moving a small share of traffic first and then the rest after two quiet weeks.",
+    "The gateway runs as containers on Kubernetes in two data centres, with Kafka carrying payment events between the services.",
+    "Payment state is stored in PostgreSQL with synchronous replication between the centres, so no accepted payment is lost if one centre fails.",
+    "Messages use the ISO 20022 standard internally, and the adapters translate to and from the formats each scheme requires.",
+    "Sanctions screening is provided by a vendor product called through an internal service, and its answer is stored with the payment record.",
+    "Connections to partners use mutual TLS, and customer facing APIs follow the OpenAPI 3.0 specification with OAuth 2.0 authorisation.",
+    "A new payment scheme can now be added in about 6 weeks instead of 9 months.",
+    "Payments are confirmed within 10 seconds at any hour, and the nightly batch delay has been removed.",
+    "Customer enquiries about a payment take 3 minutes to resolve instead of 12, because operations staff use one screen.",
+    "Shadow mode found 31 differences in rounding and timing rules before any customer was affected, which justified its cost.",
+    "Moving traffic in small shares made each cut over a routine event, and the team would keep that approach.",
+    "Requirements were gathered in ride alongs with drivers and in workshops with dispatchers in each region, and the findings were written up as a short list of design rules."
    ],
    "case": {
     "title": {
@@ -300,83 +680,267 @@
     },
     "client_mention": {
      "value": "Woodgrove",
-     "source_quote": "Woodgrove engaged us for its payments gateway project."
+     "source_quote": "Woodgrove engaged us for its payments gateway project. Woodgrove is a retail bank that serves consumers and small businesses in Ireland."
     },
     "industry": {
      "value": "Banking",
-     "source_quote": "Woodgrove operates in the banking sector."
+     "source_quote": "Woodgrove engaged us for its payments gateway project. Woodgrove is a retail bank that serves consumers and small businesses in Ireland."
     },
     "region": {
-     "value": "Netherlands",
-     "source_quote": "The programme was run for the Netherlands market."
+     "value": "Ireland",
+     "source_quote": "Woodgrove engaged us for its payments gateway project. Woodgrove is a retail bank that serves consumers and small businesses in Ireland."
     },
     "engagement_type": {},
     "challenge": {
-     "value": "Manual, slow payments gateway process",
-     "source_quote": "The old payments gateway process was slow and relied on manual work."
+     "value": "Payments split over four systems",
+     "source_quote": "Woodgrove processed card and account payments through four separate systems, each with its own interface and its own release cycle."
     },
     "solution": {
-     "value": "Rebuilt payments gateway as a tested platform",
-     "source_quote": "We rebuilt the payments gateway service as a modern, tested platform."
+     "value": "One gateway routing to each payment scheme",
+     "source_quote": "The scope was a single payments gateway that receives instructions from digital channels and routes them to the right payment scheme."
+    },
+    "implementation": {
+     "value": "Four phases over 16 months",
+     "source_quote": "Delivery took 16 months in four phases: foundation, credit transfers, card payments and decommissioning of the old systems."
+    },
+    "configuration": {
+     "value": "Kubernetes in two data centres with Kafka",
+     "source_quote": "The gateway runs as containers on Kubernetes in two data centres, with Kafka carrying payment events between the services."
+    },
+    "lessons_learned": {
+     "value": "Shadow mode caught rule differences early and small traffic shares made cut over routine",
+     "source_quote": "Shadow mode found 31 differences in rounding and timing rules before any customer was affected, which justified its cost."
     },
     "capabilities": [
      {
-      "value": "Cloud migration",
-      "source_quote": "Our work covered cloud migration for Woodgrove."
+      "value": "Payments modernisation",
+      "source_quote": "The scope was a single payments gateway that receives instructions from digital channels and routes them to the right payment scheme."
      },
      {
-      "value": "Payments",
-      "source_quote": "Our work covered payments for Woodgrove."
+      "value": "Event streaming",
+      "source_quote": "The gateway runs as containers on Kubernetes in two data centres, with Kafka carrying payment events between the services."
+     },
+     {
+      "value": "Operational tooling",
+      "source_quote": "The operations console shows every payment on one timeline, with its messages, its status and the person who last touched it."
      }
     ],
     "tech_stack": [
      {
-      "value": "Java",
-      "source_quote": "The stack used Java and Kubernetes in production."
+      "value": "Kubernetes",
+      "source_quote": "The gateway runs as containers on Kubernetes in two data centres, with Kafka carrying payment events between the services."
      },
      {
-      "value": "Kubernetes",
-      "source_quote": "The stack used Java and Kubernetes in production."
+      "value": "Kafka",
+      "source_quote": "The gateway runs as containers on Kubernetes in two data centres, with Kafka carrying payment events between the services."
+     },
+     {
+      "value": "PostgreSQL",
+      "source_quote": "Payment state is stored in PostgreSQL with synchronous replication between the centres, so no accepted payment is lost if one centre fails."
+     }
+    ],
+    "tech_references": [
+     {
+      "value": "ISO 20022",
+      "source_quote": "Messages use the ISO 20022 standard internally, and the adapters translate to and from the formats each scheme requires."
+     },
+     {
+      "value": "SEPA credit transfers",
+      "source_quote": "Deliverables were a common payment message model, adapters for SEPA credit transfers and card payments, a rules based router and an operations console."
+     },
+     {
+      "value": "mutual TLS",
+      "source_quote": "Connections to partners use mutual TLS, and customer facing APIs follow the OpenAPI 3.0 specification with OAuth 2.0 authorisation."
+     },
+     {
+      "value": "OpenAPI 3.0",
+      "source_quote": "Connections to partners use mutual TLS, and customer facing APIs follow the OpenAPI 3.0 specification with OAuth 2.0 authorisation."
+     },
+     {
+      "value": "OAuth 2.0",
+      "source_quote": "Connections to partners use mutual TLS, and customer facing APIs follow the OpenAPI 3.0 specification with OAuth 2.0 authorisation."
      }
     ],
     "outcomes": [
      {
-      "metric": "payment success rate",
-      "value": "raised payment success rate to 99.4 percent",
-      "source_quote": "The new platform raised payment success rate to 99.4 percent."
+      "metric": "time to add a payment scheme",
+      "value": "about 6 weeks instead of 9 months",
+      "source_quote": "A new payment scheme can now be added in about 6 weeks instead of 9 months."
+     },
+     {
+      "metric": "payment confirmation time",
+      "value": "within 10 seconds at any hour",
+      "source_quote": "Payments are confirmed within 10 seconds at any hour, and the nightly batch delay has been removed."
+     },
+     {
+      "metric": "payment enquiry resolution time",
+      "value": "3 minutes instead of 12",
+      "source_quote": "Customer enquiries about a payment take 3 minutes to resolve instead of 12, because operations staff use one screen."
      }
     ],
+    "points": {
+     "challenge": [
+      {
+       "value": "Payments split over four systems",
+       "source_quote": "Woodgrove processed card and account payments through four separate systems, each with its own interface and its own release cycle."
+      },
+      {
+       "value": "New scheme took about 9 months",
+       "source_quote": "Adding a new payment scheme took about 9 months because every system had to be changed and tested separately."
+      },
+      {
+       "value": "No end to end view of a payment",
+       "source_quote": "Operations staff could not see the state of a payment end to end, so a customer enquiry meant searching in up to four screens."
+      },
+      {
+       "value": "Batch files delayed payments",
+       "source_quote": "Nightly batch files delayed some payments to the next working day, while customers and businesses expected instant confirmation."
+      },
+      {
+       "value": "Hardware near end of support",
+       "source_quote": "The old gateway ran on hardware near the end of its support life, which was a risk Woodgrove wanted to close within the year."
+      }
+     ],
+     "solution": [
+      {
+       "value": "One gateway routing to each payment scheme",
+       "source_quote": "The scope was a single payments gateway that receives instructions from digital channels and routes them to the right payment scheme."
+      },
+      {
+       "value": "Message model, scheme adapters, router and console",
+       "source_quote": "Deliverables were a common payment message model, adapters for SEPA credit transfers and card payments, a rules based router and an operations console."
+      },
+      {
+       "value": "Sanctions screening and duplicate checks",
+       "source_quote": "Each payment is screened for sanctions and checked for duplicates before it is sent, and the result is kept with the payment."
+      },
+      {
+       "value": "One timeline for each payment",
+       "source_quote": "The operations console shows every payment on one timeline, with its messages, its status and the person who last touched it."
+      },
+      {
+       "value": "Ledgers and card processor unchanged",
+       "source_quote": "Core account ledgers and the card processor were kept as they were, and the gateway connected to them through their existing interfaces."
+      }
+     ],
+     "implementation": [
+      {
+       "value": "Four phases over 16 months",
+       "source_quote": "Delivery took 16 months in four phases: foundation, credit transfers, card payments and decommissioning of the old systems."
+      },
+      {
+       "value": "Team of 14 with Woodgrove architect and operations lead",
+       "source_quote": "The team had 14 engineers and testers, with a Woodgrove architect and an operations lead working alongside them."
+      },
+      {
+       "value": "April 2022 to July 2023",
+       "source_quote": "The programme started in April 2022 and the last old system was switched off in July 2023."
+      },
+      {
+       "value": "Shadow mode for every scheme",
+       "source_quote": "Every scheme was first run in shadow mode, where the new gateway processed copies of live payments and its results were compared with the old systems."
+      },
+      {
+       "value": "Cut over one scheme at a time",
+       "source_quote": "Cut over happened one scheme at a time, by moving a small share of traffic first and then the rest after two quiet weeks."
+      }
+     ],
+     "configuration": [
+      {
+       "value": "Kubernetes in two data centres with Kafka",
+       "source_quote": "The gateway runs as containers on Kubernetes in two data centres, with Kafka carrying payment events between the services."
+      },
+      {
+       "value": "PostgreSQL with synchronous replication",
+       "source_quote": "Payment state is stored in PostgreSQL with synchronous replication between the centres, so no accepted payment is lost if one centre fails."
+      },
+      {
+       "value": "ISO 20022 messages with scheme adapters",
+       "source_quote": "Messages use the ISO 20022 standard internally, and the adapters translate to and from the formats each scheme requires."
+      },
+      {
+       "value": "Vendor sanctions screening product",
+       "source_quote": "Sanctions screening is provided by a vendor product called through an internal service, and its answer is stored with the payment record."
+      }
+     ]
+    },
+    "prose": {
+     "challenge": {
+      "text": "Woodgrove processed card and account payments through four separate systems, each with its own interface and its own release cycle. Adding a new payment scheme took about 9 months because every system had to be changed and tested separately. Operations staff could not see the state of a payment end to end, so a customer enquiry meant searching in up to four screens. Nightly batch files delayed some payments to the next working day, while customers and businesses expected instant confirmation. The old gateway ran on hardware near the end of its support life, which was a risk Woodgrove wanted to close within the year.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "solution": {
+      "text": "The scope was a single payments gateway that receives instructions from digital channels and routes them to the right payment scheme. Deliverables were a common payment message model, adapters for SEPA credit transfers and card payments, a rules based router and an operations console. Each payment is screened for sanctions and checked for duplicates before it is sent, and the result is kept with the payment. The operations console shows every payment on one timeline, with its messages, its status and the person who last touched it. Core account ledgers and the card processor were kept as they were.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "implementation": {
+      "text": "Delivery took 16 months in four phases: foundation, credit transfers, card payments and decommissioning of the old systems. The team had 14 engineers and testers, with a Woodgrove architect and an operations lead working alongside them. The programme started in April 2022 and the last old system was switched off in July 2023. Every scheme was first run in shadow mode, where the new gateway processed copies of live payments and its results were compared with the old systems. Cut over happened one scheme at a time, by moving a small share of traffic first and then the rest after two quiet weeks.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "configuration": {
+      "text": "The gateway runs as containers on Kubernetes in two data centres, with Kafka carrying payment events between the services. Payment state is stored in PostgreSQL with synchronous replication between the centres, so no accepted payment is lost if one centre fails. Messages use the ISO 20022 standard internally, and the adapters translate to and from the formats each scheme requires. Sanctions screening is provided by a vendor product called through an internal service, and its answer is stored with the payment record. Connections to partners use mutual TLS.",
+      "by_reviewer": true,
+      "flags": []
+     }
+    },
     "duration_months": {
-     "value": 18,
-     "source_quote": "The work was delivered over 18 months."
+     "value": 16,
+     "source_quote": "Delivery took 16 months in four phases: foundation, credit transfers, card payments and decommissioning of the old systems."
     },
     "team_size": {
-     "value": 12,
-     "source_quote": "The team had 12 engineers."
+     "value": 14,
+     "source_quote": "The team had 14 engineers and testers, with a Woodgrove architect and an operations lead working alongside them."
     },
-    "summary": "Woodgrove payments gateway project, delivered over 18 months by 12 engineers. The new platform raised payment success rate to 99.4 percent.",
+    "period": {
+     "start": "2022-04",
+     "end": "2023-07",
+     "source_quote": "The programme started in April 2022 and the last old system was switched off in July 2023."
+    },
+    "summary": "Woodgrove payments gateway project, delivered over 16 months by 14 engineers and testers. A new payment scheme now takes about 6 weeks instead of 9 months.",
     "organisations": [
      "Woodgrove"
     ]
    },
-   "status": "approved"
+   "status": "approved",
+   "diagram": true
   },
   {
    "source": "Demo: Delivery archive",
    "file": "tailspin-route-planning.docx",
    "paragraphs": [
     "Tailspin route planning project.",
-    "Tailspin engaged us for its route planning project.",
-    "Tailspin operates in the logistics sector.",
-    "The programme was run for the Poland market.",
-    "The old route planning process was slow and relied on manual work.",
-    "We rebuilt the route planning service as a modern, tested platform.",
-    "The work was delivered over 8 months.",
-    "The team had 5 engineers.",
-    "The stack used Go and Redis in production.",
-    "Our work covered optimisation for Tailspin.",
-    "Our work covered api design for Tailspin.",
-    "The new platform saved 1,200 driving hours per month."
+    "Tailspin engaged us for its route planning project. Tailspin is a parcel delivery company with 340 vans that operate in Australia.",
+    "Drivers received a printed list each morning that dispatchers had built by hand, and the routes were rarely the shortest.",
+    "Same day changes, such as a missed delivery or a new pickup, were phoned to the driver and often forgotten.",
+    "Vans drove 18 percent more kilometres than needed, according to an internal study, and fuel was the largest cost after wages.",
+    "Customers were given a delivery window of a whole day, which led to missed deliveries and repeat visits for about 1 parcel in 8.",
+    "Dispatchers worked in three regional offices with three different tools, so spare capacity in one region could not help another.",
+    "Security and resilience requirements were agreed with the risk team at the start, so that the design could be reviewed against them at each phase gate and again before the final cut over.",
+    "The scope was a route planning service that builds the daily routes for every van from the parcels, the time windows and the vehicle limits.",
+    "Deliverables were a planning engine, a driver app with turn by turn navigation, a dispatcher console and a customer tracking page.",
+    "The planner re-optimises during the day when a parcel is added or a van is delayed, and sends the change to the driver app at once.",
+    "Customers choose a two hour delivery window and can follow the van on a map, which replaced the whole day window.",
+    "Vehicle maintenance, payroll and the existing parcel scanning devices remained outside the project.",
+    "A shared list of design rules, kept short and visible to the whole team, helped the developers and the optimisation engineers settle disagreements quickly.",
+    "The project took 11 months in three phases: a planning engine proof, a pilot in one region and a rollout to all three regions.",
+    "The team had 8 people, including two optimisation engineers, three developers, a designer, a tester and a delivery lead.",
+    "Work began in September 2022, the pilot ran from January to April 2023, and the third region went live in July 2023.",
+    "Dispatchers and drivers from the pilot region sat in the team every week and tested each release on real routes.",
+    "Each region went live on a Monday, with the old tool kept read only for two weeks as a reference.",
+    "The planning engine uses the OR-Tools solver library, wrapped in a Python service that scales out on Kubernetes when many routes are planned at once.",
+    "Road distances and travel times come from a map data service, and live traffic is added every five minutes.",
+    "The driver app is built with React and receives updates through push messages, and it keeps working offline in areas without coverage.",
+    "Parcel and vehicle data is read from the existing parcel system through a Kafka topic, and routes are written back to a PostgreSQL database.",
+    "Route geometry is exchanged as GeoJSON, the public API is described in an OpenAPI 3.0 specification, and sign in uses OAuth 2.0.",
+    "Distance driven fell by 14 percent, which cut fuel use by a similar share across the fleet.",
+    "Deliveries made at the first attempt rose from 87 percent to 95 percent.",
+    "Dispatchers needed 35 minutes to plan the morning routes for a region instead of three hours.",
+    "Drivers adopted the app quickly because they helped design it, and the pilot feedback changed the layout of the stop list twice.",
+    "Offline operation should have been designed earlier, as the first pilot builds failed in areas without coverage.",
+    "The steering group asked for the lessons to be shared with other teams in the bank, and the shadow mode approach has since been described in the internal engineering guidance."
    ],
    "case": {
     "title": {
@@ -385,66 +949,236 @@
     },
     "client_mention": {
      "value": "Tailspin",
-     "source_quote": "Tailspin engaged us for its route planning project."
+     "source_quote": "Tailspin engaged us for its route planning project. Tailspin is a parcel delivery company with 340 vans that operate in Australia."
     },
     "industry": {
      "value": "Logistics",
-     "source_quote": "Tailspin operates in the logistics sector."
+     "source_quote": "Tailspin engaged us for its route planning project. Tailspin is a parcel delivery company with 340 vans that operate in Australia."
     },
     "region": {
-     "value": "Poland",
-     "source_quote": "The programme was run for the Poland market."
+     "value": "Australia",
+     "source_quote": "Tailspin engaged us for its route planning project. Tailspin is a parcel delivery company with 340 vans that operate in Australia."
     },
     "engagement_type": {},
     "challenge": {
-     "value": "Manual, slow route planning process",
-     "source_quote": "The old route planning process was slow and relied on manual work."
+     "value": "Routes built by hand and rarely the shortest",
+     "source_quote": "Drivers received a printed list each morning that dispatchers had built by hand, and the routes were rarely the shortest."
     },
     "solution": {
-     "value": "Rebuilt route planning as a tested platform",
-     "source_quote": "We rebuilt the route planning service as a modern, tested platform."
+     "value": "Daily routes built from parcels, time windows and vehicle limits",
+     "source_quote": "The scope was a route planning service that builds the daily routes for every van from the parcels, the time windows and the vehicle limits."
+    },
+    "implementation": {
+     "value": "Three phases over 11 months",
+     "source_quote": "The project took 11 months in three phases: a planning engine proof, a pilot in one region and a rollout to all three regions."
+    },
+    "configuration": {
+     "value": "OR-Tools solver in a Python service on Kubernetes",
+     "source_quote": "The planning engine uses the OR-Tools solver library, wrapped in a Python service that scales out on Kubernetes when many routes are planned at once."
+    },
+    "lessons_learned": {
+     "value": "Involve drivers in design and plan for offline operation from the start",
+     "source_quote": "Drivers adopted the app quickly because they helped design it, and the pilot feedback changed the layout of the stop list twice."
     },
     "capabilities": [
      {
-      "value": "Optimisation",
-      "source_quote": "Our work covered optimisation for Tailspin."
+      "value": "Route optimisation",
+      "source_quote": "The scope was a route planning service that builds the daily routes for every van from the parcels, the time windows and the vehicle limits."
      },
      {
-      "value": "API design",
-      "source_quote": "Our work covered api design for Tailspin."
+      "value": "Mobile application development",
+      "source_quote": "Deliverables were a planning engine, a driver app with turn by turn navigation, a dispatcher console and a customer tracking page."
+     },
+     {
+      "value": "Real time tracking",
+      "source_quote": "Customers choose a two hour delivery window and can follow the van on a map, which replaced the whole day window."
      }
     ],
     "tech_stack": [
      {
-      "value": "Go",
-      "source_quote": "The stack used Go and Redis in production."
+      "value": "OR-Tools",
+      "source_quote": "The planning engine uses the OR-Tools solver library, wrapped in a Python service that scales out on Kubernetes when many routes are planned at once."
      },
      {
-      "value": "Redis",
-      "source_quote": "The stack used Go and Redis in production."
+      "value": "Python",
+      "source_quote": "The planning engine uses the OR-Tools solver library, wrapped in a Python service that scales out on Kubernetes when many routes are planned at once."
+     },
+     {
+      "value": "Kubernetes",
+      "source_quote": "The planning engine uses the OR-Tools solver library, wrapped in a Python service that scales out on Kubernetes when many routes are planned at once."
+     },
+     {
+      "value": "React",
+      "source_quote": "The driver app is built with React and receives updates through push messages, and it keeps working offline in areas without coverage."
+     },
+     {
+      "value": "Kafka",
+      "source_quote": "Parcel and vehicle data is read from the existing parcel system through a Kafka topic, and routes are written back to a PostgreSQL database."
+     },
+     {
+      "value": "PostgreSQL",
+      "source_quote": "Parcel and vehicle data is read from the existing parcel system through a Kafka topic, and routes are written back to a PostgreSQL database."
+     }
+    ],
+    "tech_references": [
+     {
+      "value": "GeoJSON",
+      "source_quote": "Route geometry is exchanged as GeoJSON, the public API is described in an OpenAPI 3.0 specification, and sign in uses OAuth 2.0."
+     },
+     {
+      "value": "OpenAPI 3.0",
+      "source_quote": "Route geometry is exchanged as GeoJSON, the public API is described in an OpenAPI 3.0 specification, and sign in uses OAuth 2.0."
+     },
+     {
+      "value": "OAuth 2.0",
+      "source_quote": "Route geometry is exchanged as GeoJSON, the public API is described in an OpenAPI 3.0 specification, and sign in uses OAuth 2.0."
      }
     ],
     "outcomes": [
      {
-      "metric": "driving hours",
-      "value": "saved 1,200 driving hours per month",
-      "source_quote": "The new platform saved 1,200 driving hours per month."
+      "metric": "distance driven",
+      "value": "fell by 14 percent",
+      "source_quote": "Distance driven fell by 14 percent, which cut fuel use by a similar share across the fleet."
+     },
+     {
+      "metric": "first attempt delivery rate",
+      "value": "rose from 87 percent to 95 percent",
+      "source_quote": "Deliveries made at the first attempt rose from 87 percent to 95 percent."
+     },
+     {
+      "metric": "morning planning time for a region",
+      "value": "35 minutes instead of three hours",
+      "source_quote": "Dispatchers needed 35 minutes to plan the morning routes for a region instead of three hours."
      }
     ],
+    "points": {
+     "challenge": [
+      {
+       "value": "Routes built by hand and rarely the shortest",
+       "source_quote": "Drivers received a printed list each morning that dispatchers had built by hand, and the routes were rarely the shortest."
+      },
+      {
+       "value": "Same day changes phoned to drivers and forgotten",
+       "source_quote": "Same day changes, such as a missed delivery or a new pickup, were phoned to the driver and often forgotten."
+      },
+      {
+       "value": "Vans drove 18 percent more kilometres than needed",
+       "source_quote": "Vans drove 18 percent more kilometres than needed, according to an internal study, and fuel was the largest cost after wages."
+      },
+      {
+       "value": "Whole day delivery windows caused repeat visits",
+       "source_quote": "Customers were given a delivery window of a whole day, which led to missed deliveries and repeat visits for about 1 parcel in 8."
+      },
+      {
+       "value": "Three offices with three tools",
+       "source_quote": "Dispatchers worked in three regional offices with three different tools, so spare capacity in one region could not help another."
+      }
+     ],
+     "solution": [
+      {
+       "value": "Daily routes built from parcels, time windows and vehicle limits",
+       "source_quote": "The scope was a route planning service that builds the daily routes for every van from the parcels, the time windows and the vehicle limits."
+      },
+      {
+       "value": "Planning engine, driver app, dispatcher console and tracking page",
+       "source_quote": "Deliverables were a planning engine, a driver app with turn by turn navigation, a dispatcher console and a customer tracking page."
+      },
+      {
+       "value": "Re-optimisation during the day",
+       "source_quote": "The planner re-optimises during the day when a parcel is added or a van is delayed, and sends the change to the driver app at once."
+      },
+      {
+       "value": "Two hour customer windows with a live map",
+       "source_quote": "Customers choose a two hour delivery window and can follow the van on a map, which replaced the whole day window."
+      },
+      {
+       "value": "Maintenance, payroll and scanners out of scope",
+       "source_quote": "Vehicle maintenance, payroll and the existing parcel scanning devices remained outside the project."
+      }
+     ],
+     "implementation": [
+      {
+       "value": "Three phases over 11 months",
+       "source_quote": "The project took 11 months in three phases: a planning engine proof, a pilot in one region and a rollout to all three regions."
+      },
+      {
+       "value": "Team of 8 people",
+       "source_quote": "The team had 8 people, including two optimisation engineers, three developers, a designer, a tester and a delivery lead."
+      },
+      {
+       "value": "September 2022 to July 2023 with a pilot from January",
+       "source_quote": "Work began in September 2022, the pilot ran from January to April 2023, and the third region went live in July 2023."
+      },
+      {
+       "value": "Dispatchers and drivers in the team every week",
+       "source_quote": "Dispatchers and drivers from the pilot region sat in the team every week and tested each release on real routes."
+      },
+      {
+       "value": "Region go lives on Mondays with the old tool read only",
+       "source_quote": "Each region went live on a Monday, with the old tool kept read only for two weeks as a reference."
+      }
+     ],
+     "configuration": [
+      {
+       "value": "OR-Tools solver in a Python service on Kubernetes",
+       "source_quote": "The planning engine uses the OR-Tools solver library, wrapped in a Python service that scales out on Kubernetes when many routes are planned at once."
+      },
+      {
+       "value": "Map data service with live traffic",
+       "source_quote": "Road distances and travel times come from a map data service, and live traffic is added every five minutes."
+      },
+      {
+       "value": "Driver app in React that works offline",
+       "source_quote": "The driver app is built with React and receives updates through push messages, and it keeps working offline in areas without coverage."
+      },
+      {
+       "value": "Kafka topic in and PostgreSQL out",
+       "source_quote": "Parcel and vehicle data is read from the existing parcel system through a Kafka topic, and routes are written back to a PostgreSQL database."
+      }
+     ]
+    },
+    "prose": {
+     "challenge": {
+      "text": "Drivers received a printed list each morning that dispatchers had built by hand, and the routes were rarely the shortest. Same day changes, such as a missed delivery or a new pickup, were phoned to the driver and often forgotten. Vans drove 18 percent more kilometres than needed, according to an internal study, and fuel was the largest cost after wages. Customers were given a delivery window of a whole day, which led to missed deliveries and repeat visits for about 1 parcel in 8. Dispatchers worked in three regional offices with three different tools, so spare capacity in one region could not help another.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "solution": {
+      "text": "The scope was a route planning service that builds the daily routes for every van from the parcels, the time windows and the vehicle limits. Deliverables were a planning engine, a driver app with turn by turn navigation, a dispatcher console and a customer tracking page. The planner re-optimises during the day when a parcel is added or a van is delayed, and sends the change to the driver app at once. Customers choose a two hour delivery window and can follow the van on a map, which replaced the whole day window. Vehicle maintenance, payroll and the existing parcel scanning devices remained outside the project.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "implementation": {
+      "text": "The project took 11 months in three phases: a planning engine proof, a pilot in one region and a rollout to all three regions. The team had 8 people, including two optimisation engineers, three developers, a designer, a tester and a delivery lead. Work began in September 2022, the pilot ran from January to April 2023, and the third region went live in July 2023. Dispatchers and drivers from the pilot region sat in the team every week and tested each release on real routes. Each region went live on a Monday, with the old tool kept read only for two weeks as a reference.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "configuration": {
+      "text": "The planning engine uses the OR-Tools solver library, wrapped in a Python service that scales out on Kubernetes when many routes are planned at once. Road distances and travel times come from a map data service, and live traffic is added every five minutes. The driver app is built with React and receives updates through push messages, and it keeps working offline in areas without coverage. Parcel and vehicle data is read from the existing parcel system through a Kafka topic, and routes are written back to a PostgreSQL database.",
+      "by_reviewer": true,
+      "flags": []
+     }
+    },
     "duration_months": {
-     "value": 8,
-     "source_quote": "The work was delivered over 8 months."
+     "value": 11,
+     "source_quote": "The project took 11 months in three phases: a planning engine proof, a pilot in one region and a rollout to all three regions."
     },
     "team_size": {
-     "value": 5,
-     "source_quote": "The team had 5 engineers."
+     "value": 8,
+     "source_quote": "The team had 8 people, including two optimisation engineers, three developers, a designer, a tester and a delivery lead."
     },
-    "summary": "Tailspin route planning project, delivered over 8 months by 5 engineers. The new platform saved 1,200 driving hours per month.",
+    "period": {
+     "start": "2022-09",
+     "end": "2023-07",
+     "source_quote": "Work began in September 2022, the pilot ran from January to April 2023, and the third region went live in July 2023."
+    },
+    "summary": "Tailspin route planning project, delivered over 11 months by 8 people. Distance driven fell by 14 percent and first attempt deliveries rose to 95 percent.",
     "organisations": [
      "Tailspin"
     ]
    },
-   "status": "approved"
+   "status": "approved",
+   "diagram": true
   },
   {
    "source": "Demo: Bid library",
@@ -934,7 +1668,9 @@
       "source_quote": "The stack used Python and MLflow in production."
      }
     ],
-    "needs_attention": ["1 outcome(s) with no clear metric"],
+    "needs_attention": [
+     "1 outcome(s) with no clear metric"
+    ],
     "outcomes": [
      {
       "metric": "metric",

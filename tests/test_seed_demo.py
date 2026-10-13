@@ -123,12 +123,15 @@ ALLOWED = {"ServiceNow", "Kafka", "Azure", "Kubernetes", "PostgreSQL", "SWIFT", 
 
 @pytest.mark.xfail(strict=False, reason="demo content is written in steps 3 to 6")
 def test_only_fictional_names():
-    ok = {n.casefold() for c in DEMO["clients"] for n in (c["name"], *c["aliases"])} | {a.casefold() for a in ALLOWED}
+    clients = {n.casefold() for c in DEMO["clients"] for n in (c["name"], *c["aliases"])}
+    ok = clients | {a.casefold() for a in ALLOWED}
     bad = []
     for e in DEMO["cases"]:
         c = e["case"]
-        names = [c.get("client_mention", {}).get("value") or "", *c.get("organisations", [])]
-        names += re.findall(r"\b[A-Z][\w-]*(?: [A-Z][\w-]*)+", " ".join(e["paragraphs"]))
+        mention = c.get("client_mention", {}).get("value") or ""
+        bad += [(e["file"], mention)] if mention.casefold() not in clients else []  # a vendor is never the customer
+        names = [mention, *c.get("organisations", [])]
+        names += re.findall(r"\b[A-Z][\w-]*(?: [A-Z][\w-]*)+", re.sub(r"\bThe ", "the ", " ".join(e["paragraphs"])))
         bad += [(e["file"], n) for n in names if n and n.casefold() not in ok]
     assert not bad
 
