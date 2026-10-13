@@ -640,6 +640,16 @@ client. Run the full suite, then PR 4.
   - At a sentence start only the first word of a capitalised run is
     skipped, so "The Snowflake team" still checks Snowflake.
   - Month and weekday names, and bare digits, are not treated as names.
+- B6 results against A5 (prose words per section; target 120 for challenge
+  and solution):
+  - Line 3: 103 / 142 / 228 / 106, summary kept, configuration flagged.
+  - Line 1: 35 / 0 / 35 / 0, summary kept. It has one point per section,
+    and the model leaves two of them empty.
+  - Tried and reverted: naming every section in the request. Line 1 didn't
+    change, and line 3 dropped (solution 94, implementation 98, summary
+    blanked).
+  - Phase B ships as is. #222's completeness check makes thin cases visible
+    and blocks their approval.
 
 ## Tests
 
