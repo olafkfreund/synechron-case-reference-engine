@@ -3,7 +3,7 @@ import sys
 import threading
 import time
 
-from app import crawl, db, diagrams, extract, llm, research
+from app import brief, crawl, db, diagrams, extract, llm, research
 
 MAX_ATTEMPTS = 3
 HEARTBEAT = 60  # seconds; 15 ticks inside the shortest stale window
@@ -14,6 +14,7 @@ HANDLERS = {
     "crawl_confluence": lambda p: crawl.crawl_confluence(p["source_id"]),
     "research": lambda p: research.run(p["research_id"]),
     "diagram": lambda p: diagrams.process(p["diagram_id"]),
+    "brief": lambda p: brief.run(p["brief_id"]),
 }
 
 # a running job this old belongs to a dead worker; first crawls can run for hours, and the

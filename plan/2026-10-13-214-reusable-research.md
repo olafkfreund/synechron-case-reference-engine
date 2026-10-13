@@ -488,6 +488,13 @@ must exist on `main`.
   - A malformed URL falls back to the publisher.
   - New tests: the fallback "Sources" box, a page title through `build()`,
     and numbering after a dropped claim.
+- Step 13:
+  - The quotes are anonymised before they are sent, and go inside
+    `<quotes>` tags.
+  - The title and theme headings are also checked with `check_prose`,
+    against all the picked quotes.
+  - `quote_texts()` gives step 14 the same texts the model saw.
+  - No 'running' status: `briefs.status` allows queued, done and failed.
 
 ## Tests
 
