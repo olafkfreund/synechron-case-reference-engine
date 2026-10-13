@@ -16,13 +16,20 @@
 {% endfor %}
 {% if industry %}
 <div class="section-card">
-<h2>{{ industry.heading }}</h2>
-<p><em>{{ industry.disclaimer }}</em></p>
+{% if industry.show_head %}<h2>{{ industry.heading }}</h2>
+<p><em>{{ industry.disclaimer }}</em></p>{% endif %}
 {% for g in industry.groups %}<h3>{{ g.title }}</h3><p><em>{{ g.lead }}</em></p>
 <ul>{% for q in g.quotes %}<li>&ldquo;{{ q.quote }}&rdquo; [{{ q.n }}]</li>{% endfor %}</ul>{% endfor %}
 {% if industry.sources %}<h3>Sources</h3>
 <ol>{% for s in industry.sources %}<li>{{ s.title }}, {{ s.publisher }}, {% if s.url.startswith(("http://", "https://")) %}<a href="{{ s.url }}" rel="noopener noreferrer">{{ s.url }}</a>{% else %}{{ s.url }}{% endif %}, retrieved {{ s.date }}</li>{% endfor %}</ol>{% endif %}
 {% if industry.note %}<p>{{ industry.note }}</p>{% endif %}
+{% for b in industry.briefs %}<h2>{{ b.title }}</h2>
+<p><em>{{ b.disclaimer }}</em></p>
+{% if b.takeaways %}<h3>Key takeaways</h3><ul>{% for t in b.takeaways %}<li>{{ t }}</li>{% endfor %}</ul>{% endif %}
+{% for t in b.themes %}<h3>{{ t.heading }}</h3><p>{{ t.text }}</p>{% endfor %}
+{% if b.sources %}<h3>Sources</h3>
+<ol>{% for s in b.sources %}<li>{{ s.title }}, {{ s.publisher }}, {% if s.url.startswith(("http://", "https://")) %}<a href="{{ s.url }}" rel="noopener noreferrer">{{ s.url }}</a>{% else %}{{ s.url }}{% endif %}, retrieved {{ s.date }}</li>{% endfor %}</ol>{% endif %}
+{% if b.note %}<p>{{ b.note }}</p>{% endif %}{% endfor %}
 </div>
 {% endif %}
 <form method="post" action="/generate" class="section-card generate">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}

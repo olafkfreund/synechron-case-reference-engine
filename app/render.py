@@ -163,7 +163,9 @@ def slide_statements(ind: dict) -> list[str]:
     Word and Markdown (#123)."""
     lines = [f"{g['lead']} \u201c{excerpt(g['quotes'][0]['quote'], SLIDE_QUOTE)}\u201d [{g['quotes'][0]['n']}]"
              for g in ind["groups"]]
-    return lines[:SLIDE_ITEMS] + ([ind["note"]] if ind["note"] else [])
+    # a library brief is one line (its title and takeaways, no source numbers); briefs come first so they are not cut by the quotes
+    briefs = [excerpt(f"{b['title']}: {' '.join(b['takeaways'])}".strip(": "), SLIDE_QUOTE) for b in ind.get("briefs", [])]
+    return (briefs + lines)[:SLIDE_ITEMS] + ([ind["note"]] if ind["note"] else [])
 
 
 def section(case: ReferenceCase, client: str) -> dict:
@@ -431,6 +433,7 @@ MD = _env.from_string("""\
 ---
 
 {% endif %}
+{% if industry.show_head %}
 # {{ industry.heading | md }}
 
 *{{ industry.disclaimer | md }}*
@@ -452,10 +455,43 @@ MD = _env.from_string("""\
 {{ s.n }}. {{ s.title | md }}, {{ s.publisher | md }}, {{ s.url | link }}, retrieved {{ s.date | md }}
 {% endfor %}
 {% endif %}
+{% endif %}
 {% if industry.note %}
 
 {{ industry.note | md }}
 {% endif %}
+{% for b in industry.briefs %}
+
+# {{ b.title | md }}
+
+*{{ b.disclaimer | md }}*
+
+{% if b.takeaways %}
+## Key takeaways
+
+{% for t in b.takeaways %}
+- {{ t | md }}
+{% endfor %}
+
+{% endif %}
+{% for t in b.themes %}
+## {{ t.heading | md }}
+
+{{ t.text | md }}
+
+{% endfor %}
+{% if b.sources %}
+## Sources
+
+{% for s in b.sources %}
+{{ s.n }}. {{ s.title | md }}, {{ s.publisher | md }}, {{ s.url | link }}, retrieved {{ s.date | md }}
+{% endfor %}
+{% endif %}
+{% if b.note %}
+
+{{ b.note | md }}
+{% endif %}
+{% endfor %}
 {% endif %}
 """)
 
@@ -599,10 +635,12 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
         raise HTTPException(400, "the research has no usable public statements")
     if briefs or withheld:
         industry = industry or {"heading": heading, "disclaimer": INDUSTRY_DISCLAIMER, "groups": [], "sources": [], "statements": [], "note": ""}
-        industry["briefs"] = briefs
         if withheld:
             n = f"{withheld} library brief{'s' if withheld != 1 else ''} withheld: {'they' if withheld != 1 else 'it'} named a protected client"
             industry["note"] = f"{industry['note']}; {n}" if industry["note"] else n
+    if industry:  # the heading and disclaimer come with quotes, or when there is no brief to stand alone
+        industry["briefs"] = briefs
+        industry["show_head"] = bool(industry["groups"]) or not (briefs or withheld)
     return ids, sections, industry, anonymised, claims, used
 
 

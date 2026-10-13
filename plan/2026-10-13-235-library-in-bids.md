@@ -214,6 +214,11 @@ Branch `feat/235-library-in-bids`, worktree `../refs-engine-235`. Two PRs.
   rather than as a separate return value, so the renderers need no new
   parameter. `build()` returns the ids actually rendered, and those are what
   `generations.library_ids` stores.
+- Step 9:
+  - An output with only briefs drops the empty "Industry context" heading
+    (`show_head`). The withheld note always shows.
+  - On the pptx slide, briefs come before quote lines, so a full set of
+    quotes can't push them off. They share the `SLIDE_ITEMS` cap.
 
 ## Tests
 
