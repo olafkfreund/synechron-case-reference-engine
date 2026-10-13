@@ -106,7 +106,7 @@ def run(brief_id: int) -> None:
             clients = anonymise.load_clients(conn)
         texts = quote_texts(row[0][:MAX_QUOTES], clients)
         msg = "<quotes>\n" + "\n".join(f"[{i}] {t}" for i, t in enumerate(texts, 1)) + "\n</quotes>"
-        body = complete_json("DRAFT_MODEL", BRIEF_SYSTEM, msg, Brief, data_class="public").model_dump()
+        body = complete_json("DRAFT_MODEL", BRIEF_SYSTEM, msg, Brief, data_class="public", shape_hint=True).model_dump()
         if row[1]:  # the title the user asked for replaces the model's; it is checked like any other title
             body["title"] = row[1]
         body["flags"] = check(body, texts)

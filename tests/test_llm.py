@@ -133,7 +133,7 @@ def test_policy_error_has_no_content_and_blocks_before_request(monkeypatch):
 def test_json_mode_request_shape(monkeypatch):
     _, kw = run(monkeypatch, '{"title": {}}', model=LOCAL, opts={"think": False, "num_ctx": 24576, "repeat_penalty": 1.05})
     assert kw["response_format"] == {"type": "json_object"}
-    assert "do not repeat it" in kw["messages"][0]["content"][0]["text"]
+    assert kw["messages"][0]["content"][0]["text"] == "sys" + llm.json_cue(llm.llm_schema(ReferenceCase)) and "do not repeat" not in kw["messages"][0]["content"][0]["text"]
     assert kw["think"] is False and kw["num_ctx"] == 24576 and kw["repeat_penalty"] == 1.05 and "api_key" not in kw
 
 
@@ -320,3 +320,30 @@ def test_example_values_are_type_labels_never_literal_answers():
     text = json.dumps(llm._example(llm.llm_schema(Triage)))
     assert text.count("true") == text.count("false") == text.count("<true or false>")  # no bare boolean literal
     assert ": true" not in text and ": false" not in text and ": 0" not in text
+
+
+def test_default_cue_is_the_old_one_and_the_hint_adds_the_example():
+    schema = llm.llm_schema(ReferenceCase)
+    assert llm.json_cue(schema) == f"\n\nReply with JSON matching this schema: {json.dumps(schema)}"
+    hint = llm.json_cue(schema, True)
+    assert "do not repeat it" in hint and "not an answer" in hint and "<string>" in hint
+
+
+def test_shape_hint_reaches_the_prompt_and_the_retry_works_with_both(monkeypatch):
+    for hint in (False, True):
+        f, calls = go(monkeypatch, [ECHO, GOOD])
+        monkeypatch.setattr(llm.litellm, "completion", seq([ECHO, GOOD], calls))
+        llm.complete_json("EXTRACT_MODEL", "sys", "usr", ReferenceCase, data_class="public", shape_hint=hint)
+        sysmsg = calls[0]["messages"][0]["content"][0]["text"]
+        assert ("do not repeat it" in sysmsg) is hint and len(calls) == 2
+
+
+def test_only_claims_and_briefs_ask_for_the_hint(monkeypatch):
+    import inspect
+    from app import brief, research
+    assert "shape_hint=True" in inspect.getsource(research.extract_claims)
+    assert "shape_hint=True" in inspect.getsource(brief.run)
+    import pathlib
+    for f in pathlib.Path(llm.__file__).parent.glob("*.py"):
+        if f.name not in ("research.py", "brief.py", "llm.py"):
+            assert "shape_hint" not in f.read_text(), f.name

@@ -64,7 +64,7 @@ def brief_call(brief_id: int):
         clients = anonymise.load_clients(c)
     texts = brief.quote_texts(quotes[:brief.MAX_QUOTES], clients)
     msg = "<quotes>\n" + "\n".join(f"[{i}] {t}" for i, t in enumerate(texts, 1)) + "\n</quotes>"
-    return lambda: llm.complete_json("DRAFT_MODEL", brief.BRIEF_SYSTEM, nonce(msg), brief.Brief, data_class="public")
+    return lambda: llm.complete_json("DRAFT_MODEL", brief.BRIEF_SYSTEM, nonce(msg), brief.Brief, data_class="public", shape_hint=True)
 
 
 def main(argv: list[str] | None = None) -> int:

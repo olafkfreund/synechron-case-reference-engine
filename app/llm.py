@@ -114,13 +114,16 @@ def _example(schema: dict) -> object:
     return build(schema)
 
 
-def json_cue(schema: dict) -> str:
+def json_cue(schema: dict, shape_hint: bool = False) -> str:
+    """The JSON-mode instruction. The shape hint (#245) is only for calls measured to need it: it changed triage."""
+    if not shape_hint:
+        return f"\n\nReply with JSON matching this schema: {json.dumps(schema)}"
     return ("\n\nReply with one JSON object that follows this JSON Schema. The schema describes the format; do not repeat it."
             f"\nSchema: {json.dumps(schema)}"
             f"\nExample of the shape (each value shows its type, not an answer): {json.dumps(_example(schema), ensure_ascii=False)}")
 
 
-def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: type[M], *, data_class: str) -> M:
+def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: type[M], *, data_class: str, shape_hint: bool = False) -> M:
     """alias is an env var name (EXTRACT_MODEL | DRAFT_MODEL) holding the LiteLLM model id."""
     global ECHO_RETRIES
     model = os.environ.get(alias)
@@ -134,7 +137,7 @@ def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: t
     schema = llm_schema(model_cls)
     extra = {}
     if json_mode:
-        system += json_cue(schema)
+        system += json_cue(schema, shape_hint)
         extra["response_format"] = {"type": "json_object"}
     else:
         extra["response_format"] = {"type": "json_schema", "json_schema": {
