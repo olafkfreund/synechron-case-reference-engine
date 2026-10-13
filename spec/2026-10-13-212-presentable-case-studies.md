@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 212
 intent: intent/2026-10-13-212-presentable-case-studies.md
 ---
