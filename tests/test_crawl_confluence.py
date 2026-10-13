@@ -257,6 +257,56 @@ def test_confluence_withdrawn_attachment_returns_with_new_text(cf, monkeypatch):
         assert c.execute("select text from documents where source_id=%s and external_id='att:p1:a1'", (cf.sid,)).fetchone()[0] == "brand new text"
 
 
+def skip_a1(cf, monkeypatch):
+    """Cap 15, a1 is 20 bytes: skipped and remembered. A later page p2 moves the cursor past p1 (CURSOR_SLACK)."""
+    monkeypatch.setenv("CONFLUENCE_MAX_BYTES", "15")
+    cf.page("p1", when="2026-01-01T00:00:00.000Z")
+    cf.attach("p1", "a1", "spec.docx", b"spec bytes", size=20, when="2026-01-01T00:00:00.000Z")
+    crawl.crawl_confluence(cf.sid)
+    assert "att:p1:a1" not in live(cf.sid) and src(cf.sid)[1]["too_large"] == {"att:p1:a1": 20}
+    cf.page("p2", when="2026-03-01T00:00:00.000Z")
+    crawl.crawl_confluence(cf.sid)
+    cf.calls.clear()
+
+
+def test_confluence_raised_cap_returns_an_unchanged_attachment(cf, monkeypatch):
+    skip_a1(cf, monkeypatch)
+    monkeypatch.setenv("CONFLUENCE_MAX_BYTES", "1000")
+    crawl.crawl_confluence(cf.sid)
+    assert "att:p1:a1" in live(cf.sid) and DL in cf.calls
+    assert src(cf.sid)[1]["too_large"] == {}
+
+
+def test_confluence_same_cap_makes_no_extra_page_fetch(cf, monkeypatch):
+    skip_a1(cf, monkeypatch)
+    crawl.crawl_confluence(cf.sid)
+    assert DL not in cf.calls and "att:p1:a1" not in live(cf.sid)
+    assert f"{API}/p1/child/attachment" not in cf.calls  # p1 was not crawled again
+    assert src(cf.sid)[1]["too_large"] == {"att:p1:a1": 20}
+
+
+def test_confluence_download_over_cap_is_remembered(cf, monkeypatch):
+    monkeypatch.setenv("CONFLUENCE_MAX_BYTES", "15")
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"x" * 20, size=5)  # the listing says 5 bytes, the download is 20
+    assert crawl.crawl_confluence(cf.sid)["skipped_too_large"] == 1
+    assert src(cf.sid)[1]["too_large"] == {"att:p1:a1": 20}
+
+
+def test_confluence_restricted_page_drops_its_still_too_large_attachment(cf, monkeypatch):
+    monkeypatch.setenv("CONFLUENCE_MAX_BYTES", "15")
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"x" * 20)
+    cf.attach("p1", "a2", "plan.docx", b"y" * 30)
+    crawl.crawl_confluence(cf.sid)
+    cf.page("p2", when="2026-03-01T00:00:00.000Z")
+    crawl.crawl_confluence(cf.sid)  # the cursor moves past p1
+    cf.restricted.add("p1")
+    monkeypatch.setenv("CONFLUENCE_MAX_BYTES", "25")  # a1 now fits, a2 does not
+    crawl.crawl_confluence(cf.sid)
+    assert src(cf.sid)[1]["too_large"] == {}  # p1 was crawled again, found restricted: nothing carried
+
+
 def test_changed_attachment_is_downloaded_and_version_stored(cf):
     cf.page("p1")
     cf.attach("p1", "a1", "spec.docx", b"spec bytes", number=1)

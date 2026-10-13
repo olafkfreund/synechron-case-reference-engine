@@ -131,6 +131,74 @@ def test_sharepoint_withdrawn_file_returns_with_new_text(sp, monkeypatch):
         assert c.execute("select text from documents where source_id=%s and external_id='f1'", (sp.sid,)).fetchone()[0] == "brand new text"
 
 
+def skip_f1(sp, monkeypatch):
+    """Cap 15, f1 offered at size 20: skipped and remembered. The cursor is then at d2."""
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "15")
+    first_run(sp)
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([f("f1", size=20)], delta=f"{ROOT}?token=d2"))
+    assert crawl.crawl_sharepoint(sp.sid)["skipped_too_large"] == 1
+    assert docs(sp.sid)["f1"][0] is True
+    assert source(sp.sid)[1]["too_large"] == {"f1": 20}
+    sp.delta[f"{ROOT}?token=d2"] = (200, page([], delta=f"{ROOT}?token=d3"))
+    sp.calls.clear()
+
+
+def test_raised_cap_returns_an_unchanged_file(sp, monkeypatch):
+    skip_f1(sp, monkeypatch)
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "1000")
+    counts = crawl.crawl_sharepoint(sp.sid)
+    assert counts["updated"] + counts["skipped"] == 1
+    assert docs(sp.sid)["f1"][0] is False
+    assert source(sp.sid)[1]["too_large"] == {}
+
+
+def test_same_cap_makes_no_extra_call(sp, monkeypatch):
+    skip_f1(sp, monkeypatch)
+    crawl.crawl_sharepoint(sp.sid)
+    assert not [c for c in sp.calls if "/items/f1" in c]
+    assert docs(sp.sid)["f1"][0] is True
+    assert source(sp.sid)[1]["too_large"] == {"f1": 20}
+
+
+def test_still_too_large_after_a_small_raise(sp, monkeypatch):
+    skip_f1(sp, monkeypatch)
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "18")
+    crawl.crawl_sharepoint(sp.sid)
+    assert not [c for c in sp.calls if "/items/f1" in c]
+    assert docs(sp.sid)["f1"][0] is True
+    assert source(sp.sid)[1]["too_large"] == {"f1": 20}
+
+
+def test_deleted_while_skipped_is_forgotten(sp, monkeypatch):
+    skip_f1(sp, monkeypatch)
+    sp.delta[f"{ROOT}?token=d2"] = (200, page([{"id": "f1", "deleted": {}}], delta=f"{ROOT}?token=d3"))
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "1000")
+    crawl.crawl_sharepoint(sp.sid)
+    assert not [c for c in sp.calls if "/items/f1" in c]  # delta said deleted: not fetched again
+    assert docs(sp.sid)["f1"][0] is True
+    assert source(sp.sid)[1]["too_large"] == {}
+
+
+def test_404_on_refetch_is_forgotten(sp, monkeypatch):
+    skip_f1(sp, monkeypatch)
+    del sp.files["f1"]
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "1000")
+    crawl.crawl_sharepoint(sp.sid)
+    assert [c for c in sp.calls if c.endswith("/items/f1")]  # it was looked up, and the 404 forgot it
+    assert source(sp.sid)[1]["retry_ids"] == []  # a 404 is final, not retried
+    assert docs(sp.sid)["f1"][0] is True
+    assert source(sp.sid)[1]["too_large"] == {}
+
+
+def test_download_over_cap_is_remembered(sp, monkeypatch):
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "15")
+    first_run(sp)
+    sp.files["f3"] = b"x" * 20  # the listing says 5 bytes, the download is 20
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([f("f3", size=5)], delta=f"{ROOT}?token=d2"))
+    assert crawl.crawl_sharepoint(sp.sid)["skipped_too_large"] == 1
+    assert source(sp.sid)[1]["too_large"] == {"f3": 20}
+
+
 def test_full_crawl_follows_pages_and_stores_delta_link(sp):
     counts = first_run(sp)
     assert counts["new"] == 2 and counts["failed"] == 0

@@ -179,6 +179,7 @@ def crawl_sharepoint(source_id: int) -> dict:
     folder, with its own grants or with a sharing link is skipped, and withdrawn if ingested before.
     Delta does not report permission changes on descendants, so every crawl (daily) also re-checks
     the permissions of every live document. Failed items are retried by id on the next run.
+    Files skipped as too large are remembered with their size and fetched again once the cap admits them (#206).
     Needs the app's Sites.Selected grant with the fullcontrol role: a read-only caller sees only
     the sharing permissions that apply to itself, and the comparison would be meaningless.
     """
@@ -192,7 +193,7 @@ def crawl_sharepoint(source_id: int) -> dict:
         g = Graph(config["tenant_id"])
         counts = {"new": 0, "updated": 0, "skipped": 0, "deleted": 0, "failed": 0, "skipped_unique_permissions": 0,
                   "skipped_type": 0, "skipped_too_large": 0, "withdrawn_on_recheck": 0}
-        failed, retry, seen, checked = [], [], set(), set()
+        failed, retry, seen, checked, too_large = [], [], set(), set(), {}
 
         def perms_of(path):
             return [p for page in g.pages(f"{GRAPH}/drives/{drive}/{path}/permissions") for p in page.get("value", [])]
@@ -212,6 +213,7 @@ def crawl_sharepoint(source_id: int) -> dict:
         def handle(item):
             iid = item["id"]
             if "deleted" in item:
+                seen.add(iid)
                 counts["deleted"] += withdraw(iid)
                 return
             if "file" not in item:  # folders
@@ -224,6 +226,7 @@ def crawl_sharepoint(source_id: int) -> dict:
                 return
             if item.get("size", 0) > cap:
                 counts["skipped_too_large"] += 1
+                too_large[iid] = item.get("size", 0)
                 withdraw(iid)
                 return
             try:
@@ -234,6 +237,7 @@ def crawl_sharepoint(source_id: int) -> dict:
                 data = g.get(f"{GRAPH}/drives/{drive}/items/{iid}/content").content
                 if len(data) > cap:
                     counts["skipped_too_large"] += 1
+                    too_large[iid] = len(data)
                     withdraw(iid)
                     return
                 counts[ingest(source_id, iid, name, data)] += 1
@@ -274,6 +278,21 @@ def crawl_sharepoint(source_id: int) -> dict:
                 else:
                     retry.append(iid)
 
+        # last run's too-large files: delta will not offer them again; fetch those the cap now admits (#206)
+        for iid, size in ({} if full else (last or {}).get("too_large", {})).items():
+            if iid in seen:
+                continue
+            if size > cap:
+                too_large[iid] = size
+                continue
+            try:
+                handle(g.get(f"{GRAPH}/drives/{drive}/items/{iid}").json())
+            except Exception as e:  # noqa: BLE001 - one bad item must not stop the crawl (#129)
+                if getattr(e, "status", None) == 404:
+                    counts["deleted"] += withdraw(iid)
+                else:
+                    retry.append(iid)
+
         if full and seen:  # a full listing tells us what disappeared while we had no cursor
             counts["deleted"] += lock.execute(
                 "update documents set deleted_at=now() where source_id=%s and deleted_at is null "
@@ -297,7 +316,8 @@ def crawl_sharepoint(source_id: int) -> dict:
                      "from (select acl_groups from sources where id=%s for share) s "
                      "where d.source_id=%s and d.acl_groups is distinct from s.acl_groups", (source_id, source_id))
         lock.execute("update sources set cursor=%s, last_run_at=now(), last_counts=%s where id=%s",
-                     (delta_link, Jsonb({**counts, "failed_keys": failed, "retry_ids": retry}), source_id))
+                     (delta_link, Jsonb({**counts, "failed_keys": failed, "retry_ids": retry,
+                                "too_large": too_large}), source_id))
     return counts
 
 
@@ -356,6 +376,7 @@ def crawl_confluence(source_id: int) -> dict:
     that is gone, trashed, restricted or cannot be verified. A failure withdraws the item and is retried
     by page id on the next run. external_id: `page:{id}` and `att:{page_id}:{attachment_id}`: the
     parent page id lives in the key (no schema change), which is how the re-check finds it.
+    Attachments skipped as too large are remembered with their size and their page is crawled again once the cap admits them (#206).
     """
     with db.connect(autocommit=True) as lock:
         if not lock.execute("select pg_try_advisory_lock(2, %s)", (source_id,)).fetchone()[0]:
@@ -371,7 +392,7 @@ def crawl_confluence(source_id: int) -> dict:
         exts = {"docx", "pptx", "pdf"}
         counts = {"new": 0, "updated": 0, "skipped": 0, "failed": 0, "skipped_restricted": 0, "skipped_type": 0,
                   "skipped_too_large": 0, "withdrawn_on_recheck": 0}
-        failed, retry, done, cache, visited = [], [], set(), {}, set()
+        failed, retry, done, cache, visited, too_large = [], [], set(), {}, set(), {}
 
         def restricted(cid):  # one lookup per content id per crawl
             if cid not in cache:
@@ -426,6 +447,7 @@ def crawl_confluence(source_id: int) -> dict:
                             continue
                         if att.get("extensions", {}).get("fileSize", 0) > cap:
                             counts["skipped_too_large"] += 1
+                            too_large[ext] = att.get("extensions", {}).get("fileSize", 0)
                             withdraw(ext)
                             continue
                         try:
@@ -438,6 +460,7 @@ def crawl_confluence(source_id: int) -> dict:
                             data = c.get(base + att["_links"]["download"]).content
                             if len(data) > cap:
                                 counts["skipped_too_large"] += 1
+                                too_large[ext] = len(data)
                                 withdraw(ext)
                                 continue
                             counts[ingest(source_id, ext, title, data, source_version=ver)] += 1
@@ -491,6 +514,29 @@ def crawl_confluence(source_id: int) -> dict:
                 else:
                     retry.append(pid)
 
+        # last run's too-large attachments: CQL will not offer them again; re-crawl pages the cap now admits (#206).
+        # No cursor means CQL listed every page, so the list was rebuilt (and a reset forgets deleted pages).
+        keep, again = {}, []
+        for ext, size in ((last or {}).get("too_large", {}) if cursor else {}).items():
+            pid = ext.split(":")[1]
+            if pid in visited:
+                continue
+            if size > cap:
+                keep[ext] = size
+            elif pid not in again:
+                again.append(pid)
+        # a page crawled again records its own attachments: carry only the others
+        too_large.update({e: s for e, s in keep.items() if e.split(":")[1] not in again})
+        for pid in again:
+            try:
+                do_page(c.get(f"{c.api}/content/{pid}?expand=body.storage,version,ancestors,space").json())
+            except Exception as e:  # noqa: BLE001 (#129)
+                if getattr(e, "status", None) == 404:
+                    withdraw(f"page:{pid}")
+                    withdraw(f"att:{pid}:", prefix=True)
+                elif pid not in retry:
+                    retry.append(pid)
+
         live = [r[0] for r in lock.execute(
             "select external_id from documents where source_id=%s and deleted_at is null", (source_id,))]
         for ext in live:
@@ -512,5 +558,6 @@ def crawl_confluence(source_id: int) -> dict:
                      "from (select acl_groups from sources where id=%s for share) s "
                      "where d.source_id=%s and d.acl_groups is distinct from s.acl_groups", (source_id, source_id))
         lock.execute("update sources set cursor=%s, last_run_at=now(), last_counts=%s where id=%s",
-                     (newest.isoformat() if newest else None, Jsonb({**counts, "failed_keys": failed, "retry_ids": retry}), source_id))
+                     (newest.isoformat() if newest else None,
+                      Jsonb({**counts, "failed_keys": failed, "retry_ids": retry, "too_large": too_large}), source_id))
     return counts

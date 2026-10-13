@@ -63,7 +63,7 @@ S3 and SharePoint: optional <code>"include_ext"</code> (default docx, pptx, pdf)
 <h3>Config</h3>
 <dl class="status-list">{% for k, v in config.items() %}<dt>{{ k }}</dt><dd>{{ v if v is string else v | tojson }}</dd>{% endfor %}</dl>
 {% if counts %}<h3>Last run counts</h3>
-<dl class="status-list">{% for k, v in counts.items() if k not in ("failed_keys", "retry_ids") %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>{% endif %}
+<dl class="status-list">{% for k, v in counts.items() if k not in ("failed_keys", "retry_ids", "too_large") %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>{% endif %}
 <div class="action-row"><button class="btn primary" aria-label="Save {{ name }}">Save</button></div>
 </form></details>
 </div>
