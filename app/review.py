@@ -2,7 +2,7 @@ import hashlib
 import copy
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
@@ -115,7 +115,18 @@ def rows(case, docs=None):
 
 @router.get("/")
 def landing(request: Request, user: User = Depends(require("user"))):
-    return page(request, "landing.html", user)
+    from app.search import browse  # app.search imports app.review: a top-level import would be circular
+    latest = browse(user, {}, "", "newest", 1)[:5]
+    queue = waiting = None
+    with db.connect() as conn:
+        research = conn.execute("select id, query, status, retrieved_at from research where created_by=%s "
+                                "order by retrieved_at desc limit 5", (user.sub,)).fetchall()
+        if "reviewer" in user.roles:
+            queue = conn.execute(f"select count(*) from cases c where {REVIEWABLE} and {QUEUE}", (list(user.groups),)).fetchone()[0]
+            waiting = conn.execute("select count(*) from jobs where kind='extract' and status in ('queued','running')").fetchone()[0]
+    clients = anonymise.load_clients()
+    research = [(i, "[withheld]" if anonymise.blocked(q, clients) else q, st, at) for i, q, st, at in research]  # as research_view
+    return page(request, "landing.html", user, latest=latest, research=research, queue=queue, waiting=waiting)
 
 
 @router.get("/review")
@@ -134,6 +145,52 @@ def review_list(request: Request, user: User = Depends(require("reviewer"))):
              for i, s, d, t, n in found]
     due_soon = [dict(id=i, title=d["title"]["value"], document=t, due=due.strftime("%Y-%m-%d"), members=n) for i, d, t, due, n in soon]
     return page(request, "review_list.html", user, cases=cases, due_soon=due_soon)
+
+
+SKIP_CONTRACT = "Skipped: contract not marked executed"
+
+
+def doc_status(kind, case_status, retired_by, merged_into, job):
+    """(label, link) for one document row: the newest extract job first, then the case, then 'no case' by kind."""
+    if job in ("queued", "running"):
+        return "Waiting for extraction", None
+    if job == "failed" and case_status is None:
+        return "Extraction failed", None
+    if merged_into:
+        return "Part of a merged case", f"/review/{merged_into}"
+    if case_status == "extracted":
+        return "Case waiting for review", "case"
+    if case_status == "approved":
+        return "Approved", "case"
+    if case_status == "rejected":
+        return (SKIP_CONTRACT, None) if retired_by == "untick" else ("Rejected in review", "case")
+    if kind == "contract":
+        return SKIP_CONTRACT, None
+    if kind in ("proposal", "deck"):
+        return "Skipped: proposal or deck, not delivered work", None
+    return "Skipped: not a case document", None
+
+
+@router.get("/documents")
+def documents(request: Request, pageno: int = Query(1, alias="page"), user: User = Depends(require("reviewer"))):
+    pageno = min(max(pageno, 1), 1000)
+    with db.connect() as conn:
+        # shortcut: offset paging; switch to keyset past ~50k documents
+        found = conn.execute(
+            "select d.id, d.title, d.kind, d.created_at, d.updated_at, s.name, c.id, c.status, c.retired_by, c.merged_into, j.status "
+            "from documents d join sources s on s.id = d.source_id left join cases c on c.document_id = d.id "
+            "left join lateral (select status from jobs where kind = 'extract' and payload->>'document_id' = d.id::text "
+            "order by id desc limit 1) j on true "
+            "where d.deleted_at is null and d.acl_groups && %s::text[] "
+            f"order by d.updated_at desc, d.id desc limit 50 offset {(pageno - 1) * 50}", (list(user.groups),)).fetchall()
+    rows = []
+    for did, title, kind, created, updated, source, cid, cstatus, retired, merged, job in found:
+        label, link = doc_status(kind, cstatus, retired, merged, job)
+        rows.append(dict(title=title, source=source, updated=updated.strftime("%Y-%m-%d"),
+                         first=created.strftime("%Y-%m-%d") if created.date() != updated.date() else "",
+                         label=label, link=f"/review/{cid}" if link == "case" else link,
+                         sources=label == SKIP_CONTRACT))
+    return page(request, "documents.html", user, rows=rows, pageno=pageno, full=len(rows) == 50)
 
 
 @router.get("/review/{cid}")

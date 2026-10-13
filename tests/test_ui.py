@@ -9,8 +9,8 @@ from tests.test_review import DOCS, case_data, make  # noqa: F401
 from tests.test_search import approved, data, picks_reply  # noqa: F401
 
 TABS = {
-    "admin": ["Find references", "Research", "Review queue", "Sources", "Client registry", "Model approvals", "Audit"],
-    "reviewer": ["Find references", "Research", "Review queue"],
+    "admin": ["Find references", "Research", "Review queue", "Latest documents", "Sources", "Client registry", "Model approvals", "Audit"],
+    "reviewer": ["Find references", "Research", "Review queue", "Latest documents"],
     "sales": ["Find references", "Research"],
 }
 GROUPS = {"admin": [ADMIN], "reviewer": [REV], "sales": [USER], "nobody": ["other"]}

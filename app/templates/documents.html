@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block body %}
+<div class="page-head"><div><h1>Latest documents</h1><p>Every document you can see, most recently updated first, and what became of it.</p></div></div>
+{% if not rows %}<div class="empty-state">{{ icon("inbox") }}<p><b>No documents yet</b></p></div>{% else %}
+<div class="section-card client-list">
+{% for r in rows %}<div class="source-row">
+<div class="who"><b>{{ r.title }}</b><br><span class="muted">{{ r.source }} &middot; Updated {{ r.updated }}{% if r.first %} &middot; first seen {{ r.first }}{% endif %}</span></div>
+<div class="chips"><span class="badge neutral">{% if r.link %}<a href="{{ r.link }}">{{ r.label }}</a>{% else %}{{ r.label }}{% endif %}</span>
+{% if r.sources and 'admin' in user.roles %}<a class="btn btn-sm" href="/admin/sources">Sources</a>{% endif %}</div>
+</div>{% endfor %}</div>{% endif %}
+{% if pageno > 1 or full %}<nav class="row" aria-label="Pages">{% if pageno > 1 %}<a class="btn" href="/documents?page={{ pageno - 1 }}">Previous</a>{% endif %}
+<span class="muted">Page {{ pageno }}</span>{% if full %}<a class="btn" href="/documents?page={{ pageno + 1 }}">Next</a>{% endif %}</nav>{% endif %}
+<p class="muted" style="font-size:13px">Files of an unsupported type or over the size cap are not listed here; they are counted per source on the Sources page.</p>
+{% endblock %}

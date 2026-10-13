@@ -3,6 +3,15 @@
 {% block body %}
 <div class="page-head"><div><h1>Customer reference engine</h1>
 <p>Find approved customer cases for a bid, and check what the market says.</p></div></div>
+<div class="section-card"><div class="card-head"><h2>Latest approved cases</h2></div>
+{% for c in latest %}<div class="other-row"><a href="/search"><b>{{ c.title }}</b></a> <span class="muted">({{ c.label }}{% if c.approved_at %}, approved {{ c.approved_at.strftime("%Y-%m-%d") }}{% endif %})</span></div>
+{% else %}<p class="muted" style="margin:0">No approved cases yet.</p>{% endfor %}
+<p style="margin:8px 0 0"><a href="/search">Browse all cases</a></p></div>
+<div class="section-card"><div class="card-head"><h2>Your recent research</h2></div>
+{% for id, q, st, at in research %}<div class="other-row"><a href="/research/{{ id }}"><b>{{ q }}</b></a> <span class="muted">({{ st }}, {{ at.strftime("%Y-%m-%d") }})</span></div>
+{% else %}<p class="muted" style="margin:0">You have not run any research yet.</p>{% endfor %}</div>
+{% if queue is not none %}<div class="section-card"><div class="card-head"><h2>Waiting for review</h2></div>
+<p style="margin:0"><a href="/review">{{ queue }} cases</a>, {{ waiting }} documents being extracted</p></div>{% endif %}
 <div class="lead-grid">
 <a class="card lead-card" href="/search">{{ icon("search") }}<h2>Find reference cases</h2>
 <span class="muted">Paste a bid requirement and get the best approved cases.</span><span class="btn primary">Find references</span></a>

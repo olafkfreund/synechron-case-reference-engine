@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from pydantic import BaseModel, ConfigDict
 
 from app import anonymise, db
@@ -46,7 +46,13 @@ def facts(case: ReferenceCase) -> list[str]:
     return [str(v) for v in vs if v not in (None, "")]
 
 
-def search(user: User, bid_text: str, filters: dict) -> list[dict]:
+ORDER = {"newest": "c.approved_at desc nulls last, c.id desc",
+         "title": "lower(c.data->'title'->>'value'), c.id",
+         "industry": "c.data->'industry'->>'value' nulls last, c.id"}
+FACET_KEYS = {"industry": "c.data->'industry'->>'value'", "region": "c.data->'region'->>'value'"}
+
+
+def search(user: User, bid_text: str, filters: dict, kind: str = "", sort: str = "newest", page: int = 1) -> list[dict]:
     """Top 20 approved, in-date, ACL-visible cases. Candidates: id, case, label, basis, rank (best first).
 
     label is unchecked: show it only through results(), whose view() blocks protected names.
@@ -69,13 +75,23 @@ def search(user: User, bid_text: str, filters: dict) -> list[dict]:
         where.append("exists (select 1 from jsonb_array_elements(c.data->'tech_stack') t "
                      "where position(lower(%s) in lower(t->>'value')) > 0)")
         params.append(v)
+    if kind in ("delivered", "engagement"):
+        where.append("c.basis = %s")
+        params.append(kind)
+    # with bid text: ranked, no paging. Without: the chosen sort, paged
+    # shortcut: offset paging; switch to keyset past ~50k approved cases
+    order = "rank desc, (c.basis = 'delivered') desc, c.id"
+    offset = ""
+    if not bid:
+        order = ORDER.get(sort, ORDER["newest"])
+        offset = f" offset {(min(max(page, 1), 1000) - 1) * TOP}"
     with db.connect() as conn:
         rows = conn.execute(
-            f"select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null, c.basis, {rank} as rank from cases c "
+            f"select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null, c.basis, {rank} as rank, c.approved_at from cases c "
             f"left join clients cl on cl.id = c.client_id {join} "
-            f"where {' and '.join(where)} order by rank desc, (c.basis = 'delivered') desc, c.id limit {TOP}", params).fetchall()
-    cands = [dict(id=i, case=ReferenceCase.model_validate(d), label=anonymise.shown(name, label, ref, linked), basis=b, rank=r)
-             for i, d, name, label, ref, linked, b, r in rows]
+            f"where {' and '.join(where)} order by {order} limit {TOP}{offset}", params).fetchall()
+    cands = [dict(id=i, case=ReferenceCase.model_validate(d), label=anonymise.shown(name, label, ref, linked), basis=b, rank=r, approved_at=at)
+             for i, d, name, label, ref, linked, b, r, at in rows]
     for c in cands:
         if c["basis"] == "engagement":
             c["case"].outcomes = []  # contracted scope claims no results, whatever the record holds (#139)
@@ -128,33 +144,74 @@ def pick(bid_text: str, candidates: list[dict], clients) -> tuple[list[dict], li
     return picks, notes
 
 
-def results(user: User, bid_text: str, filters: dict):
-    cands = search(user, bid_text, filters)
+def view(c, clients, **extra):
+    case = c["case"]
+    return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label=clean(c["label"], clients, "a client"), basis=c["basis"], **extra)
+
+
+def browse(user: User, filters: dict, kind: str = "", sort: str = "newest", page: int = 1) -> list[dict]:
+    """One page of approved cases, no model. Rows go through view() and clean() like the ranked list."""
+    clients = anonymise.load_clients()
+    return [view(c, clients, summary=clean(c["case"].summary, clients), approved_at=c["approved_at"],
+                 industry=clean(str(c["case"].industry.value or ""), clients),
+                 region=clean(str(c["case"].region.value or ""), clients),
+                 tech=[t for t in (clean(str(x.value), clients) for x in c["case"].tech_stack if not x.unsourced) if t][:5])
+            for c in search(user, "", filters, kind, sort, page)]
+
+
+def facets(user: User) -> dict[str, list[tuple[str, int]]]:
+    """Value counts over every visible approved in-date case (not cross-filtered); protected values are dropped."""
+    clients = anonymise.load_clients()
+    base = f"from cases c {{extra}} where c.status = 'approved' and c.review_due > now() and {VISIBLE}"
+    tech = ("from cases c cross join jsonb_array_elements(c.data->'tech_stack') t where c.status = 'approved' "
+            f"and c.review_due > now() and {VISIBLE} and not coalesce((t->>'unsourced')::bool, false)")
+    queries = {k: f"select {e} as v, count(*) as n {base.format(extra='')} group by v having {e} <> '' order by n desc, v limit 50"
+               for k, e in FACET_KEYS.items()}
+    queries["tech"] = f"select t->>'value' as v, count(*) as n {tech} group by v having t->>'value' <> '' order by n desc, v limit 50"
+    out = {}
+    with db.connect() as conn:  # shortcut: facet group-by scans approved cases; cache per minute if search gets slow
+        for k, q in queries.items():
+            rows = conn.execute(q, [list(user.groups)]).fetchall()
+            # a value clean() changes or withholds is never offered: its cleaned form would not match the stored one
+            out[k] = [(v, n) for v, n in rows if clean(v, clients, None) == v]
+    return out
+
+
+def results(user: User, bid_text: str, filters: dict, kind: str = ""):
+    cands = search(user, bid_text, filters, kind)
     clients = anonymise.load_clients()
     picks, notes = pick(bid_text, cands, clients) if cands else ([], [])
     chosen = {p["id"] for p in picks}
     by_id = {c["id"]: c for c in cands}
 
-    def view(c, **extra):
-        case = c["case"]
-        return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label=clean(c["label"], clients, "a client"), basis=c["basis"], **extra)
-    top = [view(by_id[p["id"]], reason=p["reason"], tailored=p["tailored"],
+    top = [view(by_id[p["id"]], clients, reason=p["reason"], tailored=p["tailored"],
                 outcomes=[clean((f"{o.metric}: {o.value}" if o.metric else o.value), clients, "[withheld]")
                           for o in by_id[p["id"]]["case"].outcomes if not o.unsourced]) for p in picks]
-    others = [view(c, summary=clean(c["case"].summary, clients)) for c in cands if c["id"] not in chosen]
+    others = [view(c, clients, summary=clean(c["case"].summary, clients)) for c in cands if c["id"] not in chosen]
     return top, others, notes
 
 
+def browse_page(request, user, filters, kind, sort, pageno, bid_text=""):
+    kind, sort, pageno = (kind if kind in ("delivered", "engagement") else ""), (sort if sort in ORDER else "newest"), min(max(pageno, 1), 1000)
+    rows = browse(user, filters, kind, sort, pageno)
+    return page(request, "search.html", user, bid_text=bid_text, f=filters, kind=kind, sort=sort, pageno=pageno, rows=rows,
+                facets=facets(user), full=len(rows) == TOP, ran=False, top=[], others=[], notes=[])
+
+
 @router.get("/search")
-def search_form(request: Request, user: User = Depends(require("user"))):
-    return page(request, "search.html", user, bid_text="", f={}, ran=False, top=[], others=[], notes=[])
+def search_form(request: Request, industry: str = "", region: str = "", tech: str = "", kind: str = "", sort: str = "newest",
+                pageno: int = Query(1, alias="page"), user: User = Depends(require("user"))):
+    filters = {k: v.strip()[:MAX_FILTER_CHARS] for k, v in dict(industry=industry, region=region, tech=tech).items()}
+    return browse_page(request, user, filters, kind, sort, pageno)
 
 
 # POST: the bid text is confidential and must not land in URLs, access logs or browser history
 @router.post("/search")
 def search_page(request: Request, bid_text: str = Form(""), industry: str = Form(""), region: str = Form(""),
-                tech: str = Form(""), user: User = Depends(require("user"))):
+                tech: str = Form(""), kind: str = Form(""), sort: str = Form("newest"), user: User = Depends(require("user"))):
     filters = dict(industry=industry, region=region, tech=tech)
-    ran = bool(bid_text.strip() or any(v.strip() for v in filters.values()))
-    top, others, notes = results(user, bid_text, filters) if ran else ([], [], [])
-    return page(request, "search.html", user, bid_text=bid_text, f=filters, ran=ran, top=top, others=others, notes=notes)
+    if not bid_text.strip():
+        return browse_page(request, user, filters, kind, sort, 1)
+    top, others, notes = results(user, bid_text, filters, kind)
+    return page(request, "search.html", user, bid_text=bid_text, f=filters, kind=kind, sort=sort, pageno=1, rows=[],
+                facets=facets(user), full=False, ran=True, top=top, others=others, notes=notes)

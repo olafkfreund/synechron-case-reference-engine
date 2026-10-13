@@ -699,3 +699,25 @@ def test_s3_crawl_does_not_write_back_groups_changed_mid_crawl(env, monkeypatch)
     with db.connect() as c:
         rows = c.execute("select acl_groups from documents where source_id=%s", (sid,)).fetchall()
     assert rows == [(["g-new"],)] * 3
+
+
+def stamp_old(sid):
+    with db.connect() as c:
+        c.execute("update documents set updated_at = now() - interval '2 days' where source_id=%s", (sid,))
+
+
+def updated_age(sid):
+    with db.connect() as c:
+        return c.execute("select now() - updated_at from documents where source_id=%s", (sid,)).fetchone()[0].days
+
+
+def test_changed_content_moves_a_document_up_but_unchanged_does_not(env):  # #215
+    _, sid = env
+    ing.ingest(sid, "a", "a", b"one", source_version="v1")
+    stamp_old(sid)
+    assert ing.ingest(sid, "a", "a", b"one", source_version="v1") == "skipped"  # same bytes
+    assert updated_age(sid) == 2
+    assert ing.skip_unchanged(sid, "a", "v1", "a")  # crawl skips the download
+    assert updated_age(sid) == 2
+    assert ing.ingest(sid, "a", "a", b"two", source_version="v2") == "updated"
+    assert updated_age(sid) == 0
