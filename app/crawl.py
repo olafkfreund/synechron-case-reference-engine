@@ -514,16 +514,19 @@ def crawl_confluence(source_id: int) -> dict:
                 else:
                     retry.append(pid)
 
-        # last run's too-large attachments: CQL will not offer them again; re-crawl pages the cap now admits (#206)
-        again = []
-        for ext, size in (last or {}).get("too_large", {}).items():
+        # last run's too-large attachments: CQL will not offer them again; re-crawl pages the cap now admits (#206).
+        # No cursor means CQL listed every page, so the list was rebuilt (and a reset forgets deleted pages).
+        keep, again = {}, []
+        for ext, size in ((last or {}).get("too_large", {}) if cursor else {}).items():
             pid = ext.split(":")[1]
             if pid in visited:
                 continue
             if size > cap:
-                too_large[ext] = size
+                keep[ext] = size
             elif pid not in again:
                 again.append(pid)
+        # a page crawled again records its own attachments: carry only the others
+        too_large.update({e: s for e, s in keep.items() if e.split(":")[1] not in again})
         for pid in again:
             try:
                 do_page(c.get(f"{c.api}/content/{pid}?expand=body.storage,version,ancestors,space").json())
@@ -531,7 +534,7 @@ def crawl_confluence(source_id: int) -> dict:
                 if getattr(e, "status", None) == 404:
                     withdraw(f"page:{pid}")
                     withdraw(f"att:{pid}:", prefix=True)
-                else:
+                elif pid not in retry:
                     retry.append(pid)
 
         live = [r[0] for r in lock.execute(

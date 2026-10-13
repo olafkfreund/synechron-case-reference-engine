@@ -177,6 +177,18 @@ Branch `fix/206-sharepoint-raised-cap`, worktree `../refs-engine-206`.
    Traps: the sources page must not print item ids, which is what
    `failed_keys` and `retry_ids` are hidden for.
 
+## Deviations (review)
+
+- Step 3: entries are carried only for pages not crawled again; a re-crawled
+  page records its own attachments. So a page found restricted, deleted, or
+  missing an attachment drops them, as step 3's trap says. Without a cursor
+  (a full CQL listing, or a reset) nothing is carried, like SharePoint's
+  `full`: a reset clears entries of deleted pages. A failed re-crawl adds its
+  page to `retry` only once.
+- Tests: the 404 test asserts nothing is retried. The Confluence same-cap test
+  asserts p1's attachments were not listed. New tests cover the download-size
+  branch for both crawlers, and the restricted page.
+
 ## Tests
 
 ```bash
