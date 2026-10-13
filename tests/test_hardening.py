@@ -175,7 +175,7 @@ queries:
     args = ["--file", str(f), "--groups", DOCS]
     assert recall.main(args) == 0
     out = capsys.readouterr().out
-    assert "queries: 2  top-3: 100%  top-20: 100%" in out and "1 sample entry skipped" in out
+    assert "queries: 2  top-3: 100%  top-20: 100%" in out and "gate: top-20" in out and "1 sample entry skipped" in out
     assert recall.main(args + ["--samples"]) == 1  # the sample misses: 2 of 3 = 67% < 90%
     out = capsys.readouterr().out
     assert "top-3: 67%" in out and "MISS sample-skipped" in out and "not in top 20" in out
@@ -184,6 +184,16 @@ queries:
     only_samples = tmp_path / "s.yaml"
     only_samples.write_text("queries:\n  - {id: s, sample: true, bid_text: x, expected: [y]}\n")
     assert recall.main(["--file", str(only_samples), "--groups", DOCS]) == 2
+
+
+def test_recall_gate_is_top20(monkeypatch, tmp_path, capsys):
+    recall = load_recall()
+    monkeypatch.setattr(recall, "evaluate", lambda q, u: [{"id": "q1", "top3": False, "top20": True, "expected": ["x"], "returned": 20}])
+    f = tmp_path / "q.yaml"
+    f.write_text('queries:\n  - {id: q1, bid_text: b, expected: [x]}\n')
+    assert recall.main(["--file", str(f), "--groups", DOCS]) == 0
+    out = capsys.readouterr().out
+    assert "top-3: 0%" in out and "top-20: 100%" in out and "MISS q1: expected ['x'], in top 20 only" in out
 
 
 def test_shipped_recall_file_parses_and_is_all_samples():
