@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, Response
 from psycopg.types.json import Jsonb
 
-from app import anonymise, brief, db, main, render, research
+from app import anonymise, brief, db, render, research
 from app.main import User, require
 from app.review import SOURCE_KEYS, page, reviewable_cases
 from app.schema import quote_in
@@ -62,12 +62,7 @@ def _item(conn, lid):
 
 
 def _refuse(request, user, status, message, back):
-    """A browser gets a portal page with a way back; an API client keeps the JSON error."""
-    if main.wants_html(request):
-        resp = page(request, "message.html", user, message=message, back=back)
-        resp.status_code = status
-        return resp
-    raise HTTPException(status, message)
+    return render.friendly(request, user, status, message, back)
 
 
 @router.post("/library/save")

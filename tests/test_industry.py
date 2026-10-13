@@ -1,6 +1,7 @@
 import html
 import json
 import re
+import uuid
 import zipfile
 from io import BytesIO
 
@@ -691,3 +692,154 @@ def test_a_client_name_split_by_markup_is_caught_on_the_page_and_in_a_download(r
 def test_preview_shows_a_markdown_quote_as_plain_text(rows, approved):
     r = as_user("u1", G).post("/preview", data={"case_ids": [approved()], "research_id": rows([claim(MD)])})
     assert "Entra supports passwordless sign in out of the box" in r.text and "](" not in r.text and "**Entra" not in r.text
+
+
+# --- #235: library items in downloads ---
+
+LQ = "Library quote about passwordless sign in zq9"
+
+
+@pytest.fixture
+def libs(env):  # noqa: F811
+    db.init()
+    made = []
+
+    def add(kind="quotes", quote=LQ, title="Zero trust brief", url="https://docs.vendor.io/lib"):
+        quotes = [{"quote": quote, "publisher": "docs.vendor.io", "url": url, "retrieved_at": "2026-10-01T00:00:00+00:00", "type": "out_of_the_box"}]
+        body = {"quotes": quotes}
+        if kind == "brief":
+            body["brief"] = {"title": title, "takeaways": ["Verify every request [1]."], "themes": [{"heading": "Identity", "text": "Use single sign on [1]."}]}
+        with db.connect() as c:
+            made.append(c.execute("insert into library_items(topic, kind, body, created_by) values ('t',%s,%s,'u9') returning id",
+                                  (kind, json.dumps(body))).fetchone()[0])
+        return made[-1]
+    yield add
+    with db.connect() as c:
+        c.execute("delete from library_items where id = any(%s)", (made,))
+
+
+def lgen(ids=(), lib=(), fmt="md", ack=False, path="/generate", **kw):
+    form = {"format": fmt, "case_ids": list(ids), "library_ids": list(lib), **({"industry_context_ack": "on"} if ack else {})}
+    return as_user("u1", G).post(path, data=form, **kw)
+
+
+def test_library_quotes_join_the_cited_section_in_every_format(libs, approved):
+    cid, lid = approved(), libs()
+    assert LQ not in lgen([cid]).text                                    # nothing ticked: nothing added
+    md = lgen([cid], [lid]).text
+    assert LQ in md and md.index("Industry context") < md.index(LQ)
+    assert LQ in doc_text(lgen([cid], [lid], "docx").content)
+    assert any(LQ in " ".join(v) for s in slides(lgen([cid], [lid], "pptx").content)[1] for v in s.values())
+
+
+def test_a_library_brief_renders_with_its_own_sources_and_the_preview_matches(libs, approved):
+    cid, lid = approved(), libs("brief", url="https://docs.vendor.io/brief")
+    md = lgen([cid], [lid]).text
+    assert "# Zero trust brief" in md and "Verify every request" in md and "https://docs.vendor.io/brief" in md and "Industry context" not in md
+    assert "Zero trust brief" in doc_text(lgen([cid], [lid], "docx").content)
+    assert any("Zero trust brief" in " ".join(v) for s in slides(lgen([cid], [lid], "pptx").content)[1] for v in s.values())
+    p = lgen([cid], [lid], path="/preview").text
+    assert "Zero trust brief" in p and "Verify every request" in p and f'name="library_ids" value="{lid}"' in p  # the download repeats the same ids
+    assert "Industry context" not in p.split("Zero trust brief")[0].split("</article>")[-1]                      # no empty heading before the brief
+
+
+def test_a_withheld_brief_is_dropped_counted_and_not_recorded(libs, approved, monkeypatch):
+    cid, qid, bid = approved(), libs(), libs("brief")
+    def boom(*a, **k):
+        raise render.Withheld("x")
+    monkeypatch.setattr(render, "brief_section", boom)
+    md = lgen([cid], [qid, bid]).text
+    assert LQ in md and "1 library brief withheld" in md and "Zero trust" not in md
+    with db.connect() as c:
+        assert c.execute("select library_ids from generations order by id desc limit 1").fetchone()[0] == [qid]
+
+
+def test_library_ids_are_validated_and_library_alone_needs_the_acknowledgement(libs, approved):
+    cid, lid = approved(), libs()
+    assert lgen([cid], [999999999]).status_code == 404
+    assert lgen([cid], [lid, lid + 1, lid + 2, lid + 3]).status_code == 400
+    assert lgen([cid], [lid, lid, lid]).status_code == 200                 # duplicates collapse to one
+    assert lgen([], [lid]).status_code == 400                              # no case, no acknowledgement
+    r = lgen([], [lid], ack=True)
+    assert r.status_code == 200 and LQ in r.text
+    with db.connect() as c:
+        assert c.execute("select library_ids, industry_context_ack from generations order by id desc limit 1").fetchone() == ([lid], True)
+
+
+def test_a_browser_gets_a_page_not_json_for_library_errors(libs, approved):
+    cid, lid = approved(), libs()
+    html_ = {"headers": {"Accept": "text/html"}}
+    for path in ("/generate", "/preview"):
+        r = lgen([cid], [lid, lid + 1, lid + 2, lid + 3], path=path, **html_)
+        assert r.status_code == 400 and "text/html" in r.headers["content-type"] and "up to 3 library items" in r.text and 'href="/search"' in r.text
+        r = lgen([cid], [999999999], path=path, **html_)
+        assert r.status_code == 404 and "text/html" in r.headers["content-type"] and 'href="/search"' in r.text
+        assert lgen([cid], [999999999], path=path).json()["detail"] == "no such library item"   # not a browser: JSON stays
+
+
+def test_a_brief_slide_line_drops_the_briefs_own_citation_numbers(libs, approved):
+    cid, lid = approved(), libs("brief")
+    lines = [x for s in slides(lgen([cid], [lid], "pptx").content)[1] for v in s.values() for x in v]
+    line = next(x for x in lines if x.startswith("Zero trust brief"))
+    assert "Verify every request" in line and "[" not in line     # [1] would point at an unrelated industry source
+
+
+def test_a_library_quote_naming_a_client_is_anonymised_or_dropped_and_counted(libs, approved, reg):
+    cid = approved()
+    named = libs(quote=f"{reg} runs passwordless sign in zq9")                       # name in the text: apply() replaces it
+    off = libs(quote="Another library quote zq8", url=f"https://{reg.lower()}.example/x")  # name in the url: blocked() drops it
+    for fmt, text in (("md", lambda r: r.text), ("docx", lambda r: doc_text(r.content))):
+        t = text(lgen([cid], [named], fmt))
+        assert reg not in t and "a retailer runs passwordless" in t
+    r = lgen([cid], [off])
+    assert reg.lower() not in r.text.lower() and "zq8" not in r.text and "1 library quote withheld" in r.text
+    with db.connect() as c:
+        assert c.execute("select library_ids from generations order by id desc limit 1").fetchone()[0] is None   # nothing of it went out
+    assert lgen([], [off], ack=True).status_code == 400                              # nothing usable left and no case
+
+
+def test_a_brief_withheld_by_the_real_rule_is_dropped_and_the_preview_resends_the_choice(libs, approved):
+    cid, qid = approved(), libs()
+    first = f"Qwx{uuid.uuid4().hex[:6]}"
+    with db.connect() as c:  # a two-word name split over two takeaways: each passes alone, only the whole text gives it away
+        client = c.execute("insert into clients(name, anonymised_label) values (%s,'a bank') returning id", (f"{first} Bank",)).fetchone()[0]
+        bid = c.execute("insert into library_items(topic, kind, body, created_by) values ('t','brief',%s,'u9') returning id", (json.dumps({
+            "quotes": [{"quote": "q", "publisher": "p.example", "url": "https://p.example/a", "retrieved_at": "2026-10-01T00:00:00+00:00", "type": "out_of_the_box"}],
+            "brief": {"title": "T", "takeaways": [f"We saw {first}", "Bank again"], "themes": []}}),)).fetchone()[0]
+    try:
+        md = lgen([cid], [qid, bid]).text
+        assert LQ in md and "1 library brief withheld" in md and first not in md
+        p = lgen([cid], [qid, bid], path="/preview").text
+        assert f'name="library_ids" value="{bid}"' in p and f'name="library_ids" value="{qid}"' in p and "1 library brief withheld" in p
+    finally:
+        with db.connect() as c:
+            c.execute("delete from library_items where id=%s", (bid,))
+            c.execute("delete from clients where id=%s", (client,))
+
+
+def test_the_same_quote_from_research_and_the_library_appears_once(libs, approved, rows):
+    cid, lid = approved(), libs(quote="**Bold** passwordless statement zq7", url="https://learn.microsoft.com/entra")
+    rid = rows([claim("**Bold** passwordless statement zq7")])
+    md = as_user("u1", G).post("/generate", data={"format": "md", "case_ids": [cid], "research_id": rid, "library_ids": [lid]}).text
+    assert md.count("Bold passwordless statement zq7") == 1
+
+
+def test_a_damaged_library_row_is_a_400_not_a_500(libs, approved):
+    cid = approved()
+    with db.connect() as c:
+        a = c.execute("insert into library_items(topic, kind, body, created_by) values ('t','quotes','{}','u9') returning id").fetchone()[0]
+        b = c.execute("insert into library_items(topic, kind, body, created_by) values ('t','brief',%s,'u9') returning id", (json.dumps({"quotes": []}),)).fetchone()[0]
+    try:
+        for lid in (a, b):
+            r = lgen([cid], [lid])
+            assert r.status_code == 400 and "damaged" in r.json()["detail"]
+    finally:
+        with db.connect() as c:
+            c.execute("delete from library_items where id = any(%s)", ([a, b],))
+
+
+def test_case_study_and_pdf_outputs_carry_library_items(libs, approved):
+    cid, lid = approved(), libs("brief")
+    study = lgen([cid], [lid], "case_study_docx")
+    assert study.status_code == 200 and "Zero trust brief" in doc_text(study.content)
+    assert lgen([cid], [lid], "pdf_docx").content.startswith(b"%PDF")

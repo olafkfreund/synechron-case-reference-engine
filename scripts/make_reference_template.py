@@ -1,7 +1,8 @@
 """Write the placeholder Word template. Marketing's real template replaces brand/reference.docx
 and must use the same context: cases[] with title, client, note (empty unless an engagement), summary, details[{label,value}],
 blocks[{heading,text,paragraphs[str]}], lists[{heading,bullets[]}], diagrams[{image,caption}], footer (the case-study document only; empty elsewhere); and industry (or None): heading, disclaimer,
-groups[{title, lead, quotes[{quote, n}]}], sources[{n, title, publisher, url, date}], note
+groups[{title, lead, quotes[{quote, n}]}], sources[{n, title, publisher, url, date}], note, show_head (false when only library briefs follow: skip the heading, disclaimer, groups and sources),
+briefs[{title, disclaimer, takeaways[str], themes[{heading, text}], sources[{n, title, publisher, url, date}], note}] (library briefs, each with its own sources)
 (statements[{text}] is the flat fallback). The optional second path gets the brief template (brand/brief.docx): brief with title, disclaimer,
 takeaways[str], themes[{heading, text}], sources[{n, title, publisher, url, date}], appendix[{n, quote}], note.
 Usage: make_reference_template.py <out.docx> [<brief.docx>]
@@ -14,6 +15,7 @@ from docx.shared import Pt, RGBColor
 
 def industry_section(d, page_break=True):
     d.add_paragraph("{%p if industry %}")
+    d.add_paragraph("{%p if industry.show_head %}")
     d.add_heading("{{ industry.heading }}", 1).paragraph_format.page_break_before = page_break
     d.add_paragraph().add_run("{{ industry.disclaimer }}").italic = True
     d.add_paragraph("{%p for g in industry.groups %}")
@@ -29,9 +31,30 @@ def industry_section(d, page_break=True):
     d.add_paragraph("[{{ s.n }}] {{ s.title }}, {{ s.publisher }}, {{ s.url }}, retrieved {{ s.date }}")
     d.add_paragraph("{%p endfor %}")
     d.add_paragraph("{%p endif %}")
+    d.add_paragraph("{%p endif %}")
     d.add_paragraph("{%p if industry.note %}")
     d.add_paragraph("{{ industry.note }}")
     d.add_paragraph("{%p endif %}")
+    d.add_paragraph("{%p for b in industry.briefs %}")  # library briefs (#235): each with its own sources
+    d.add_heading("{{ b.title }}", 1).paragraph_format.page_break_before = page_break
+    d.add_paragraph().add_run("{{ b.disclaimer }}").italic = True
+    d.add_paragraph("{%p for t in b.takeaways %}")
+    d.add_paragraph("{{ t }}", style="List Bullet")
+    d.add_paragraph("{%p endfor %}")
+    d.add_paragraph("{%p for t in b.themes %}")
+    d.add_heading("{{ t.heading }}", 2)
+    d.add_paragraph("{{ t.text }}")
+    d.add_paragraph("{%p endfor %}")
+    d.add_paragraph("{%p if b.sources %}")
+    d.add_heading("Sources", 2)
+    d.add_paragraph("{%p for s in b.sources %}")
+    d.add_paragraph("[{{ s.n }}] {{ s.title }}, {{ s.publisher }}, {{ s.url }}, retrieved {{ s.date }}")
+    d.add_paragraph("{%p endfor %}")
+    d.add_paragraph("{%p endif %}")
+    d.add_paragraph("{%p if b.note %}")
+    d.add_paragraph("{{ b.note }}")
+    d.add_paragraph("{%p endif %}")
+    d.add_paragraph("{%p endfor %}")
     d.add_paragraph("{%p endif %}")
 
 

@@ -210,6 +210,33 @@ Branch `feat/235-library-in-bids`, worktree `../refs-engine-235`. Two PRs.
 - Codex review (gpt-6-sol), P2, confirmed: a topic chip sent `due=` when
   "Needs re-check" was off, which gave a 422. It now sends `due=0`. A test
   follows the rendered chip link.
+- Step 8: brief items travel inside the `industry` dict (`industry["briefs"]`)
+  rather than as a separate return value, so the renderers need no new
+  parameter. `build()` returns the ids actually rendered, and those are what
+  `generations.library_ids` stores.
+- Step 9:
+  - An output with only briefs drops the empty "Industry context" heading
+    (`show_head`). The withheld note always shows.
+  - On the pptx slide, briefs come before quote lines, so a full set of
+    quotes can't push them off. They share the `SLIDE_ITEMS` cap.
+- Step 10: the "Include" checkboxes belong to the Download all form only. An
+  HTML input has a single `form=` owner, so per-case downloads leave library
+  items out, and the card says so. With library suggestions and no case, the
+  form adds the acknowledgement checkbox.
+- Step 11: browser posts to `/preview` and `/generate` that fail a library
+  or case check get the `message.html` page with a link back to search,
+  through the shared `render.friendly()`, which `library._refuse` also uses.
+  Clients that aren't browsers still get JSON.
+- PR 2 review fixes (Codex gpt-6-sol and Opus):
+  - Brief slide lines drop the brief's own `[n]`.
+  - A quote item is audited as used only when one of its quotes is
+    rendered, and its withheld quotes are counted in the note.
+  - The preview re-sends the chosen ids, so the download shows the same
+    withheld note.
+  - One normalised `(url, quote)` key (`plain()` + `apply()`) is used for
+    dedupe and for the case-study heading.
+  - A damaged library row gives a 400.
+  - Tests use real protected client names, not monkeypatches.
 
 ## Tests
 
