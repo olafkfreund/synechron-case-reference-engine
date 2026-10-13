@@ -14,6 +14,9 @@
     if (!b) return;
     function sync() { b.setAttribute("aria-pressed", current() === "dark" ? "true" : "false"); }
     sync();
+    try {  // no saved choice: follow the OS while the page is open
+      matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () { if (!stored()) sync(); });
+    } catch (e) {}
     b.addEventListener("click", function () {
       var n = current() === "dark" ? "light" : "dark";
       d.setAttribute("data-theme", n);

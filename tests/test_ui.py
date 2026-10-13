@@ -263,6 +263,7 @@ def test_theme_contrast():
         assert ratio(t["input-border"], t["surface"]) >= 3, name  # a field's edge is a UI component
         assert ratio(t["header-text"], t["header"]) >= 4.5 and ratio(t["header-tag"], t["header"]) >= 4.5, name
         assert ratio(t["header-text"], t["header-hover"]) >= 4.5, name
+        assert ratio(t["header-strong"], t["header"]) >= 4.5, name  # the brand link on hover
 
 
 def test_theme_toggle_on_every_page(make, approved, monkeypatch):  # noqa: F811
@@ -303,3 +304,10 @@ def test_templates_have_no_inline_colours():
         if re.search(r"<style\b|\bbgcolor=|\bcolor=\"", t):
             bad.append((f.name, "style block or colour attribute"))
     assert bad == []
+
+
+def test_brand_hover_uses_the_header_colour_and_theme_js_follows_the_os():
+    assert ".site-header .brand:hover{color:var(--header-strong)}" in CSS.read_text()
+    js = (CSS.parent / "theme.js").read_text()
+    assert 'addEventListener("change"' in js and "prefers-color-scheme: dark" in js and "if (!stored()) sync()" in js
+    assert "onclick" not in js

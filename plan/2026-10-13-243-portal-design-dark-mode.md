@@ -300,3 +300,11 @@ ignored.
     one script, `theme.js`.
   - `docs/user-guide/bid-team.md` labels follow the new button text.
   - Full suite: 1118 passed.
+- Step 8: the session took screenshots of search (with source documents
+  open), preview, library list and item, research, and review, in light and
+  dark at 1280 and 390, on the demo data.
+- Codex review (gpt-6-sol): two findings, both fixed.
+  - The brand link hover now uses `--header-strong`, checked at 4.5:1 in the
+    contrast test.
+  - `theme.js` resyncs `aria-pressed` and the icon on OS theme changes when
+    no choice is saved.
