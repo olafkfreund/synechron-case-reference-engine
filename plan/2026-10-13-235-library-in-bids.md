@@ -227,6 +227,16 @@ Branch `feat/235-library-in-bids`, worktree `../refs-engine-235`. Two PRs.
   or case check get the `message.html` page with a link back to search,
   through the shared `render.friendly()`, which `library._refuse` also uses.
   Clients that aren't browsers still get JSON.
+- PR 2 review fixes (Codex gpt-6-sol and Opus):
+  - Brief slide lines drop the brief's own `[n]`.
+  - A quote item is audited as used only when one of its quotes is
+    rendered, and its withheld quotes are counted in the note.
+  - The preview re-sends the chosen ids, so the download shows the same
+    withheld note.
+  - One normalised `(url, quote)` key (`plain()` + `apply()`) is used for
+    dedupe and for the case-study heading.
+  - A damaged library row gives a 400.
+  - Tests use real protected client names, not monkeypatches.
 
 ## Tests
 

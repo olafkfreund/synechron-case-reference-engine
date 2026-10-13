@@ -164,7 +164,9 @@ def slide_statements(ind: dict) -> list[str]:
     lines = [f"{g['lead']} \u201c{excerpt(g['quotes'][0]['quote'], SLIDE_QUOTE)}\u201d [{g['quotes'][0]['n']}]"
              for g in ind["groups"]]
     # a library brief is one line (its title and takeaways, no source numbers); briefs come first so they are not cut by the quotes
-    briefs = [excerpt(f"{b['title']}: {' '.join(b['takeaways'])}".strip(": "), SLIDE_QUOTE) for b in ind.get("briefs", [])]
+    from app.brief import CITE  # a brief's [n] points at its own sources, which the slide does not list
+    nocite = lambda t: re.sub(r"\s+([.,;:])", r"\1", " ".join(CITE.sub("", t).split()))  # noqa: E731
+    briefs = [excerpt(nocite(f"{b['title']}: {' '.join(b['takeaways'])}").strip(": "), SLIDE_QUOTE) for b in ind.get("briefs", [])]
     return (briefs + lines)[:SLIDE_ITEMS] + ([ind["note"]] if ind["note"] else [])
 
 
@@ -617,12 +619,22 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
     except Withheld as e:
         raise HTTPException(409, str(e)) from None
     from app import research  # here: research imports render's neighbours
-    lib_claims, briefs, used, withheld = [], [], [], 0
+    def key(c):  # one normal form for every claim, so the same quote from two places is one
+        q = str(c.get("quote") or "")
+        return c.get("url"), anonymise.apply(q if c.get("type") == "technical_note" else plain(q), clients)
+
+    lib_claims, briefs, used, withheld, dropped = [], [], [], 0, 0
     for lid in lib:  # in the order chosen; text is re-checked now, whatever was true when it was saved
         _, kind, body = items[lid]
+        ok = isinstance(body, dict) and isinstance(body.get("quotes"), list) and (kind == "quotes" or isinstance(body.get("brief"), dict))
+        if kind not in ("quotes", "brief") or not ok:
+            raise HTTPException(400, f"library item {lid} is damaged and cannot be used")
         if kind == "quotes":
-            lib_claims += research.visible_claims(body["quotes"], clients)[0]
-            used.append(lid)
+            kept, n = research.visible_claims(body["quotes"], clients)
+            dropped += n
+            if (industry_section(kept, clients) or {}).get("statements"):  # used only if a quote survives to the page
+                lib_claims += kept
+                used.append(lid)
         else:
             try:
                 briefs.append(brief_section(body["brief"], body["quotes"], clients))
@@ -631,25 +643,26 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
                 withheld += 1
     seen, merged = set(), []
     for c in attached + claims + lib_claims:  # attached first: they win the slide's 5 places
-        if (k := (c.get("url"), c.get("quote"))) not in seen:
+        if (k := key(c)) not in seen:
             seen.add(k); merged.append(c)
     # the new heading only if an attached claim survives apply()/blocked() at render
     cited = bool(attached) and bool((industry_section(attached, clients, pages=pages) or {}).get("statements"))
-    mine = {(c.get("url"), c.get("quote")) for c in attached}
-    only_attached = not any((c.get("url"), c.get("quote")) not in mine for c in claims + lib_claims)  # no ad-hoc research or library text merged in
+    mine = {key(c) for c in attached}
+    only_attached = not any(key(c) not in mine for c in claims + lib_claims)  # no ad-hoc research or library text merged in
     heading = (APPROACH_HEADING if study and only_attached else SOURCES_HEADING) if cited else INDUSTRY_HEADING
     industry = industry_section(merged, clients, heading=heading, pages=pages) \
         if merged else None
     if not ids and not (industry and industry["statements"]) and not briefs:
         raise HTTPException(400, "the research has no usable public statements")
-    if briefs or withheld:
+    if briefs or withheld or dropped:
         industry = industry or {"heading": heading, "disclaimer": INDUSTRY_DISCLAIMER, "groups": [], "sources": [], "statements": [], "note": ""}
-        if withheld:
-            n = f"{withheld} library brief{'s' if withheld != 1 else ''} withheld: {'they' if withheld != 1 else 'it'} named a protected client"
-            industry["note"] = f"{industry['note']}; {n}" if industry["note"] else n
+        for count, what in ((withheld, "library brief"), (dropped, "library quote")):
+            if count:
+                n = f"{count} {what}{'s' if count != 1 else ''} withheld: {'they' if count != 1 else 'it'} named a protected client"
+                industry["note"] = f"{industry['note']}; {n}" if industry["note"] else n
     if industry:  # the heading and disclaimer come with quotes, or when there is no brief to stand alone
         industry["briefs"] = briefs
-        industry["show_head"] = bool(industry["groups"]) or not (briefs or withheld)
+        industry["show_head"] = bool(industry["groups"]) or not (briefs or withheld or dropped)
     return ids, sections, industry, anonymised, claims, used
 
 
@@ -658,7 +671,7 @@ def preview(request: Request, case_ids: list[int] = Form([]), research_id: int |
             industry_context_ack: bool = Form(False), library_ids: list[int] = Form([]), user: User = Depends(require("user"))):
     with db.connect() as conn:  # same content and errors as /generate; nothing is logged
         try:
-            ids, sections, industry, _, _, used = build(conn, case_ids, research_id, industry_context_ack, user, library_ids=library_ids)
+            ids, sections, industry, _, _, _ = build(conn, case_ids, research_id, industry_context_ack, user, library_ids=library_ids)
         except HTTPException as e:
             if e.status_code not in (400, 404):
                 raise
@@ -668,7 +681,7 @@ def preview(request: Request, case_ids: list[int] = Form([]), research_id: int |
             _, study, study_industry, _, _, _ = build(conn, case_ids, research_id, industry_context_ack, user, "case_study_docx", library_ids)
             footer, retitled = study[0]["footer"], bool(study_industry) and study_industry["heading"] != (industry or {}).get("heading")
     return page(request, "output_preview.html", user, cases=sections, industry=industry, ids=ids,
-                research_id=research_id, library_ids=used, ack=industry_context_ack, footer=footer, retitled=APPROACH_HEADING if retitled else "")
+                research_id=research_id, library_ids=list(dict.fromkeys(library_ids)), ack=industry_context_ack, footer=footer, retitled=APPROACH_HEADING if retitled else "")
 
 
 @router.post("/generate")
