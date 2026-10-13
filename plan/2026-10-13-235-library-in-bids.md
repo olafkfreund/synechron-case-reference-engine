@@ -187,6 +187,15 @@ Branch `feat/235-library-in-bids`, worktree `../refs-engine-235`. Two PRs.
     only match would come from a label that `apply()` inserts is missed.
     That's rare, and noted in the code.
   - Topic chips use the first-seen casing.
+- User-reported fixes (2026-10-13):
+  - Save to library with no topic defaults to the scrubbed search or brief
+    title, else "Untitled research".
+  - The research page always sends `research_id`, so Save works for
+    non-reviewers.
+  - The action row is redesigned into Tick / Export / Write a brief / Save
+    to library, then "Download all".
+  - `/library/save` errors render an HTML message page (`message.html`)
+    for browsers.
 
 ## Tests
 

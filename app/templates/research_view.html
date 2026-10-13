@@ -10,14 +10,21 @@
 {% if omitted %}<div class="note">{{ omitted }} statement(s) not shown: they named a protected client.</div>{% endif %}
 <p class="muted" style="font-size:13px">Public sources only. This is industry context, not our own delivery.</p>
 {% if claims %}
+<div class="section-card"><div class="card-head"><h2>Use these sources</h2></div>
+<p><b>1. Tick quotes below</b>, then choose what to do with them.</p>
+<div class="trio">
+<div class="stack"><h3>Export</h3><div class="row"><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="md">Markdown</button><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="csv">CSV</button><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="copy">Copy</button></div></div>
+<div class="stack"><h3>Write a brief</h3><label for="brief-title">Brief title</label><input type="text" id="brief-title" name="title" form="pick" maxlength="200" placeholder="optional">
+<div class="row"><button class="btn" form="pick" formaction="/research/{{ research_id }}/brief">Write a brief</button></div></div>
+<div class="stack"><h3>Save to library</h3><label for="lib-topic">Topic</label><input type="text" id="lib-topic" name="topic" form="pick" maxlength="200" placeholder="defaults to the search">
+<div class="row"><button class="btn" form="pick" formaction="/library/save">Save to library</button></div></div></div></div>
 <form method="post" action="/generate" class="section-card stack">
-<div class="card-head"><h2>Use these sources</h2></div><input type="hidden" name="research_id" value="{{ research_id }}">
+<div class="card-head"><h2>Download all (industry context only)</h2></div><input type="hidden" name="research_id" value="{{ research_id }}">
 {% if case_id %}<label class="check"><input type="checkbox" name="case_ids" value="{{ case_id }}" checked> Include the reference case this research started from</label>{% endif %}
 <label class="check"><input type="checkbox" name="industry_context_ack"> I understand the industry context section contains public statements by third parties, not our delivery evidence (required when no case is included).</label>
 <div class="row"><label for="dl-format">Format</label><select id="dl-format" name="format" style="max-width:200px"><option value="docx">Word</option><option value="pptx">PowerPoint</option><option value="pdf_docx">PDF</option><option value="pdf_pptx">PDF slides</option><option value="md">Markdown</option></select>
 <button class="btn" formaction="/preview">Preview</button>
 <button class="btn primary">Download</button></div></form>
-<div class="row" style="margin-top:8px"><span class="muted">Selected quotes:</span><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="md">Markdown</button><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="csv">CSV</button><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="copy">Copy</button><input type="text" name="title" form="pick" placeholder="Brief title" maxlength="200" aria-label="Brief title" style="max-width:220px"><button class="btn" form="pick" formaction="/research/{{ research_id }}/brief">Write a brief</button><input type="text" name="topic" form="pick" value="{{ query }}" placeholder="Library topic" maxlength="200" aria-label="Library topic" style="max-width:220px"><button class="btn" form="pick" formaction="/library/save">Save to library</button></div>
 <form id="pick" method="post">{% if attach_cases %}<input type="hidden" name="research_id" value="{{ research_id }}">{% endif %}
 <div class="section-card"><div class="card-head"><h2>What public sources say</h2></div>
 <p class="muted" style="font-size:13px">The quote is the source; the reading under it is the AI's. Rely on the quote.</p>

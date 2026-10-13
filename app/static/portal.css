@@ -172,6 +172,8 @@ details.mini:not([open])>summary,.client-row .slot{min-width:84px;justify-conten
 .help-links{display:flex;flex-wrap:wrap;gap:0 20px}
 .help-links details.help-link[open]{flex:1 1 100%}
 
+.trio{display:grid;grid-template-columns:1fr;gap:16px}
+@media (min-width:900px){.trio{grid-template-columns:repeat(3,1fr)}}
 .cols{display:grid;grid-template-columns:1fr;gap:0 16px}
 @media (min-width:900px){.cols{grid-template-columns:1fr 1fr}}
 .filter{max-width:360px}
