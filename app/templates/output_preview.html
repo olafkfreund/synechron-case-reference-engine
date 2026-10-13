@@ -18,7 +18,7 @@
 <div class="section-card">
 <h2>{{ industry.heading }}</h2>
 <p><em>{{ industry.disclaimer }}</em></p>
-<ul>{% for i in industry["statements"] %}<li>{{ i.phrase }}: &ldquo;{{ i.quote }}&rdquo; &mdash; {{ i.publisher }}, {{ i.url }}, retrieved {{ i.date }}</li>{% endfor %}</ul>
+<ul>{% for i in industry["statements"] %}<li>{{ i.phrase }}: &ldquo;{{ i.quote }}&rdquo; &mdash; {{ i.url }}, retrieved {{ i.date }}</li>{% endfor %}</ul>
 {% if industry.note %}<p>{{ industry.note }}</p>{% endif %}
 </div>
 {% endif %}
