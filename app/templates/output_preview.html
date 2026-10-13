@@ -33,6 +33,9 @@
 <button class="btn dark" name="format" value="pptx">Download (PowerPoint)</button>
 <button class="btn dark" name="format" value="pdf_docx">Download (PDF)</button>
 <button class="btn dark" name="format" value="pdf_pptx">Download (PDF slides)</button>
-<button class="btn dark" name="format" value="md">Download (Markdown)</button></div></form>
+<button class="btn dark" name="format" value="md">Download (Markdown)</button>
+{% if footer %}<p class="muted" style="flex-basis:100%">Case study downloads also end with: {{ footer }}</p>{% endif %}
+{% if ids | length == 1 %}<button class="btn dark" name="format" value="case_study_docx">Download case study (Word)</button>
+<button class="btn dark" name="format" value="case_study_pdf">Download case study (PDF)</button>{% endif %}</div></form>
 </div>
 {% endblock %}

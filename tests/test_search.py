@@ -394,3 +394,10 @@ def test_placeholder_metric_outcome_is_value_only(approved, monkeypatch):
     picks_reply(monkeypatch, sr.Pick(case_id=a, reason="fits", tailored=""))
     top, _, _ = sr.results(ME, "onboarding", {})
     assert top[0]["outcomes"] == ["cut by half"]
+
+
+def test_search_card_has_case_study_buttons_for_one_case(approved, monkeypatch):
+    a = approved(data())
+    monkeypatch.setattr(sr, "complete_json", lambda *a_, **k: sr.Picks(picks=[sr.Pick(case_id=a, reason="", tailored="x")]))
+    t = client([USER, DOCS]).post("/search", data={"bid_text": "onboarding"}).text
+    assert 'value="case_study_docx"' in t and 'value="case_study_pdf"' in t

@@ -663,3 +663,29 @@ def test_docx_templates_loop_paragraphs():
         tpl.save(buf)
         paras = [p.text for p in Document(buf).paragraphs]
         assert "A" in paras and "B" in paras, path
+
+
+def test_case_study_docx_pdf_footer_and_one_case(approved, reg):
+    name, label_id = reg("Zorp", "a UK retailer")
+    c = approved(full().model_copy(update={"challenge": Sourced[str](value=f"Built for {name}", source_quote="q")}))
+    link(c, label_id)
+    r = gen([c], "case_study_docx")
+    assert r.status_code == 200 and r.headers["content-disposition"].endswith('case-study.docx"')
+    t = doc_text(r.content)
+    assert "Faster onboarding" in t and "At a glance" in t and "Based on 1 source document reviewed" in t
+    assert name not in t and "{{" not in t and "{%" not in t
+    assert [p.text for p in Document(BytesIO(r.content)).paragraphs] and Document(BytesIO(r.content)).core_properties.author == "Reference Engine"
+    pdf = gen([c], "case_study_pdf")
+    assert pdf.headers["content-disposition"].endswith('case-study.pdf"') and pdf.content.startswith(b"%PDF")
+    assert gen([c, approved(full())], "case_study_docx").status_code == 400
+    one = html.unescape(prev([c]).text)
+    note = re.search(r"Case study downloads also end with: (Based on 1 source document reviewed[^<]*)", one)
+    assert note and note[1] in t and one.count("Based on 1 source document") == 1  # the note only, not the bid section
+    assert "Case study downloads also end" not in html.unescape(prev([c, approved(full())]).text)
+
+
+def test_case_study_withheld_gives_409(approved, reg, monkeypatch):
+    c = approved(full())
+    monkeypatch.setattr(render.anonymise, "blocked", lambda *a, **k: True)
+    assert gen([c], "case_study_docx").status_code == 409
+

@@ -24,6 +24,7 @@ from app.schema import ReferenceCase, vague_metric
 
 router = APIRouter()
 TEMPLATE = Path(__file__).resolve().parent.parent / "brand" / "reference.docx"
+TEMPLATE_CASE_STUDY = TEMPLATE.with_name("case_study.docx")
 MASTER = Path(__file__).resolve().parent.parent / "brand" / "master.pptx"
 LAYOUT = "Reference case"
 PLACEHOLDERS = ("Title", "Client", "Summary", "Challenge", "Solution", "Outcomes", "Technology")
@@ -228,8 +229,8 @@ def protect(sections: list[dict], clients) -> list[dict]:
     return out
 
 
-def to_docx(sections: list[dict], industry: dict | None = None, images: dict[int, bytes] = {}) -> bytes:
-    tpl = DocxTemplate(TEMPLATE)
+def to_docx(sections: list[dict], industry: dict | None = None, images: dict[int, bytes] = {}, template=None) -> bytes:
+    tpl = DocxTemplate(template or TEMPLATE)
     # images are added after protect(): an InlineImage is not a string; one missing from `images` is skipped
     sections = [{**s, "diagrams": [{**d, "image": InlineImage(tpl, BytesIO(images[d["id"]]), width=Mm(min(160, d["width"] * 25.4 / 96)))}
                                    for d in s["diagrams"] if d["id"] in images]} for s in sections]
@@ -241,6 +242,10 @@ def to_docx(sections: list[dict], industry: dict | None = None, images: dict[int
     buf = BytesIO()
     tpl.save(buf)
     return buf.getvalue()
+
+
+def to_case_study_docx(sections: list[dict], industry: dict | None = None, images: dict[int, bytes] = {}) -> bytes:
+    return to_docx(sections, industry, images, TEMPLATE_CASE_STUDY)
 
 
 def excerpt(s: str, limit: int = SLIDE_TEXT) -> str:
@@ -537,7 +542,9 @@ OUTPUTS = {"docx": (to_docx, OFFICE + "wordprocessingml.document"),
            "md": (lambda s, i, images={}: to_markdown(s, i).encode(), "text/markdown; charset=utf-8"),
            # one format value per source keeps the form a single field
            "pdf_docx": (lambda s, i, images={}: to_pdf(to_docx(s, i, images), ".docx"), "application/pdf"),
-           "pdf_pptx": (lambda s, i, images={}: to_pdf(to_pptx(s, i, images), ".pptx"), "application/pdf")}
+           "pdf_pptx": (lambda s, i, images={}: to_pdf(to_pptx(s, i, images), ".pptx"), "application/pdf"),
+           "case_study_docx": (to_case_study_docx, OFFICE + "wordprocessingml.document"),
+           "case_study_pdf": (lambda s, i, images={}: to_pdf(to_case_study_docx(s, i, images), ".docx"), "application/pdf")}
 
 
 def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
@@ -553,6 +560,9 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
                                      "third-party statements only, not delivery evidence")
     if fmt is not None and fmt not in OUTPUTS:  # after the input checks, as on main
         raise HTTPException(400, f"format must be one of {', '.join(OUTPUTS)}")
+    study = bool(fmt) and fmt.startswith("case_study")
+    if study and len(ids) != 1:
+        raise HTTPException(400, "a case study is one case")
     claims, pages = [], []
     if research_id is not None:  # only your own, finished research
         row = conn.execute("select results from research where id=%s and created_by=%s and status='done'",
@@ -562,7 +572,7 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
         claims, pages = row[0].get("claims", []), row[0].get("pages", [])
     # same restrictions as search: approved, in date, and the user can open the source document
     rows = conn.execute(
-        "select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null, c.public_sources "
+        "select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null, c.public_sources, c.member_count, c.approved_at "
         "from cases c left join clients cl on cl.id = c.client_id "
         f"where c.id = any(%s) and c.status = 'approved' and c.review_due > now() and {VISIBLE}",
         (ids, list(user.groups))).fetchall()
@@ -572,11 +582,15 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None):
     clients = anonymise.load_clients(conn)
     sections, anonymised, attached = [], False, []
     for i in ids:
-        _, data, name, label, referenceable, linked, public_sources = by_id[i]
+        _, data, name, label, referenceable, linked, public_sources, members, approved = by_id[i]
         attached += public_sources
         shown = anonymise.shown(name, label, referenceable, linked)
         anonymised |= not (linked and referenceable) or anonymise.apply(shown, clients) != shown
-        sections.append(section(ReferenceCase.model_validate(data), shown))
+        sec = section(ReferenceCase.model_validate(data), shown)
+        if study:  # a role and a date, never a person; goes through protect() with the rest
+            n = members or 1
+            sec["footer"] = f"Based on {n} source document{'s' if n != 1 else ''} reviewed{f' on {approved:%Y-%m-%d}' if approved else ''}"
+        sections.append(sec)
     try:
         sections = protect(sections, clients)
     except Withheld as e:
@@ -599,8 +613,11 @@ def preview(request: Request, case_ids: list[int] = Form([]), research_id: int |
             industry_context_ack: bool = Form(False), user: User = Depends(require("user"))):
     with db.connect() as conn:  # same content and errors as /generate; nothing is logged
         ids, sections, industry, _, _ = build(conn, case_ids, research_id, industry_context_ack, user)
+        footer = ""  # what a case-study download adds; the same code path as /generate, so the text cannot drift
+        if len(ids) == 1:
+            footer = build(conn, case_ids, research_id, industry_context_ack, user, "case_study_docx")[1][0]["footer"]
     return page(request, "output_preview.html", user, cases=sections, industry=industry, ids=ids,
-                research_id=research_id, ack=industry_context_ack)
+                research_id=research_id, ack=industry_context_ack, footer=footer)
 
 
 @router.post("/generate")
@@ -621,7 +638,7 @@ def generate(format: str = Form(), case_ids: list[int] = Form([]), research_id: 
                      "values (%s,%s,%s,%s,%s,%s)", (user.sub, format, ids, anonymised, industry_context_ack and not ids,
                                                     research_id if (industry and claims) else None))
     return Response(body, media_type=mime, headers={
-        "Content-Disposition": f'attachment; filename="reference-cases.{format.split('_')[0]}"', "X-Content-Type-Options": "nosniff"})
+        "Content-Disposition": f'attachment; filename="{'case-study' if format.startswith('case_study') else 'reference-cases'}.{'pdf' if 'pdf' in format else format.rsplit('_', 1)[-1]}"', "X-Content-Type-Options": "nosniff"})
 
 
 @router.get("/cases/{cid}/diagrams/{did}.png")
