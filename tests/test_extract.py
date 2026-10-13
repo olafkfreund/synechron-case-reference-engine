@@ -619,6 +619,21 @@ def test_reextract_keeps_reviewer_prose_over_a_new_model_one(doc, monkeypatch):
     assert "Solution: your write-up from before the document changed was kept; check it still holds" in data["needs_attention"]
 
 
+def test_reextract_keeps_a_reviewer_architecture_over_a_new_proposal(doc, monkeypatch):
+    from app import writeup
+    q = "cut customer onboarding from 12 days to 3 days"
+    monkeypatch.setattr(writeup, "complete_json", lambda *a, **k: writeup.Writeup() if a[3] is writeup.Writeup else writeup.ArchProposal(
+        components=[writeup.ArchItem(name="Onboarding", zone="core", kind="service", cite="solution 1")]))
+    run(doc, case(("solution", "Faster onboarding", q)))
+    with db.connect() as c:
+        data = c.execute("select data from cases where document_id=%s", (doc[0],)).fetchone()[0]
+        data["architecture"] = {"title": "Mine", "components": [], "flows": [], "callouts": [], "by_reviewer": True, "flags": []}
+        c.execute("update cases set data=%s where document_id=%s", (Jsonb(data), doc[0]))
+    data, *_ = run(doc, case(("solution", "Faster onboarding", q)))
+    assert data["architecture"]["title"] == "Mine" and data["architecture"]["by_reviewer"] is True
+    assert any(n.startswith("Architecture: your diagram") for n in data["needs_attention"])
+
+
 def test_reextract_drops_model_prose_but_keeps_reviewer_prose_when_nothing_new(doc):
     run(doc, case())
     reviewer_prose(doc[0], "challenge")

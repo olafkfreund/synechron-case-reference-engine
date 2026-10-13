@@ -350,3 +350,13 @@ code ignores it. The demo can be re-seeded.
     guard; `route(budget=3)` proves the cap.
   - One flag for no cite plus no match; `no-store` on `architecture.png`;
     a font cache.
+- B1:
+  - In the model's output, flows and callouts refer to components and
+    outcomes by 1-based number; code assigns the ids.
+  - Rows with bad literals or unknown endpoints are dropped in code, not
+    failing the reply.
+  - A reviewer's architecture is re-checked against new quotes on
+    re-extraction.
+  - The autouse writeup stub returns `model()`, so each model class gets
+    its own empty reply.
+  - A proposal with zero components sets nothing.

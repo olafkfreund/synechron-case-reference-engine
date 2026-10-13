@@ -5,7 +5,7 @@ from psycopg.types.json import Jsonb
 
 from app import db, writeup
 from app.llm import MAX_TOKENS, complete_json, profile
-from app.schema import FIELDS, POINT_FIELDS, Extraction, Period, Prose, ReferenceCase, References, Sourced, _norm, assemble, quote_in, sourced, vague_metric
+from app.schema import FIELDS, POINT_FIELDS, Architecture, Extraction, Period, Prose, ReferenceCase, References, Sourced, _norm, assemble, check_architecture, quote_in, sourced, vague_metric
 
 EXTRACTION_VERSION = 3  # #212 phases A, B and D; every PR that changes extraction output bumps it (#222)
 MAX_CHARS = 400_000  # budget: longer documents are cut; chunks fit the model's context
@@ -227,6 +227,7 @@ def build(full_text: str, data_class: str, basis: str = "delivered", basis_reaso
             notes.append(f"{n} item(s) with prices, rates or payment terms removed")
     # engagements had prices stripped above, so none reaches the model; a delivered case's prose is caught by the price flag
     writeup.write(case, data_class)
+    writeup.propose(case, data_class)
     notes += case.needs_attention
     if n := sum(vague_metric(o) for o in case.outcomes):
         notes.append(f"{n} outcome(s) with no clear metric")
@@ -283,6 +284,10 @@ def extract(document_id: int, basis: str = "delivered", basis_reason: str = "", 
                 prev.flags = writeup.check_prose(prev.text, writeup.quotes_of(case, f), case.quotes())  # against the new quotes
                 case.prose[f] = prev
                 case.needs_attention.append(f"{label}: your write-up from before the document changed was kept; check it still holds")
+        if old and (old[0].get("architecture") or {}).get("by_reviewer"):  # the reviewer's diagram wins over a new proposal
+            case.architecture = Architecture.model_validate(old[0]["architecture"])
+            case.architecture.flags = check_architecture(case)  # against the new quotes
+            case.needs_attention.append("Architecture: your diagram from before the document changed was kept; check it still holds")
         data = case.model_dump()
         conn.execute(
             "insert into cases(document_id, data, summary, search_text, basis, status) "
