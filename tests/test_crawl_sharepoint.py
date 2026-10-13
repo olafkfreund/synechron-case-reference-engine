@@ -35,6 +35,7 @@ class Site:
     def __init__(self):
         self.delta, self.files, self.perms, self.statuses, self.calls, self.forms = {}, {}, {}, {}, [], []
         self.root_perms, self.perm_errors = ROOT_PERMS, {}
+        self.meta, self.folders, self.drive_url = {}, {}, "https://contoso.sharepoint.com/sites/x/Shared Documents"
 
     def __call__(self, request):
         url = str(request.url).split("?")[0] if "token=" not in str(request.url) else str(request.url)
@@ -45,6 +46,8 @@ class Site:
                                   json={"access_token": "tok"})
         assert request.headers["authorization"] == "Bearer tok"
         path = request.url.path
+        if path.endswith("/drives/D1"):
+            return httpx.Response(200, json={"webUrl": self.drive_url}) if self.drive_url else httpx.Response(404)
         if path.endswith("/root/permissions"):
             return httpx.Response(200, json={"value": self.root_perms})
         if "/items/" in path:
@@ -54,7 +57,9 @@ class Site:
                     return httpx.Response(self.perm_errors[iid])
                 return httpx.Response(200, json={"value": self.perms.get(iid, inherited())})
             if not path.endswith("/content"):  # item metadata (retry by id)
-                return httpx.Response(200, json=f(iid)) if iid in self.files else httpx.Response(404)
+                if iid in self.folders:
+                    return httpx.Response(200, json={"id": iid, "webUrl": self.folders[iid]})
+                return httpx.Response(200, json={**f(iid), **self.meta.get(iid, {})}) if iid in self.files else httpx.Response(404)
             queue = self.statuses.get(iid, [])
             if queue:
                 code, headers = queue.pop(0) if len(queue) > 1 or queue[0][0] != 503 else queue[0]
@@ -414,3 +419,72 @@ def test_crawl_does_not_write_back_groups_changed_mid_crawl(sp, monkeypatch):
     _change_groups_after_first_ingest(monkeypatch, sp.sid)
     first_run(sp)
     assert [v[1] for v in docs(sp.sid).values()] == [["g-new"], ["g-new"]]
+
+
+HOST = "https://contoso.sharepoint.com/sites/x/Shared%20Documents"
+
+
+def test_safe_link_accepts_only_the_hosts_own_https():
+    ok = "https://h.example/a/b?c=1"
+    assert crawl.safe_link(ok, "h.example") == ok
+    assert crawl.safe_link("https://H.Example/a", "h.example")
+    for bad in ("http://h.example/a", "javascript:alert(1)", "https://evil.example/a", "https://evil@h.example/a",
+                "https://u:p@h.example/a", "https://h.example:8443/a", "https://h.example:x/a", "https://h.example.evil.com/a",
+                "https://h.example/" + "a" * 2000, "", None, 5):
+        assert crawl.safe_link(bad, "h.example") is None, bad
+    assert crawl.safe_link(ok, None) is None
+
+
+def links(sid):
+    with db.connect() as c:
+        return {r[0]: r[1:] for r in c.execute("select external_id, web_url, folder_url from documents where source_id=%s", (sid,))}
+
+
+def linked(iid, url, parent="dir1"):
+    return dict(f(iid), webUrl=url, parentReference={"id": parent})
+
+
+def test_links_stored_and_parent_fetched_once_for_two_files(sp):
+    sp.files = {"f1": b"one", "f2": b"two"}
+    sp.folders["dir1"] = f"{HOST}/Cases"
+    sp.delta[ROOT] = (200, page([linked("f1", f"{HOST}/Cases/a.docx"), linked("f2", f"{HOST}/Cases/b.docx")], delta=f"{ROOT}?token=d1"))
+    crawl.crawl_sharepoint(sp.sid)
+    assert links(sp.sid) == {k: (f"{HOST}/Cases/{n}.docx", f"{HOST}/Cases") for k, n in (("f1", "a"), ("f2", "b"))}
+    assert sum(c.endswith("/items/dir1") for c in sp.calls) == 1
+
+
+def test_foreign_or_insecure_urls_are_stored_as_null(sp):
+    sp.files = {"f1": b"one", "f2": b"two"}
+    sp.folders["dir1"] = "http://contoso.sharepoint.com/Cases"
+    sp.delta[ROOT] = (200, page([linked("f1", "http://contoso.sharepoint.com/a.docx"),
+                                 linked("f2", "https://evil.example/b.docx")], delta=f"{ROOT}?token=d1"))
+    crawl.crawl_sharepoint(sp.sid)
+    assert links(sp.sid) == {"f1": (None, None), "f2": (None, None)}
+
+
+def test_unreadable_drive_host_nulls_all_links_and_the_crawl_goes_on(sp):
+    sp.drive_url = None
+    sp.files = {"f1": b"one"}
+    sp.delta[ROOT] = (200, page([linked("f1", f"{HOST}/a.docx")], delta=f"{ROOT}?token=d1"))
+    assert crawl.crawl_sharepoint(sp.sid)["new"] == 1
+    assert links(sp.sid) == {"f1": (None, None)}
+
+
+def test_backfill_fills_null_links_without_a_new_version_and_a_failure_withdraws_nothing(sp):
+    first_run(sp)  # f1, f2 stored with no links (the fake gives no webUrl)
+    with db.connect() as c:
+        before = c.execute("select external_id, updated_at from documents where source_id=%s order by 1", (sp.sid,)).fetchall()
+    sp.meta["f1"] = {"webUrl": f"{HOST}/a.docx", "parentReference": {"id": "dir1"}}
+    sp.folders["dir1"] = f"{HOST}/Cases"
+    sp.perm_errors = {}
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([], delta=f"{ROOT}?token=d2"))
+    # f2: the metadata call fails (item no longer answers) - it stays live and unlinked
+    del sp.files["f2"]
+    sp.statuses = {}
+    c = crawl.crawl_sharepoint(sp.sid)
+    assert links(sp.sid)["f1"] == (f"{HOST}/a.docx", f"{HOST}/Cases")
+    assert links(sp.sid)["f2"] == (None, None)
+    assert c["withdrawn_on_recheck"] == 0 and c["updated"] == 0 and docs(sp.sid)["f2"][0] is False
+    with db.connect() as cc:
+        assert cc.execute("select external_id, updated_at from documents where source_id=%s order by 1", (sp.sid,)).fetchall() == before
+    assert sum(x.endswith("/items/f1") for x in sp.calls[-30:]) >= 1
