@@ -116,7 +116,7 @@ def brief_section(body: dict, quotes: list[dict], clients) -> dict:
         kept = []
         for sent in brief.sentences(str(text or "")):
             c = clean(sent)
-            if anonymise.blocked(c, clients) or dead & {int(x) for x in brief.CITE.findall(c)}:
+            if anonymise.blocked(c, clients) or dead & set(brief.cites(c)):
                 omitted += 1
             else:
                 kept.append(c)

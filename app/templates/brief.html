@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block body %}
-<div class="page-head"><div><h1>Brief</h1><p>{{ title }}</p></div></div>
+<div class="page-head"><div><h1>Brief</h1><p>{{ body.title or title }}</p></div></div>
 {% if status == "queued" %}
 <div class="empty-state"><p>Writing&hellip; this page refreshes by itself.</p></div><meta http-equiv="refresh" content="5">
 {% elif status == "failed" %}<div class="note">The brief failed: {{ error }}</div>

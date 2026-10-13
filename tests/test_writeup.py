@@ -28,11 +28,18 @@ def test_check_prose_flags_numbers_names_and_prices():
     assert wu.check_prose("Fees of £1,200 per day applied.", ["x"], ["x"])[-1] == "contains a price or payment term"
 
 
-def test_check_prose_sentence_start_is_not_a_name_unless_acronym_or_digit():
-    assert wu.check_prose("Delivery began early.\n\nPlanning followed.", [Q1], [Q1]) == []
+def test_check_prose_sentence_start_is_not_a_name_unless_acronym_digit_or_uncommon():
+    assert wu.check_prose("However, delivery began early.\n\nThe plan followed.", [Q1], [Q1]) == []
+    assert wu.check_prose("Organisations should adopt it.", [Q1], [Q1]) == []  # a common start word
+    # an uncommon word at a sentence start is checked like any name (it used to be skipped), as a whole word in any case
+    assert wu.check_prose("Okta beats it.", [Q1], [Q1]) == ["names 'Okta', which no quote supports"]
+    assert wu.check_prose("Ledgers moved.", ["the ledgers moved"], ["the ledgers moved"]) == []
+    assert wu.check_prose("Ledgers moved.", ["the ledgerservice moved"], ["the ledgerservice moved"]) == ["names 'Ledgers', which no quote supports"]
+    assert wu.check_prose("Setup is easy", [Q1], [Q1], heading=True) == []  # a heading may open with any word
     assert wu.check_prose("SLA terms applied.", [Q1], [Q1]) == ["names 'SLA', which no quote supports"]
-    # "Phase" opens the sentence and "2" is a number, not a name: the number rule is what catches it
-    assert wu.check_prose("Phase 2 began.", [Q1], [Q1]) == ["number 2 is in no quote"]
+    # "2" is a number, not a name; "Phase" opens the sentence but is not a common start word, so it is checked now
+    assert wu.check_prose("Phase 2 began.", [Q1], [Q1]) == ["number 2 is in no quote", "names 'Phase', which no quote supports"]
+    assert wu.check_prose("Phase 2 began.", ["phase 2 began"], ["phase 2 began"]) == []
 
 
 def test_write_sets_prose_with_flags_and_notes(monkeypatch):

@@ -30,6 +30,16 @@ WRITEUP_SYSTEM = (
 DATE_WORDS = frozenset(w for n in ("january february march april may june july august september october november december "
                                    "monday tuesday wednesday thursday friday saturday sunday").split()
                        for w in (n, n[:3]))
+# a capital at a sentence start proves nothing for these: they are not names. Any other word there is checked like a name
+COMMON_STARTS = frozenset("""a an the this that these those it its they their them we our us you your he she his her i
+and but or so yet nor if when while where because although though since as after before until unless once whereas
+however also moreover furthermore therefore thus hence then still instead otherwise meanwhile overall finally first second third next
+in on at by for with without from to of into onto over under about between through during within across against among
+there here what which who whom whose how why each every some many most more much several both either neither all any no none other another such
+using use used based given following according providing supporting enabling running working
+customers clients users teams people staff organisations organizations companies businesses vendors providers
+can could may might must shall should will would do does did is are was were be been being has have had
+not only just even often usually typically generally""".split())
 PRICE_FLAG = "contains a price or payment term"  # blocks approval even for a reviewer's own text
 # a name is capitalised words on one line; a dot only inside a word ("Node.js"), so a sentence end never joins two
 _TAIL = r"[\w-]*(?:\.[\w-]+)*"
@@ -37,11 +47,12 @@ _TERM = re.compile(rf"\b[A-Z]{_TAIL}(?:[^\S\r\n]+[A-Z0-9]{_TAIL})*")
 _SENTENCE_START = re.compile(r"(?:^|[.!?]\s+|\n\s*\n)$")
 
 
-def check_prose(text: str, section_quotes: list[str], case_quotes: list[str]) -> list[str]:
+def check_prose(text: str, section_quotes: list[str], case_quotes: list[str], *, heading: bool = False) -> list[str]:
     """What in `text` no quote supports: numbers, capitalised names and prices. Empty means clean.
 
     A number must be in the section's own quotes; a name may come from any sourced quote of the case,
-    since a product named under Solution is often quoted only under technology.
+    since a product named under Solution is often quoted only under technology. A `heading` may open with any
+    capitalised word ("Setup"): only its later words and acronyms are checked.
     """
     from app.extract import COMMERCIAL  # extract imports this module inside build()
     flags = []
@@ -51,9 +62,8 @@ def check_prose(text: str, section_quotes: list[str], case_quotes: list[str]) ->
     for m in _TERM.finditer(text):
         term = m.group().rstrip(".-")
         first, _, rest = term.partition(" ")
-        # a capital at a sentence start proves nothing, unless it is an acronym or has a digit: drop that word only.
-        # Known limit: a single capitalised word that starts a sentence is never checked ("Snowflake runs it.")
-        if _SENTENCE_START.search(text[:m.start()]) and not (first.isupper() or any(c.isdigit() for c in first)):
+        # a common word at a sentence start is no name (an acronym or a word with a digit always is): drop that word only
+        if _SENTENCE_START.search(text[:m.start()]) and (heading or first.lower() in COMMON_STARTS) and not (first.isupper() and len(first) > 1):
             term = rest.strip()
         term = " ".join(w for w in term.split() if w.lower() not in DATE_WORDS and not w.isdigit())
         if not term:
