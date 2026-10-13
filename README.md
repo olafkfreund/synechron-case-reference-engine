@@ -94,7 +94,9 @@ sees the demo sources:
 The seed adds two
 sources ("Demo: Bid library" for `sales`, "Demo: Delivery archive" for `delivery`), ten clients and 14 cases
 (9 approved, 5 waiting for review, including a Fabrikam statement of work and change order to merge).
-Running `up` again leaves existing rows alone. The S3 originals are in memory and are put again each time.
+Each case is a full case study with points, written sections, technical references and, for most, a diagram.
+
+Running `up` again refreshes the demo cases in place: when a demo document's text has changed in `demo/cases.json`, the seed updates that document and its case, and a case you approved or edited by hand goes back to its scripted state. A document that has not changed is left alone, and nothing is deleted. The seed only ever touches sources named "Demo: ..." and their own documents and cases; any other source is never touched. The S3 originals are in memory and are put again each time.
 
 **Online research** also needs a Brave Search key: `demo.sh` reads `/run/agenix/api-brave-search` if it exists, or uses an exported `BRAVE_API_KEY`.
 
@@ -105,7 +107,7 @@ and review still work. Rows are made with no LLM call.
 Walkthrough:
 
 1. **Sales:** log in as `sales`, search for a bid text (try "claims" or "payments"), open a case, pick cases and draft an output.
-2. **Reviewer:** as `reviewer`, open the review list. Fix the case with an outcome named "metric", look at the unsourced field, and approve one.
+2. **Reviewer:** as `reviewer`, open the review list. Open "Contoso fraud scoring": its solution text names a product no quote supports, so approval is blocked until you edit it. "Northwind loyalty platform" has an unsourced region. Approve one.
 3. **Admin:** as `admin`, look at sources and clients, and merge the two Fabrikam cases.
 4. **Live upload:** as `admin`, upload a document with Upload on the "Demo: Bid library" row of the Sources page and watch it extract (needs a model).
 5. **Nobody:** log in as `nobody` and see that there is no access.
