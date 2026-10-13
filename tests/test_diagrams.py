@@ -478,3 +478,19 @@ def test_office_limit_drops_an_oversized_output_and_to_pdf_passes_none(tmp_path,
     monkeypatch.setattr(office, "convert", lambda *a, **k: seen.append((a, k)) or {"in.docx": b"%PDF"})
     from app import render
     assert render.to_pdf(b"x", ".docx") == b"%PDF" and "limit" not in seen[0][1] and len(seen[0][0]) == 4
+
+
+def test_one_corrupt_media_entry_does_not_block_the_other_vectors(monkeypatch):
+    calls = []
+    fake_convert(monkeypatch, page_png(), calls)
+    z = pack({"word/media/a_bad.emf": EMF + b"\0" * 5000, "word/media/b.emf": EMF + b"\0" * 10})
+    real = zipfile.ZipFile.open
+
+    def opener(self, name, *a, **k):
+        if getattr(name, "filename", name).endswith("a_bad.emf"):
+            raise zipfile.BadZipFile("Bad CRC-32")
+        return real(self, name, *a, **k)
+    monkeypatch.setattr(zipfile.ZipFile, "open", opener)
+    meta = {}
+    got = diagrams.document_images_from(z, "x.docx", meta=meta)
+    assert len(got) == 1 and list(calls[0][0]) == ["v0.emf"] and meta["vector_failed"] is False

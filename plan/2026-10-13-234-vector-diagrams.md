@@ -208,6 +208,12 @@ dismissed (`dismissed_images`) would be offered again. So:
     `with zf.open`.
   - Accepted and recorded: `VEC_SCAN = 100` largest media entries; soffice
     disk use is bounded only by the timeout.
+- Codex review (gpt-6-sol), both P2 and confirmed:
+  - `skip_unchanged` doesn't skip a document whose images are older than
+    `IMAGES_VERSION` and that has a live case, so unchanged Confluence
+    attachments get the backfill.
+  - Each media read is isolated, so one corrupt entry no longer blocks the
+    other vector candidates.
 
 ## Tests
 

@@ -192,5 +192,8 @@ def skip_unchanged(source_id: int, external_id: str, source_version: str, title:
         return conn.execute(
             "update documents set acl_groups=(select acl_groups from sources where id=%s for share), deleted_at=null, title=%s, "
             "web_url=coalesce(%s, web_url), folder_url=coalesce(%s, folder_url) "
-            "where source_id=%s and external_id=%s and source_version=%s returning id",
-            (source_id, title, *links, source_id, external_id, source_version)).fetchone() is not None
+            "where source_id=%s and external_id=%s and source_version=%s "
+            # a document whose images were read by an older version is downloaded once for the backfill
+            "and not (exists(select 1 from cases c where c.document_id=documents.id and c.status <> 'rejected') "
+            "and images_version < %s) returning id",
+            (source_id, title, *links, source_id, external_id, source_version, IMAGES_VERSION)).fetchone() is not None

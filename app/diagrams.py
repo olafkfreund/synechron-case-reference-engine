@@ -215,13 +215,15 @@ def _vector_candidates(zf, infos, prefix: str) -> list[tuple] | None:
         for info in eligible:
             if len(files) >= MAX_VECTORS:
                 break
-            with zf.open(info) as f:
-                ext = _vector_ext(f.read(48))
-            if ext:
+            try:
                 with zf.open(info) as f:
-                    raw = f.read(MAX_BYTES + 1)  # bounded whatever the declared size said
-            else:
+                    ext = _vector_ext(f.read(48))
                 raw = b""
+                if ext:
+                    with zf.open(info) as f:
+                        raw = f.read(MAX_BYTES + 1)  # bounded whatever the declared size said
+            except Exception:  # noqa: BLE001 - one bad entry (a bad CRC) loses only itself, as in the raster loop
+                continue
             if ext and len(raw) <= MAX_BYTES:
                 key = f"v{len(files)}"  # distinct stems: soffice names the output <stem>.png
                 files[f"{key}.{ext}"] = raw

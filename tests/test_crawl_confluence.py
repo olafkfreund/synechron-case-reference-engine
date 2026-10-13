@@ -227,6 +227,28 @@ def test_unchanged_attachment_is_not_downloaded_again(cf):
     assert "att:p1:a1" in live(cf.sid) and version(cf.sid) == "1:2026-01-01T00:00:00.000Z"
 
 
+def test_unchanged_attachment_with_older_images_is_downloaded_once_for_the_backfill(cf, monkeypatch):
+    calls = []
+    monkeypatch.setattr(ing, "document_images_from", lambda *a, **k: calls.append(1) or [(b"png", 500, 400, "")])
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"spec bytes", number=1)
+    crawl.crawl_confluence(cf.sid)
+    with db.connect() as c:  # as if read by version 1, with a live case
+        did = c.execute("select id from documents where source_id=%s and external_id='att:p1:a1'", (cf.sid,)).fetchone()[0]
+        c.execute("insert into cases(document_id,status) values (%s,'extracted') on conflict do nothing", (did,))
+        c.execute("update documents set images_version=1 where id=%s", (did,))
+        c.execute("delete from document_images where document_id=%s", (did,))
+    calls.clear()
+    cf.calls.clear()
+    offer_again(cf)
+    crawl.crawl_confluence(cf.sid)
+    assert DL in cf.calls and len(calls) == 1  # downloaded, and its images stored
+    cf.calls.clear()
+    offer_again(cf)
+    crawl.crawl_confluence(cf.sid)
+    assert DL not in cf.calls and len(calls) == 1  # skipped again
+
+
 def test_confluence_attachment_grown_past_cap_is_withdrawn(cf):
     cf.page("p1")
     cf.attach("p1", "a1", "spec.docx", b"spec bytes")
