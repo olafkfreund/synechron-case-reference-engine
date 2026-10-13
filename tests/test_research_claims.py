@@ -193,6 +193,59 @@ def test_view_hides_protected_names_in_claims_and_sources(reg):
     assert "clean claim quote" in t and "runs this nightly in production" in t
 
 
+BASE = {"statement": "S", "type": "vendor_claim", "retrieved_at": "2026-10-01T00:00:00+00:00", "rank": 3}
+
+
+def done_row(c, *quotes, **extra):
+    loc = sent(c, None)
+    finish(loc, [{**BASE, "quote": q, "url": f"https://v.example/{i}", "publisher": "v.example", **extra} for i, q in enumerate(quotes)])
+    return loc.rsplit("/", 1)[1]
+
+
+def test_export_returns_only_the_picked_claims_and_is_private(reg):
+    c = as_user("u1")
+    rid = done_row(c, "first quote here", "second quote here", "third quote here")
+    r = c.post(f"/research/{rid}/export", data={"format": "md", "n": [0, 2]})
+    assert r.status_code == 200 and "attachment" in r.headers["content-disposition"] and r.headers["cache-control"] == "no-store"
+    assert "first quote" in r.text and "third quote" in r.text and "second quote" not in r.text and "https://v.example/2" in r.text
+    assert as_user("u2").post(f"/research/{rid}/export", data={"format": "md", "n": [0]}).status_code == 404
+
+
+def test_export_drops_protected_claims_and_refuses_when_none_are_left(reg):
+    c = as_user("u1")
+    loc = sent(c, None)
+    finish(loc, [{**BASE, "quote": "ok quote", "url": "https://v.example/a", "publisher": "v.example"},
+                 {**BASE, "quote": "bad quote", "url": "https://w.example/b", "publisher": f"{reg}.example"}])
+    rid = loc.rsplit("/", 1)[1]
+    r = c.post(f"/research/{rid}/export", data={"format": "md", "n": [0, 1]})
+    assert "ok quote" in r.text and "bad quote" not in r.text and reg.lower() not in r.text.lower()
+    assert c.post(f"/research/{rid}/export", data={"format": "md", "n": [1]}).status_code == 400
+    assert c.post(f"/research/{rid}/export", data={"format": "md"}).status_code == 400
+
+
+def test_export_csv_neutralises_formulas(reg):
+    c = as_user("u1")
+    rid = done_row(c, "=HYPERLINK(\"http://x\")")
+    r = c.post(f"/research/{rid}/export", data={"format": "csv", "n": [0]})
+    assert r.headers["content-type"].startswith("text/csv") and "'=HYPERLINK" in r.text
+    assert "\n=HYPERLINK" not in r.text and ',=HYPERLINK' not in r.text and '"=HYPERLINK' not in r.text
+
+
+def test_export_copy_is_a_readonly_textarea(reg):
+    c = as_user("u1")
+    rid = done_row(c, "copy me quote")
+    r = c.post(f"/research/{rid}/export", data={"format": "copy", "n": [0]})
+    assert "<textarea readonly" in r.text and "copy me quote" in r.text and "attachment" not in r.headers.get("content-disposition", "")
+
+
+def test_view_puts_actions_first_and_has_no_type_label(reg):
+    c = as_user("u1")
+    rid = done_row(c, "some quote text")
+    t = c.get(f"/research/{rid}").text
+    assert t.index("Use these sources") < t.index("What public sources say")
+    assert "vendor claim" not in t and "AI reading:" in t and 'form="pick"' in t
+
+
 def test_search_page_has_research_button(approved, monkeypatch):
     from app import search as sr
     cid = approved()
