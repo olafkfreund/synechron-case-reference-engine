@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 231
 intent: intent/2026-10-13-231-richer-research.md
 ---
