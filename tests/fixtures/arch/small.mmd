@@ -1,21 +1,21 @@
 flowchart LR
   subgraph channels["Channels"]
-    n_web["Customer portal<br/>Self-service sign-up for new customers"]
+    n0["Customer portal<br/>Self-service sign-up for new customers"]
   end
   subgraph integration["Integration"]
-    n_api["Onboarding API<br/>Validates and routes applications"]
+    n1["Onboarding API<br/>Validates and routes applications"]
   end
   subgraph core["Core"]
-    n_core["Account engine<br/>Opens accounts and holds balances"]
+    n3["Account engine<br/>Opens accounts and holds balances"]
   end
   subgraph data["Data"]
-    n_db["Customer store<br/>Customer and account records"]
+    n4["Customer store<br/>Customer and account records"]
   end
   subgraph external["External"]
-    n_kyc["Identity check<br/>Screens applicants against watch lists"]
+    n2["Identity check<br/>Screens applicants against watch lists"]
   end
-  n_web -->|"Submit application"| n_api
-  n_api -->|"Screen applicant"| n_kyc
-  n_api -->|"Open account"| n_core
-  n_core -->|"Write records"| n_db
-  n_kyc -.->|"Screening result"| n_api
+  n0 -->|"Submit application"| n1
+  n1 -->|"Screen applicant"| n2
+  n1 -->|"Open account"| n3
+  n3 -->|"Write records"| n4
+  n2 -.->|"Screening result"| n1

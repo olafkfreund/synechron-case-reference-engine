@@ -385,6 +385,32 @@ def _tech_values(case: "ReferenceCase") -> list[str]:
     return [t.value for t in (*case.tech_stack, *case.tech_references) if t.value and not t.unsourced]
 
 
+def _tokens(s: str) -> set[str]:
+    return {w.rstrip(".-") for w in re.findall(r"[a-z0-9][a-z0-9.+#-]*", _norm(s))}
+
+
+def _known(token: str, vocab: set[str]) -> bool:
+    """A word the vocabulary uses, in any form: "validation" for "validates" (five letters shared), exact for short words."""
+    t = token.rstrip(".-").casefold()
+    return any(t == v or (len(t) >= 5 and len(v) >= 5 and t[:5] == v[:5]) for v in vocab)
+
+
+def unsupported_terms(name: str, vocab: set[str]) -> list[str]:
+    """Capitalised words, acronyms and words with a digit in a component name that the cited quote, the tech stack and the
+    references never use, the first word included: only an ordinary opener ("The", "Using") is exempt (a product is not one)."""
+    from app.writeup import COMMON_STARTS
+    out = []
+    for i, w in enumerate(name.split()):
+        bare = w.strip(".,;:()[]\"'")
+        if not bare or not (bare[0].isupper() or any(ch.isdigit() for ch in bare)):
+            continue
+        if i == 0 and bare.casefold() in COMMON_STARTS:
+            continue
+        if not _known(bare, vocab):
+            out.append(bare)
+    return out
+
+
 def tech_match(case: "ReferenceCase", name: str) -> bool:
     return bool(_words(name) & _words(" ".join(_tech_values(case))))
 
@@ -413,8 +439,10 @@ def check_architecture(case: "ReferenceCase") -> list[str]:
             flags.append(f"{who} cites '{c.cite}', which is no sourced point")
         if not c.cite.strip() and not tech_match(case, c.name):
             flags.append(f"{who} has no cite and matches no technology")
-        if not _words(c.name) & (_words(q or "") | _words(tech)):
-            flags.append(f"{who} matches neither its cited point nor the technology")
+        if c.cite.strip() and not _words(c.name) & (_words(q or "") | _words(tech)):
+            flags.append(f"{who} matches neither its cited point nor the technology")  # one flag when there is no cite either: above
+        flags += [f"{who} names '{t}', which neither its cited point nor the technology uses"
+                  for t in unsupported_terms(c.name, _tokens(q or "") | _tokens(tech))]
         flags += [f"{who}: {f}" for t in (c.name, c.role) for f in check_prose(t, [q] if q else [], allq, heading=True)]
     names = {c.id: c.name for c in a.components}
     for f in a.flows:

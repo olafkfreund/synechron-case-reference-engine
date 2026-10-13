@@ -787,7 +787,7 @@
        "role": "Review and override order proposals",
        "zone": "channels",
        "kind": "user",
-       "cite": "solution 3"
+       "cite": "solution 2"
       },
       {
        "id": "dash",
@@ -1659,7 +1659,7 @@
       },
       {
        "id": "track",
-       "name": "Live map for customers",
+       "name": "Customer map",
        "role": "Customers follow the van on a map",
        "zone": "channels",
        "kind": "app",
@@ -3300,7 +3300,7 @@
       },
       {
        "id": "bank",
-       "name": "Bank payment files",
+       "name": "Payment files from banks",
        "role": "Read in the ISO 20022 format",
        "zone": "external",
        "kind": "external",

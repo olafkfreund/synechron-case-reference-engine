@@ -373,3 +373,22 @@ def test_a_tech_stack_match_is_accepted_without_a_cite_and_a_bare_name_is_not():
     assert any("Mystery box" in f and "no cite" in f for f in flags) and not any("Kafka cluster" in f for f in flags)
     prune_architecture(c)
     assert [x.id for x in c.architecture.components] == ["k"] and c.architecture.flows == []
+
+
+def test_an_invented_product_is_flagged_even_as_the_first_word():
+    def comp(name, cite="configuration 1"):
+        return {"id": "k", "name": name, "role": "Carries claim events", "zone": "data", "kind": "queue", "cite": cite}
+    c, check = _checked(components=[comp("Snowflake events")], flows=[], callouts=[])
+    assert any("'Snowflake'" in f for f in check(c))  # "events" overlaps the quote; "Snowflake" is in no quote, tech or reference
+    c, check = _checked(components=[comp("Kafka events")], flows=[], callouts=[])
+    assert check(c) == []
+    c, check = _checked(components=[comp("The Kafka events")], flows=[], callouts=[])
+    assert check(c) == []  # an ordinary opener is exempt
+    c, check = _checked(components=[comp("Postgres14 store")], flows=[], callouts=[])
+    assert any("Postgres14" in f for f in check(c))  # a word with a digit is a product too
+
+
+def test_no_cite_and_no_tech_match_is_one_flag():
+    c, check = _checked(components=[{"id": "m", "name": "Mystery box", "role": "x", "zone": "core", "kind": "app", "cite": ""}], flows=[], callouts=[])
+    flags = check(c)
+    assert sum("has no cite" in f for f in flags) == 1 and not any("matches neither" in f for f in flags)

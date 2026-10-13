@@ -209,7 +209,20 @@ def test_mermaid_snapshot_and_escaping():
         {"id": "a b", "name": 'Say "hi" [x]', "zone": "core", "kind": "app"}, {"id": "c", "name": "C|D<E>", "zone": "data", "kind": "store"}],
         "flows": [{"src": "a b", "dst": "c", "label": "a|b", "mode": "batch"}]})
     m = to_mermaid(a)
-    assert "#34;hi#34; #91;x#93;" in m and "C#124;D#60;E#62;" in m and 'n_a_b -.->|"a#124;b"| n_c' in m
+    assert "#34;hi#34; #91;x#93;" in m and "C#124;D#60;E#62;" in m and 'n0 -.->|"a#124;b"| n1' in m
+
+
+def test_mermaid_cannot_break_its_fence_or_its_lines_and_ids_never_collide():
+    a = Architecture.model_validate({"components": [
+        {"id": "a-b", "name": "Tick ``` fence", "role": "line one\nline two\r\nthree", "zone": "core", "kind": "app"},
+        {"id": "a_b", "name": "Second", "zone": "core", "kind": "app"}],
+        "flows": [{"src": "a-b", "dst": "a_b", "label": "x\ny", "mode": "api"}, {"src": "a_b", "dst": "a-b", "label": "back", "mode": "api"}]})
+    m = to_mermaid(a)
+    assert "`" not in m and "#96;#96;#96;" in m
+    assert all(line.startswith(("flowchart", "  ")) for line in m.splitlines())  # no stray line from a newline in the text
+    assert "line one line two three" in m and "x y" in m
+    assert 'n0 -->|"x y"| n1' in m and 'n1 -->|"back"| n0' in m  # "a-b" and "a_b" are two nodes
+
 
 
 def test_every_kind_has_an_icon_in_svg_and_png():
@@ -267,3 +280,33 @@ def test_cards_in_a_row_share_a_height_that_fits_their_text(name):
     assert all(len(h) == 1 for h in rows.values())
     if name == "sample-small":
         assert min(c.h / sc.scale for c in cards(sc)) < 78  # one-line roles no longer leave a fixed 78 px
+
+
+def test_worst_case_layouts_stay_fast_and_the_router_gives_up_on_budget():
+    import time
+    from app.archdiagram import _Grid, _SCENES
+    for name in ("one-zone", "six-columns", "full", "platform-only"):
+        _SCENES.clear()
+        t = time.perf_counter()
+        layout(CASES[name], FOOTER)
+        assert time.perf_counter() - t < 3.0, name  # a loose guard against hangs; route(budget=...) proves the cap deterministically
+    assert _Grid([], [], (0, 0, 400, 400)).route((1, 1), 0, (40, 40), 0, budget=3) is None  # out of budget: the caller draws an elbow
+    assert layout(CASES["one-zone"], FOOTER) is layout(CASES["one-zone"], FOOTER)  # cached, and deterministic below
+
+
+def test_fonts_are_loaded_once_per_style_and_size():
+    from app.archdiagram import _font_px
+    to_png(layout(SAMPLES["small"], "Source: Demo"))
+    before = _font_px.cache_info()
+    to_png(layout(SAMPLES["small"], "Source: Demo"))
+    assert _font_px.cache_info().misses == before.misses  # the second render loads no font
+
+
+def test_a_long_unvalidated_architecture_still_lays_out_and_renders():
+    from app.schema import ArchComponent
+    long = "An expanded client label " * 6
+    a = Architecture.model_construct(title=long, by_reviewer=False, flags=[], callouts=[], flows=[],
+                                     components=[ArchComponent.model_construct(id="a", name=long, role=long, zone="core", kind="app", cite="")])
+    sc = layout(a, "Source: " + long)
+    assert not [t for t in sc.texts if "…" in t.text] and len(cards(sc)) == 1
+    assert to_png(sc) and "<svg" in to_svg(sc)

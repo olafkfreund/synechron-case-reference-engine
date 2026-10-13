@@ -336,3 +336,17 @@ code ignores it. The demo can be re-seeded.
   - Any failure gives the same 404 "no such diagram".
   - It sends `PNG_HEADERS` and `Cache-Control: private, max-age=300`.
   - The preview links it with the `zoom` macros.
+- Review fixes (Codex gpt-6-sol + Opus):
+  - `protect()` and `blocked()` rewrite only the architecture's free text;
+    structure is validated on placeholders, then built with
+    `model_construct`, so expanded labels can exceed `max_length`.
+  - Product-like terms in a name are checked against quotes, tech and
+    references, the first word included. Three demo names changed.
+  - Engagement cases get no callouts, and callouts are numbered by shown
+    outcome.
+  - Mermaid node ids are positional.
+  - Router budget: 12000 expansions with an elbow fallback, weighted A*.
+    The worst case is about 0.6 s. The wall-clock test is a loose 3 s
+    guard; `route(budget=3)` proves the cap.
+  - One flag for no cite plus no match; `no-store` on `architecture.png`;
+    a font cache.

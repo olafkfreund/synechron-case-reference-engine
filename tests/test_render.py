@@ -814,7 +814,7 @@ def test_architecture_png_route(approved, reg):
     cid = approved(with_arch())
     r = client(R).get(f"/cases/{cid}/architecture.png")
     assert r.status_code == 200 and r.headers["content-type"] == "image/png"
-    assert r.headers["cache-control"] == "private, max-age=300" and r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["cache-control"] == "private, no-store" and r.headers["x-content-type-options"] == "nosniff"
     assert "default-src 'none'" in r.headers["content-security-policy"]
     im = Image.open(BytesIO(r.content))
     assert im.width == 3200 and im.height < 1800  # cropped to the content
@@ -838,3 +838,55 @@ def test_architecture_png_route_answers_404_alike_and_403_without_a_role(approve
     r = client(R).get(f"/cases/{blocked}/architecture.png")
     assert r.status_code == 404 and r.text == miss[0].text
     assert client([]).get(f"/cases/{ok}/architecture.png").status_code == 403
+
+
+def test_a_long_expanded_client_label_does_not_drop_the_architecture(approved, reg):
+    name, label_id = reg("Zorp", "a UK retailer with a very long anonymised label that expands every client name past forty characters")
+    cid = approved(with_arch(f"{name} ledger", "Account engine", label=f"Open {name} account"))
+    link(cid, label_id)
+    md = gen([cid], "md").text
+    assert "## Architecture" in md and name not in md and "a very long anonymised label" in md
+    p = prev([cid]).text
+    assert 'class="paper"' in p and "left out" not in p and name not in p
+    assert gen([cid], "docx").status_code == 200 and pptx_arch(gen([cid], "pptx").content)
+    assert client(R).get(f"/cases/{cid}/architecture.png").status_code == 200
+
+
+def test_a_client_named_like_a_zone_does_not_rewrite_the_structure(approved):
+    with db.connect() as c:  # reg() adds a random tag to every name; a client really called "core" needs a row of its own
+        c.execute("delete from clients where name = 'core'")
+        label_id = c.execute("insert into clients(name, anonymised_label, referenceable) values ('core', 'a UK retailer', false) returning id").fetchone()[0]
+    try:
+        cid = approved(with_arch("core ledger", "Account engine"))
+        link(cid, label_id)
+        md = gen([cid], "md").text
+        assert "## Architecture" in md and 'subgraph core["Core"]' in md  # the zone literal is untouched
+        assert "a UK retailer ledger" in md and "core ledger" not in md
+        assert 'class="paper"' in prev([cid]).text
+    finally:
+        with db.connect() as c:
+            c.execute("update cases set client_id = null where client_id = %s", (label_id,))
+            c.execute("delete from clients where id = %s", (label_id,))
+
+
+def test_a_structure_that_cannot_be_kept_is_left_out_with_a_note(approved, monkeypatch):
+    cid = approved(with_arch())
+    monkeypatch.setattr(render, "architecture_of", lambda sec: None)
+    p = prev([cid]).text
+    assert "left out" in p and 'class="paper"' not in p
+
+
+def test_callouts_follow_the_shown_outcomes_and_a_contract_has_none(approved):
+    from app.schema import Architecture, Outcome
+    base = with_arch()
+    outs = [Outcome(metric="hidden", value="x", source_quote="q", unsourced=True),
+            Outcome(metric="onboarding", value="12 to 3 days", source_quote="q")]
+    arch = Architecture.model_validate({**base.architecture.model_dump(), "callouts": [{"text": "Onboarding in 3 days", "outcome": 1},
+                                                                                       {"text": "Hidden claim", "outcome": 0}]})
+    case = base.model_copy(update={"outcomes": outs, "architecture": arch})
+    d = render.architecture_dict(case)
+    assert d["callouts"] == [{"text": "Onboarding in 3 days", "outcome": 0}]  # numbered by place among the shown outcomes; unsourced dropped
+    eng = render.architecture_dict(case.model_copy(update={"basis": "engagement"}))
+    assert eng["callouts"] == [] and eng["components"]
+    cid = approved(case.model_copy(update={"basis": "engagement"}))
+    assert "Onboarding in 3 days" not in prev([cid]).text.split("<figure")[1].split("</figure>")[0] and "Hidden claim" not in gen([cid], "md").text

@@ -17,7 +17,7 @@ from app import anonymise, db, office
 from app.archdiagram import layout, to_mermaid, to_pptx_shapes, to_png, to_svg
 from app.main import User, require, wants_html
 from app.review import PNG_HEADERS, VISIBLE, page
-from app.schema import Architecture, ReferenceCase, fence, plain, vague_metric
+from app.schema import ArchCallout, ArchComponent, ArchFlow, Architecture, ReferenceCase, fence, plain, vague_metric
 
 router = APIRouter()
 TEMPLATE = Path(__file__).resolve().parent.parent / "brand" / "reference.docx"
@@ -226,9 +226,11 @@ def architecture_dict(case: ReferenceCase) -> dict | None:
     a = case.architecture
     if not a or not a.components or a.flags:
         return None
-    return {**a.model_dump(include={"title", "components", "flows", "callouts"}),
-            "components": [c.model_dump(exclude={"cite"}) for c in a.components],
-            "flows": [f.model_dump(exclude={"cite"}) for f in a.flows], "footer": ""}
+    shown = [i for i, o in enumerate(case.outcomes) if not o.unsourced]  # the Outcomes list as section() shows it
+    # a contract claims no results (as in section()); a callout is numbered by its outcome's place in the shown list
+    callouts = [] if case.basis == "engagement" else [{"text": c.text, "outcome": shown.index(c.outcome)} for c in a.callouts if c.outcome in shown]
+    return {"title": a.title, "components": [c.model_dump(exclude={"cite"}) for c in a.components],
+            "flows": [f.model_dump(exclude={"cite"}) for f in a.flows], "callouts": callouts, "footer": ""}
 
 
 def architecture_of(sec: dict):
@@ -236,30 +238,44 @@ def architecture_of(sec: dict):
     a = sec.get("architecture")
     if not a:
         return None
-    try:
-        arch = Architecture.model_validate({k: a[k] for k in ("title", "components", "flows", "callouts")})
-    except ValidationError:
+    try:  # the structure is checked with placeholder text (lengths are input limits: an expanded client label may run past them)
+        skel = Architecture.model_validate({
+            "title": "t", "components": [{**c, "name": "n", "role": ""} for c in a["components"]],
+            "flows": [{**f, "label": ""} for f in a["flows"]], "callouts": [{"text": "t", "outcome": c["outcome"]} for c in a["callouts"]]})
+        if (len(skel.components), len(skel.flows), len(skel.callouts)) != (len(a["components"]), len(a["flows"]), len(a["callouts"])):
+            return None  # an id was rewritten, or a cap cut something: not the architecture that was approved
+    except (ValidationError, KeyError, TypeError):
         return None
+    arch = Architecture.model_construct(
+        title=a["title"], by_reviewer=False, flags=[],
+        components=[ArchComponent.model_construct(id=s.id, name=c["name"], role=c["role"], zone=s.zone, kind=s.kind, cite="")
+                    for s, c in zip(skel.components, a["components"])],
+        flows=[ArchFlow.model_construct(src=s.src, dst=s.dst, label=f["label"], mode=s.mode, cite="") for s, f in zip(skel.flows, a["flows"])],
+        callouts=[ArchCallout.model_construct(text=c["text"], outcome=s.outcome) for s, c in zip(skel.callouts, a["callouts"])])
     return arch, layout(arch, a.get("footer", ""))
 
 
-def _walk(o, f):
+ARCH_KEYS = frozenset({"id", "zone", "kind", "mode", "src", "dst"})  # the architecture's structure: never text, never rewritten
+
+
+def _walk(o, f, keep=frozenset()):
     if isinstance(o, str):
         return f(o)
     if isinstance(o, dict):
-        return {k: _walk(x, f) for k, x in o.items()}
-    return [_walk(x, f) for x in o] if isinstance(o, list) else o
+        return {k: x if k in keep else _walk(x, f, ARCH_KEYS if k == "architecture" else keep) for k, x in o.items()}
+    return [_walk(x, f, keep) for x in o] if isinstance(o, list) else o
 
 
-def _strings(o):
+def _strings(o, keep=frozenset()):
     if isinstance(o, str):
         yield o
     elif isinstance(o, dict):
-        for x in o.values():
-            yield from _strings(x)
+        for k, x in o.items():
+            if k not in keep:
+                yield from _strings(x, ARCH_KEYS if k == "architecture" else keep)
     elif isinstance(o, list):
         for x in o:
-            yield from _strings(x)
+            yield from _strings(x, keep)
 
 
 def protect(sections: list[dict], clients) -> list[dict]:
@@ -713,7 +729,7 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
         if sec["architecture"]:
             sec["architecture"]["footer"] = f"Source: {sec['title']}" + (f" · reviewed {approved:%Y-%m-%d}" if approved else "")
             try:  # a blocked architecture is left out and counted on the preview; it never withholds the whole output
-                protect([sec["architecture"]], clients)
+                protect([{"architecture": sec["architecture"]}], clients)
             except Withheld:
                 sec["architecture"], sec["arch_withheld"] = None, True
         sections.append(sec)
@@ -783,6 +799,9 @@ def preview(request: Request, case_ids: list[int] = Form([]), research_id: int |
         if len(ids) == 1:
             _, study, study_industry, _, _, _ = build(conn, case_ids, research_id, industry_context_ack, user, "case_study_docx", library_ids)
             footer, retitled = study[0]["footer"], bool(study_industry) and study_industry["heading"] != (industry or {}).get("heading")
+    for c in sections:  # a structure protect() could not keep intact is left out, and the page says so
+        if c.get("architecture") and not architecture_of(c):
+            c["architecture"], c["arch_withheld"] = None, True
     svgs = [Markup(to_svg(a[1], a[0].title)) if (a := architecture_of(c)) else "" for c in sections]  # Markup only after to_svg escaped every string
     return page(request, "output_preview.html", user, cases=sections, svgs=svgs, industry=industry, ids=ids,
                 research_id=research_id, library_ids=list(dict.fromkeys(library_ids)), ack=industry_context_ack, footer=footer, retitled=APPROACH_HEADING if retitled else "")
@@ -840,4 +859,4 @@ def architecture_png(cid: int, user: User = Depends(require("user"))):
     a = architecture_of(sections[0]) if sections else None
     if not a:
         raise HTTPException(404, "no such diagram")  # the same answer for a hidden case, a missing one and a case with none
-    return Response(to_png(a[1]), media_type="image/png", headers={**PNG_HEADERS, "Cache-Control": "private, max-age=300"})
+    return Response(to_png(a[1]), media_type="image/png", headers=PNG_HEADERS)  # no-store: a withdrawn case must not linger in a cache

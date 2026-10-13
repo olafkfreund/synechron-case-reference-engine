@@ -32,6 +32,7 @@ M = 24
 SPAN = W - 2 * M
 CARD_MIN_H, ROW_GAP, SUB_GAP, PAD, LABEL_H = 46, 22, 16, 14, 28
 GMIN, GMAX, BAND_GAP, PILL_H, GRID = 80, 150, 30, 18, 8
+BUDGET = 12000  # A* expansions per flow; 14 flows in a crowded zone must lay out in about a second
 
 
 @dataclass
@@ -92,9 +93,12 @@ class Scene:
 
 # --- text ------------------------------------------------------------------------------------
 @lru_cache(maxsize=None)
+def _font_px(style: str, px: int):
+    return ImageFont.truetype(str(FONTS / f"IBMPlexSans-{WEIGHTS[TEXT[style][1]]}.ttf"), px)
+
+
 def _font(style: str):
-    size, weight = TEXT[style]
-    return ImageFont.truetype(str(FONTS / f"IBMPlexSans-{WEIGHTS[weight]}.ttf"), size)
+    return _font_px(style, TEXT[style][0])
 
 
 def measure(text: str, style: str) -> float:
@@ -197,9 +201,10 @@ class _Grid:
         return {(ix, iy) for x0, y0, x1, y1 in rects
                 for ix in range(math.ceil(x0 / GRID), int(x1 // GRID) + 1) for iy in range(math.ceil(y0 / GRID), int(y1 // GRID) + 1)}
 
-    def route(self, start, sdir, end, edir, box=None, avoid=()):
+    def route(self, start, sdir, end, edir, box=None, avoid=(), budget=BUDGET):
         """start/end: grid nodes; sdir the outward direction at the start, edir the inward one at the end (0 right, 1 down, 2 left, 3 up).
-        `box` limits the path to a rectangle in px, `avoid` lists rectangles in px it must stay out of. Returns the nodes or None."""
+        `box` limits the path to a rectangle in px, `avoid` lists rectangles in px it must stay out of. Gives up after `budget`
+        expansions (a crowded diagram): None, and the caller draws a plain elbow. Returns the nodes or None."""
         x0, y0, x1, y1 = self.bx0, self.by0, self.bx1, self.by1
         if box:
             x0, y0, x1, y1 = max(x0, math.ceil(box[0] / GRID)), max(y0, math.ceil(box[1] / GRID)), min(x1, int(box[2] // GRID)), min(y1, int(box[3] // GRID))
@@ -209,7 +214,8 @@ class _Grid:
         best = {(start[0], start[1], sdir): 0}
         prev: dict = {}
         tick = 0
-        while heap:
+        while heap and budget:
+            budget -= 1
             _, c, _, ix, iy, d = heapq.heappop(heap)
             if c > best.get((ix, iy, d), 1e18):
                 continue
@@ -230,7 +236,7 @@ class _Grid:
                     best[(nx, ny, nd)] = nc
                     prev[(nx, ny, nd)] = (ix, iy, d)
                     tick += 1
-                    heapq.heappush(heap, (nc + abs(end[0] - nx) + abs(end[1] - ny), nc, tick, nx, ny, nd))
+                    heapq.heappush(heap, (nc + 2 * (abs(end[0] - nx) + abs(end[1] - ny)), nc, tick, nx, ny, nd))  # weighted A*: a little off the optimum, much faster
         return None
 
     def mark(self, nodes):
@@ -340,8 +346,16 @@ def _plan(comp, order, cols, avail, plat_h, res_top, gap):
     return None
 
 
+_SCENES: dict = {}  # (architecture JSON, footer) -> Scene; layout is slow enough to want a cache, but the architecture may be unvalidated
+
+
 def layout(arch: Architecture, footer: str = "") -> Scene:
-    return _cached(arch.model_dump_json(), footer)
+    key = (arch.model_dump_json(), footer)
+    if key not in _SCENES:
+        if len(_SCENES) >= 64:
+            _SCENES.clear()
+        _SCENES[key] = _cached(arch, footer)
+    return _SCENES[key]
 
 
 def _key_rows(labels):
@@ -355,9 +369,7 @@ def _key_rows(labels):
     return out, (ky + 26 if out else 0)
 
 
-@lru_cache(maxsize=64)
-def _cached(js: str, footer: str) -> Scene:
-    arch = Architecture.model_validate_json(js)
+def _cached(arch: Architecture, footer: str) -> Scene:
     reserve: list = []
     for _ in range(3):
         sc, markers = _build(arch, footer, reserve)
@@ -825,7 +837,7 @@ def to_png(sc: Scene, scale: int = 2, crop: bool = True) -> bytes:
             d.line(S(s.geom), stroke, lw, joint="curve")
     for t in sc.texts:
         size, weight = TEXT[t.style]
-        font = ImageFont.truetype(str(FONTS / f"IBMPlexSans-{WEIGHTS[weight]}.ttf"), max(1, round(size * t.k * scale)))
+        font = _font_px(t.style, max(1, round(size * t.k * scale)))
         col = TEXT_COLOUR.get(t.style, INK)
         if t.style in LETTER:
             x = t.x * scale
@@ -923,7 +935,8 @@ def to_pptx_shapes(slide, sc: Scene, left: int, top: int, width: int, height: in
 
 def to_mermaid(arch: Architecture) -> str:
     esc = lambda s: re.sub(r'["\[\]|<>`]', lambda m: f"#{ord(m.group())};", " ".join(s.split()))  # no fence breaker, no line break
-    nid = lambda i: "n_" + re.sub(r"\W", "_", i)
+    ids = {c.id: f"n{n}" for n, c in enumerate(arch.components)}  # by position: "a-b" and "a_b" stay two nodes
+    nid = ids.__getitem__
     out = ["flowchart LR"]
     for z in [*ZONES, "platform"]:
         cs = [c for c in arch.components if c.zone == z]
