@@ -286,3 +286,37 @@ def test_plain_is_fast_on_hostile_input():
 
 def test_plain_leaves_no_link_behind_nested_markup():
     assert plain("[[x](y)](javascript:z)") == "x"
+
+
+def _arch(**kw):
+    from app.schema import Architecture
+    comp = lambda i: {"id": f"c{i}", "name": f"N{i}", "zone": "core", "kind": "service"}
+    return Architecture.model_validate({"components": [comp(i) for i in range(15)], **kw})
+
+
+def test_architecture_caps_keep_the_first_n_and_drop_unknown_endpoints():
+    flow = lambda s, d: {"src": s, "dst": d, "mode": "api"}
+    a = _arch(flows=[flow("c0", "zz"), flow("c0", "c14"), *[flow("c0", "c1")] * 20],
+              callouts=[{"text": "x", "outcome": 0}] * 5)
+    assert [c.id for c in a.components] == [f"c{i}" for i in range(12)]
+    assert len(a.flows) == 14 and all(f.dst == "c1" for f in a.flows)  # zz and the capped-out c14 are gone
+    assert len(a.callouts) == 3
+
+
+def test_architecture_rejects_unknown_keys_and_enums():
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        _arch(extra=1)
+    with pytest.raises(ValidationError):
+        _arch(components=[{"id": "a", "name": "A", "zone": "moon", "kind": "app"}])
+
+
+def test_architecture_hidden_from_llm_schema_old_json_loads_and_searchable():
+    assert "architecture" not in llm_schema()["properties"]
+    assert "Arch" not in json.dumps(llm_schema())
+    d = {"title": {"value": "T", "source_quote": "q"}}
+    assert ReferenceCase.model_validate(d).architecture is None
+    d["architecture"] = {"components": [{"id": "a", "name": "Ledger", "role": "books", "zone": "core", "kind": "store"}]}
+    c = ReferenceCase.model_validate(d)
+    assert "Ledger" in c.search_text() and "Solution architecture" in c.search_text()
+    assert ReferenceCase.model_validate_json(c.model_dump_json()) == c

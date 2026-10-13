@@ -266,3 +266,11 @@ code ignores it. The demo can be re-seeded.
   - The Dockerfile's `COPY . .` already includes `brand/`, so it needs no
     change.
   - The tests are in `tests/test_fonts.py`.
+- A2:
+  - Dropping a component with no cite and no tech match moves to
+    `check_architecture` (A6), because the model can't see the case's tech
+    stack.
+  - Over-long strings are rejected by `max_length`. B1 trims model output
+    before building, and the B3 editor reports the line.
+  - `cite` is a plain string.
+  - `Architecture.text()` feeds `search_text()`.

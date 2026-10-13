@@ -1,7 +1,7 @@
 import re
 from typing import Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
 T = TypeVar("T")
@@ -141,6 +141,54 @@ class Prose(_Model):
     flags: list[str] = []
 
 
+Zone = Literal["channels", "experience", "integration", "core", "data", "platform", "external"]
+
+
+class ArchComponent(_Model):
+    id: str
+    name: str = Field(max_length=40)
+    role: str = Field("", max_length=70)
+    zone: Zone
+    kind: Literal["user", "app", "service", "queue", "store", "external", "platform"]
+    cite: str = ""  # a numbered point such as "solution 2"
+
+
+class ArchFlow(_Model):
+    src: str
+    dst: str
+    label: str = Field("", max_length=40)
+    mode: Literal["api", "event", "batch", "file", "ui", "data"]
+    cite: str = ""
+
+
+class ArchCallout(_Model):
+    text: str = Field(max_length=60)
+    outcome: int  # index into ReferenceCase.outcomes
+
+
+class Architecture(_Model):
+    """The solution architecture diagram (#246); built by app/archdiagram.py inputs, never by the LLM schema."""
+    title: str = Field("Solution architecture", max_length=80)
+    components: list[ArchComponent] = []
+    flows: list[ArchFlow] = []
+    callouts: list[ArchCallout] = []
+    by_reviewer: bool = False
+    flags: list[str] = []
+
+    @model_validator(mode="after")
+    def _caps_and_endpoints(self) -> "Architecture":
+        # trimmed, never rejected (like summary); a component with no cite and no tech match is dropped by check_architecture
+        self.components = self.components[:12]
+        ids = {c.id for c in self.components}
+        self.flows = [f for f in self.flows if f.src in ids and f.dst in ids][:14]
+        self.callouts = self.callouts[:3]
+        return self
+
+    def text(self) -> str:
+        return " ".join([self.title, *(f"{c.name} {c.role}" for c in self.components),
+                         *(f.label for f in self.flows), *(c.text for c in self.callouts)])
+
+
 class ReferenceCase(_Model):
     title: Sourced[str]
     client_mention: Sourced[str] = Sourced[str]()  # raw name as written; client_id is resolved later
@@ -170,6 +218,7 @@ class ReferenceCase(_Model):
     # reviewer notes set by extract.py only (hidden from the LLM, like `unsourced`)
     needs_attention: SkipJsonSchema[list[str]] = []
     diagrams: SkipJsonSchema[list[Diagram]] = []
+    architecture: SkipJsonSchema[Architecture | None] = None
     dismissed_images: SkipJsonSchema[list[int]] = []  # document_images candidates the reviewer turned down (#212)
     basis: SkipJsonSchema[Literal["delivered", "engagement"]] = "delivered"
     extraction_version: SkipJsonSchema[int] = 1  # bump EXTRACTION_VERSION when extraction output changes
@@ -203,7 +252,8 @@ class ReferenceCase(_Model):
                  *(c.value for c in self.capabilities), *(t.value for t in self.tech_stack), *(t.value for t in self.tech_references),
                  *(p.value for ps in self.points.values() for p in ps),
                  *(f"{o.metric} {o.value}" for o in self.outcomes), self.summary,
-                 *(p.text for p in self.prose.values())]
+                 *(p.text for p in self.prose.values()),
+                 self.architecture.text() if self.architecture else ""]
         return " ".join(p for p in parts if p)
 
 
