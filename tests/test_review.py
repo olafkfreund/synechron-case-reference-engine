@@ -1178,7 +1178,8 @@ def test_detail_shows_diagrams_card(make, jobs):
         c.execute("update cases set data = jsonb_set(jsonb_set(data, '{diagrams,0,status}', '\"ready\"'), "
                   "'{diagrams,0,width}', '900') where id=%s", (cid,))
     page = client(R).get(f"/review/{cid}").text
-    assert f'<img src="/review/{cid}/diagrams/{did}.png" alt="&lt;b&gt;Flow&lt;/b&gt;" width="480">' in page
+    assert (f'class="zoom" aria-label="Open &lt;b&gt;Flow&lt;/b&gt; full size"><img src="/review/{cid}/diagrams/{did}.png" alt="&lt;b&gt;Flow&lt;/b&gt;"></a>' in page
+            and page.count(f'href="/review/{cid}/diagrams/{did}.png"') == 2 and 'width="480"' not in page)
     assert 'name="diagrams_checked" required' in page and "no client name, logo, person" in page
     set_diagram(cid, "rejected")
     page = client(R).get(f"/review/{cid}").text
@@ -1338,6 +1339,7 @@ def test_candidate_thumbnail_headers_and_card(make):
     page = client(R).get(f"/review/{cid}").text
     assert "Diagrams found in the documents" in page and "Nothing here reaches an output until you choose Use" in page
     assert f"/review/{cid}/images/{iid}.png" in page and "<b>Zed</b>" not in page and "&lt;b&gt;Zed" in page
+    assert f'<a href="/review/{cid}/images/{iid}.png" target="_blank" rel="noopener" class="zoom"' in page and "width=" not in page.split("Diagrams found in the documents")[1].split("<img")[1].split(">")[0]
 
 
 def test_use_goes_through_the_diagram_path_and_the_image_stops_being_a_candidate(make, jobs):

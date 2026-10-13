@@ -308,3 +308,9 @@ ignored.
     contrast test.
   - `theme.js` resyncs `aria-pressed` and the icon on OS theme changes when
     no choice is saved.
+- User-reported on 2026-10-13: diagrams were too small to read.
+  - Diagrams and document-image candidates now fill their card, with no
+    480/240 px cap.
+  - Each one links to its full-resolution PNG in a new tab, and has an
+    "Open full size" hint.
+  - Shared `zoom` and `zoom_hint` macros.

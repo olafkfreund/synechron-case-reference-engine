@@ -333,4 +333,7 @@ fieldset.pick legend{font-weight:600;padding:0 6px;text-transform:capitalize}
 .detail-panel>summary::-webkit-details-marker,details.mini>summary::-webkit-details-marker,details.help-link>summary::-webkit-details-marker{display:none}
 
 /* diagrams and document images sit on paper in both themes */
-main img{background:var(--paper);padding:8px;border-radius:var(--r-control)}
+main img{background:var(--paper);padding:8px;border-radius:var(--r-control);max-width:100%;height:auto}
+.zoom{display:block;width:fit-content;max-width:100%;cursor:zoom-in;border-radius:var(--r-control)}
+.zoom:hover,.zoom:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.zoom-hint{display:inline-block;margin-top:4px}
