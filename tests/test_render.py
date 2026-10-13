@@ -650,3 +650,16 @@ def test_placeholder_metric_is_hidden_in_outputs():
         Outcome(metric="Fraud", value="up 17%", source_quote="q")])
     out = render.section(c, "C")["lists"][0]["bullets"]
     assert out == ["flagged 17 percent more", "Fraud: up 17%"]
+
+
+def test_docx_templates_loop_paragraphs():
+    from docxtpl import DocxTemplate
+    sec = {"title": "T", "client": "C", "summary": "S", "note": "", "details": [], "lists": [], "diagrams": [],
+           "blocks": [{"heading": "Challenge", "text": "A\n\nB", "paragraphs": ["A", "B"]}]}
+    for path in (render.TEMPLATE, render.TEMPLATE.with_name("case_study.docx")):
+        tpl = DocxTemplate(path)
+        tpl.render({"cases": [{**sec, "footer": "F"}], "industry": None}, autoescape=True)
+        buf = BytesIO()
+        tpl.save(buf)
+        paras = [p.text for p in Document(buf).paragraphs]
+        assert "A" in paras and "B" in paras, path
