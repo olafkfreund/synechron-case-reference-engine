@@ -1,0 +1,149 @@
+{
+ "title": "Payments modernisation architecture",
+ "components": [
+  {
+   "id": "app",
+   "name": "Mobile app",
+   "role": "Customer payments and balances",
+   "zone": "channels",
+   "kind": "user",
+   "cite": ""
+  },
+  {
+   "id": "portal",
+   "name": "Corporate portal",
+   "role": "Bulk payment upload for businesses",
+   "zone": "channels",
+   "kind": "app",
+   "cite": ""
+  },
+  {
+   "id": "gw",
+   "name": "API gateway",
+   "role": "Authenticates and throttles every call",
+   "zone": "experience",
+   "kind": "service",
+   "cite": ""
+  },
+  {
+   "id": "orch",
+   "name": "Payment orchestrator",
+   "role": "Routes each payment to a rail",
+   "zone": "integration",
+   "kind": "service",
+   "cite": ""
+  },
+  {
+   "id": "bus",
+   "name": "Event bus",
+   "role": "Publishes payment events to subscribers",
+   "zone": "integration",
+   "kind": "queue",
+   "cite": ""
+  },
+  {
+   "id": "ledger",
+   "name": "Core ledger",
+   "role": "Posts debits and credits in real time",
+   "zone": "core",
+   "kind": "service",
+   "cite": ""
+  },
+  {
+   "id": "store",
+   "name": "Payments store",
+   "role": "Payment history and audit trail",
+   "zone": "data",
+   "kind": "store",
+   "cite": ""
+  },
+  {
+   "id": "scheme",
+   "name": "Instant payment scheme",
+   "role": "National scheme, settled in seconds",
+   "zone": "external",
+   "kind": "external",
+   "cite": ""
+  },
+  {
+   "id": "k8s",
+   "name": "Kubernetes platform",
+   "role": "Runs all services with zero-downtime deploys",
+   "zone": "platform",
+   "kind": "platform",
+   "cite": ""
+  }
+ ],
+ "flows": [
+  {
+   "src": "app",
+   "dst": "gw",
+   "label": "Pay a contact",
+   "mode": "ui"
+  },
+  {
+   "src": "portal",
+   "dst": "gw",
+   "label": "Upload batch file",
+   "mode": "file"
+  },
+  {
+   "src": "gw",
+   "dst": "orch",
+   "label": "Payment request",
+   "mode": "api"
+  },
+  {
+   "src": "orch",
+   "dst": "ledger",
+   "label": "Reserve funds",
+   "mode": "api"
+  },
+  {
+   "src": "orch",
+   "dst": "bus",
+   "label": "Payment accepted",
+   "mode": "event"
+  },
+  {
+   "src": "ledger",
+   "dst": "store",
+   "label": "Posted entries",
+   "mode": "data"
+  },
+  {
+   "src": "orch",
+   "dst": "scheme",
+   "label": "Send to scheme",
+   "mode": "api"
+  },
+  {
+   "src": "bus",
+   "dst": "store",
+   "label": "Audit events",
+   "mode": "event"
+  },
+  {
+   "src": "scheme",
+   "dst": "orch",
+   "label": "Settlement report",
+   "mode": "batch"
+  },
+  {
+   "src": "k8s",
+   "dst": "gw",
+   "label": "Hosts gateway",
+   "mode": "data"
+  }
+ ],
+ "callouts": [
+  {
+   "text": "Payments settle in under 10 seconds",
+   "outcome": 0
+  },
+  {
+   "text": "Peak load 3x with no incidents",
+   "outcome": 1
+  }
+ ]
+}

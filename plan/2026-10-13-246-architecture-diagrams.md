@@ -285,3 +285,8 @@ code ignores it. The demo can be re-seeded.
     - pills are dropped when there is under 48 px of room
     - lines can run behind cards in the same zone or platform row
     - platform-lane pills can touch
+- A4:
+  - pptx flows are freeform polylines with an arrowhead, not elbow
+    connectors, because routes bend up to 5 times.
+  - `scripts/arch_sample.py` and the fixtures under `tests/fixtures/arch/`
+    are added for visual review.

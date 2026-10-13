@@ -88,3 +88,69 @@ def test_barycentre_puts_connected_cards_level():
         "flows": [{"src": "x1", "dst": "y2", "mode": "api"}, {"src": "x2", "dst": "y1", "mode": "api"}]})
     by = {b.ref: b for b in cards(layout(a))}
     assert (by["x1"].y < by["x2"].y) == (by["y2"].y < by["y1"].y) or by["x1"].y == by["y2"].y
+
+
+# --- renderers ---------------------------------------------------------------------------------
+import io
+import json
+from pathlib import Path
+from xml.etree import ElementTree
+
+from PIL import Image
+from pptx import Presentation
+from pptx.util import Inches
+
+from app.archdiagram import to_mermaid, to_png, to_pptx_shapes, to_svg
+
+FIX = Path(__file__).parent / "fixtures" / "arch"
+SAMPLES = {p.stem: Architecture.model_validate_json(p.read_text()) for p in sorted(FIX.glob("*.json"))}
+
+
+def test_sample_sizes():
+    assert {k: (len(a.components), len(a.flows)) for k, a in SAMPLES.items()} == {"small": (5, 5), "typical": (9, 10), "max": (12, 14)}
+
+
+def test_svg_parses_and_is_inert():
+    a = Architecture.model_validate({"title": "Pay <&> \"go\"", "components": [{"id": "a", "name": "A<script>", "zone": "core", "kind": "app"}]})
+    svg = to_svg(layout(a, "Source: x & y"), a.title)
+    root = ElementTree.fromstring(svg)
+    assert root.get("viewBox") == "0 0 1600 900" and root.get("width") is None
+    low = svg.lower()
+    assert "<script" not in low and "href" not in low and "http" not in svg.replace("http://www.w3.org/2000/svg", "")
+    assert "A&lt;script&gt;" in svg
+
+
+@pytest.mark.parametrize("name", SAMPLES)
+def test_png_is_2x_and_text_is_drawn_in_every_card(name):
+    sc = layout(SAMPLES[name], "Source: Demo")
+    im = Image.open(io.BytesIO(to_png(sc))).convert("RGB")
+    assert im.size == (3200, 1800)
+    for c in cards(sc):
+        box = im.crop((int(c.x * 2) + 6, int(c.y * 2) + 6, int((c.x + c.w) * 2) - 6, int((c.y + c.h) * 2) - 6))
+        dark = sum(1 for p in box.getdata() if sum(p) < 450)
+        assert dark / (box.width * box.height) > 0.01, c.ref
+
+
+@pytest.mark.parametrize("name", SAMPLES)
+def test_pptx_shapes_one_freeform_per_flow_and_text_reads_back(name):
+    a = SAMPLES[name]
+    sc = layout(a, "Source: Demo")
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    to_pptx_shapes(slide, sc, Inches(.4), Inches(.3), Inches(9), Inches(5))
+    shapes = list(slide.shapes)
+    assert sum(s.name.startswith("arch:card-") for s in shapes) == len(a.components)
+    assert sum(s.name.startswith("arch:flow-") for s in shapes) == len(a.flows) + len({f.mode for f in a.flows})  # plus the legend samples
+    assert sum(s.name.startswith(("arch:zone", "arch:card-")) for s in shapes) >= len(a.components) + len(sc.zones)
+    text = " ".join(s.text_frame.text for s in shapes if s.has_text_frame)
+    assert all(c.name.split()[0] in text for c in a.components) and a.title.split()[0] in text
+    assert "tailEnd" in slide.shapes._spTree.xml
+
+
+def test_mermaid_snapshot_and_escaping():
+    assert to_mermaid(SAMPLES["small"]) == (FIX / "small.mmd").read_text()
+    a = Architecture.model_validate({"components": [
+        {"id": "a b", "name": 'Say "hi" [x]', "zone": "core", "kind": "app"}, {"id": "c", "name": "C|D<E>", "zone": "data", "kind": "store"}],
+        "flows": [{"src": "a b", "dst": "c", "label": "a|b", "mode": "batch"}]})
+    m = to_mermaid(a)
+    assert "#34;hi#34; #91;x#93;" in m and "C#124;D#60;E#62;" in m and 'n_a_b -.->|"a#124;b"| n_c' in m

@@ -1,0 +1,201 @@
+{
+ "title": "Lending platform architecture",
+ "components": [
+  {
+   "id": "a1",
+   "name": "Branch app",
+   "role": "Staff tool for branch advisers",
+   "zone": "channels",
+   "kind": "app",
+   "cite": ""
+  },
+  {
+   "id": "a2",
+   "name": "Web banking",
+   "role": "Customer internet banking",
+   "zone": "channels",
+   "kind": "user",
+   "cite": ""
+  },
+  {
+   "id": "b1",
+   "name": "Experience API",
+   "role": "One API for all front ends",
+   "zone": "experience",
+   "kind": "service",
+   "cite": ""
+  },
+  {
+   "id": "c1",
+   "name": "Orchestrator",
+   "role": "Coordinates lending decisions",
+   "zone": "integration",
+   "kind": "service",
+   "cite": ""
+  },
+  {
+   "id": "c2",
+   "name": "Message queue",
+   "role": "Decouples intake from scoring",
+   "zone": "integration",
+   "kind": "queue",
+   "cite": ""
+  },
+  {
+   "id": "d1",
+   "name": "Loan engine",
+   "role": "Decisions, pricing and servicing",
+   "zone": "core",
+   "kind": "service",
+   "cite": ""
+  },
+  {
+   "id": "d2",
+   "name": "Scoring service",
+   "role": "Calculates risk scores",
+   "zone": "core",
+   "kind": "service",
+   "cite": ""
+  },
+  {
+   "id": "e1",
+   "name": "Loan store",
+   "role": "Applications and decisions",
+   "zone": "data",
+   "kind": "store",
+   "cite": ""
+  },
+  {
+   "id": "e2",
+   "name": "Document archive",
+   "role": "Signed contracts and evidence",
+   "zone": "data",
+   "kind": "store",
+   "cite": ""
+  },
+  {
+   "id": "f1",
+   "name": "Credit bureau",
+   "role": "External credit data",
+   "zone": "external",
+   "kind": "external",
+   "cite": ""
+  },
+  {
+   "id": "f2",
+   "name": "Payment rail",
+   "role": "Disbursement to customers",
+   "zone": "external",
+   "kind": "external",
+   "cite": ""
+  },
+  {
+   "id": "g1",
+   "name": "Cloud platform",
+   "role": "Hosting, secrets and monitoring",
+   "zone": "platform",
+   "kind": "platform",
+   "cite": ""
+  }
+ ],
+ "flows": [
+  {
+   "src": "a1",
+   "dst": "b1",
+   "label": "Adviser request",
+   "mode": "ui"
+  },
+  {
+   "src": "a2",
+   "dst": "b1",
+   "label": "Customer request",
+   "mode": "ui"
+  },
+  {
+   "src": "b1",
+   "dst": "c1",
+   "label": "Application",
+   "mode": "api"
+  },
+  {
+   "src": "c1",
+   "dst": "c2",
+   "label": "Queue scoring",
+   "mode": "event"
+  },
+  {
+   "src": "c2",
+   "dst": "d2",
+   "label": "Score request",
+   "mode": "event"
+  },
+  {
+   "src": "d2",
+   "dst": "f1",
+   "label": "Fetch bureau data",
+   "mode": "api"
+  },
+  {
+   "src": "c1",
+   "dst": "d1",
+   "label": "Decision request",
+   "mode": "api"
+  },
+  {
+   "src": "d1",
+   "dst": "e1",
+   "label": "Save decision",
+   "mode": "data"
+  },
+  {
+   "src": "d1",
+   "dst": "e2",
+   "label": "Store contract",
+   "mode": "file"
+  },
+  {
+   "src": "d1",
+   "dst": "f2",
+   "label": "Disburse loan",
+   "mode": "api"
+  },
+  {
+   "src": "d2",
+   "dst": "e1",
+   "label": "Score history",
+   "mode": "data"
+  },
+  {
+   "src": "g1",
+   "dst": "c1",
+   "label": "Hosts orchestrator",
+   "mode": "data"
+  },
+  {
+   "src": "f1",
+   "dst": "d2",
+   "label": "Bureau response",
+   "mode": "batch"
+  },
+  {
+   "src": "e1",
+   "dst": "d1",
+   "label": "Load customer",
+   "mode": "data"
+  }
+ ],
+ "callouts": [
+  {
+   "text": "Decisions in minutes, not days",
+   "outcome": 0
+  },
+  {
+   "text": "40% fewer manual reviews",
+   "outcome": 1
+  },
+  {
+   "text": "Zero downtime releases",
+   "outcome": 2
+  }
+ ]
+}

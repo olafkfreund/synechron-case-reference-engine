@@ -369,3 +369,194 @@ def layout(arch: Architecture, footer: str = "") -> Scene:
         lx -= 18
     sc.texts.append(Text(M, FOOT_Y, fit(footer, "footer", lx - M - 16), "footer"))
     return sc
+
+
+# --- renderers -------------------------------------------------------------------------------
+# brand palette (app/static/portal.css)
+INK, GROUND, ACCENT, BORDER, MUTED, WHITE = "#1B2430", "#F6F5F1", "#0B6A6A", "#DAD7CF", "#55606E", "#FFFFFF"
+KIND = {"user": "#3D4652", "app": "#0B6A6A", "service": "#1F5F8B", "queue": "#8A5A00", "store": "#5B4B8A",
+        "external": "#7A6F5F", "platform": "#3D4652"}
+MODE = {"api": "#0B6A6A", "event": "#8A5A00", "batch": "#5B4B8A", "file": "#7A6F5F", "ui": "#1F5F8B", "data": "#1E6B3A"}
+DASH = {"event": (3, 4), "batch": (9, 5), "file": (9, 5)}
+TEXT_COLOUR = {"role": MUTED, "zone": MUTED, "legend": MUTED, "footer": MUTED, "glyph": WHITE, "badge": WHITE}
+
+
+def box_paint(style: str) -> tuple[str, str, int]:
+    """(fill, stroke, corner radius) for a box style key."""
+    kind, _, sub = style.partition("-")
+    return {"zone": (GROUND, BORDER, 12), "card": (WHITE, KIND.get(sub, INK), 8), "glyph": (KIND.get(sub, INK),) * 2 + (5,),
+            "pill": (WHITE, MODE.get(sub, INK), 9), "callout": ("#E3F0F0", ACCENT, 8), "badge": (ACCENT, ACCENT, 11)}[kind]
+
+
+def _arrow(pts: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    (x1, y1), (x2, y2) = pts[-2], pts[-1]
+    d = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** .5 or 1
+    ux, uy = (x2 - x1) / d, (y2 - y1) / d
+    bx, by = x2 - ux * 10, y2 - uy * 10
+    return [(x2, y2), (bx - uy * 5, by + ux * 5), (bx + uy * 5, by - ux * 5)]
+
+
+def _clean(pts):
+    out = [pts[0]]
+    for p in pts[1:]:
+        if p != out[-1]:
+            out.append(p)
+    return out
+
+
+def to_svg(sc: Scene, title: str = "Solution architecture") -> str:
+    from xml.sax.saxutils import escape, quoteattr
+    f = lambda v: f"{v:.1f}".rstrip("0").rstrip(".")
+    o = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {sc.width} {sc.height}" role="img" '
+         f'font-family="IBM Plex Sans, system-ui, sans-serif"><title>{escape(title)}</title>'
+         f'<rect width="{sc.width}" height="{sc.height}" fill="{WHITE}"/>']
+
+    def box(b: Box):
+        fill, stroke, r = box_paint(b.style)
+        o.append(f'<rect x="{f(b.x)}" y="{f(b.y)}" width="{f(b.w)}" height="{f(b.h)}" rx="{r}" fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>')
+
+    for b in sc.zones:
+        box(b)
+    for ln in sc.lines:
+        pts = _clean(ln.points)
+        if len(pts) < 2:
+            continue
+        col = MODE[ln.style.split("-", 1)[1]]
+        dash = DASH.get(ln.style.split("-", 1)[1])
+        o.append(f'<polyline points="{" ".join(f"{f(x)},{f(y)}" for x, y in pts)}" fill="none" stroke="{col}" stroke-width="2"'
+                 + (f' stroke-dasharray="{dash[0]} {dash[1]}"' if dash else "") + "/>")
+        if ln.arrow:
+            o.append(f'<polygon points="{" ".join(f"{f(x)},{f(y)}" for x, y in _arrow(pts))}" fill="{col}"/>')
+    for b in sc.boxes:
+        box(b)
+    for t in sc.texts:
+        size, weight = TEXT[t.style]
+        o.append(f'<text x="{f(t.x)}" y="{f(t.y)}" font-size="{size}" font-weight="{weight}" fill="{TEXT_COLOUR.get(t.style, INK)}" '
+                 f'dominant-baseline="hanging"' + (' text-anchor="middle"' if t.anchor == "middle" else "") + f">{escape(t.text)}</text>")
+    o.append("</svg>")
+    return "".join(o)
+
+
+def to_png(sc: Scene, scale: int = 2) -> bytes:
+    import io
+    from PIL import Image, ImageDraw
+    im = Image.new("RGB", (sc.width * scale, sc.height * scale), WHITE)
+    d = ImageDraw.Draw(im)
+    S = lambda pts: [(x * scale, y * scale) for x, y in pts]
+
+    def box(b: Box):
+        fill, stroke, r = box_paint(b.style)
+        d.rounded_rectangle([b.x * scale, b.y * scale, (b.x + b.w) * scale, (b.y + b.h) * scale], r * scale, fill, stroke, int(1.5 * scale))
+
+    for b in sc.zones:
+        box(b)
+    for ln in sc.lines:
+        pts = _clean(ln.points)
+        if len(pts) < 2:
+            continue
+        mode = ln.style.split("-", 1)[1]
+        dash = DASH.get(mode)
+        for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+            if not dash:
+                d.line(S([(x1, y1), (x2, y2)]), MODE[mode], 2 * scale)
+                continue
+            n = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** .5
+            at = 0.0
+            while at < n:
+                e = min(at + dash[0], n)
+                d.line(S([(x1 + (x2 - x1) * at / n, y1 + (y2 - y1) * at / n), (x1 + (x2 - x1) * e / n, y1 + (y2 - y1) * e / n)]), MODE[mode], 2 * scale)
+                at += dash[0] + dash[1]
+        if ln.arrow:
+            d.polygon(S(_arrow(pts)), MODE[mode])
+    for b in sc.boxes:
+        box(b)
+    for t in sc.texts:
+        size, weight = TEXT[t.style]
+        font = ImageFont.truetype(str(FONTS / f"IBMPlexSans-{WEIGHTS[weight]}.ttf"), size * scale)
+        d.text((t.x * scale, t.y * scale), t.text, TEXT_COLOUR.get(t.style, INK), font, anchor="ma" if t.anchor == "middle" else "la")
+    out = io.BytesIO()
+    im.save(out, "PNG")
+    return out.getvalue()
+
+
+def to_pptx_shapes(slide, sc: Scene, left: int, top: int, width: int, height: int) -> None:
+    """Native shapes: rounded rectangles, one freeform polyline per flow (arrow at the end) and text boxes."""
+    from lxml import etree
+    from pptx.dml.color import RGBColor
+    from pptx.enum.shapes import MSO_SHAPE
+    from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+    from pptx.enum.dml import MSO_LINE
+    from pptx.util import Emu, Pt
+
+    s = min(width / sc.width, height / sc.height)
+    X, Y = (lambda v: int(left + v * s)), (lambda v: int(top + v * s))
+    rgb = lambda h: RGBColor.from_string(h.lstrip("#"))
+
+    def box(b: Box):
+        fill, stroke, r = box_paint(b.style)
+        sh = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, X(b.x), Y(b.y), int(b.w * s), int(b.h * s))
+        sh.adjustments[0] = min(.5, r / min(b.w, b.h))
+        sh.fill.solid()
+        sh.fill.fore_color.rgb = rgb(fill)
+        sh.line.color.rgb = rgb(stroke)
+        sh.line.width = Emu(int(1.5 * s))
+        sh.shadow.inherit = False
+        sh.name = f"arch:{b.style}:{b.ref}" if b.ref else f"arch:{b.style}"
+
+    for b in sc.zones:
+        box(b)
+    for ln in sc.lines:
+        pts = _clean(ln.points)
+        if len(pts) < 2:
+            continue
+        mode = ln.style.split("-", 1)[1]
+        fb = slide.shapes.build_freeform(X(pts[0][0]), Y(pts[0][1]))
+        fb.add_line_segments([(X(x), Y(y)) for x, y in pts[1:]], close=False)
+        sh = fb.convert_to_shape()
+        sh.fill.background()
+        sh.line.color.rgb = rgb(MODE[mode])
+        sh.line.width = Emu(int(2 * s))
+        if mode in DASH:
+            sh.line.dash_style = MSO_LINE.DASH if DASH[mode][0] > 3 else MSO_LINE.ROUND_DOT
+        if ln.arrow:
+            ln_el = sh.line._get_or_add_ln()
+            etree.SubElement(ln_el, "{http://schemas.openxmlformats.org/drawingml/2006/main}tailEnd", type="triangle")
+        sh.shadow.inherit = False
+        sh.name = f"arch:{ln.style}"
+    for b in sc.boxes:
+        box(b)
+    for t in sc.texts:
+        size, weight = TEXT[t.style]
+        w = int(max(measure(t.text, t.style), 10) * s) + 8
+        x = X(t.x) - (w // 2 if t.anchor == "middle" else 0)
+        tb = slide.shapes.add_textbox(x, Y(t.y), w, int(size * 1.4 * s))
+        tf = tb.text_frame
+        tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+        tf.word_wrap = False
+        tf.vertical_anchor = MSO_ANCHOR.TOP
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER if t.anchor == "middle" else PP_ALIGN.LEFT
+        r = p.add_run()
+        r.text = t.text
+        r.font.name = "IBM Plex Sans"
+        r.font.size = Pt(size * s / 12700)
+        r.font.bold = weight >= 600
+        r.font.color.rgb = rgb(TEXT_COLOUR.get(t.style, INK))
+        tb.name = f"arch:text:{t.style}"
+
+
+def to_mermaid(arch: Architecture) -> str:
+    import re
+    esc = lambda s: re.sub(r'["\[\]|<>]', lambda m: f"#{ord(m.group())};", s)
+    nid = lambda i: "n_" + re.sub(r"\W", "_", i)
+    out = ["flowchart LR"]
+    for z in [*ZONES, "platform"]:
+        cs = [c for c in arch.components if c.zone == z]
+        if cs:
+            out.append(f'  subgraph {z}["{z.capitalize()}"]')
+            out += [f'    {nid(c.id)}["{esc(c.name)}' + (f'<br/>{esc(c.role)}' if c.role else "") + '"]' for c in cs]
+            out.append("  end")
+    for f in arch.flows:
+        arrow = "-.->" if f.mode in DASH else "-->"
+        out.append(f'  {nid(f.src)} {arrow}' + (f'|"{esc(f.label)}"|' if f.label else "") + f" {nid(f.dst)}")
+    return "\n".join(out) + "\n"
