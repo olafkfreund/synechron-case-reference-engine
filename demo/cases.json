@@ -2193,17 +2193,31 @@
    "file": "alpine-ski-house-guest-app.docx",
    "paragraphs": [
     "Alpine Ski House guest app project.",
-    "Alpine Ski House engaged us for its guest app project.",
-    "Alpine Ski House operates in the leisure sector.",
-    "The programme was run for the Austria market.",
-    "The old guest app process was slow and relied on manual work.",
-    "We rebuilt the guest app service as a modern, tested platform.",
-    "The work was delivered over 7 months.",
-    "The team had 5 engineers.",
-    "The stack used Flutter and Firebase in production.",
-    "Our work covered mobile development for Alpine Ski House.",
-    "Our work covered ux design for Alpine Ski House.",
-    "The new platform reached 40,000 app downloads in the first season."
+    "Alpine Ski House engaged us for its guest app project. Alpine Ski House operates a ski resort in Austria with 26 lifts, three hotels and nine rental shops.",
+    "Guests bought lift passes at the ticket office, hotel rooms by phone and ski lessons online, so a family needed three accounts for one holiday. Queues at the ticket office reached 40 minutes on busy mornings.",
+    "Lessons and rentals were booked on paper forms at the shop counter. Staff re-entered the forms in the evening, and about 1 booking in 10 contained a mistake.",
+    "Guests received no information during the day, such as lift closures or weather changes. The resort used loudspeakers and printed boards for notices, and guests often missed them.",
+    "The resort lost an estimated 15 percent of lift pass sales to partner websites. Management wanted to own the guest relationship and the data behind it.",
+    "The scope was a guest app for iOS and Android that combines lift passes, lessons, rentals and hotel services in one account. A guest can buy and top up a digital lift pass on the phone and scan it at the gate.",
+    "Deliverables were the app, a back end for passes and bookings, a gate scanning integration and a staff console. Push notifications tell guests about lift closures and weather changes as they happen.",
+    "The staff console lets shop and ticket staff look up a guest, change a booking and issue a replacement pass. Hotel services such as late checkout and room cleaning requests can be sent from the app.",
+    "The existing hotel property management system and the lift gate hardware were kept. The app connects to both through their existing interfaces.",
+    "The project took 7 months in three phases: design, a build of the pass and booking features, and a release for the opening of the season. Work started in June 2023 and the app went live in December 2023.",
+    "The team had 9 people, including three mobile developers, two back end developers, a designer, a tester and a product owner from Alpine Ski House. Guests from the resort loyalty club tested every build during the autumn.",
+    "Each release was tried at the resort on real lifts with staff volunteers. A soft launch to 500 club members came two weeks before opening day.",
+    "Support staff were trained in the staff console during November. Extra staff were placed at the gates for the first weekend to help guests who had not yet set up their pass.",
+    "The app is built with React and a shared code base for iOS and Android. It stores passes on the phone so that gates still work with weak mobile coverage on the mountain.",
+    "The back end runs on Azure as containers on Kubernetes, with PostgreSQL for guests and bookings. Events about passes and bookings are sent through Kafka to the gate and hotel integrations.",
+    "Gates read a QR code that the app refreshes every 30 seconds, and the gate controller checks it against a signed JWT. Guests sign in with an email link or with a social account through OAuth 2.0.",
+    "Push notifications can be targeted by location in the resort. Weather and lift status data are read every minute from the resort control system.",
+    "The back end API follows the OpenAPI 3.0 specification. The integration with the hotel system uses its existing interface.",
+    "More than 80 percent of lift passes are now bought and loaded in the app. Queues at the ticket office fell from 40 minutes to under 10 minutes on busy mornings.",
+    "Booking mistakes fell from about 1 in 10 to fewer than 1 in 100. Staff no longer re-enter paper forms in the evening.",
+    "Pass sales through partner websites fell by 9 percent in the first season, while direct sales rose. Guests rated the app 4.6 out of 5 in the stores.",
+    "A soft launch with club members found 23 problems that internal tests had missed. The team would run a soft launch for every future release.",
+    "Weak coverage on the mountain was the largest risk, and storing passes on the phone solved it. This design should be tested on a real lift line as early as possible.",
+    "The managing director of the resort chaired a short review every second week, where the product owner showed the latest build and the front line staff gave their views.",
+    "The app replaced a paper booklet that guests had received at check in, and the resort kept a printed map for guests who prefer it."
    ],
    "case": {
     "title": {
@@ -2216,79 +2230,254 @@
     },
     "industry": {
      "value": "Leisure",
-     "source_quote": "Alpine Ski House operates in the leisure sector."
+     "source_quote": "Alpine Ski House operates a ski resort in Austria with 26 lifts, three hotels and nine rental shops."
     },
     "region": {
      "value": "Austria",
-     "source_quote": "The programme was run for the Austria market."
+     "source_quote": "Alpine Ski House operates a ski resort in Austria with 26 lifts, three hotels and nine rental shops."
     },
     "engagement_type": {},
     "challenge": {
-     "value": "Manual, slow guest app process",
-     "source_quote": "The old guest app process was slow and relied on manual work."
+     "value": "Three accounts for one holiday and 40 minute queues",
+     "source_quote": "Guests bought lift passes at the ticket office, hotel rooms by phone and ski lessons online, so a family needed three accounts for one holiday. Queues at the ticket office reached 40 minutes on busy mornings."
     },
     "solution": {
-     "value": "Rebuilt guest app as a tested platform",
-     "source_quote": "We rebuilt the guest app service as a modern, tested platform."
+     "value": "One app for passes, lessons, rentals and hotel services",
+     "source_quote": "The scope was a guest app for iOS and Android that combines lift passes, lessons, rentals and hotel services in one account."
+    },
+    "implementation": {
+     "value": "Three phases over 7 months",
+     "source_quote": "The project took 7 months in three phases: design, a build of the pass and booking features, and a release for the opening of the season."
+    },
+    "configuration": {
+     "value": "React app that stores passes on the phone",
+     "source_quote": "The app is built with React and a shared code base for iOS and Android."
+    },
+    "lessons_learned": {
+     "value": "Run a soft launch with club members before every release",
+     "source_quote": "The team would run a soft launch for every future release."
     },
     "capabilities": [
      {
-      "value": "Mobile development",
-      "source_quote": "Our work covered mobile development for Alpine Ski House."
+      "value": "Mobile application development",
+      "source_quote": "The scope was a guest app for iOS and Android that combines lift passes, lessons, rentals and hotel services in one account."
      },
      {
-      "value": "UX design",
-      "source_quote": "Our work covered ux design for Alpine Ski House."
+      "value": "System integration",
+      "source_quote": "The app connects to both through their existing interfaces."
+     },
+     {
+      "value": "Real time guest notifications",
+      "source_quote": "Push notifications tell guests about lift closures and weather changes as they happen."
      }
     ],
     "tech_stack": [
      {
-      "value": "Flutter",
-      "source_quote": "The stack used Flutter and Firebase in production."
+      "value": "React",
+      "source_quote": "The app is built with React and a shared code base for iOS and Android."
      },
      {
-      "value": "Firebase",
-      "source_quote": "The stack used Flutter and Firebase in production."
+      "value": "Azure",
+      "source_quote": "The back end runs on Azure as containers on Kubernetes, with PostgreSQL for guests and bookings."
+     },
+     {
+      "value": "Kubernetes",
+      "source_quote": "The back end runs on Azure as containers on Kubernetes, with PostgreSQL for guests and bookings."
+     },
+     {
+      "value": "PostgreSQL",
+      "source_quote": "The back end runs on Azure as containers on Kubernetes, with PostgreSQL for guests and bookings."
+     },
+     {
+      "value": "Kafka",
+      "source_quote": "Events about passes and bookings are sent through Kafka to the gate and hotel integrations."
+     }
+    ],
+    "tech_references": [
+     {
+      "value": "OAuth 2.0",
+      "source_quote": "Guests sign in with an email link or with a social account through OAuth 2.0."
+     },
+     {
+      "value": "JWT",
+      "source_quote": "Gates read a QR code that the app refreshes every 30 seconds, and the gate controller checks it against a signed JWT."
+     },
+     {
+      "value": "OpenAPI 3.0",
+      "source_quote": "The back end API follows the OpenAPI 3.0 specification."
      }
     ],
     "outcomes": [
      {
-      "metric": "app downloads",
-      "value": "reached 40,000 app downloads in the first season",
-      "source_quote": "The new platform reached 40,000 app downloads in the first season."
+      "metric": "lift passes bought in the app",
+      "value": "more than 80 percent",
+      "source_quote": "More than 80 percent of lift passes are now bought and loaded in the app."
+     },
+     {
+      "metric": "ticket office queue",
+      "value": "fell from 40 minutes to under 10 minutes on busy mornings",
+      "source_quote": "Queues at the ticket office fell from 40 minutes to under 10 minutes on busy mornings."
+     },
+     {
+      "metric": "booking mistakes",
+      "value": "fell from about 1 in 10 to fewer than 1 in 100",
+      "source_quote": "Booking mistakes fell from about 1 in 10 to fewer than 1 in 100."
+     },
+     {
+      "metric": "guest rating of the app",
+      "value": "4.6 out of 5",
+      "source_quote": "Guests rated the app 4.6 out of 5 in the stores."
      }
     ],
+    "points": {
+     "challenge": [
+      {
+       "value": "Three accounts for one holiday and 40 minute queues",
+       "source_quote": "Guests bought lift passes at the ticket office, hotel rooms by phone and ski lessons online, so a family needed three accounts for one holiday. Queues at the ticket office reached 40 minutes on busy mornings."
+      },
+      {
+       "value": "Paper forms with about 1 booking in 10 wrong",
+       "source_quote": "Staff re-entered the forms in the evening, and about 1 booking in 10 contained a mistake."
+      },
+      {
+       "value": "No information for guests during the day",
+       "source_quote": "Guests received no information during the day, such as lift closures or weather changes."
+      },
+      {
+       "value": "An estimated 15 percent of pass sales lost to partner websites",
+       "source_quote": "The resort lost an estimated 15 percent of lift pass sales to partner websites."
+      }
+     ],
+     "solution": [
+      {
+       "value": "One app for passes, lessons, rentals and hotel services",
+       "source_quote": "The scope was a guest app for iOS and Android that combines lift passes, lessons, rentals and hotel services in one account."
+      },
+      {
+       "value": "App, back end, gate integration, staff console and notifications",
+       "source_quote": "Deliverables were the app, a back end for passes and bookings, a gate scanning integration and a staff console."
+      },
+      {
+       "value": "Staff console to change bookings and issue passes",
+       "source_quote": "The staff console lets shop and ticket staff look up a guest, change a booking and issue a replacement pass."
+      },
+      {
+       "value": "Hotel system and gate hardware kept",
+       "source_quote": "The existing hotel property management system and the lift gate hardware were kept."
+      }
+     ],
+     "implementation": [
+      {
+       "value": "Three phases over 7 months",
+       "source_quote": "The project took 7 months in three phases: design, a build of the pass and booking features, and a release for the opening of the season."
+      },
+      {
+       "value": "Team of 9 people",
+       "source_quote": "The team had 9 people, including three mobile developers, two back end developers, a designer, a tester and a product owner from Alpine Ski House."
+      },
+      {
+       "value": "June 2023 to December 2023",
+       "source_quote": "Work started in June 2023 and the app went live in December 2023."
+      },
+      {
+       "value": "Soft launch to 500 club members",
+       "source_quote": "A soft launch to 500 club members came two weeks before opening day."
+      },
+      {
+       "value": "Staff trained and gate staff added",
+       "source_quote": "Support staff were trained in the staff console during November."
+      }
+     ],
+     "configuration": [
+      {
+       "value": "React app that stores passes on the phone",
+       "source_quote": "The app is built with React and a shared code base for iOS and Android."
+      },
+      {
+       "value": "Azure, Kubernetes, PostgreSQL and Kafka",
+       "source_quote": "The back end runs on Azure as containers on Kubernetes, with PostgreSQL for guests and bookings."
+      },
+      {
+       "value": "QR codes refreshed every 30 seconds, signed JWT and OAuth 2.0",
+       "source_quote": "Gates read a QR code that the app refreshes every 30 seconds, and the gate controller checks it against a signed JWT. Guests sign in with an email link or with a social account through OAuth 2.0."
+      },
+      {
+       "value": "Push notifications targeted by location",
+       "source_quote": "Push notifications can be targeted by location in the resort."
+      }
+     ]
+    },
+    "prose": {
+     "challenge": {
+      "text": "Guests at Alpine Ski House bought lift passes at the ticket office, hotel rooms by phone and ski lessons online, so a family needed three accounts for one holiday, and queues at the ticket office reached 40 minutes on busy mornings. Lessons and rentals were booked on paper forms at the shop counter, which staff re-entered in the evening, and about 1 booking in 10 contained a mistake. Guests received no information during the day, such as lift closures or weather changes, and often missed the notices on loudspeakers and printed boards. The resort also lost an estimated 15 percent of lift pass sales to partner websites, and management wanted to own the guest relationship and the data behind it.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "solution": {
+      "text": "Alpine Ski House built a guest app for iOS and Android that combines lift passes, lessons, rentals and hotel services in one account. A guest can buy and top up a digital lift pass on the phone and scan it at the gate. The delivery covered the app, a back end for passes and bookings, a gate scanning integration and a staff console, while push notifications tell guests about lift closures and weather changes as they happen. Shop and ticket staff use the console to look up a guest, change a booking and issue a replacement pass. The existing hotel property management system and the lift gate hardware were kept and connected through their existing interfaces.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "implementation": {
+      "text": "The project took 7 months in three phases: design, a build of the pass and booking features, and a release for the opening of the season. Work started in June 2023 and the app went live in December 2023. The team of 9 people included three mobile developers, two back end developers, a designer, a tester and a product owner from Alpine Ski House, and guests from the resort loyalty club tested every build during the autumn. Each release was tried at the resort on real lifts with staff volunteers, and a soft launch to 500 club members came two weeks before opening day. Support staff were trained in November.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "configuration": {
+      "text": "The app is built with React and a shared code base for iOS and Android, and it stores passes on the phone so that gates still work with weak mobile coverage on the mountain. The back end runs on Azure as containers on Kubernetes, with PostgreSQL for guests and bookings, and events about passes and bookings travel through Kafka to the gate and hotel integrations. Gates read a QR code that the app refreshes every 30 seconds and check it against a signed JWT, while guests sign in with an email link or a social account through OAuth 2.0. Push notifications can be targeted by location in the resort.",
+      "by_reviewer": true,
+      "flags": []
+     }
+    },
     "duration_months": {
      "value": 7,
-     "source_quote": "The work was delivered over 7 months."
+     "source_quote": "The project took 7 months in three phases: design, a build of the pass and booking features, and a release for the opening of the season."
     },
     "team_size": {
-     "value": 5,
-     "source_quote": "The team had 5 engineers."
+     "value": 9,
+     "source_quote": "The team had 9 people, including three mobile developers, two back end developers, a designer, a tester and a product owner from Alpine Ski House."
     },
-    "summary": "Alpine Ski House guest app project, delivered over 7 months by 5 engineers. The new platform reached 40,000 app downloads in the first season.",
+    "period": {
+     "start": "2023-06",
+     "end": "2023-12",
+     "source_quote": "Work started in June 2023 and the app went live in December 2023."
+    },
+    "summary": "Alpine Ski House guest app project, delivered over 7 months by 9 people. More than 80 percent of lift passes are now bought in the app.",
     "organisations": [
      "Alpine Ski House"
     ]
    },
-   "status": "approved"
+   "status": "approved",
+   "diagram": true
   },
   {
    "source": "Demo: Bid library",
    "file": "contoso-fraud-scoring.docx",
    "paragraphs": [
     "Contoso fraud scoring project.",
-    "Contoso engaged us for its fraud scoring project.",
-    "Contoso operates in the insurance sector.",
-    "The programme was run for the UK market.",
-    "The old fraud scoring process was slow and relied on manual work.",
-    "We rebuilt the fraud scoring service as a modern, tested platform.",
-    "The work was delivered over 11 months.",
-    "The team had 7 engineers.",
-    "The stack used Python and MLflow in production.",
-    "Our work covered machine learning for Contoso.",
-    "Our work covered mlops for Contoso.",
-    "The new platform flagged 17 percent more fraud cases."
+    "Contoso engaged us for its fraud scoring project. Contoso is a general insurer in the UK that settles motor and home claims.",
+    "Contoso paid out claims that were later found to be fraudulent, and the fraud team estimated the loss at about 3 percent of claim payments. Fraud was detected after payment in most cases, when recovery was slow and uncertain.",
+    "Investigators reviewed claims from a weekly list built from simple rules, and 70 percent of the flagged claims turned out to be genuine. Genuine customers were delayed, and investigators spent their time on the wrong cases.",
+    "Rules were maintained in spreadsheets by two analysts, and a change took 3 weeks to reach production. Fraud patterns changed faster than the rules.",
+    "The claims intake platform produced events for every claim, but no one used them for fraud checks. Contoso wanted a score on every claim before it was paid.",
+    "The scope was a fraud scoring service that gives every new claim a score from 0 to 100 within 2 seconds of submission. Claims above a threshold go to an investigator before payment.",
+    "Deliverables were a feature store, a scoring model, a scoring API, a case queue for investigators and a monitoring report. The case queue shows the score and the main reasons for it.",
+    "The scoring service reads the claim events from the intake platform and writes the score back to the claim. Rules from the old process were kept as extra features so that no knowledge was lost.",
+    "Payments, the policy system and the claims intake platform were not changed. The decision to pay or investigate stays with a person.",
+    "The project took 9 months in three phases: data preparation, model development and a shadow run, and a controlled release. Work started in April 2024 and the release to all claims was in December 2024.",
+    "The team had 8 people, including two data scientists, two engineers, an investigator seconded from the fraud team, a tester and a delivery lead. The fraud team lead joined the weekly review.",
+    "The model ran in shadow mode for 8 weeks, scoring claims without changing any decision. Investigators compared the scores with their own findings and the results were reviewed with the risk committee.",
+    "The release started with motor claims and widened in steps. The risk committee approved each step after reviewing the false positive rate.",
+    "The feature store keeps the history of each policy holder and claim in PostgreSQL, refreshed from Kafka events as they arrive. The model is a gradient boosted trees model trained in Python.",
+    "The scoring API runs on Kubernetes and answers in under 200 milliseconds. It writes the score and the top five reasons back to the claim record.",
+    "Access to the scoring API uses OAuth 2.0 tokens, and every score is logged with the model version for audit. Models are retrained each month and compared with the live model before release.",
+    "The scoring API is described with the OpenAPI 3.0 specification. Model reports follow the model risk guidance of the regulator.",
+    "The share of flagged claims that turned out to be genuine fell from 70 percent to 28 percent. Investigators now spend their time on the cases that matter.",
+    "Fraud found before payment rose by 41 percent in the first six months. Estimated avoided losses were reported to the risk committee each quarter.",
+    "A rule change that took 3 weeks now takes 2 days, because analysts adjust features and thresholds in the model configuration.",
+    "The shadow run built trust with investigators, who first doubted the scores. The team would again run a shadow period before any live decision.",
+    "Explaining the main reasons for each score mattered more to investigators than the score itself. This should be part of the design from the first sprint.",
+    "The programme was sponsored by the head of claims, who asked for monthly updates in plain language and for every decision about the model to be written down."
    ],
    "case": {
     "title": {
@@ -2301,82 +2490,238 @@
     },
     "industry": {
      "value": "Insurance",
-     "source_quote": "Contoso operates in the insurance sector."
+     "source_quote": "Contoso is a general insurer in the UK that settles motor and home claims."
     },
     "region": {
      "value": "UK",
-     "source_quote": "The programme was run for the UK market."
+     "source_quote": "Contoso is a general insurer in the UK that settles motor and home claims."
     },
     "engagement_type": {},
     "challenge": {
-     "value": "Manual, slow fraud scoring process",
-     "source_quote": "The old fraud scoring process was slow and relied on manual work."
+     "value": "Fraud losses of about 3 percent of claim payments",
+     "source_quote": "Contoso paid out claims that were later found to be fraudulent, and the fraud team estimated the loss at about 3 percent of claim payments."
     },
     "solution": {
-     "value": "Rebuilt fraud scoring as a tested platform",
-     "source_quote": "We rebuilt the fraud scoring service as a modern, tested platform."
+     "value": "Score from 0 to 100 on every claim within 2 seconds",
+     "source_quote": "The scope was a fraud scoring service that gives every new claim a score from 0 to 100 within 2 seconds of submission."
+    },
+    "implementation": {
+     "value": "Three phases over 9 months",
+     "source_quote": "The project took 9 months in three phases: data preparation, model development and a shadow run, and a controlled release."
+    },
+    "configuration": {
+     "value": "Feature store in PostgreSQL fed by Kafka and a Python model",
+     "source_quote": "The feature store keeps the history of each policy holder and claim in PostgreSQL, refreshed from Kafka events as they arrive."
+    },
+    "lessons_learned": {
+     "value": "Run a shadow period before any live decision",
+     "source_quote": "The team would again run a shadow period before any live decision."
     },
     "capabilities": [
      {
-      "value": "Machine learning",
-      "source_quote": "Our work covered machine learning for Contoso."
+      "value": "Fraud analytics",
+      "source_quote": "The scope was a fraud scoring service that gives every new claim a score from 0 to 100 within 2 seconds of submission."
      },
      {
-      "value": "MLOps",
-      "source_quote": "Our work covered mlops for Contoso."
+      "value": "Machine learning engineering",
+      "source_quote": "The model is a gradient boosted trees model trained in Python."
+     },
+     {
+      "value": "Investigator tooling",
+      "source_quote": "The case queue shows the score and the main reasons for it."
      }
     ],
     "tech_stack": [
      {
-      "value": "Python",
-      "source_quote": "The stack used Python and MLflow in production."
+      "value": "PostgreSQL",
+      "source_quote": "The feature store keeps the history of each policy holder and claim in PostgreSQL, refreshed from Kafka events as they arrive."
      },
      {
-      "value": "MLflow",
-      "source_quote": "The stack used Python and MLflow in production."
+      "value": "Kafka",
+      "source_quote": "The feature store keeps the history of each policy holder and claim in PostgreSQL, refreshed from Kafka events as they arrive."
+     },
+     {
+      "value": "Python",
+      "source_quote": "The model is a gradient boosted trees model trained in Python."
+     },
+     {
+      "value": "Kubernetes",
+      "source_quote": "The scoring API runs on Kubernetes and answers in under 200 milliseconds."
      }
     ],
-    "needs_attention": [
-     "1 outcome(s) with no clear metric"
+    "tech_references": [
+     {
+      "value": "OAuth 2.0",
+      "source_quote": "Access to the scoring API uses OAuth 2.0 tokens, and every score is logged with the model version for audit."
+     },
+     {
+      "value": "OpenAPI 3.0",
+      "source_quote": "The scoring API is described with the OpenAPI 3.0 specification."
+     }
     ],
     "outcomes": [
      {
-      "metric": "metric",
-      "value": "flagged 17 percent more fraud cases",
-      "source_quote": "The new platform flagged 17 percent more fraud cases."
+      "metric": "flagged claims that were genuine",
+      "value": "fell from 70 percent to 28 percent",
+      "source_quote": "The share of flagged claims that turned out to be genuine fell from 70 percent to 28 percent."
+     },
+     {
+      "metric": "fraud found before payment",
+      "value": "rose by 41 percent in the first six months",
+      "source_quote": "Fraud found before payment rose by 41 percent in the first six months."
+     },
+     {
+      "metric": "time to change a detection rule",
+      "value": "3 weeks to 2 days",
+      "source_quote": "A rule change that took 3 weeks now takes 2 days, because analysts adjust features and thresholds in the model configuration."
      }
     ],
+    "points": {
+     "challenge": [
+      {
+       "value": "Fraud losses of about 3 percent of claim payments",
+       "source_quote": "Contoso paid out claims that were later found to be fraudulent, and the fraud team estimated the loss at about 3 percent of claim payments."
+      },
+      {
+       "value": "70 percent of flagged claims were genuine",
+       "source_quote": "Investigators reviewed claims from a weekly list built from simple rules, and 70 percent of the flagged claims turned out to be genuine."
+      },
+      {
+       "value": "Rules in spreadsheets, 3 weeks to change",
+       "source_quote": "Rules were maintained in spreadsheets by two analysts, and a change took 3 weeks to reach production."
+      },
+      {
+       "value": "Intake events not used for fraud checks",
+       "source_quote": "The claims intake platform produced events for every claim, but no one used them for fraud checks."
+      }
+     ],
+     "solution": [
+      {
+       "value": "Score from 0 to 100 on every claim within 2 seconds",
+       "source_quote": "The scope was a fraud scoring service that gives every new claim a score from 0 to 100 within 2 seconds of submission."
+      },
+      {
+       "value": "Feature store, model, API, case queue and monitoring report",
+       "source_quote": "Deliverables were a feature store, a scoring model, a scoring API, a case queue for investigators and a monitoring report."
+      },
+      {
+       "value": "Score written back to the claim and old rules kept as features",
+       "source_quote": "The scoring service reads the claim events from the intake platform and writes the score back to the claim."
+      },
+      {
+       "value": "Payments and policy system unchanged",
+       "source_quote": "Payments, the policy system and the claims intake platform were not changed."
+      }
+     ],
+     "implementation": [
+      {
+       "value": "Three phases over 9 months",
+       "source_quote": "The project took 9 months in three phases: data preparation, model development and a shadow run, and a controlled release."
+      },
+      {
+       "value": "Team of 8 people",
+       "source_quote": "The team had 8 people, including two data scientists, two engineers, an investigator seconded from the fraud team, a tester and a delivery lead."
+      },
+      {
+       "value": "April 2024 to December 2024",
+       "source_quote": "Work started in April 2024 and the release to all claims was in December 2024."
+      },
+      {
+       "value": "Shadow mode for 8 weeks",
+       "source_quote": "The model ran in shadow mode for 8 weeks, scoring claims without changing any decision."
+      },
+      {
+       "value": "Release in steps approved by the risk committee",
+       "source_quote": "The risk committee approved each step after reviewing the false positive rate."
+      }
+     ],
+     "configuration": [
+      {
+       "value": "Feature store in PostgreSQL fed by Kafka and a Python model",
+       "source_quote": "The feature store keeps the history of each policy holder and claim in PostgreSQL, refreshed from Kafka events as they arrive."
+      },
+      {
+       "value": "Scoring API on Kubernetes under 200 milliseconds",
+       "source_quote": "The scoring API runs on Kubernetes and answers in under 200 milliseconds."
+      },
+      {
+       "value": "OAuth 2.0 access, audit logging and monthly retraining",
+       "source_quote": "Access to the scoring API uses OAuth 2.0 tokens, and every score is logged with the model version for audit."
+      }
+     ]
+    },
+    "prose": {
+     "challenge": {
+      "text": "Contoso paid out claims that were later found to be fraudulent, and the fraud team estimated the loss at about 3 percent of claim payments, with most fraud detected only after payment when recovery was slow and uncertain. Investigators reviewed claims from a weekly list built from simple rules, and 70 percent of the flagged claims turned out to be genuine, so customers were delayed and investigator time was spent on the wrong cases. Rules were maintained in spreadsheets by two analysts, and a change took 3 weeks to reach production, while fraud patterns changed faster than the rules. Contoso wanted a score on every claim before it was paid.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "solution": {
+      "text": "Contoso introduced a fraud scoring service that gives every new claim a score from 0 to 100 within 2 seconds of submission, and claims above a threshold go to an investigator before payment. The scoring model was trained with the FraudSense toolkit and is supported by a feature store, a scoring API, a case queue for investigators and a monitoring report. The case queue shows the score and the main reasons for it. The service reads the claim events from the intake platform and writes the score back to the claim, and the rules of the old process were kept as extra features so that no knowledge was lost. Payments, the policy system and the claims intake platform were not changed, and the decision to pay or investigate stays with a person.",
+      "by_reviewer": false,
+      "flags": []
+     },
+     "implementation": {
+      "text": "The project took 9 months in three phases: data preparation, model development and a shadow run, and a controlled release. Work started in April 2024 and the release to all claims was in December 2024. The team of 8 people included two data scientists, two engineers, an investigator seconded from the fraud team, a tester and a delivery lead, and the fraud team lead joined the weekly review. The model ran in shadow mode for 8 weeks, scoring claims without changing any decision, and investigators compared the scores with their own findings before the results went to the risk committee. The release started with motor claims and widened in steps, each approved by the risk committee after it reviewed the false positive rate.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "configuration": {
+      "text": "The feature store keeps the history of each policy holder and claim in PostgreSQL and is refreshed from Kafka events as they arrive, and the model is a gradient boosted trees model trained in Python. The scoring API runs on Kubernetes and answers in under 200 milliseconds, writing the score and the top five reasons back to the claim record. Access to the API uses OAuth 2.0 tokens, and every score is logged with the model version for audit. Models are retrained each month and compared with the live model before release.",
+      "by_reviewer": true,
+      "flags": []
+     }
+    },
     "duration_months": {
-     "value": 11,
-     "source_quote": "The work was delivered over 11 months."
+     "value": 9,
+     "source_quote": "The project took 9 months in three phases: data preparation, model development and a shadow run, and a controlled release."
     },
     "team_size": {
-     "value": 7,
-     "source_quote": "The team had 7 engineers."
+     "value": 8,
+     "source_quote": "The team had 8 people, including two data scientists, two engineers, an investigator seconded from the fraud team, a tester and a delivery lead."
     },
-    "summary": "Contoso fraud scoring project, delivered over 11 months by 7 engineers. The new platform flagged 17 percent more fraud cases.",
+    "period": {
+     "start": "2024-04",
+     "end": "2024-12",
+     "source_quote": "Work started in April 2024 and the release to all claims was in December 2024."
+    },
+    "summary": "Contoso fraud scoring project, delivered over 9 months by 8 people. The share of flagged claims that turned out to be genuine fell from 70 percent to 28 percent.",
     "organisations": [
      "Contoso"
     ]
    },
-   "status": "extracted"
+   "status": "extracted",
+   "diagram": true,
+   "expect_flag": true
   },
   {
    "source": "Demo: Delivery archive",
    "file": "northwind-loyalty-platform.docx",
    "paragraphs": [
     "Northwind loyalty platform project.",
-    "Northwind engaged us for its loyalty platform project.",
-    "Northwind operates in the retail sector.",
-    "The programme was run for the Germany market.",
-    "The old loyalty platform process was slow and relied on manual work.",
-    "We rebuilt the loyalty platform service as a modern, tested platform.",
-    "The work was delivered over 13 months.",
-    "The team had 8 engineers.",
-    "The stack used Java and Kafka in production.",
-    "Our work covered api design for Northwind.",
-    "Our work covered integration for Northwind.",
-    "The new platform grew active members by 25 percent."
+    "Northwind engaged us for its loyalty platform project. Northwind Traders is a retail chain with 120 stores in Germany.",
+    "Northwind ran three separate loyalty programmes, one for grocery, one for household goods and one for its web shop. A customer who shopped in all three had three cards and three point balances.",
+    "Points were calculated overnight, so a customer saw points for a purchase only on the next day. Customers who asked about missing points were often told to wait.",
+    "Marketing could not run an offer for a single member across all programmes. Campaigns were produced by three teams, and members sometimes received the same offer three times.",
+    "The programme data sat in three databases, which made it hard to answer simple questions such as how many members were active. Reports were put together by hand every month.",
+    "The scope was one loyalty platform with a single member account across stores and the web shop. Members collect and spend points at the till and online.",
+    "Deliverables were a member service, a points engine that works in real time, an offers service for marketing and a member app. The app shows the balance, the offers and a digital card.",
+    "Existing members were migrated from the three programmes with their balances. Duplicate members were merged using email address and phone number.",
+    "The tills and the web shop connect through a points API. The finance system receives a daily summary of points issued and spent.",
+    "The project took 13 months in four phases: design, member migration, the points engine and the member app. Work started in February 2023 and the last stores moved to the new platform in February 2024.",
+    "The team had 8 engineers, supported by a product owner and a marketing lead from Northwind. A data specialist was responsible for the migration.",
+    "Migration was rehearsed three times on copies of the data before the real run. Each rehearsal produced a list of duplicate members for review by the loyalty team.",
+    "Stores moved in groups, starting with 10 pilot stores in October 2023. The web shop moved last, in the final month.",
+    "The points engine is written in Java and runs on Kubernetes. It processes every purchase event from Kafka and updates the member balance within a second.",
+    "Member data is held in PostgreSQL, with a search index in Elasticsearch for the support team. Members sign in to the app with an email address or with a social account through OAuth 2.0.",
+    "The points API follows the OpenAPI 3.0 specification, and the tills call it through a local gateway. The app is built in React.",
+    "Offers are selected by rules that marketing edits in a web tool, and each offer is limited to one use for each member. Messages are sent by email and push notification.",
+    "Active members grew by 25 percent in the six months after the migration. Repeat purchases by members rose by 11 percent.",
+    "Points now appear within a second of a purchase, instead of the next day. Complaints about missing points fell by 60 percent.",
+    "Campaigns now reach each member once, and marketing prepares an offer in 2 days instead of 3 weeks.",
+    "Rehearsing the migration three times removed nearly all surprises from the real run. The duplicate member lists were the most useful result of the rehearsals.",
+    "Marketing needed training on the offer rules, which was planned too late. The team would schedule training before the first pilot store.",
+    "The loyalty team met the programme every Friday, and a short note after each meeting recorded the decisions that affected members, so that store staff could be told in time."
    ],
    "case": {
     "title": {
@@ -2389,7 +2734,7 @@
     },
     "industry": {
      "value": "Retail",
-     "source_quote": "Northwind operates in the retail sector."
+     "source_quote": "Northwind Traders is a retail chain with 120 stores in Germany."
     },
     "region": {
      "value": "Switzerland",
@@ -2398,71 +2743,237 @@
     },
     "engagement_type": {},
     "challenge": {
-     "value": "Manual, slow loyalty platform process",
-     "source_quote": "The old loyalty platform process was slow and relied on manual work."
+     "value": "Three loyalty programmes and three point balances",
+     "source_quote": "Northwind ran three separate loyalty programmes, one for grocery, one for household goods and one for its web shop."
     },
     "solution": {
-     "value": "Rebuilt loyalty platform as a tested platform",
-     "source_quote": "We rebuilt the loyalty platform service as a modern, tested platform."
+     "value": "One loyalty platform with a single member account",
+     "source_quote": "The scope was one loyalty platform with a single member account across stores and the web shop."
+    },
+    "implementation": {
+     "value": "Four phases over 13 months",
+     "source_quote": "The project took 13 months in four phases: design, member migration, the points engine and the member app."
+    },
+    "configuration": {
+     "value": "Java points engine on Kubernetes with Kafka",
+     "source_quote": "The points engine is written in Java and runs on Kubernetes."
+    },
+    "lessons_learned": {
+     "value": "Rehearse the migration and train marketing before the first pilot store",
+     "source_quote": "Rehearsing the migration three times removed nearly all surprises from the real run."
     },
     "capabilities": [
      {
-      "value": "API design",
-      "source_quote": "Our work covered api design for Northwind."
+      "value": "Loyalty programme management",
+      "source_quote": "The scope was one loyalty platform with a single member account across stores and the web shop."
      },
      {
-      "value": "Integration",
-      "source_quote": "Our work covered integration for Northwind."
+      "value": "API design",
+      "source_quote": "The tills and the web shop connect through a points API."
+     },
+     {
+      "value": "Data migration",
+      "source_quote": "Existing members were migrated from the three programmes with their balances."
      }
     ],
     "tech_stack": [
      {
       "value": "Java",
-      "source_quote": "The stack used Java and Kafka in production."
+      "source_quote": "The points engine is written in Java and runs on Kubernetes."
+     },
+     {
+      "value": "Kubernetes",
+      "source_quote": "The points engine is written in Java and runs on Kubernetes."
      },
      {
       "value": "Kafka",
-      "source_quote": "The stack used Java and Kafka in production."
+      "source_quote": "It processes every purchase event from Kafka and updates the member balance within a second."
+     },
+     {
+      "value": "PostgreSQL",
+      "source_quote": "Member data is held in PostgreSQL, with a search index in Elasticsearch for the support team."
+     },
+     {
+      "value": "Elasticsearch",
+      "source_quote": "Member data is held in PostgreSQL, with a search index in Elasticsearch for the support team."
+     }
+    ],
+    "tech_references": [
+     {
+      "value": "OAuth 2.0",
+      "source_quote": "Members sign in to the app with an email address or with a social account through OAuth 2.0."
+     },
+     {
+      "value": "OpenAPI 3.0",
+      "source_quote": "The points API follows the OpenAPI 3.0 specification, and the tills call it through a local gateway."
      }
     ],
     "outcomes": [
      {
       "metric": "active members",
-      "value": "grew active members by 25 percent",
-      "source_quote": "The new platform grew active members by 25 percent."
+      "value": "grew by 25 percent in the six months after the migration",
+      "source_quote": "Active members grew by 25 percent in the six months after the migration."
+     },
+     {
+      "metric": "time for points to appear",
+      "value": "within a second instead of the next day",
+      "source_quote": "Points now appear within a second of a purchase, instead of the next day."
+     },
+     {
+      "metric": "time to prepare an offer",
+      "value": "2 days instead of 3 weeks",
+      "source_quote": "Campaigns now reach each member once, and marketing prepares an offer in 2 days instead of 3 weeks."
      }
     ],
+    "points": {
+     "challenge": [
+      {
+       "value": "Three loyalty programmes and three point balances",
+       "source_quote": "Northwind ran three separate loyalty programmes, one for grocery, one for household goods and one for its web shop."
+      },
+      {
+       "value": "Points seen only on the next day",
+       "source_quote": "Points were calculated overnight, so a customer saw points for a purchase only on the next day."
+      },
+      {
+       "value": "Offers repeated three times",
+       "source_quote": "Campaigns were produced by three teams, and members sometimes received the same offer three times."
+      },
+      {
+       "value": "Data in three databases and manual reports",
+       "source_quote": "The programme data sat in three databases, which made it hard to answer simple questions such as how many members were active."
+      }
+     ],
+     "solution": [
+      {
+       "value": "One loyalty platform with a single member account",
+       "source_quote": "The scope was one loyalty platform with a single member account across stores and the web shop."
+      },
+      {
+       "value": "Member service, points engine, offers service and app",
+       "source_quote": "Deliverables were a member service, a points engine that works in real time, an offers service for marketing and a member app."
+      },
+      {
+       "value": "Members migrated and duplicates merged",
+       "source_quote": "Existing members were migrated from the three programmes with their balances."
+      },
+      {
+       "value": "Points API for tills and web shop",
+       "source_quote": "The tills and the web shop connect through a points API."
+      }
+     ],
+     "implementation": [
+      {
+       "value": "Four phases over 13 months",
+       "source_quote": "The project took 13 months in four phases: design, member migration, the points engine and the member app."
+      },
+      {
+       "value": "Team of 8 engineers",
+       "source_quote": "The team had 8 engineers, supported by a product owner and a marketing lead from Northwind."
+      },
+      {
+       "value": "February 2023 to February 2024",
+       "source_quote": "Work started in February 2023 and the last stores moved to the new platform in February 2024."
+      },
+      {
+       "value": "Migration rehearsed three times",
+       "source_quote": "Migration was rehearsed three times on copies of the data before the real run."
+      },
+      {
+       "value": "10 pilot stores in October 2023",
+       "source_quote": "Stores moved in groups, starting with 10 pilot stores in October 2023."
+      }
+     ],
+     "configuration": [
+      {
+       "value": "Java points engine on Kubernetes with Kafka",
+       "source_quote": "The points engine is written in Java and runs on Kubernetes."
+      },
+      {
+       "value": "PostgreSQL with Elasticsearch and OAuth 2.0 sign in",
+       "source_quote": "Member data is held in PostgreSQL, with a search index in Elasticsearch for the support team. Members sign in to the app with an email address or with a social account through OAuth 2.0."
+      },
+      {
+       "value": "OpenAPI 3.0 points API and React app",
+       "source_quote": "The points API follows the OpenAPI 3.0 specification, and the tills call it through a local gateway."
+      },
+      {
+       "value": "Offers edited by marketing in a web tool",
+       "source_quote": "Offers are selected by rules that marketing edits in a web tool, and each offer is limited to one use for each member."
+      }
+     ]
+    },
+    "prose": {
+     "challenge": {
+      "text": "Northwind ran three separate loyalty programmes, one for grocery, one for household goods and one for its web shop, so a customer who shopped in all three had three cards and three point balances. Points were calculated overnight, which meant a customer saw points for a purchase only on the next day and was often told to wait when asking about missing points. Marketing could not run an offer for a single member across all programmes, and members sometimes received the same offer three times because three teams produced campaigns. The programme data sat in three databases, so simple questions such as how many members were active needed reports that were put together by hand every month.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "solution": {
+      "text": "Northwind introduced one loyalty platform with a single member account across stores and the web shop, where members collect and spend points at the till and online. The deliverables were a member service, a points engine that works in real time, an offers service for marketing and a member app that shows the balance, the offers and a digital card. Existing members were migrated from the three programmes with their balances, and duplicate members were merged using email address and phone number. The tills and the web shop connect through a points API, and the finance system receives a daily summary of points issued and spent.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "implementation": {
+      "text": "The project took 13 months in four phases: design, member migration, the points engine and the member app. Work started in February 2023 and the last stores moved to the new platform in February 2024. The team had 8 engineers, supported by a product owner and a marketing lead from Northwind, and a data specialist was responsible for the migration. Migration was rehearsed three times on copies of the data before the real run, and each rehearsal produced a list of duplicate members for review by the loyalty team. Stores moved in groups, starting with 10 pilot stores in October 2023, and the web shop moved last.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "configuration": {
+      "text": "The points engine is written in Java and runs on Kubernetes, processing every purchase event from Kafka and updating the member balance within a second. Member data is held in PostgreSQL, with a search index in Elasticsearch for the support team, and members sign in to the app with an email address or with a social account through OAuth 2.0. The points API follows the OpenAPI 3.0 specification, the tills call it through a local gateway and the app is built in React. Marketing edits the offer rules in a web tool, each offer is limited to one use for each member, and messages are sent by email and push notification.",
+      "by_reviewer": true,
+      "flags": []
+     }
+    },
     "duration_months": {
      "value": 13,
-     "source_quote": "The work was delivered over 13 months."
+     "source_quote": "The project took 13 months in four phases: design, member migration, the points engine and the member app."
     },
     "team_size": {
      "value": 8,
-     "source_quote": "The team had 8 engineers."
+     "source_quote": "The team had 8 engineers, supported by a product owner and a marketing lead from Northwind."
     },
-    "summary": "Northwind loyalty platform project, delivered over 13 months by 8 engineers. The new platform grew active members by 25 percent.",
+    "period": {
+     "start": "2023-02",
+     "end": "2024-02",
+     "source_quote": "Work started in February 2023 and the last stores moved to the new platform in February 2024."
+    },
+    "summary": "Northwind loyalty platform project, delivered over 13 months by 8 engineers. Active members grew by 25 percent in the six months after the migration.",
     "organisations": [
      "Northwind"
     ]
    },
-   "status": "extracted"
+   "status": "extracted",
+   "document_image": true
   },
   {
    "source": "Demo: Delivery archive",
    "file": "litware-records-archive.docx",
    "paragraphs": [
     "Litware records archive project.",
-    "Litware engaged us for its records archive project.",
-    "Litware operates in the public sector sector.",
-    "The programme was run for the Sweden market.",
-    "The old records archive process was slow and relied on manual work.",
-    "We rebuilt the records archive service as a modern, tested platform.",
-    "The work was delivered over 6 months.",
-    "The team had 4 engineers.",
-    "The stack used Python and Elasticsearch in production.",
-    "Our work covered search for Litware.",
-    "Our work covered data migration for Litware.",
-    "The new platform made 2 million records searchable."
+    "Litware engaged us for its records archive project. Litware is a regional government in Sweden that holds records for permits, planning and social services.",
+    "Paper and digital records were kept in 14 different places, including file servers, shared mailboxes and a basement archive. Staff could not tell which copy of a document was the official one.",
+    "A request for a historical record took 12 working days on average, because staff searched several places by hand. Legal deadlines for public access requests were missed in about 1 case in 6.",
+    "Retention rules were applied by hand once a year, and many records were kept far longer than allowed. The records manager had no list of what was held.",
+    "The basement archive was running out of space and a flood risk had been identified. Litware wanted to digitise the oldest series and close the room.",
+    "The scope was a records archive that holds official records of permits, planning and social services in one searchable store. Each record has a retention period and a legal owner.",
+    "Deliverables were the archive store, a capture service for scanned and born digital records, a search page for staff and a public access request tool. The tool tracks each request against its legal deadline.",
+    "Retention rules run automatically, and the archive proposes records for disposal for the records manager to approve. Nothing is deleted without an approval.",
+    "The case register and the portal were not changed, but both now send closed cases to the archive. The scanning of the oldest series was done by a contractor under Litware supervision.",
+    "The project took 14 months in three phases: analysis and design, the archive and capture service, and the digitisation of the oldest series. Work started in March 2023 and ended in April 2024.",
+    "The team had 7 people, including two developers, a records specialist, an information architect, a tester and a delivery lead. The records manager at Litware acted as product owner.",
+    "Records were classified in workshops with each department, and 38 record series were agreed. The workshops also settled who owns each series.",
+    "Digitisation ran in batches of 5,000 pages, each batch checked by staff before the paper was released. The basement room was closed in April 2024.",
+    "The archive store keeps documents in object storage with a checksum for each file, and metadata in PostgreSQL. Search uses an index in Elasticsearch.",
+    "Scanned pages are converted to PDF/A with text recognition, so that they can be searched and kept for the long term. Born digital records are converted on capture.",
+    "Access uses the staff directory in Active Directory, and public requests are served through the portal with OpenID Connect sign in. Every access is logged for audit.",
+    "The metadata for each record follows the ISO 15489 principles for records management. A nightly job checks the checksums and reports any difference.",
+    "Finding a historical record now takes 2 minutes instead of 12 working days. Legal deadlines for access requests were met in all cases in the first six months.",
+    "Records held beyond their retention period fell from an estimated 40 percent to 4 percent after the first disposal round.",
+    "The basement archive was closed in April 2024, and 1,100 boxes were released for recycling after digitisation.",
+    "Agreeing the record series with each department took longer than planned but made the rest of the project simple. The team would start these workshops in the first month.",
+    "Checking each scanned batch before releasing the paper caught poor scans early. The check cost time but protected the originals.",
+    "The project reported to the head of administration every month, and the records manager signed off each stage before the next one began."
    ],
    "case": {
     "title": {
@@ -2475,62 +2986,212 @@
     },
     "industry": {
      "value": "Public sector",
-     "source_quote": "Litware operates in the public sector sector."
+     "source_quote": "Litware is a regional government in Sweden that holds records for permits, planning and social services."
     },
     "region": {
      "value": "Sweden",
-     "source_quote": "The programme was run for the Sweden market."
+     "source_quote": "Litware is a regional government in Sweden that holds records for permits, planning and social services."
     },
     "engagement_type": {},
     "challenge": {
-     "value": "Manual, slow records archive process",
-     "source_quote": "The old records archive process was slow and relied on manual work."
+     "value": "Records in 14 places with no official copy",
+     "source_quote": "Paper and digital records were kept in 14 different places, including file servers, shared mailboxes and a basement archive."
     },
     "solution": {
-     "value": "Rebuilt records archive as a tested platform",
-     "source_quote": "We rebuilt the records archive service as a modern, tested platform."
+     "value": "One searchable archive with retention and legal owner",
+     "source_quote": "The scope was a records archive that holds official records of permits, planning and social services in one searchable store."
+    },
+    "implementation": {
+     "value": "Three phases over 14 months",
+     "source_quote": "The project took 14 months in three phases: analysis and design, the archive and capture service, and the digitisation of the oldest series."
+    },
+    "configuration": {
+     "value": "Object storage, PostgreSQL and Elasticsearch",
+     "source_quote": "The archive store keeps documents in object storage with a checksum for each file, and metadata in PostgreSQL."
+    },
+    "lessons_learned": {
+     "value": "Start the record series workshops in the first month",
+     "source_quote": "The team would start these workshops in the first month."
     },
     "capabilities": [
      {
-      "value": "Search",
-      "source_quote": "Our work covered search for Litware."
+      "value": "Records management",
+      "source_quote": "The scope was a records archive that holds official records of permits, planning and social services in one searchable store."
      },
      {
-      "value": "Data migration",
-      "source_quote": "Our work covered data migration for Litware."
+      "value": "Digitisation",
+      "source_quote": "Digitisation ran in batches of 5,000 pages, each batch checked by staff before the paper was released."
+     },
+     {
+      "value": "Enterprise search",
+      "source_quote": "Search uses an index in Elasticsearch."
      }
     ],
     "tech_stack": [
      {
-      "value": "Python",
-      "source_quote": "The stack used Python and Elasticsearch in production."
+      "value": "PostgreSQL",
+      "source_quote": "The archive store keeps documents in object storage with a checksum for each file, and metadata in PostgreSQL."
      },
      {
       "value": "Elasticsearch",
-      "source_quote": "The stack used Python and Elasticsearch in production."
+      "source_quote": "Search uses an index in Elasticsearch."
+     },
+     {
+      "value": "Active Directory",
+      "source_quote": "Access uses the staff directory in Active Directory, and public requests are served through the portal with OpenID Connect sign in."
+     }
+    ],
+    "tech_references": [
+     {
+      "value": "PDF/A",
+      "source_quote": "Scanned pages are converted to PDF/A with text recognition, so that they can be searched and kept for the long term."
+     },
+     {
+      "value": "ISO 15489",
+      "source_quote": "The metadata for each record follows the ISO 15489 principles for records management."
+     },
+     {
+      "value": "OpenID Connect",
+      "source_quote": "Access uses the staff directory in Active Directory, and public requests are served through the portal with OpenID Connect sign in."
      }
     ],
     "outcomes": [
      {
-      "metric": "searchable records",
-      "value": "made 2 million records searchable",
-      "source_quote": "The new platform made 2 million records searchable."
+      "metric": "time to find a historical record",
+      "value": "2 minutes instead of 12 working days",
+      "source_quote": "Finding a historical record now takes 2 minutes instead of 12 working days."
+     },
+     {
+      "metric": "records held beyond retention",
+      "value": "fell from an estimated 40 percent to 4 percent",
+      "source_quote": "Records held beyond their retention period fell from an estimated 40 percent to 4 percent after the first disposal round."
+     },
+     {
+      "metric": "basement archive",
+      "value": "closed in April 2024 with 1,100 boxes released",
+      "source_quote": "The basement archive was closed in April 2024, and 1,100 boxes were released for recycling after digitisation."
      }
     ],
+    "points": {
+     "challenge": [
+      {
+       "value": "Records in 14 places with no official copy",
+       "source_quote": "Paper and digital records were kept in 14 different places, including file servers, shared mailboxes and a basement archive."
+      },
+      {
+       "value": "12 working days to find a record and missed deadlines",
+       "source_quote": "A request for a historical record took 12 working days on average, because staff searched several places by hand."
+      },
+      {
+       "value": "Retention rules applied by hand",
+       "source_quote": "Retention rules were applied by hand once a year, and many records were kept far longer than allowed."
+      },
+      {
+       "value": "Basement archive full and at flood risk",
+       "source_quote": "The basement archive was running out of space and a flood risk had been identified."
+      }
+     ],
+     "solution": [
+      {
+       "value": "One searchable archive with retention and legal owner",
+       "source_quote": "The scope was a records archive that holds official records of permits, planning and social services in one searchable store."
+      },
+      {
+       "value": "Archive store, capture, search page and request tool",
+       "source_quote": "Deliverables were the archive store, a capture service for scanned and born digital records, a search page for staff and a public access request tool."
+      },
+      {
+       "value": "Automatic retention with approval before disposal",
+       "source_quote": "Retention rules run automatically, and the archive proposes records for disposal for the records manager to approve."
+      },
+      {
+       "value": "Case register and portal unchanged",
+       "source_quote": "The case register and the portal were not changed, but both now send closed cases to the archive."
+      }
+     ],
+     "implementation": [
+      {
+       "value": "Three phases over 14 months",
+       "source_quote": "The project took 14 months in three phases: analysis and design, the archive and capture service, and the digitisation of the oldest series."
+      },
+      {
+       "value": "Team of 7 people",
+       "source_quote": "The team had 7 people, including two developers, a records specialist, an information architect, a tester and a delivery lead."
+      },
+      {
+       "value": "March 2023 to April 2024",
+       "source_quote": "Work started in March 2023 and ended in April 2024."
+      },
+      {
+       "value": "38 record series agreed in workshops",
+       "source_quote": "Records were classified in workshops with each department, and 38 record series were agreed."
+      },
+      {
+       "value": "Digitisation in batches of 5,000 pages",
+       "source_quote": "Digitisation ran in batches of 5,000 pages, each batch checked by staff before the paper was released."
+      }
+     ],
+     "configuration": [
+      {
+       "value": "Object storage, PostgreSQL and Elasticsearch",
+       "source_quote": "The archive store keeps documents in object storage with a checksum for each file, and metadata in PostgreSQL."
+      },
+      {
+       "value": "PDF/A conversion with text recognition",
+       "source_quote": "Scanned pages are converted to PDF/A with text recognition, so that they can be searched and kept for the long term."
+      },
+      {
+       "value": "Active Directory and OpenID Connect access",
+       "source_quote": "Access uses the staff directory in Active Directory, and public requests are served through the portal with OpenID Connect sign in."
+      },
+      {
+       "value": "ISO 15489 metadata and nightly checksum checks",
+       "source_quote": "The metadata for each record follows the ISO 15489 principles for records management."
+      }
+     ]
+    },
+    "prose": {
+     "challenge": {
+      "text": "Paper and digital records at Litware were kept in 14 different places, including file servers, shared mailboxes and a basement archive, and staff could not tell which copy of a document was the official one. A request for a historical record took 12 working days on average because staff searched several places by hand, and legal deadlines for public access requests were missed in about 1 case in 6. Retention rules were applied by hand once a year, so many records were kept far longer than allowed, and the records manager had no list of what was held. The basement archive was also running out of space and a flood risk had been identified, so Litware wanted to digitise the oldest series and close the room.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "solution": {
+      "text": "Litware built a records archive that holds the official records of permits, planning and social services in one searchable store, with a retention period and a legal owner for each record. The deliverables were the archive store, a capture service for scanned and born digital records, a search page for staff and a public access request tool that tracks each request against its legal deadline. Retention rules run automatically and the archive proposes records for disposal for the records manager to approve, so nothing is deleted without an approval. The case register and the portal were not changed, but both now send closed cases to the archive, and a contractor did the scanning of the oldest series under Litware supervision.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "implementation": {
+      "text": "The project took 14 months in three phases: analysis and design, the archive and capture service, and the digitisation of the oldest series. Work started in March 2023 and ended in April 2024. The team of 7 people included two developers, a records specialist, an information architect, a tester and a delivery lead, and the records manager at Litware acted as product owner. Records were classified in workshops with each department, where 38 record series were agreed and ownership of each series was settled. Digitisation ran in batches of 5,000 pages, each checked by staff before the paper was released, and the basement room was closed in April 2024.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "configuration": {
+      "text": "The archive store keeps documents in object storage with a checksum for each file and metadata in PostgreSQL, and search uses an index in Elasticsearch. Scanned pages are converted to PDF/A with text recognition so that they can be searched and kept for the long term, and born digital records are converted on capture. Access uses the staff directory in Active Directory, public requests are served through the portal with OpenID Connect sign in, and every access is logged for audit. The metadata for each record follows the ISO 15489 principles for records management, and a nightly job checks the checksums and reports any difference.",
+      "by_reviewer": true,
+      "flags": []
+     }
+    },
     "duration_months": {
-     "value": 6,
-     "source_quote": "The work was delivered over 6 months."
+     "value": 14,
+     "source_quote": "The project took 14 months in three phases: analysis and design, the archive and capture service, and the digitisation of the oldest series."
     },
     "team_size": {
-     "value": 4,
-     "source_quote": "The team had 4 engineers."
+     "value": 7,
+     "source_quote": "The team had 7 people, including two developers, a records specialist, an information architect, a tester and a delivery lead."
     },
-    "summary": "Litware records archive project, delivered over 6 months by 4 engineers. The new platform made 2 million records searchable.",
+    "period": {
+     "start": "2023-03",
+     "end": "2024-04",
+     "source_quote": "Work started in March 2023 and ended in April 2024."
+    },
+    "summary": "Litware records archive project, delivered over 14 months by 7 people. Finding a historical record now takes 2 minutes instead of 12 working days.",
     "organisations": [
      "Litware"
     ]
    },
-   "status": "extracted"
+   "status": "extracted",
+   "document_image": true
   },
   {
    "source": "Demo: Delivery archive",
