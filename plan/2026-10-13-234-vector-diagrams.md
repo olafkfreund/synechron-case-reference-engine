@@ -190,6 +190,14 @@ dismissed (`dismissed_images`) would be offered again. So:
   no network namespace, because unsharing needs privileges the container
   doesn't have, and production egress is already restricted. This is
   accepted and noted.
+- Steps 4-6:
+  - A new version also resets `images_version` to 1, so a failed replace is
+    retried in add-only mode.
+  - The backfill inserts only PNGs not already stored (by md5), so used and
+    dismissed rows keep their ids.
+  - Eval: candidates went from 13 to 16 across the trial documents (lines 3
+    and 4 gained 1 and 2). Six documents with EMF/WMF gained none, probably
+    because of the size or blank-page filters; not investigated.
 
 ## Tests
 

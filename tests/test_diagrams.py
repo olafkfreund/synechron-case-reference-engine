@@ -430,3 +430,12 @@ def test_a_slow_office_is_killed_and_leaves_no_child(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="timeout"):
         office.convert({"a.emf": EMF}, "png", 0.5, 1)
     assert subprocess.run(["pgrep", "-f", "sleep 30"], capture_output=True).returncode == 1
+
+
+@pytest.mark.skipif(not shutil.which("soffice"), reason="needs LibreOffice")
+def test_malformed_and_truncated_emf_fail_safely_and_keep_the_rasters():
+    bad = {"word/media/a.emf": EMF,  # all zeros after the header
+           "word/media/b.emf": EMF[:44] + os.urandom(3000),  # random records
+           "word/media/c.wmf": WMF[:200] + b"\xff" * 2500}  # truncated placeholder header, junk body
+    got = diagrams.document_images_from(pack({"word/media/r.png": noise_png(450)} | bad), "x.docx")
+    assert [g[1] for g in got] == [450]
