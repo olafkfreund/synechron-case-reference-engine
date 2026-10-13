@@ -212,6 +212,18 @@ create table if not exists diagrams (
   created_at timestamptz not null default now()
 );
 
+-- images found inside a document's own docx/pptx (#212): already re-encoded PNGs, candidates for a case's diagrams
+create table if not exists document_images (
+  id bigserial primary key,
+  document_id bigint not null references documents(id) on delete cascade,
+  png bytea not null,
+  width int not null,
+  height int not null,
+  hint text not null default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists document_images_document_idx on document_images (document_id);
+
 alter table documents add column if not exists updated_at timestamptz;
 update documents set updated_at = created_at where updated_at is null;  -- keep the real age of existing documents
 alter table documents alter column updated_at set default now(), alter column updated_at set not null;

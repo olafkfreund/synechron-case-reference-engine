@@ -5,7 +5,7 @@ import pytest
 
 from app import db
 
-TABLES = {"sources", "documents", "cases", "clients", "jobs", "research", "generations"}
+TABLES = {"sources", "documents", "cases", "clients", "jobs", "research", "generations", "document_images"}
 
 
 def test_init_idempotent_and_tables():
@@ -127,3 +127,17 @@ def test_rotated_secret_is_fetched_again(monkeypatch):
 def lru(f):
     from functools import lru_cache
     return lru_cache(maxsize=1)(f)
+
+
+def test_document_images_die_with_their_document():
+    import uuid
+    db.init()
+    with db.connect() as c:
+        sid = c.execute("insert into sources(kind,name) values ('s3',%s) returning id", (uuid.uuid4().hex,)).fetchone()[0]
+        did = c.execute("insert into documents(source_id,external_id,checksum,text) values (%s,'a','x','t') returning id",
+                        (sid,)).fetchone()[0]
+        c.execute("insert into document_images(document_id, png, width, height) values (%s, 'x', 500, 400)", (did,))
+        assert c.execute("select hint from document_images where document_id=%s", (did,)).fetchone() == ("",)
+        c.execute("delete from documents where id=%s", (did,))
+        assert c.execute("select count(*) from document_images where document_id=%s", (did,)).fetchone()[0] == 0
+        c.execute("delete from sources where id=%s", (sid,))
