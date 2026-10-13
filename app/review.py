@@ -153,6 +153,7 @@ def review_list(request: Request, user: User = Depends(require("reviewer"))):
 
 
 SKIP_CONTRACT = "Skipped: contract not marked executed"
+RETRIAGED = "No longer delivery evidence (document changed)"  # ingest retired it, no reviewer did (#218)
 
 
 def doc_status(kind, case_status, retired_by, merged_into, job):
@@ -168,7 +169,9 @@ def doc_status(kind, case_status, retired_by, merged_into, job):
     if case_status == "approved":
         return "Approved", "case"
     if case_status == "rejected":
-        return (SKIP_CONTRACT, None) if retired_by == "untick" else ("Rejected in review", "case")
+        if retired_by == "untick":
+            return SKIP_CONTRACT, None
+        return (RETRIAGED if retired_by == "retriage" else "Rejected in review"), "case"
     if kind == "contract":
         return SKIP_CONTRACT, None
     if kind in ("proposal", "deck"):

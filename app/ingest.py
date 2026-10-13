@@ -138,8 +138,8 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
         conn.execute("delete from document_images where document_id=%s", (doc_id,))  # new content: no stale candidate is offered meanwhile
         # a changed document re-opens its case for review, or retires it when it no longer
         # describes delivered work (a stale case must not stay approvable)
-        conn.execute("update cases set status=%s, retired_by=null where document_id=%s",
-                     ("extracted" if basis else "rejected", doc_id))
+        conn.execute("update cases set status=%s, retired_by=%s where document_id=%s",
+                     ("extracted" if basis else "rejected", None if basis else "retriage", doc_id))
         reopen_merged(conn, [doc_id])
         if basis:
             conn.execute("insert into jobs(kind, payload) values ('extract', jsonb_build_object("

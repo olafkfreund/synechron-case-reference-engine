@@ -531,7 +531,7 @@ def test_changed_document_no_longer_a_case_retires_it(env):
     before = jobs()
     ing.ingest(sid, "a", "a", b"two")
     with db.connect() as c:
-        assert c.execute("select status from cases where document_id=%s", (did,)).fetchone()[0] == "rejected"
+        assert c.execute("select status, retired_by from cases where document_id=%s", (did,)).fetchone() == ("rejected", "retriage")
     assert jobs() == before
 
 
@@ -545,7 +545,7 @@ def test_changed_document_clears_the_untick_mark(env):  # #160: a reject by inge
     TRIAGE["v"] = ing.Triage(kind="other", describes_delivered_work=False)
     ing.ingest(sid, "a", "a", b"two")
     with db.connect() as c:
-        assert c.execute("select status, retired_by from cases where document_id=%s", (did,)).fetchone() == ("rejected", None)
+        assert c.execute("select status, retired_by from cases where document_id=%s", (did,)).fetchone() == ("rejected", "retriage")  # #218
 
 def merged_pair(sid):
     """Two ingested documents "a" and "b", each with an engagement case, merged into one approved case."""
