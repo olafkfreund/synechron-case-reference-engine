@@ -117,7 +117,7 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
             "on conflict (source_id, external_id) do update set "
             "title=excluded.title, checksum=excluded.checksum, s3_key=excluded.s3_key, text=excluded.text, "
             "kind=excluded.kind, source_version=excluded.source_version, acl_groups=excluded.acl_groups, "
-            "deleted_at=null returning id",
+            "updated_at=now(), deleted_at=null returning id",
             (source_id, external_id, title, checksum, key, text, triage.kind, source_version, source_id)).fetchone()
         if not got:
             raise LookupError(f"source {source_id} no longer exists")

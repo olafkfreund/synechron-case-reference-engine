@@ -198,3 +198,8 @@ create table if not exists diagrams (
   created_by text not null,
   created_at timestamptz not null default now()
 );
+
+alter table documents add column if not exists updated_at timestamptz not null default now();
+create index if not exists documents_updated_idx on documents (updated_at desc, id desc);
+create index if not exists cases_approved_idx on cases (approved_at desc, id desc)
+  where status = 'approved' and merged_into is null;
