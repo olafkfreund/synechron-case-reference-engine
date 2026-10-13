@@ -259,4 +259,10 @@ code ignores it. The demo can be re-seeded.
 
 ## Deviations
 
-None yet.
+- A1:
+  - The fonts come from IBM/plex release `@ibm/plex-sans@1.1.0`
+    (`ibm-plex-sans.zip`), and the hashes are in `brand/fonts/SHA256SUMS`.
+  - `OFL.txt` is the release's `LICENSE.txt` (SIL OFL 1.1), renamed.
+  - The Dockerfile's `COPY . .` already includes `brand/`, so it needs no
+    change.
+  - The tests are in `tests/test_fonts.py`.
