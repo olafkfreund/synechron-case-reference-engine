@@ -1453,3 +1453,28 @@ def test_remerge_keeps_the_dismissed_images(make, acme):
         x.execute("update documents set deleted_at=now() where id=(select document_id from cases where id=%s)", (d,))
     assert c.post(f"/review/{new}/remerge", data={"v": ver(new)}, follow_redirects=False).status_code == 303
     assert row(new)[1]["dismissed_images"] == [iid]
+
+
+def test_technical_references_can_be_added_removed_and_dropped_when_unsourced(make):
+    cid = make(data=case_data(tech_references=[Sourced[str](value="ISO 20022", source_quote=Q_TITLE),
+                                               Sourced[str](value="Made up", source_quote="not in the document", unsourced=True)]))
+    page = client(R).get(f"/review/{cid}").text
+    assert "technical reference #1" in page and "technical reference #2" in page
+    add = client(R).post(f"/review/{cid}/edit", data={"field": "tech_references.new", "value": "OAuth 2.0", "quote": Q_TITLE, "v": ver(cid)},
+                         follow_redirects=False)
+    assert add.status_code == 303 and len(row(cid)[1]["tech_references"]) == 3 and "OAuth 2.0" in row(cid)[2]
+    rm = client(R).post(f"/review/{cid}/edit", data={"field": "tech_references.0", "action": "remove", "v": ver(cid)}, follow_redirects=False)
+    assert rm.status_code == 303 and "ISO 20022" not in [r["value"] for r in row(cid)[1]["tech_references"]]
+    client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)})
+    assert [r["value"] for r in row(cid)[1]["tech_references"]] == []  # OAuth's quote is not in the document text: unsourced, emptied
+
+
+def test_merge_unions_technical_references(make, acme):
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    for cid, vals, q in ((a, ["Python", "REST"], TEXT_A.split(".")[0]), (b, ["rest", "SWIFT"], TEXT_B.split(".")[0])):
+        with db.connect() as c:
+            d = c.execute("select data from cases where id=%s", (cid,)).fetchone()[0]
+            d["tech_references"] = [{"value": v, "source_quote": q} for v in vals]
+            c.execute("update cases set data=%s where id=%s", (json.dumps(d), cid))
+    new = int(merge(client(R), [a, b]).headers["location"].rsplit("/", 1)[1])
+    assert [r["value"] for r in _data_and_doc(new)[0]["tech_references"]] == ["Python", "REST", "SWIFT"]

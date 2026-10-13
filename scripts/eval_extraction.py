@@ -111,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
             images = len(document_images_from(p.read_bytes(), p.name))  # a count only; the images are not kept
             rows.append((sourced, len(items), secs, vram, bad))
             print(f"{model} {p.name[:30]} kind={tri.kind} executed={tri.executed} basis={basis} sourced={sourced}/{len(items)} caps={len(case.capabilities)} "
-                  f"tech={len(case.tech_stack)} outcomes={len(case.outcomes)} points={pts} prose_words={words} flagged={flagged} images={images} "
+                  f"tech={len(case.tech_stack)} refs={len(case.tech_references)} outcomes={len(case.outcomes)} points={pts} prose_words={words} flagged={flagged} images={images} "
                   f"parts={len(extract.split(text[:extract.MAX_CHARS]))} summary={'kept' if case.summary else 'blank'} bad_metrics={bad} notes={case.needs_attention} "
                   f"{secs:.0f}s vram={vram:.1f}GB\n    fields: {filled}", flush=True)
         if rows:
