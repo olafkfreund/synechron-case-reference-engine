@@ -9,7 +9,7 @@ from app import anonymise, db, research
 from app.llm import complete_json
 from app.main import User, require
 from app.review import SOURCE_KEYS, page
-from app.schema import _Model
+from app.schema import _Model, plain
 from app.writeup import check_prose
 
 router = APIRouter()
@@ -92,7 +92,7 @@ _TAG = re.compile(r"</?\s*quotes\s*>", re.I)
 def quote_texts(quotes: list[dict], clients) -> list[str]:
     """What the model sees and check() compares against: apply() first, so a protected name never reaches a model.
     One line each, and without our delimiter tags, so a quote cannot forge a numbered line or close the data block."""
-    return [" ".join(_TAG.sub("", anonymise.apply(str(q.get("quote") or ""), clients)).split()) for q in quotes]
+    return [" ".join(_TAG.sub("", anonymise.apply(plain(str(q.get("quote") or "")), clients)).split()) for q in quotes]
 
 
 def run(brief_id: int) -> None:

@@ -20,7 +20,7 @@ from pptx import Presentation
 from app import anonymise, db
 from app.main import User, require
 from app.review import PNG_HEADERS, VISIBLE, page
-from app.schema import ReferenceCase, vague_metric
+from app.schema import ReferenceCase, plain, vague_metric
 
 router = APIRouter()
 TEMPLATE = Path(__file__).resolve().parent.parent / "brand" / "reference.docx"
@@ -66,8 +66,9 @@ def industry_section(claims: list[dict], clients, heading=INDUSTRY_HEADING, page
             continue
         # only quote and title are anonymised: rewriting a publisher or URL would forge the citation
         title = c.get("title") or page_titles.get(c.get("url")) or _host(c.get("url", "")) or c.get("publisher", "")
+        pl = (lambda t: t) if c.get("type") == "technical_note" else plain  # a note's code stays exact
         safe = {k: CTRL.sub("", str(v)) for k, v in
-                {"quote": c.get("quote", ""), "title": title, "publisher": c.get("publisher", ""), "url": c.get("url", ""),
+                {"quote": pl(str(c.get("quote", ""))), "title": pl(str(title)), "publisher": c.get("publisher", ""), "url": c.get("url", ""),
                  "retrieved_at": c.get("retrieved_at", "")}.items()}
         safe["quote"], safe["title"] = anonymise.apply(safe["quote"], clients), anonymise.apply(safe["title"], clients)
         safe["date"] = safe.pop("retrieved_at")[:10]
@@ -103,7 +104,8 @@ def brief_section(body: dict, quotes: list[dict], clients) -> dict:
     clean = lambda t: anonymise.apply(CTRL.sub("", str(t or "")), clients)  # noqa: E731
     omitted, dead, sources, appendix = 0, set(), [], []
     for n, q in enumerate(quotes[:brief.MAX_QUOTES], 1):
-        item = {"n": n, "quote": clean(q.get("quote")), "title": clean(q.get("title") or _host(q.get("url")) or q.get("publisher")),
+        item = {"n": n, "quote": clean(plain(str(q.get("quote") or ""))),
+                "title": clean(plain(str(q.get("title") or _host(q.get("url")) or q.get("publisher") or ""))),
                 "publisher": CTRL.sub("", str(q.get("publisher") or "")), "url": CTRL.sub("", str(q.get("url") or "")),
                 "date": CTRL.sub("", str(q.get("retrieved_at") or ""))[:10]}
         if anonymise.blocked("\n".join(str(v) for v in item.values()), clients):
