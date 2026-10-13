@@ -182,6 +182,28 @@ def test_refresh_updates_only_demo_rows(env, tmp_path, monkeypatch):
             c.execute("delete from sources where name='Other: not demo'")
 
 
+def test_refresh_reopens_a_merged_case(env, tmp_path, monkeypatch):
+    demo = copy.deepcopy(DEMO)
+    demo["cases"] = demo["cases"][12:14]  # the two Fabrikam contracts
+    use(tmp_path, monkeypatch, demo)
+    assert seed.main() == 0
+    q = "select c.id, c.data from cases c join documents d on d.id=c.document_id where d.title=%s"
+    with db.connect() as c:
+        ids = [c.execute(q, (e["file"],)).fetchone() for e in demo["cases"]]
+        merged = c.execute("insert into cases(document_id, member_count, basis, status, data, summary, search_text) "
+                           "values (null, 2, 'engagement', 'approved', %s, '', '') returning id",
+                           (json.dumps(ids[0][1]),)).fetchone()[0]
+        c.execute("update cases set merged_into=%s, merged_version=md5(data::text) where id = any(%s)", (merged, [i for i, _ in ids]))
+    demo["cases"][0]["paragraphs"].append("A further note added to the contract for the refresh.")
+    use(tmp_path, monkeypatch, demo)
+    assert seed.main() == 0
+    with db.connect() as c:
+        assert c.execute("select status from cases where id=%s", (merged,)).fetchone()[0] == "extracted"
+        assert c.execute("select merged_into from cases where id=%s", (ids[0][0],)).fetchone()[0] == merged
+        assert "further note" in c.execute("select text from documents where title=%s", (demo["cases"][0]["file"],)).fetchone()[0]
+        c.execute("delete from cases where id=%s", (merged,))  # the clean-up deletes sources only
+
+
 def _bad_quote(d):
     d["cases"][1]["case"]["title"]["source_quote"] = "A sentence that is nowhere in this document."
 

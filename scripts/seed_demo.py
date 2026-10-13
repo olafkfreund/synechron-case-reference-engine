@@ -23,7 +23,7 @@ from psycopg.types.json import Jsonb
 from app import anonymise, db
 from app.completeness import checklist, score
 from app.extract import EXTRACTION_VERSION, check
-from app.ingest import to_markdown
+from app.ingest import reopen_merged, to_markdown
 from app.review import fix_summary
 from app.schema import Diagram, ReferenceCase, quote_in
 from app.writeup import check_prose, quotes_of
@@ -192,6 +192,8 @@ def main() -> int:
                 "client_id=%s, review_due=%s where id=%s",
                 (Jsonb(case.model_dump()), case.summary, case.search_text(), case.basis, e["status"],
                  None, None, client_id, None, cid))
+            if row:  # a merged engagement whose member changed goes back to review, as in ingest (#55)
+                reopen_merged(conn, [doc_id])
             if e["status"] == "approved":
                 conn.execute("update cases set approved_by='demo-seed', approved_at=now(), review_due=now() + interval '12 months' where id=%s", (cid,))
                 items = checklist(case)
