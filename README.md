@@ -175,3 +175,8 @@ Docker run it with `--network host`:
 ```sh
 python scripts/eval_extraction.py --docs ~/presale --models ollama_chat/qwen3:14b [--data-class confidential]
 ```
+
+**Diagrams from documents:** images inside a crawled .docx or .pptx are offered to the reviewer as diagram
+candidates. Vector EMF and WMF drawings are converted to PNG with LibreOffice (isolated, time-limited) and cropped
+to their content; SVG is never converted and relies on the PNG fallback Office stores next to it. `eval_extraction.py`
+prints the candidate count as `images=`.

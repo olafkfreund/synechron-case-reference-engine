@@ -90,18 +90,18 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
                          "deleted_at=null, source_version=%s, title=%s, web_url=coalesce(%s, web_url), "
                          "folder_url=coalesce(%s, folder_url) where id=%s",
                          (source_id, source_version, title, *links, row[0]))
-            # a document ingested before images were read gets its candidates once: it has a case and no rows yet.
-            # shortcut: a document with no usable image is scanned again on each crawl, which reads the zip but decodes nothing
+            # a document whose images were read by an older version gets the new candidates once: it has a live case
+            # and images_version < IMAGES_VERSION. store_images bumps the version, even when nothing is found.
             missing = conn.execute(
                 "select exists(select 1 from cases where document_id=%s and status <> 'rejected') "
-                "and not exists(select 1 from document_images where document_id=%s)", (row[0], row[0])).fetchone()[0]
+                "and (select images_version from documents where id=%s) < %s", (row[0], row[0], IMAGES_VERSION)).fetchone()[0]
         else:
             src = conn.execute("select data_class from sources where id=%s", (source_id,)).fetchone()
             if not src:
                 raise LookupError(f"source {source_id} no longer exists")
     if missing is not None:  # outside the transaction: decoding holds no lock
         if missing:
-            store_images(row[0], data, title or PurePosixPath(external_id).name, True)
+            store_images(row[0], data, title or PurePosixPath(external_id).name, True, add_only=True)
         return "skipped"
 
     key = f"originals/{checksum}"
@@ -130,7 +130,7 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
             "title=excluded.title, checksum=excluded.checksum, s3_key=excluded.s3_key, text=excluded.text, "
             "kind=excluded.kind, source_version=excluded.source_version, acl_groups=excluded.acl_groups, "
             "web_url=coalesce(excluded.web_url, documents.web_url), folder_url=coalesce(excluded.folder_url, documents.folder_url), "
-            "updated_at=now(), deleted_at=null returning id",
+            "updated_at=now(), deleted_at=null, images_version=1 returning id",
             (source_id, external_id, title, checksum, key, text, triage.kind, source_version, *links, source_id)).fetchone()
         if not got:
             raise LookupError(f"source {source_id} no longer exists")
@@ -149,21 +149,38 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
     return "updated" if row else "new"
 
 
-def store_images(doc_id: int, data: bytes, name: str, wanted: bool) -> None:
+IMAGES_LOCK = 234  # first key of the advisory lock that serialises store_images per document
+IMAGES_VERSION = 2  # 2: EMF/WMF drawings are converted (#234)
+
+
+def store_images(doc_id: int, data: bytes, name: str, wanted: bool, add_only: bool = False) -> None:
     """Replace the document's diagram candidates (#212). After the document is saved and outside its transaction:
-    decoding can take seconds, and a failure here must never fail the ingest."""
+    decoding can take seconds, and a failure here must never fail the ingest. `add_only` (the backfill of an
+    unchanged document) deletes nothing and skips a PNG already stored, so an image the reviewer used or
+    dismissed keeps its id. A failure leaves images_version as it was, so the next crawl tries again."""
+    meta: dict = {}
     try:
         if wanted:
             with db.connect() as conn:
                 clients = anonymise.load_clients(conn)
-            images = document_images_from(data, name, clients)  # hints are anonymised here, once
+            images = document_images_from(data, name, clients, meta)  # hints are anonymised here, once
         else:
             images = []  # a document that gets no case gets no candidates
+        hashes = meta.get("src_hashes") or [None] * len(images)
         with db.connect() as conn:
-            conn.execute("delete from document_images where document_id=%s", (doc_id,))
-            for png, w, h, hint in images:
-                conn.execute("insert into document_images(document_id, png, width, height, hint) values (%s,%s,%s,%s,%s)",
-                             (doc_id, png, w, h, hint))
+            # two runs on one document (an upload and a crawl, two workers) must not both add the same image
+            conn.execute("select pg_advisory_xact_lock(%s::int, %s::int)", (IMAGES_LOCK, doc_id & 0x7FFFFFFF))
+            if not add_only:
+                conn.execute("delete from document_images where document_id=%s", (doc_id,))
+            for (png, w, h, hint), src in zip(images, hashes):
+                # the same source entry, or (older rows have no src_hash) the same PNG bytes
+                conn.execute("insert into document_images(document_id, png, width, height, hint, src_hash) "
+                             "select %s::bigint,%s::bytea,%s::int,%s::int,%s::text,%s::text where not exists "
+                             "(select 1 from document_images where document_id=%s::bigint "
+                             "and (src_hash = %s::text or md5(png)=md5(%s::bytea)))",
+                             (doc_id, png, w, h, hint, src, doc_id, src, png))
+            if not meta.get("vector_failed"):  # a failed conversion leaves the version, so the next crawl tries again
+                conn.execute("update documents set images_version=%s where id=%s", (IMAGES_VERSION, doc_id))
     except Exception as e:  # noqa: BLE001 - the class only: a message could echo document text
         print(f"document {doc_id} images not stored: {type(e).__name__}", flush=True)
 
@@ -175,5 +192,8 @@ def skip_unchanged(source_id: int, external_id: str, source_version: str, title:
         return conn.execute(
             "update documents set acl_groups=(select acl_groups from sources where id=%s for share), deleted_at=null, title=%s, "
             "web_url=coalesce(%s, web_url), folder_url=coalesce(%s, folder_url) "
-            "where source_id=%s and external_id=%s and source_version=%s returning id",
-            (source_id, title, *links, source_id, external_id, source_version)).fetchone() is not None
+            "where source_id=%s and external_id=%s and source_version=%s "
+            # a document whose images were read by an older version is downloaded once for the backfill
+            "and not (exists(select 1 from cases c where c.document_id=documents.id and c.status <> 'rejected') "
+            "and images_version < %s) returning id",
+            (source_id, title, *links, source_id, external_id, source_version, IMAGES_VERSION)).fetchone() is not None

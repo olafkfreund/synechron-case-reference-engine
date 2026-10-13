@@ -73,6 +73,9 @@ alter table documents add constraint documents_kind_check
 -- is not downloaded again; null means unknown, and the item is downloaded as before
 alter table documents add column if not exists source_version text;
 
+-- which reading of a document's images was stored (app/ingest.py IMAGES_VERSION): an older one is read again once
+alter table documents add column if not exists images_version int not null default 1;
+
 -- what a case claims: work delivered, or scope contracted (signed SOW / change order)
 alter table cases add column if not exists basis text not null default 'delivered';
 alter table cases drop constraint if exists cases_basis_check;
@@ -237,6 +240,8 @@ create table if not exists document_images (
   created_at timestamptz not null default now()
 );
 create index if not exists document_images_document_idx on document_images (document_id);
+-- sha256 of the original entry: the re-encoded PNG can change with a library upgrade, the source does not (null for older rows)
+alter table document_images add column if not exists src_hash text;
 
 alter table documents add column if not exists updated_at timestamptz;
 update documents set updated_at = created_at where updated_at is null;  -- keep the real age of existing documents
