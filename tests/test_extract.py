@@ -5,7 +5,7 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from app import db, extract as ex
-from app.schema import Extraction, Item, ReferenceCase, Sourced, llm_schema
+from app.schema import Extraction, Item, Ref, ReferenceCase, References, Sourced, llm_schema
 
 DOC = ("Acme Bank cut customer onboarding from 12 days to 3 days. "
        "The programme ran for 18 months with a team of 8 engineers, "
@@ -29,7 +29,7 @@ def doc(monkeypatch):
         did = c.execute("insert into documents(source_id,external_id,checksum,text) "
                         "values (%s,'a','x',%s) returning id", (sid, DOC)).fetchone()[0]
     reply = {}
-    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: reply["v"])
+    monkeypatch.setattr(ex, "complete_json", lambda a, system, user, model, **k: References() if model is References else reply["v"])
     yield did, reply
     with db.connect() as c:
         c.execute("delete from sources where id=%s", (sid,))
@@ -461,6 +461,8 @@ def test_build_reads_long_text_in_parts_and_keeps_points(monkeypatch):
     seen = []
 
     def fake(alias, system, user, model, **k):
+        if model is References:  # the references pass is not what these tests count
+            return References()
         seen.append(user)
         i = len(seen)
         q = f"the bank migrated system {i} in {i + 2} weeks"
@@ -509,6 +511,8 @@ def test_build_summary_not_vouched_by_an_unsourced_quote(monkeypatch):
     seen = []
 
     def fake(alias, system, user, model, **k):
+        if model is References:  # the references pass is not what these tests count
+            return References()
         seen.append(user)
         if len(seen) == 1:  # a fabricated quote carries 99; the first summary leans on it
             return Extraction(items=[Item(field="title", value="T", quote="the bank migrated system 0 in 2 weeks"),
@@ -531,6 +535,8 @@ def test_three_chunks_via_num_ctx_source_a_quote_only_in_the_last(monkeypatch):
     seen = []
 
     def fake(alias, system, user, model, **k):
+        if model is References:  # the references pass is not what these tests count
+            return References()
         seen.append(user)
         if "retired the legacy ledger" in user:
             return Extraction(items=[Item(field="solution", value="Ledger retired", quote="retired the legacy ledger in 7 weeks")])
@@ -544,7 +550,7 @@ def test_three_chunks_via_num_ctx_source_a_quote_only_in_the_last(monkeypatch):
 def test_engagement_keeps_points_and_drops_lessons(monkeypatch):
     q = "the bank migrated system 1 in 3 weeks"
     text = f"Scope: {q}. Fees of £1,200 per day apply to the migration work."
-    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: Extraction(items=[
+    monkeypatch.setattr(ex, "complete_json", lambda a, system, user, model, **k: References() if model is References else Extraction(items=[
         Item(field="solution", value="Migrate system 1", quote=q),
         Item(field="solution", value="Migrate system 2", quote=q),
         Item(field="solution", value="Priced work", quote="Fees of £1,200 per day apply"),
@@ -595,7 +601,7 @@ def reviewer_prose(did, f="solution", text="Our own write-up."):
 def test_build_writes_prose_from_points_and_merges_notes(monkeypatch):
     from app import writeup
     q = "cut customer onboarding from 12 days to 3 days"
-    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: case(("solution", "Faster onboarding", q)))
+    monkeypatch.setattr(ex, "complete_json", lambda a, system, user, model, **k: References() if model is References else case(("solution", "Faster onboarding", q)))
     monkeypatch.setattr(writeup, "complete_json", lambda *a, **k: writeup.Writeup(solution="Onboarding took 9 days."))
     c = ex.build(DOC, "internal")
     assert c.prose["solution"].flags == ["number 9 is in no quote"]
@@ -628,13 +634,13 @@ def test_reextract_recomputes_the_flags_of_kept_reviewer_prose(doc):
 
 
 def test_build_stamps_the_extraction_version(monkeypatch):
-    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: case())
-    assert ex.build(DOC, "internal").extraction_version == 2
+    monkeypatch.setattr(ex, "complete_json", lambda a, system, user, model, **k: References() if model is References else case())
+    assert ex.build(DOC, "internal").extraction_version == ex.EXTRACTION_VERSION
     assert "extraction_version" not in json.dumps(llm_schema())
 
 
 def test_extraction_version_is_pinned():
-    assert ex.EXTRACTION_VERSION == 2  # a change to extraction output must bump this
+    assert ex.EXTRACTION_VERSION == 3  # a change to extraction output must bump this
 
 
 NOTE = "Re-extracted with richer extraction: check and approve again"
@@ -650,7 +656,7 @@ def test_reextracting_an_old_row_adds_the_note_and_keeps_reviewer_prose(doc):
         c.execute("update cases set data=%s where document_id=%s", (Jsonb(data), did))
     data, *_ = run(doc, case())
     assert NOTE in data["needs_attention"] and data["prose"]["challenge"]["text"] == "Mine"
-    assert data["extraction_version"] == 2
+    assert data["extraction_version"] == ex.EXTRACTION_VERSION
 
 
 def test_reextracting_a_current_row_has_no_note(doc):
@@ -666,3 +672,73 @@ def test_reextract_keeps_dismissed_images_and_diagrams(doc):
         c.execute("update cases set data=%s where document_id=%s", (Jsonb(data), doc[0]))
     data, *_ = run(doc, case())
     assert data["dismissed_images"] == [7] and data["diagrams"][0]["id"] == 3
+
+
+def test_references_are_checked_literally_and_stripped_of_prices():
+    c = ReferenceCase(title=Sourced[str]())
+    c.tech_references = [Sourced[str](value="ISO 20022", source_quote="payments follow ISO 20022 messaging"),
+                         Sourced[str](value="SWIFT gpi", source_quote="payments follow ISO 20022 messaging"),  # not in its quote
+                         Sourced[str](value="£1,200 per day", source_quote="fees of £1,200 per day apply")]
+    ex.check(c, "payments follow ISO 20022 messaging and fees of £1,200 per day apply")
+    assert [r.unsourced for r in c.tech_references] == [False, True, False]
+    assert ex.strip_commercial(c) == 1 and [r.value for r in c.tech_references] == ["ISO 20022", "SWIFT gpi"]
+
+
+def test_main_prompts_have_no_reference_field_and_the_pass_has_its_own(monkeypatch):
+    for prompt in (ex.SYSTEM, ex.CONTRACT_SYSTEM):
+        assert "reference" not in prompt.lower()  # a `reference` field in the main prompt cut capabilities and technologies in half
+    seen = []
+
+    def fake(alias, system, user, model, **k):
+        seen.append((system, user, model, k["data_class"]))
+        return case() if model is Extraction else References(items=[Ref(value="OAuth 2.0", quote="supports OAuth 2.0 sign in")])
+    monkeypatch.setattr(ex, "complete_json", fake)
+    c = ex.build("The portal supports OAuth 2.0 sign in for staff. " + DOC, "internal")
+    assert [r.value for r in c.tech_references] == ["OAuth 2.0"] and not c.tech_references[0].unsourced
+    refs_call = next(s for s in seen if s[2] is References)
+    assert refs_call[3] == "internal" and refs_call[0] == ex.REFERENCES_SYSTEM and refs_call[1].startswith("<document>\n") and refs_call[1].endswith("\n</document>")
+
+
+def test_references_pass_dedupes_caps_strips_prices_and_is_literal_checked(monkeypatch):
+    items = [Ref(value=f"Std {i}", quote=f"the platform follows Std {i} closely") for i in range(30)]
+    items += [Ref(value="std 3", quote="the platform follows Std 3 closely"),   # a duplicate
+              Ref(value="Rate", quote="fees of £1,200 per day apply"),           # a price
+              Ref(value="", quote="empty value")]
+    classes = []
+    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: (classes.append(k["data_class"]), References(items=items))[1])
+    refs, notes = ex.extract_references(["x"], "confidential")
+    assert classes == ["confidential"]  # the points quote the document, so its class is passed through
+    assert [r.value for r in refs] == [f"Std {i}" for i in range(20)] and notes == [] and len(refs) == ex.MAX_REFS
+    c = ReferenceCase(title=Sourced[str]())
+    c.tech_references = [Sourced[str](value="Std 1", source_quote="the platform follows Std 1 closely"),
+                         Sourced[str](value="Std 9", source_quote="the platform follows Std 1 closely")]  # not in its quote
+    ex.check(c, "the platform follows Std 1 closely")
+    assert [r.unsourced for r in c.tech_references] == [False, True]
+
+
+def test_a_failing_references_pass_never_fails_the_build(monkeypatch):
+    def fake(alias, system, user, model, **k):
+        if model is References:
+            raise RuntimeError("echo Zorbulon")
+        return case()
+    monkeypatch.setattr(ex, "complete_json", fake)
+    c = ex.build(DOC, "internal")
+    assert c.tech_references == [] and c.title.value == "Faster onboarding"
+    assert c.needs_attention == ["technical references could not be read from every part (RuntimeError)"]
+    assert "Zorbulon" not in " ".join(c.needs_attention)
+
+
+def test_references_pass_reads_every_part_and_one_failed_part_loses_only_itself(monkeypatch):
+    calls = []
+
+    def fake(alias, system, user, model, **k):
+        calls.append(user)
+        n = len(calls)
+        if n == 3:
+            raise RuntimeError("part 3 broke")
+        return References(items=[Ref(value=f"Std {n}", quote=f"follows Std {n} closely")])
+    monkeypatch.setattr(ex, "complete_json", fake)
+    refs, notes = ex.extract_references(["p1", "p2", "p3", "p4"], "internal")
+    assert len(calls) == 4 and [r.value for r in refs] == ["Std 1", "Std 2", "Std 4"]  # the other parts are still read
+    assert notes == ["technical references could not be read from every part (RuntimeError)"]  # once, not per failure
+    assert all(f"<document>\np{i}\n</document>" == u for i, u in enumerate(calls, 1))

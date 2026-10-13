@@ -594,3 +594,39 @@ def test_pptx_without_diagram_layout_fails_only_with_diagrams(tmp_path, monkeypa
     render.to_pptx([sec([d])])  # a diagram with no image (rejected or missing) is skipped
     with pytest.raises(ValueError, match="no slide layout named 'Diagram'"):
         render.to_pptx([sec([d])], images={1: b"x"})
+
+
+# --- technical references (#212 phase D) ---
+def with_refs(*values, **kw):
+    return full(**kw).model_copy(update={"tech_references": [Sourced[str](value=v, source_quote="q") for v in values]
+                                         + [Sourced[str](value="Unsourced ref", source_quote="q", unsourced=True)]})
+
+
+def test_technical_references_render_in_md_docx_and_preview_without_unsourced_ones(approved):
+    cid = approved(with_refs("ISO 20022", "OAuth 2.0"))
+    md, preview, docx = gen([cid], "md").text, prev([cid]).text, doc_text(gen([cid], "docx").content)
+    for name, text in (("md", md), ("preview", preview), ("docx", docx)):
+        assert "Technical references" in text and "ISO 20022" in text and "OAuth 2.0" in text, name
+        assert "Unsourced ref" not in text, name
+    assert md.index("Technology") < md.index("Technical references")
+    assert "Technical references" not in gen([approved(full())], "md").text  # none: the list is dropped
+
+
+def test_technical_references_are_escaped_and_the_pptx_has_none(approved):
+    cid = approved(with_refs("<script>x</script> & y"))
+    assert "&lt;script&gt;" in prev([cid]).text and "<script>x" not in prev([cid]).text
+    assert "\\<script" in gen([cid], "md").text or "&lt;script" in gen([cid], "md").text
+    from pptx import Presentation
+    deck = Presentation(BytesIO(gen([cid], "pptx").content))
+    assert "script" not in " ".join(s.text_frame.text for sl in deck.slides for s in sl.shapes if s.has_text_frame)
+
+
+def test_a_reference_naming_a_protected_client_is_anonymised_or_withheld(approved, reg, monkeypatch):
+    name, label_id = reg("Zorp", "a UK retailer")
+    cid = approved(with_refs(f"{name} payments API v2"))
+    link(cid, label_id)
+    m = gen([cid], "md").text
+    assert name not in m and "a UK retailer payments API v2" in m
+    monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)  # a missed replacement must withhold
+    r = gen([cid], "md")
+    assert r.status_code == 409 and name not in r.text

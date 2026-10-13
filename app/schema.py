@@ -118,6 +118,7 @@ class ReferenceCase(_Model):
     lessons_learned: Sourced[str] = Sourced[str]()
     capabilities: list[Sourced[str]] = []
     tech_stack: list[Sourced[str]] = []
+    tech_references: list[Sourced[str]] = []  # standards, protocols, interfaces and versioned products, as written
     outcomes: list[Outcome] = []
     # every point the document makes per POINT_FIELDS field, beyond the one-line headline above
     points: SkipJsonSchema[dict[str, list[Sourced[str]]]] = {}
@@ -148,7 +149,7 @@ class ReferenceCase(_Model):
     def quotes(self) -> list[str]:
         items = [self.title, self.client_mention, self.industry, self.region, self.engagement_type,
                  self.challenge, self.solution, self.implementation, self.configuration,
-                 self.lessons_learned, *self.capabilities, *self.tech_stack,
+                 self.lessons_learned, *self.capabilities, *self.tech_stack, *self.tech_references,
                  *(p for ps in self.points.values() for p in ps),
                  self.duration_months, self.team_size, *self.outcomes, self.period]
         # an unsourced quote must not vouch for summary numbers
@@ -163,7 +164,7 @@ class ReferenceCase(_Model):
         parts = [self.title.value, self.industry.value, self.region.value,
                  self.engagement_type.value, self.challenge.value, self.solution.value,
                  self.implementation.value, self.configuration.value, self.lessons_learned.value,
-                 *(c.value for c in self.capabilities), *(t.value for t in self.tech_stack),
+                 *(c.value for c in self.capabilities), *(t.value for t in self.tech_stack), *(t.value for t in self.tech_references),
                  *(p.value for ps in self.points.values() for p in ps),
                  *(f"{o.metric} {o.value}" for o in self.outcomes), self.summary,
                  *(p.text for p in self.prose.values())]
@@ -193,6 +194,24 @@ class Item(_Model):
     @classmethod
     def _null_is_empty(cls, v):  # small models often emit null; one null must not fail the whole reply
         return "" if v is None else v
+
+
+class Ref(_Model):
+    """One technical reference as the references pass states it; lenient like Item."""
+    model_config = ConfigDict(extra="ignore", coerce_numbers_to_str=True,
+                              json_schema_extra={"additionalProperties": False, "required": ["value", "quote"]})
+    value: str = ""
+    quote: str = ""
+
+    @field_validator("value", "quote", mode="before")
+    @classmethod
+    def _null_is_empty(cls, v):
+        return "" if v is None else v
+
+
+class References(_Model):
+    model_config = ConfigDict(json_schema_extra={"required": ["items"]})
+    items: list[Ref] = []
 
 
 class Extraction(_Model):

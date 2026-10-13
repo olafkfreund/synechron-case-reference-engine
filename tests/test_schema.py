@@ -238,3 +238,16 @@ def test_prose_round_trips_is_searchable_and_hidden():
     assert ReferenceCase.model_validate(c.model_dump()).prose == c.prose
     assert "Zanzibar intake" in c.search_text()
     assert "prose" not in json.dumps(llm_schema())
+
+
+def test_references_are_not_a_main_extraction_field_and_stay_searchable():
+    from app.schema import FIELDS, Extraction, Item, References, assemble
+    assert "reference" not in FIELDS and "tech_references" not in json.dumps(llm_schema(Extraction))
+    c, notes = assemble(Extraction(items=[Item(field="reference", value="ISO 20022", quote="ISO 20022 messaging")]))
+    assert c.tech_references == [] and notes  # an unknown field is skipped and counted
+    c.tech_references = [Sourced[str](value="ISO 20022", source_quote="ISO 20022 messaging")]
+    assert "ISO 20022 messaging" in c.quotes() and "ISO 20022" in c.search_text()
+    assert ReferenceCase.model_validate({"title": {"value": "T"}}).tech_references == []
+    assert ReferenceCase.model_validate(c.model_dump()).tech_references == c.tech_references
+    r = References.model_validate_json('{"items": [{"value": null, "quote": "q", "extra": 1}]}')
+    assert r.items[0].value == "" and "items" in llm_schema(References)["required"]

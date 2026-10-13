@@ -182,6 +182,7 @@ def section(case: ReferenceCase, client: str) -> dict:
               ("Lessons learned", None if case.basis == "engagement" else v(case.lessons_learned))]
     lists = [("Capabilities", [v(c) for c in case.capabilities]),
              ("Technology", [v(t) for t in case.tech_stack]),
+             ("Technical references", [v(t) for t in case.tech_references]),
              ("Outcomes", [(f"{o.metric}: {o.value}" if o.metric else o.value) for o in case.outcomes if not o.unsourced])]
     engagement = case.basis == "engagement"
     if engagement:  # contracted scope claims no results, whatever the record holds

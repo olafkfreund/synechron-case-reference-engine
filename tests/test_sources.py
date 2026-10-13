@@ -3,6 +3,7 @@ import uuid
 from psycopg.types.json import Jsonb
 
 from app import db
+from app.extract import EXTRACTION_VERSION
 from app.sources import OLDER
 from app.schema import ReferenceCase, Sourced
 from tests.test_auth import ADMIN, REV, client, env  # noqa: F401
@@ -246,7 +247,7 @@ def _old_case(c, did, status="extracted", version=None):
 def test_reextract_queues_only_older_live_unqueued_cases(env):  # noqa: F811
     db.init()
     with db.connect() as c:
-        n0 = c.execute("select count(*) " + OLDER, (2,)).fetchone()[0]  # leftovers from elsewhere
+        n0 = c.execute("select count(*) " + OLDER, (EXTRACTION_VERSION,)).fetchone()[0]  # leftovers from elsewhere
         sid = _src(c, False)
         old, rejected, gone, queued, current = (_doc(c, sid, "contract") for _ in range(5))
         _old_case(c, old)
@@ -255,7 +256,7 @@ def test_reextract_queues_only_older_live_unqueued_cases(env):  # noqa: F811
         _old_case(c, gone)
         _old_case(c, queued)
         _job(c, queued)
-        _old_case(c, current, version=2)
+        _old_case(c, current, version=EXTRACTION_VERSION)
         c.execute("insert into cases(document_id, member_count, status, data) values (null, 2, 'extracted', %s)",
                   (ReferenceCase(title=Sourced[str](value="M")).model_dump_json(),))  # a merged parent, no version
     try:
@@ -293,7 +294,7 @@ def test_reextract_skips_recent_failures_and_merged_members(env):  # noqa: F811
         parent = c.execute("insert into cases(document_id, member_count, status, data) values (null, 2, 'extracted', %s) returning id",
                            (ReferenceCase(title=Sourced[str](value="M")).model_dump_json(),)).fetchone()[0]
         c.execute("update cases set merged_into=%s where id=%s", (parent, member))
-        n0 = c.execute("select count(*) " + OLDER, (2,)).fetchone()[0]
+        n0 = c.execute("select count(*) " + OLDER, (EXTRACTION_VERSION,)).fetchone()[0]
     try:
         assert n0 >= 2  # stale and good are counted, the 25 failures and the member are not
         client([ADMIN]).post("/admin/reextract", follow_redirects=False)

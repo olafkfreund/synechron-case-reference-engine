@@ -30,7 +30,7 @@ SCALARS = ("title", "client_mention", "industry", "region", "engagement_type", "
            "solution", "implementation", "configuration", "lessons_learned", "duration_months", "team_size")
 WRITABLE = ("implementation", "configuration", "lessons_learned")  # a reviewer may write these by hand (#198)
 INTS = ("duration_months", "team_size")
-LISTS = ("capabilities", "tech_stack", "outcomes")
+LISTS = ("capabilities", "tech_stack", "tech_references", "outcomes")
 # a case can be edited/approved/rejected only while it is new or its approval has expired
 OPEN = "(c.status = 'extracted' or (c.status = 'approved' and c.review_due <= now() + interval '30 days'))"
 # the queue lists only new and expired cases; due-soon ones have their own list (#143)
@@ -106,8 +106,9 @@ def rows(case, docs=None):
            if not (n == "lessons_learned" and case.basis == "engagement")]  # as outcomes (#198)
     def new(n, label, names):
         return dict(path=f"{n}.new", label=label, quote="", unsourced=False, new=True, inputs=[(i, "") for i in names])
-    for n, label in (("capabilities", "capability"), ("tech_stack", "tech")):
-        out += [dict(row(f"{n}.{i}", f"{n.replace('_', ' ')} #{i + 1}", o, ["value"]), item=True) for i, o in enumerate(getattr(case, n))]
+    for n, label in (("capabilities", "capability"), ("tech_stack", "tech"), ("tech_references", "technical reference")):
+        out += [dict(row(f"{n}.{i}", f"{label if n == 'tech_references' else n.replace('_', ' ')} #{i + 1}", o, ["value"]), item=True)
+                for i, o in enumerate(getattr(case, n))]
         out.append(new(n, f"add {label}", ["value"]))
     out += [dict(row(f"outcomes.{i}", f"outcome #{i + 1}", o, ["metric", "value"]), item=True) for i, o in enumerate(case.outcomes)]
     if case.basis != "engagement": out.append(new("outcomes", "add outcome", ["metric", "value"]))  # contracted scope claims no results (#139)
@@ -482,6 +483,7 @@ def approve(cid: int, v: str = Form(), diagrams_checked: bool = Form(False), rea
                 s.value, s.source_quote, s.unsourced = None, "", False
         case.capabilities = [c for c in case.capabilities if not c.unsourced]
         case.tech_stack = [t for t in case.tech_stack if not t.unsourced]
+        case.tech_references = [t for t in case.tech_references if not t.unsourced]
         case.points = {f: [p for p in ps if not p.unsourced] for f, ps in case.points.items()}
         case.outcomes = [] if case.basis == "engagement" else [o for o in case.outcomes if not o.unsourced]  # contracted scope claims no results (#139, spec #52)
         if case.basis == "engagement":
@@ -612,7 +614,7 @@ def combine(members, pick):
     for f in MERGE_FIELDS:
         doc, case = by_id[pick.get(f, first_sourced([(cid, c) for cid, _, c in members], f))]
         out[f] = stamped(getattr(case, f), doc)
-    for f in ("capabilities", "tech_stack"):
+    for f in ("capabilities", "tech_stack", "tech_references"):
         seen, items = {}, []  # casefolded value -> index in items
         for _, doc, case in members:
             for i in getattr(case, f):
