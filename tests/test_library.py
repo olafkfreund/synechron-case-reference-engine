@@ -258,3 +258,11 @@ def test_a_brief_item_protected_after_saving_is_withheld(reg, lib, monkeypatch):
     finally:
         with db.connect() as conn:
             conn.execute("delete from clients where id=%s", (cid,))
+
+
+def test_a_markdown_quote_shows_as_plain_text_in_the_library(reg, lib):
+    c = as_user("u1")
+    rid = research_with(c, ("Entra **supports** [passwordless](https://x.io/a) sign in out of the box", {}))
+    _, lid = save(c, rid)
+    v = as_user("u2").get(f"/library/{lid}").text
+    assert "Entra supports passwordless sign in out of the box" in v and "](" not in v and "**" not in v

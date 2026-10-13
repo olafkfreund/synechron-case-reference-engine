@@ -299,3 +299,10 @@ def test_save_checks_against_the_anonymised_quotes(reg, made):
 def test_run_on_a_deleted_brief_does_nothing(env):
     db.init()
     brief.run(999999999)
+
+
+def test_a_takeaway_quoting_a_markdown_quote_is_not_flagged_once_cleaned():
+    texts = brief.quote_texts([{"quote": "Entra **supports** [passwordless](https://x.io/a) sign in out of the box"}], [])
+    assert texts == ["Entra supports passwordless sign in out of the box"]
+    assert brief.check({"title": "Passwordless sign in", "takeaways": ["Entra supports passwordless sign in out of the box [1]."],
+                        "themes": []}, texts) == []

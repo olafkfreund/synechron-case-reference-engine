@@ -686,3 +686,8 @@ def test_a_client_name_split_by_markup_is_caught_on_the_page_and_in_a_download(r
     assert reg not in page_ and "**" not in page_ and "a retailer runs this in production daily" in page_
     dl = gen(rid, [approved()], ack=True).text
     assert reg not in dl and "a retailer runs this in production daily" in dl
+
+
+def test_preview_shows_a_markdown_quote_as_plain_text(rows, approved):
+    r = as_user("u1", G).post("/preview", data={"case_ids": [approved()], "research_id": rows([claim(MD)])})
+    assert "Entra supports passwordless sign in out of the box" in r.text and "](" not in r.text and "**Entra" not in r.text

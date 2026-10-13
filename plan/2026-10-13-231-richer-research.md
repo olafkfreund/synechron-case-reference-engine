@@ -342,6 +342,14 @@ check the brief has a diagram, counts only.
   - A single `*` or `_` is removed only when it wraps words.
   - Outer quote marks are removed only when the same mark doesn't also
     appear inside the quote.
+- Phase (a) review fixes:
+  - `plain()` is linear: links and references can't nest, and it repeats
+    until stable, so no link survives. Over 2,000 characters it skips the
+    Markdown rules (whitespace only), so it never cuts a quote and can't
+    split a protected name.
+  - Only real page titles are cleaned, not the host or publisher fallback.
+  - Brief, library and attach-from-library store the plain()+apply() text,
+    as they already stored the apply() text.
 
 ## Tests
 

@@ -275,6 +275,14 @@ def test_plain(raw, want):
     assert plain(raw) == want
 
 
-def test_plain_does_not_change_what_quote_in_matches():
-    page = "We say **Zor**pale runs it, see [docs](https://x.io)."
-    assert quote_in(page, "**Zor**pale runs it, see [docs](https://x.io)") and not quote_in(page, plain("**Zor**pale runs it, see [docs](https://x.io)"))
+def test_plain_is_fast_on_hostile_input():
+    import time
+    for bad in ("[" * 6000, "*a " * 2000):
+        t = time.perf_counter()
+        out = plain(bad)
+        assert time.perf_counter() - t < 0.05
+        assert out == " ".join(bad.split())  # over the cap: whitespace-collapsed, never cut
+
+
+def test_plain_leaves_no_link_behind_nested_markup():
+    assert plain("[[x](y)](javascript:z)") == "x"
