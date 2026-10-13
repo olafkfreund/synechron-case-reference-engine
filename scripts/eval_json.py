@@ -40,18 +40,24 @@ def claims_call(research_id: int):
     with db.connect() as c:
         query, results = c.execute("select query, results from research where id=%s", (research_id,)).fetchone()
     pages = results.get("pages", [])
-    seen = []
+    seen, errs = [], []
     real = research.complete_json
 
     def spy(alias, system, user, model_cls, **kw):
-        reply = real(alias, system, nonce(user), model_cls, **kw)
+        try:
+            reply = real(alias, system, nonce(user), model_cls, **kw)
+        except Exception as e:
+            errs.append(e)  # extract_claims swallows the error; keep it so measure() can classify it
+            raise
         seen.append(reply)
         return reply
-    research.complete_json = spy  # extract_claims swallows errors, so the spy sees the reply and re-raises nothing
+    research.complete_json = spy
 
     def call():
-        seen.clear()
+        seen.clear(), errs.clear()
         note = research.extract_claims(query, pages)[1]
+        if errs:
+            raise errs[0]
         if not seen:
             raise ValueError(note or "no reply")
         return seen[0]

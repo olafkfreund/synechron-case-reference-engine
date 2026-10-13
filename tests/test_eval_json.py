@@ -28,7 +28,7 @@ def test_measure_counts_classes_only(monkeypatch):
 
 def test_main_prints_counts_and_never_text(monkeypatch, capsys):
     monkeypatch.setenv("DRAFT_MODEL", "ollama_chat/m")
-    monkeypatch.delenv("DRAFT_MODEL_OPTIONS", raising=False)
+    monkeypatch.setenv("DRAFT_MODEL_OPTIONS", "{}")  # main() rewrites it; pytest restores it
     sent = []
 
     def completion(**kw):
@@ -54,3 +54,19 @@ class FakeConn:
 
     def execute(self, sql, args=()):
         return SimpleNamespace(fetchone=lambda: ([{"quote": SECRET, "type": "x"}],))
+
+
+def test_claims_echo_is_counted_as_echo(monkeypatch):
+    monkeypatch.setenv("DRAFT_MODEL", "ollama_chat/m")
+    monkeypatch.setenv("DRAFT_MODEL_OPTIONS", "{}")
+    monkeypatch.setattr(ev.research, "complete_json", ev.research.complete_json)  # restored after the spy
+    echo = json.dumps({"properties": {}, "type": "object", "required": ["claims"]})
+    monkeypatch.setattr(llm.litellm, "completion", lambda **kw: SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=echo), finish_reason="stop")]))
+
+    class Conn(FakeConn):
+        def execute(self, sql, args=()):
+            return SimpleNamespace(fetchone=lambda: ("q", {"pages": [{"publisher": "p", "markdown": "m"}]}))
+    monkeypatch.setattr(ev.db, "connect", lambda: Conn())
+    r = ev.measure(ev.claims_call(1), 2)
+    assert (r["echo"], r["other"], r["success"], r["retries"]) == (2, 0, 0, 2)

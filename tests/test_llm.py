@@ -347,3 +347,50 @@ def test_only_claims_and_briefs_ask_for_the_hint(monkeypatch):
     for f in pathlib.Path(llm.__file__).parent.glob("*.py"):
         if f.name not in ("research.py", "brief.py", "llm.py"):
             assert "shape_hint" not in f.read_text(), f.name
+
+
+def test_real_schema_echoes_are_detected_bare_and_wrapped():
+    from app import brief, research
+    for m in (brief.Brief, research.Claims, ReferenceCase):
+        schema = llm.llm_schema(m)
+        assert llm._schema_echo(json.dumps(schema), schema), m.__name__
+        assert llm._schema_echo(json.dumps({m.__name__: schema}), schema), m.__name__
+    b = llm.llm_schema(brief.Brief)
+    data = {"title": "T", "takeaways": [], "themes": []}
+    assert not llm._schema_echo(json.dumps(data), b)
+    assert not llm._schema_echo(json.dumps({**data, "type": "x"}), b)
+
+
+def test_draft_model_retry_is_guarded_by_num_ctx(monkeypatch):
+    calls = []
+    monkeypatch.setenv("DRAFT_MODEL", LOCAL)
+    monkeypatch.setenv("DRAFT_MODEL_OPTIONS", json.dumps({"num_ctx": 12000}))
+    monkeypatch.setattr(llm.litellm, "completion", seq([ECHO + " " * 30000, GOOD], calls))
+    with pytest.raises(ValueError, match="not a valid") as e:
+        llm.complete_json("DRAFT_MODEL", "s", "u", ReferenceCase, data_class="public")
+    assert len(calls) == 1 and "retry" not in str(e.value)
+
+
+def test_truncated_retry_keeps_the_marker(monkeypatch):
+    calls = []
+    monkeypatch.setenv("EXTRACT_MODEL", LOCAL)
+    monkeypatch.delenv("EXTRACT_MODEL_OPTIONS", raising=False)
+    replies = iter([(ECHO, "stop"), ('{"ti', "length")])
+
+    def completion(**kw):
+        text, fin = next(replies)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text), finish_reason=fin)])
+    monkeypatch.setattr(llm.litellm, "completion", completion)
+    with pytest.raises(ValueError, match=r"truncated.*after a schema-echo retry"):
+        llm.complete_json("EXTRACT_MODEL", "s", "u", ReferenceCase, data_class="public")
+
+
+def test_example_stops_at_recursive_refs():
+    from pydantic import BaseModel
+
+    class Node(BaseModel):
+        name: str
+        kids: list["Node"]
+    ex = llm._example(llm.llm_schema(Node))
+    assert ex == {"name": "<string>", "kids": ["<object>"]}
+    assert llm._example({"type": "object", "properties": {"a": {"$ref": "#"}}}) == {"a": {"a": "<object>"}}

@@ -86,10 +86,15 @@ def _schema_echo(text: str, schema: dict) -> bool:
         return False
     if not isinstance(obj, dict):
         return False
-    fields = set(schema.get("required", []))  # not all properties: ReferenceCase has a field "title"
+    # required names that are no schema keyword: data (a Brief has a field "title", ReferenceCase too)
+    fields = set(schema.get("required", [])) - SCHEMA_WORDS
+    clash = set(schema.get("required", [])) & SCHEMA_WORDS
 
     def echo(o):
-        return isinstance(o, dict) and len(SCHEMA_WORDS & o.keys()) >= 2 and not fields & o.keys()
+        if not isinstance(o, dict) or len(SCHEMA_WORDS & o.keys()) < 2 or fields & o.keys():
+            return False
+        # a keyword that is also a field name counts only next to a real schema body, not next to data
+        return not clash & o.keys() or isinstance(o.get("properties"), dict) or isinstance(o.get("$defs"), dict)
     return echo(obj) or (len(obj) == 1 and echo(next(iter(obj.values()))))
 
 
@@ -97,19 +102,22 @@ def _example(schema: dict) -> object:
     """The schema's shape with a type label for every value, so none reads as a default answer (#245). Deterministic."""
     defs = schema.get("$defs", {})
 
-    def build(n):
+    def build(n, seen=()):
         if "$ref" in n:
-            return build(defs[n["$ref"].rsplit("/", 1)[-1]])
+            ref = n["$ref"]
+            if ref in seen:  # a recursive model: stop at the cycle
+                return "<object>"
+            return build(schema if ref == "#" else defs[ref.rsplit("/", 1)[-1]], (*seen, ref))
         if "enum" in n:
             return "<one of: " + " | ".join(str(v) for v in n["enum"]) + ">"
         for k in ("anyOf", "oneOf"):
             if k in n:
-                return build(next((b for b in n[k] if b.get("type") != "null"), n[k][0]))
+                return build(next((b for b in n[k] if b.get("type") != "null"), n[k][0]), seen)
         t = n.get("type")
         if t == "object" or "properties" in n:
-            return {k: build(v) for k, v in n.get("properties", {}).items()}
+            return {k: build(v, seen) for k, v in n.get("properties", {}).items()}
         if t == "array":
-            return [build(n.get("items", {}))]
+            return [build(n.get("items", {}), seen)]
         return {"string": "<string>", "integer": "<number>", "number": "<number>", "boolean": "<true or false>"}.get(t, "<string>")
     return build(schema)
 
@@ -152,7 +160,7 @@ def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: t
 
     def too_long(more):  # Ollama drops the start of a prompt that overflows its context, without an error
         est = (len(system) + len(user) + sum(len(m["content"]) for m in more)) // 3  # characters per token; size only
-        return ollama and alias == "EXTRACT_MODEL" and "num_ctx" in opts and est + MAX_TOKENS > opts["num_ctx"], est
+        return ollama and "num_ctx" in opts and est + MAX_TOKENS > opts["num_ctx"], est
 
     def _call(more=()):
         resp = litellm.completion(
@@ -173,7 +181,7 @@ def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: t
         return choice.message.content or ""
 
     over, est = too_long(())
-    if over:
+    if over and alias == "EXTRACT_MODEL":  # research's worst case sits at the limit (#212 G1), so only extraction is refused
         raise ValueError(f"{alias} prompt (~{est} tokens) does not fit num_ctx={opts['num_ctx']}")
     text = _call()
     retried = ""
@@ -191,5 +199,8 @@ def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: t
                 raise err from None
             ECHO_RETRIES += 1
             log.warning("schema echo: alias=%s model=%s schema=%s", alias, model, model_cls.__name__)
-            text = _call(more)
             retried = " (after a schema-echo retry)"
+            try:
+                text = _call(more)
+            except ValueError as e2:  # truncated: keep the marker
+                raise ValueError(f"{e2}{retried}") from None
