@@ -14,7 +14,8 @@ from pydantic import ValidationError
 from app import anonymise, db, diagrams
 from app.extract import MAX_CHARS, check
 from app.main import User, require
-from app.schema import Diagram, Outcome, Period, ReferenceCase, Sourced, _norm
+from app.schema import POINT_FIELDS, Diagram, Outcome, Period, Prose, ReferenceCase, Sourced, _norm
+from app.writeup import PRICE_FLAG, check_prose, quotes_of
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")  # autoescape on
@@ -22,6 +23,8 @@ templates = Jinja2Templates(directory=Path(__file__).parent / "templates")  # au
 templates.env.globals["css_version"] = hashlib.sha256(
     (Path(__file__).parent / "static" / "portal.css").read_bytes()).hexdigest()[:12]
 
+PROSE_LABELS = {"challenge": "Challenge", "solution": "Solution", "implementation": "Implementation approach",
+                "configuration": "Configuration and integration"}
 SCALARS = ("title", "client_mention", "industry", "region", "engagement_type", "challenge",
            "solution", "implementation", "configuration", "lessons_learned", "duration_months", "team_size")
 WRITABLE = ("implementation", "configuration", "lessons_learned")  # a reviewer may write these by hand (#198)
@@ -219,7 +222,10 @@ def review_detail(cid: int, request: Request, user: User = Depends(require("revi
     shown = {c["n"]: c for c in visible_claims([{**c, "n": i} for i, c in enumerate(r[10])], registry)[0]}
     sources = [shown.get(i) or {"n": i, "hidden": True} for i in range(len(r[10]))]  # a hidden one can still be removed
     unlisted = anonymise.unlisted([*case.organisations, case.client_mention.value or ""], registry) if r[5] else []
+    sections = [dict(f=f, label=PROSE_LABELS[f], prose=case.prose.get(f), points=case.points.get(f, []))
+                for f in POINT_FIELDS if case.points.get(f) or f in case.prose]
     return page(request, "review_detail.html", user, id=cid, rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
+                sections=sections,
                 unlisted=unlisted, diagrams=case.diagrams, members=members, cands=cands, remerge=remerge,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
                 external_id=r[3], source=r[4], merged=bool(members),
@@ -245,6 +251,14 @@ def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: 
                 raise HTTPException(400, "unknown field")
             if field == "summary":
                 case.summary = value or ""
+                obj = None
+            elif name == "prose":  # the reviewer's own write-up: checked against the quotes, never against the document
+                if idx not in POINT_FIELDS:
+                    raise HTTPException(400, "unknown field")
+                if value:
+                    case.prose[idx] = Prose(text=value, by_reviewer=True, flags=check_prose(value, quotes_of(case, idx), case.quotes()))
+                else:
+                    case.prose.pop(idx, None)  # empty removes it
                 obj = None
             elif name in SCALARS and not idx:
                 obj = getattr(case, name)
@@ -383,6 +397,10 @@ def approve(cid: int, v: str = Form(), diagrams_checked: bool = Form(False), use
         case, text = load(conn, cid, user, v)
         if any(d.status == "pending" for d in case.diagrams):
             raise HTTPException(409, "a diagram is still being checked; reload in a moment")
+        if any(PRICE_FLAG in p.flags for p in case.prose.values()):
+            raise HTTPException(400, "remove the price or payment term from the write-up")  # whoever wrote it
+        if any(p.flags and not p.by_reviewer for p in case.prose.values()):
+            raise HTTPException(400, "fix or confirm the flagged write-up")  # editing it counts as confirming
         if any(d.status == "ready" for d in case.diagrams) and not diagrams_checked:
             raise HTTPException(400, "confirm that you have checked every diagram")
         if isinstance(text, dict) and conn.execute(
@@ -395,6 +413,7 @@ def approve(cid: int, v: str = Form(), diagrams_checked: bool = Form(False), use
                 s.value, s.source_quote, s.unsourced = None, "", False
         case.capabilities = [c for c in case.capabilities if not c.unsourced]
         case.tech_stack = [t for t in case.tech_stack if not t.unsourced]
+        case.points = {f: [p for p in ps if not p.unsourced] for f, ps in case.points.items()}
         case.outcomes = [] if case.basis == "engagement" else [o for o in case.outcomes if not o.unsourced]  # contracted scope claims no results (#139, spec #52)
         if case.basis == "engagement":
             case.lessons_learned = Sourced[str]()  # nor lessons (#198)
@@ -527,11 +546,23 @@ def combine(members, pick):
                 elif items[seen[k]].unsourced and not i.unsourced:
                     items[seen[k]] = stamped(i, doc)  # same position, the sourced copy's origin (#140)
         out[f] = items
+    points = {}
+    for _, doc, case in members:
+        for f, ps in case.points.items():
+            items = points.setdefault(f, [])
+            seen = {_norm(i.value or ""): n for n, i in enumerate(items)}
+            for p in ps:
+                k = _norm(p.value or "")
+                if k not in seen:
+                    seen[k] = len(items)
+                    items.append(stamped(p, doc))
+                elif items[seen[k]].unsourced and not p.unsourced:
+                    items[seen[k]] = stamped(p, doc)  # the sourced copy and its origin, as for the lists (#140)
     uniq = lambda xs: list(dict.fromkeys(x for x in xs if x))
-    notes = [f"merged from {len(members)} contracts: write a summary",
+    notes = [f"merged from {len(members)} contracts: write a summary", "merged: write the case-study text for each section",
              *uniq(n for _, _, c in members for n in c.needs_attention)]
     return ReferenceCase(
-        **out, outcomes=[], summary="", needs_attention=notes, basis="engagement",
+        **out, points=points, outcomes=[], summary="", needs_attention=notes, basis="engagement",
         organisations=uniq(o for _, _, c in members for o in c.organisations),
         basis_reason="merged: " + "; ".join(uniq(c.basis_reason for _, _, c in members)))
 

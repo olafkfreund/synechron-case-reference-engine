@@ -1180,3 +1180,96 @@ def test_detail_shows_diagrams_card(make, jobs):
     set_diagram(cid, "rejected")
     page = client(R).get(f"/review/{cid}").text
     assert "Rejected:" in page and "diagrams_checked" not in page
+
+
+# --- case-study text (#212 B4) ---
+def prosed(make, status="extracted", due=None, **kw):
+    pt = Sourced[str](value="Onboarding cut", source_quote=Q_TITLE)
+    gone = Sourced[str](value="Made up", source_quote="a passage that is not in the document", unsourced=True)
+    return make(status, due, data=case_data(points={"solution": [pt, gone]}, **kw))
+
+
+def edit_prose(cid, section, text, c=None):
+    return (c or client(R)).post(f"/review/{cid}/edit", data={"field": f"prose.{section}", "value": text, "v": ver(cid)},
+                                 follow_redirects=False)
+
+
+def test_prose_edit_sets_reviewer_flags_and_removal(make):
+    from app.schema import Prose
+    cid = prosed(make)
+    assert edit_prose(cid, "solution", "Onboarding fell to 3 days at Zanzibar Ltd.").status_code == 303
+    p = row(cid)[1]["prose"]["solution"]
+    assert p["by_reviewer"] is True and p["flags"] == ["names 'Zanzibar Ltd', which no quote supports"] and "Zanzibar" in row(cid)[2]
+    assert Prose.model_validate(p).text.startswith("Onboarding")
+    assert edit_prose(cid, "solution", "").status_code == 303 and "solution" not in row(cid)[1]["prose"]
+    assert edit_prose(cid, "lessons_learned", "x").status_code == 400
+    assert edit_prose(cid, "nope", "x").status_code == 400
+
+
+def test_approval_blocked_on_flagged_model_prose_until_edited(make):
+    flagged = {"solution": {"text": "It took 99 days.", "by_reviewer": False, "flags": ["number 99 is in no quote"]}}
+    cid = prosed(make, prose=flagged)
+    r = client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)})
+    assert r.status_code == 400 and "flagged write-up" in r.text
+    edit_prose(cid, "solution", "Onboarding fell to 3 days.")  # an edit confirms it
+    r = client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}, follow_redirects=False)
+    assert r.status_code == 303 and row(cid)[0] == "approved"
+    assert [p["value"] for p in row(cid)[1]["points"]["solution"]] == ["Onboarding cut"]  # the unsourced point is dropped
+
+
+def test_edit_reopens_an_approved_case_with_prose(make):
+    cid = prosed(make, "approved", "10 days")  # due within 30 days: still editable (#143)
+    assert row(cid)[0] == "approved"
+    edit_prose(cid, "challenge", "Onboarding was slow.")
+    assert row(cid)[0] == "extracted"
+
+
+def test_detail_shows_prose_escaped_with_points_and_flags(make):
+    bad = "<script>alert(1)</script>"
+    cid = prosed(make, prose={"solution": {"text": bad, "by_reviewer": False, "flags": [f"names '{bad}'"]}})
+    html = client(R).get(f"/review/{cid}").text
+    assert "Case-study text" in html and "Sourced points (2)" in html and "Onboarding cut" in html
+    assert bad not in html and "&lt;script&gt;" in html
+    assert 'name="field" value="prose.solution"' in html
+
+
+def test_merge_unions_points_and_leaves_prose_empty(make, acme):
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    for cid, vals in ((a, ["Cut onboarding", "Shared"]), (b, ["shared", "Moved payments"])):
+        with db.connect() as c:
+            d = c.execute("select data from cases where id=%s", (cid,)).fetchone()[0]
+            q = "Acme cut customer onboarding from 12 days to 3 days" if cid == a else "Acme moved payments to the cloud"
+            d["points"] = {"solution": [{"value": v, "source_quote": q} for v in vals]}
+            d["prose"] = {"solution": {"text": "member text", "by_reviewer": True, "flags": []}}
+            c.execute("update cases set data=%s where id=%s", (json.dumps(d), cid))
+    new = int(merge(client(R), [a, b]).headers["location"].rsplit("/", 1)[1])
+    data, _ = _data_and_doc(new)
+    assert [p["value"] for p in data["points"]["solution"]] == ["Cut onboarding", "Shared", "Moved payments"]
+    docs = {cid: _data_and_doc(new, cid)[1] for cid in (a, b)}
+    assert [p["document_id"] for p in data["points"]["solution"]] == [docs[a], docs[a], docs[b]]
+    # the same point, unsourced in the first member and sourced in the second: the sourced copy and its origin win
+    with db.connect() as c:
+        for cid, unsourced in ((a, True), (b, False)):
+            d = c.execute("select data from cases where id=%s", (cid,)).fetchone()[0]
+            d["points"] = {"solution": [{"value": "Shared", "source_quote": "q", "unsourced": unsourced}]}
+            c.execute("update cases set data=%s where id=%s", (json.dumps(d), cid))
+    from app.review import combine
+    from app.schema import ReferenceCase
+    got = combine([(cid, docs[cid], ReferenceCase.model_validate(row(cid)[1])) for cid in (a, b)], {})
+    assert [(p.unsourced, p.document_id) for p in got.points["solution"]] == [(False, docs[b])]
+    assert data["prose"] == {} and "merged: write the case-study text for each section" in data["needs_attention"]
+
+
+def test_reviewer_text_still_flagged_for_a_number_can_be_approved(make):
+    cid = prosed(make)
+    edit_prose(cid, "solution", "It took 99 days.")
+    assert row(cid)[1]["prose"]["solution"]["flags"] == ["number 99 is in no quote"]
+    assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}, follow_redirects=False).status_code == 303
+
+
+def test_a_price_in_the_write_up_blocks_approval_even_for_the_reviewer(make):
+    cid = prosed(make)
+    edit_prose(cid, "solution", "Onboarding cost £1,200 per day.")
+    assert row(cid)[1]["prose"]["solution"]["by_reviewer"] is True
+    r = client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)})
+    assert r.status_code == 400 and "price" in r.text and row(cid)[0] == "extracted"

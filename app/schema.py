@@ -97,6 +97,13 @@ class Diagram(_Model):
     height: int = 0
 
 
+class Prose(_Model):
+    """A written section built from the points; `flags` lists what the checker could not source."""
+    text: str = ""
+    by_reviewer: bool = False
+    flags: list[str] = []
+
+
 class ReferenceCase(_Model):
     title: Sourced[str]
     client_mention: Sourced[str] = Sourced[str]()  # raw name as written; client_id is resolved later
@@ -113,6 +120,7 @@ class ReferenceCase(_Model):
     outcomes: list[Outcome] = []
     # every point the document makes per POINT_FIELDS field, beyond the one-line headline above
     points: SkipJsonSchema[dict[str, list[Sourced[str]]]] = {}
+    prose: SkipJsonSchema[dict[str, Prose]] = {}  # written from the points by app/writeup.py; never read back by the LLM
     duration_months: Sourced[int] = Sourced[int]()
     team_size: Sourced[int] = Sourced[int]()
     period: Period = Period()
@@ -154,7 +162,8 @@ class ReferenceCase(_Model):
                  self.implementation.value, self.configuration.value, self.lessons_learned.value,
                  *(c.value for c in self.capabilities), *(t.value for t in self.tech_stack),
                  *(p.value for ps in self.points.values() for p in ps),
-                 *(f"{o.metric} {o.value}" for o in self.outcomes), self.summary]
+                 *(f"{o.metric} {o.value}" for o in self.outcomes), self.summary,
+                 *(p.text for p in self.prose.values())]
         return " ".join(p for p in parts if p)
 
 

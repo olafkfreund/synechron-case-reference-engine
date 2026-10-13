@@ -228,3 +228,13 @@ def test_points_keep_every_distinct_item_and_stay_hidden():
     assert "points" not in json.dumps(llm_schema())
     assert ReferenceCase.model_validate({"title": {"value": "T"}}).points == {}
     assert ReferenceCase.model_validate(c.model_dump()).points == c.points
+
+
+def test_prose_round_trips_is_searchable_and_hidden():
+    from app.schema import Prose
+    c = make()
+    assert c.prose == {} and ReferenceCase.model_validate({"title": {"value": "T"}}).prose == {}
+    c.prose = {"challenge": Prose(text="Zanzibar intake was slow.", by_reviewer=True, flags=["Zanzibar"])}
+    assert ReferenceCase.model_validate(c.model_dump()).prose == c.prose
+    assert "Zanzibar intake" in c.search_text()
+    assert "prose" not in json.dumps(llm_schema())

@@ -633,6 +633,32 @@ client. Run the full suite, then PR 4.
   - Accepted: a merged case has no points until phase B (M1). The
     3-characters-per-token estimate leaves about 14% slack for dense
     numeric text.
+- B2: `check_prose(text, section_quotes, case_quotes)`:
+  - Numbers must appear in the section's own quotes.
+  - Names may appear in any sourced quote of the case. A product named under
+    Solution is often only quoted under technology.
+  - At a sentence start only the first word of a capitalised run is
+    skipped, so "The Snowflake team" still checks Snowflake.
+  - Month and weekday names, and bare digits, are not treated as names.
+- B6 results against A5 (prose words per section; target 120 for challenge
+  and solution):
+  - Line 3: 103 / 142 / 228 / 106, summary kept, configuration flagged.
+  - Line 1: 35 / 0 / 35 / 0, summary kept. It has one point per section,
+    and the model leaves two of them empty.
+  - Tried and reverted: naming every section in the request. Line 1 didn't
+    change, and line 3 dropped (solution 94, implementation 98, summary
+    blanked).
+  - Phase B ships as is. #222's completeness check makes thin cases visible
+    and blocks their approval.
+- Phase B review fixes:
+  - The write-up summary passes `check_prose`; if anything is flagged, the
+    earlier summary is kept.
+  - The price flag blocks approval even for reviewer text.
+  - `check_prose` matches whole words and never joins a term across a
+    sentence end. The single-word sentence-start skip is a known limit.
+  - Points sit inside `<points>` tags, and stray tags are removed.
+  - A merge prefers sourced copies.
+  - Kept reviewer prose has its flags recomputed.
 
 ## Tests
 

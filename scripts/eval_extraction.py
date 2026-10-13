@@ -105,9 +105,11 @@ def main(argv: list[str] | None = None) -> int:
             secs = time.time() - t
             bad = sum(vague_metric(o) for o in case.outcomes)
             pts = {f: len(case.points.get(f, [])) for f in POINT_FIELDS}  # counts only
+            words = {f: len(p.text.split()) for f, p in case.prose.items()}  # counts only
+            flagged = sum(bool(p.flags) for p in case.prose.values())
             rows.append((sourced, len(items), secs, vram, bad))
             print(f"{model} {p.name[:30]} kind={tri.kind} executed={tri.executed} basis={basis} sourced={sourced}/{len(items)} caps={len(case.capabilities)} "
-                  f"tech={len(case.tech_stack)} outcomes={len(case.outcomes)} points={pts} "
+                  f"tech={len(case.tech_stack)} outcomes={len(case.outcomes)} points={pts} prose_words={words} flagged={flagged} "
                   f"parts={len(extract.split(text[:extract.MAX_CHARS]))} summary={'kept' if case.summary else 'blank'} bad_metrics={bad} notes={case.needs_attention} "
                   f"{secs:.0f}s vram={vram:.1f}GB\n    fields: {filled}", flush=True)
         if rows:

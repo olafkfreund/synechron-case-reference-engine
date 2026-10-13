@@ -70,6 +70,6 @@ def test_output_has_metrics_and_no_document_text(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr()
     assert "kind=case" in out.out and "sourced=3/3" in out.out and "1 malformed" in out.out and "== bedrock/m" in out.out
     assert "bad_metrics=1" in out.out and "mean bad_metrics" in out.out
-    assert "points={'challenge': " in out.out and "parts=1 summary=" in out.out
+    assert "points={'challenge': " in out.out and "parts=1 summary=" in out.out and "prose_words={" in out.out and "flagged=" in out.out
     for text in (out.out, out.err):
         assert "Zorbulon" not in text and "settlement" not in text.lower()
