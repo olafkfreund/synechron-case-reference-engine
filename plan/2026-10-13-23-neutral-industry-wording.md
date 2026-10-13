@@ -80,6 +80,9 @@ Branch `feat/23-neutral-industry-wording`.
    Traps: `test_citation_is_never_rewritten_and_client_site_is_dropped`
    (`:213`) must still pass unchanged. A protected client's site as the
    publisher is still dropped, and its host must not leak via "states:".
+   Deviation (review): the pptx test also asserts the host appears once per
+   slide line, and the preview test asserts `&mdash; <url>, retrieved`, so the
+   publisher coming back after the dash fails a test in every format.
 
 4. **`plan/2026-10-06-1-reference-engine.md:690-699`: record the decision.**
    Replace the fixed-phrase bullet and "We kept the approved type phrases…" with:

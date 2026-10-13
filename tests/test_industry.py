@@ -112,7 +112,7 @@ def test_pptx_industry_slide_keeps_the_quote_next_to_the_phrase(rows, approved):
     assert ind["Title"] == [render.INDUSTRY_HEADING] and ind["Summary"] == [render.INDUSTRY_DISCLAIMER]
     assert len(ind["Statements"]) == 2
     for line, phrase, quote in zip(ind["Statements"], ("learn.microsoft.com states:", "docs.vendor.io states:"), (Q1, Q2)):
-        assert line.startswith(phrase) and quote[:40] in line  # the AI-chosen phrase never stands alone
+        assert line.startswith(phrase) and quote[:40] in line and line.count(phrase.split()[0]) == 1  # source once, quote next to it
     assert len(slides(gen(rid, [], "pptx", ack=True).content)[1]) == 1  # industry only
     assert gen(rid, [cid], "pdf_pptx").content.startswith(b"%PDF")
 
@@ -169,6 +169,7 @@ def test_preview_includes_industry_and_keeps_the_ack(rows, approved):
         return as_user("u1", G).post("/preview", data=form)
     r = prev([cid])
     assert r.status_code == 200 and Q1 in r.text and "learn.microsoft.com states:" in r.text
+    assert "&mdash; https://learn.microsoft.com/entra, retrieved" in r.text  # the publisher is not repeated after the dash
     assert f'name="research_id" value="{rid}"' in r.text
     assert prev().status_code == 400
     esc = as_user("u1", G).post("/preview", data={"case_ids": [cid], "research_id": rows([claim("<b>x</b> in the quote")])})
