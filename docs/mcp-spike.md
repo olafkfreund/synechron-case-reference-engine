@@ -55,6 +55,23 @@ that phase 1 builds on facts.
 - **Negative controls:** removing the audience check, the `iat` check, or
   `required_scopes` each fails exactly its test.
 
+## Entra requirements found by review
+
+- **Token version:** the API app registration must set
+  `accessTokenAcceptedVersion=2`. Otherwise Entra issues v1 tokens
+  (`iss=https://sts.windows.net/...`), and every one is refused. That fails
+  safe, but nothing works.
+- **Scope format:** the PRM advertises the scope in Entra's full form,
+  `api://<id>/refs.access` (`{MCP_AUDIENCE}/{MCP_SCOPE}`), so clients can
+  request it as written. Tokens still carry the short `scp` value
+  `refs.access`, which the verifier checks.
+- **Signing keys:** an unknown `kid` refetches the key set at most once
+  every 5 minutes, behind a lock. A failed fetch keeps the cached keys and
+  retries 60 s later.
+- **Host header:** the SDK compares `Host` exactly. `allowed_hosts` holds
+  the lowercased host, plus `host:port` when the port is the default, so a
+  CDN must forward `Host` unchanged.
+
 ## Entra (pending tenant)
 
 These were not run, because no dev Entra tenant is available yet.

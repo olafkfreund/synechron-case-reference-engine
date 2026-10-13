@@ -1,4 +1,5 @@
 """MCP server mounted at /mcp (#249). Phase 0: Entra bearer auth and a `ping` tool."""
+import asyncio
 import base64
 import json
 import os
@@ -7,7 +8,6 @@ from urllib.parse import urlsplit
 
 import httpx
 from joserfc import jwt
-from joserfc.errors import JoseError
 from joserfc.jwk import KeySet
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.routes import create_protected_resource_routes
@@ -16,6 +16,8 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
 JWKS_TTL = 3600
+REFETCH_UNKNOWN_KID = 300  # an unknown kid is unauthenticated input: it may not trigger a fetch per request
+REFETCH_BACKOFF = 60  # after a failed or missing fetch
 LEEWAY = 60
 
 
@@ -32,18 +34,33 @@ class EntraVerifier:
     def __init__(self, issuer: str, audience: str, jwks_url: str, tenant: str = "", scope: str = "refs.access"):
         self.issuer, self.audience, self.jwks_url, self.tenant, self.scope = issuer, audience, jwks_url, tenant, scope
         self._keys: KeySet | None = None
-        self._fetched = 0.0
+        self._fetched = self._attempt = 0.0
+        self._lock = asyncio.Lock()
 
-    async def _keyset(self, kid: str | None) -> KeySet:
-        stale = time.time() - self._fetched > JWKS_TTL
-        if self._keys is None or stale or (kid and not any(k.kid == kid for k in self._keys.keys)):
-            self._keys = KeySet.import_key_set(await fetch_jwks(self.jwks_url))  # unknown kid: key rotation
-            self._fetched = time.time()
+    def _needs_fetch(self, kid) -> bool:
+        if self._keys is None or time.time() - self._fetched > JWKS_TTL:
+            return time.time() - self._attempt >= REFETCH_BACKOFF
+        unknown = bool(kid) and not any(k.kid == kid for k in self._keys.keys)  # key rotation
+        return unknown and time.time() - self._attempt >= REFETCH_UNKNOWN_KID
+
+    async def _keyset(self, kid) -> KeySet:
+        if self._needs_fetch(kid):
+            async with self._lock:  # concurrent callers share one fetch
+                if self._needs_fetch(kid):
+                    self._attempt = time.time()
+                    try:
+                        self._keys = KeySet.import_key_set(await fetch_jwks(self.jwks_url))
+                        self._fetched = time.time()
+                    except Exception:  # keep verifying with the cached keys; the next try waits out the backoff
+                        if self._keys is None:
+                            raise
         return self._keys
 
     async def verify_token(self, token: str) -> AccessToken | None:
         try:
             header = json.loads(base64.urlsafe_b64decode(token.split(".")[0] + "=="))
+            if not isinstance(header, dict):
+                return None
             decoded = jwt.decode(token, await self._keyset(header.get("kid")), algorithms=["RS256"])
             claims = decoded.claims
             registry = jwt.JWTClaimsRegistry(
@@ -51,14 +68,14 @@ class EntraVerifier:
                 iss={"essential": True, "value": self.issuer}, aud={"essential": True, "value": self.audience},
                 **({"tid": {"essential": True, "value": self.tenant}} if self.tenant else {}))
             registry.validate(claims)
-        except (JoseError, ValueError, KeyError, httpx.HTTPError):
+        except Exception:  # any malformed or unverifiable token is a plain 401
             return None
         scp = claims.get("scp")
         if not isinstance(scp, str) or not scp:  # app-only tokens carry roles, not scp: refused
             return None
         return AccessToken(
             token=token, client_id=str(claims.get("azp") or claims.get("client_id") or ""), scopes=scp.split(),
-            expires_at=int(claims["exp"]), resource=self.audience,
+            expires_at=int(claims["exp"]) + LEEWAY, resource=self.audience,
             subject=str(claims.get("oid") or claims.get("sub") or ""), claims=claims)
 
 
@@ -86,8 +103,11 @@ def build(origin: str):
         return "pong"
 
     # Host and Origin checks (DNS rebinding); a request with no Origin is allowed
-    security = TransportSecuritySettings(allowed_hosts=[urlsplit(origin).netloc], allowed_origins=[origin])
+    u = urlsplit(origin.lower())
+    port = u.port or {"http": 80, "https": 443}.get(u.scheme)
+    hosts = sorted({u.netloc, u.hostname, f"{u.hostname}:{port}"} if port in (80, 443) else {u.netloc})
+    security = TransportSecuritySettings(allowed_hosts=hosts, allowed_origins=[origin.lower()])
     app = server.streamable_http_app(streamable_http_path="/", stateless_http=True, transport_security=security)
     # the SDK registers the PRM inside the mount (/mcp/.well-known/...); the challenge names the root path
-    prm = create_protected_resource_routes(resource, [issuer], [scope])
+    prm = create_protected_resource_routes(resource, [issuer], [f"{audience}/{scope}"])  # full Entra form, as a client requests it
     return app, server.session_manager, prm
