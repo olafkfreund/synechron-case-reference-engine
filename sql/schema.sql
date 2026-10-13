@@ -151,6 +151,7 @@ create table if not exists library_items (
   checked_at timestamptz not null default now()
 );
 create index if not exists library_items_topic_idx on library_items (lower(topic));
+alter table library_items add column if not exists created_by_name text not null default '';
 
 create table if not exists generations (
   id bigserial primary key,

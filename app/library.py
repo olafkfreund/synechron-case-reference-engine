@@ -73,8 +73,8 @@ def save(research_id: int | None = Form(None), brief_id: int | None = Form(None)
         query = (conn.execute("select query from research where id=%s", (rid,)).fetchone() or [""])[0] if rid else ""
         if any(anonymise.blocked(x, clients) for x in (t, query, *_strings(body))):  # each field alone: a join could hide a name
             raise HTTPException(400, "the item names a protected client; it cannot be saved")
-        lid = conn.execute("insert into library_items(topic, kind, query, body, created_by) values (%s,%s,%s,%s,%s) returning id",
-                           (t, kind, query, Jsonb(body), user.sub)).fetchone()[0]
+        lid = conn.execute("insert into library_items(topic, kind, query, body, created_by, created_by_name) values (%s,%s,%s,%s,%s,%s) returning id",
+                           (t, kind, query, Jsonb(body), user.sub, user.name)).fetchone()[0]
     return RedirectResponse(f"/library/{lid}", status_code=303)
 
 
