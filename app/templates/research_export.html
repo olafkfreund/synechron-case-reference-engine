@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="page-head"><div><h1>Copy the selected quotes</h1></div></div>
+<div class="section-card"><textarea readonly rows="20" style="width:100%">{{ text }}</textarea>
+<p><a href="/research/{{ research_id }}">Back</a></p></div>
+{% endblock %}
