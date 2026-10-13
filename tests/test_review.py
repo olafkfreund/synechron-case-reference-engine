@@ -1399,3 +1399,57 @@ def test_merged_case_offers_its_members_images(make, acme):
     iid = add_candidate(new, doc=_data_and_doc(new, member)[1])
     assert client(R).get(f"/review/{new}/images/{iid}.png").status_code == 200
     assert f"/images/{iid}.png" in client(R).get(f"/review/{new}").text
+
+
+def test_removing_a_used_diagram_dismisses_its_image_for_good(make, jobs):
+    cid = make()
+    iid = add_candidate(cid)
+    img_post(cid, iid, "use", caption="Flow")
+    assert client(R).get(f"/review/{cid}/images/{iid}.png").status_code == 404  # used: not served as a candidate
+    did = entries(cid)[0]["id"]
+    assert client(R).post(f"/review/{cid}/diagrams/{did}/remove", data={"v": ver(cid)}, follow_redirects=False).status_code == 303
+    assert row(cid)[1]["dismissed_images"] == [iid] and entries(cid) == []
+    assert f"/images/{iid}.png" not in client(R).get(f"/review/{cid}").text
+    assert client(R).get(f"/review/{cid}/images/{iid}.png").status_code == 404
+
+
+def test_dismissed_image_thumbnail_is_not_served(make):
+    cid = make()
+    iid = add_candidate(cid)
+    img_post(cid, iid, "dismiss")
+    assert client(R).get(f"/review/{cid}/images/{iid}.png").status_code == 404
+
+
+def test_use_buttons_are_hidden_at_the_cap(make, jobs):
+    from app.diagrams import MAX_PER_CASE
+    cid = make()
+    iid = add_candidate(cid)
+    assert f"/images/{iid}/use" in client(R).get(f"/review/{cid}").text
+    for _ in range(MAX_PER_CASE):
+        add_diagram(cid)
+    page = client(R).get(f"/review/{cid}").text
+    assert f"/images/{iid}/dismiss" in page and f"/images/{iid}/use" not in page
+
+
+def test_a_withdrawn_documents_images_are_not_served(make, acme):
+    new, member = _merged(make)
+    with db.connect() as c:
+        other = c.execute("select id from cases where merged_into=%s and id<>%s", (new, member)).fetchone()[0]
+    live_doc, gone_doc = _data_and_doc(new, other)[1], _data_and_doc(new, member)[1]
+    a, b = add_candidate(new, doc=live_doc), add_candidate(new, doc=gone_doc)
+    with db.connect() as c:
+        c.execute("update documents set deleted_at=now() where id=%s", (gone_doc,))
+    assert client(R).get(f"/review/{new}/images/{a}.png").status_code == 200
+    assert client(R).get(f"/review/{new}/images/{b}.png").status_code == 404
+
+
+def test_remerge_keeps_the_dismissed_images(make, acme):
+    a, b, d = (eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], []), eng(make, TEXT_B, ["z"], []))
+    c = client(R)
+    new = int(merge(c, [a, b, d]).headers["location"].rsplit("/", 1)[1])
+    iid = add_candidate(new, doc=_data_and_doc(new, a)[1])
+    img_post(new, iid, "dismiss")
+    with db.connect() as x:
+        x.execute("update documents set deleted_at=now() where id=(select document_id from cases where id=%s)", (d,))
+    assert c.post(f"/review/{new}/remerge", data={"v": ver(new)}, follow_redirects=False).status_code == 303
+    assert row(new)[1]["dismissed_images"] == [iid]

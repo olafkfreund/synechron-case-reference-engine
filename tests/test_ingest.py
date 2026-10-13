@@ -797,3 +797,17 @@ def test_same_bytes_without_a_case_stores_no_images(env, monkeypatch):
     calls = []
     monkeypatch.setattr(ing, "document_images_from", lambda *a, **k: calls.append(1) or [])
     assert ing.ingest(sid, "a", "a.docx", b"one") == "skipped" and calls == [] and images_of(sid) == []
+
+
+def test_stale_candidates_are_gone_the_moment_the_new_version_is_saved(env, monkeypatch):
+    _, sid = env
+    monkeypatch.setattr(ing, "document_images_from", lambda *a, **k: [(b"p", 500, 400, "h")])
+    ing.ingest(sid, "a", "a.docx", b"one")
+    assert len(images_of(sid)) == 1
+    seen = []
+
+    def spy(doc_id, data, name, wanted):  # what a reader sees after the commit, before images are stored
+        seen.append(len(images_of(sid)))
+    monkeypatch.setattr(ing, "store_images", spy)
+    ing.ingest(sid, "a", "a.docx", b"two")
+    assert seen == [0]

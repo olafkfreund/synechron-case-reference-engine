@@ -386,10 +386,11 @@ def _candidate_png(conn, cid, iid, user, case):
 def candidate_png(cid: int, iid: int, user: User = Depends(require("reviewer"))):
     with db.connect() as conn:
         row = conn.execute(
-            f"select i.png from document_images i join documents md on {LIVE_DOC} join cases c on c.id = %s and {REVIEWABLE} "
+            f"select i.png, c.data from document_images i join documents md on {LIVE_DOC} join cases c on c.id = %s and {REVIEWABLE} "
             f"where i.id = %s and i.document_id in {DOCS_OF.replace('%s', 'c.id')}",
             (list(user.groups), cid, list(user.groups), iid)).fetchone()
-    if not row:
+    # a used or dismissed candidate is no longer offered, so its thumbnail is not served either
+    if not row or iid in row[1].get("dismissed_images", []) or any(d.get("image_id") == iid for d in row[1].get("diagrams", [])):
         raise HTTPException(404, "no such image")
     return Response(bytes(row[0]), media_type="image/png", headers=PNG_HEADERS)
 
@@ -433,6 +434,9 @@ def remove_diagram(cid: int, did: int, v: str = Form(), user: User = Depends(req
         case, _ = load(conn, cid, user, v)
         if not any(d.id == did for d in case.diagrams):
             raise HTTPException(404, "no such diagram")
+        gone = next(d.image_id for d in case.diagrams if d.id == did)
+        if gone is not None:
+            case.dismissed_images.append(gone)  # a removed document image is not offered again
         case.diagrams = [d for d in case.diagrams if d.id != did]
         save(conn, cid, case)
         conn.execute("delete from diagrams where id=%s and case_id=%s", (did, cid))
@@ -780,7 +784,7 @@ def remerge(cid: int, v: str = Form(), user: User = Depends(require("reviewer"))
         pick = {f: m[0] for f in MERGE_FIELDS for m in live if m[1] == getattr(merged, f).document_id}
         case = combine([(m[0], m[1], cases[m[0]]) for m in live], pick)
         check(case, {m[1]: m[5][:MAX_CHARS] for m in live})
-        case.diagrams = merged.diagrams  # the merged case's own; combine() starts empty
+        case.diagrams, case.dismissed_images = merged.diagrams, merged.dismissed_images  # the merged case's own; combine() starts empty
         save(conn, cid, case)
         conn.execute("update cases set status = 'extracted', approved_by = null, approved_at = null, "
                      "review_due = null, member_count = %s where id = %s", (len(live), cid))

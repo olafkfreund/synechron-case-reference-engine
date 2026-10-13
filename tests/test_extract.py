@@ -656,3 +656,13 @@ def test_reextracting_an_old_row_adds_the_note_and_keeps_reviewer_prose(doc):
 def test_reextracting_a_current_row_has_no_note(doc):
     run(doc, case())
     assert NOTE not in run(doc, case())[0]["needs_attention"]
+
+
+def test_reextract_keeps_dismissed_images_and_diagrams(doc):
+    run(doc, case())
+    with db.connect() as c:
+        data = c.execute("select data from cases where document_id=%s", (doc[0],)).fetchone()[0]
+        data["dismissed_images"], data["diagrams"] = [7], [{"id": 3, "caption": "c", "status": "ready", "image_id": 7}]
+        c.execute("update cases set data=%s where document_id=%s", (Jsonb(data), doc[0]))
+    data, *_ = run(doc, case())
+    assert data["dismissed_images"] == [7] and data["diagrams"][0]["id"] == 3

@@ -85,6 +85,7 @@ MAX_ENTRIES = 5000       # a zip with more entries is not read at all
 MAX_DECODED = 30         # the largest entries tried, whatever the zip holds
 MAX_FOUND = 10
 MAX_XML = 5 * 1024 * 1024
+MAX_XML_TOTAL = 20 * 1024 * 1024  # all hint parts of one document; past it the images are kept without hints
 MAX_SLIDES = 200
 _REL = "{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"
 _WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
@@ -94,23 +95,25 @@ _EMBED = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}e
 _FILENAME = re.compile(r"\.(?:png|jpe?g|gif|bmp|tiff?|emf|wmf|svg)$", re.I)  # editors fill alt text with the file name
 
 
-def _xml(zf: zipfile.ZipFile, name: str):
-    """A small XML part as an element tree root, or None. OOXML never has a DTD, so one is refused."""
+def _xml(zf: zipfile.ZipFile, name: str, budget: list[int]):
+    """A small XML part as an element tree root, or None. OOXML never has a DTD, so one is refused,
+    and neither is a part with a NUL byte (UTF-16 would hide the DOCTYPE test). `budget` is the bytes left for the document."""
     try:
         info = zf.getinfo(name)
-        if info.file_size > MAX_XML:
+        if info.file_size > MAX_XML or info.file_size > budget[0]:
             return None
+        budget[0] -= info.file_size
         data = zf.open(info).read(MAX_XML + 1)
-        if len(data) > MAX_XML or b"<!DOCTYPE" in data or b"<!ENTITY" in data:
+        if len(data) > MAX_XML or b"\0" in data or b"<!DOCTYPE" in data or b"<!ENTITY" in data:
             return None
         return ET.fromstring(data)
     except Exception:  # noqa: BLE001 - a bad part loses its hints, never the images
         return None
 
 
-def _targets(zf, rels_name: str, base: str) -> dict[str, str]:
+def _targets(zf, rels_name: str, base: str, budget: list[int]) -> dict[str, str]:
     """{relationship id: part name} for one .rels file; `base` is the folder of the part it belongs to."""
-    root = _xml(zf, rels_name)
+    root = _xml(zf, rels_name, budget)
     out = {}
     for rel in (root.iter(_REL) if root is not None else ()):
         t = rel.get("Target") or ""
@@ -127,8 +130,9 @@ def _alt(descr: str | None) -> str:
 def _hints(zf, ext: str) -> dict[str, str]:
     """{media part name: alt text, or the slide title for a pptx}. Untrusted text: cut and anonymised by the caller."""
     out: dict[str, str] = {}
+    budget = [MAX_XML_TOTAL]
     if ext == ".docx":
-        rels, root = _targets(zf, "word/_rels/document.xml.rels", "word"), _xml(zf, "word/document.xml")
+        rels, root = _targets(zf, "word/_rels/document.xml.rels", "word", budget), _xml(zf, "word/document.xml", budget)
         for box in (root.iter() if root is not None else ()):
             if box.tag in (_WP + "inline", _WP + "anchor"):
                 blip = next(box.iter(_A + "blip"), None)
@@ -140,10 +144,10 @@ def _hints(zf, ext: str) -> dict[str, str]:
     slides = sorted((n for n in zf.namelist() if re.fullmatch(r"ppt/slides/slide\d+\.xml", n)),
                     key=lambda n: int(re.findall(r"\d+", n)[0]))[:MAX_SLIDES]
     for name in slides:
-        root = _xml(zf, name)
+        root = _xml(zf, name, budget)
         if root is None:
             continue
-        rels = _targets(zf, f"ppt/slides/_rels/{posixpath.basename(name)}.rels", "ppt/slides")
+        rels = _targets(zf, f"ppt/slides/_rels/{posixpath.basename(name)}.rels", "ppt/slides", budget)
         title = ""
         for sp in root.iter(_P + "sp"):
             ph = next(sp.iter(_P + "ph"), None)
@@ -179,17 +183,23 @@ def document_images_from(data: bytes, name: str, clients=()) -> list[tuple[bytes
                          key=lambda i: -i.file_size)[:MAX_DECODED]
             found = []
             for info in big:
-                raw = zf.open(info).read(MAX_BYTES + 1)
-                if len(raw) > MAX_BYTES or not raw.startswith(MAGIC):
+                if len(found) >= MAX_FOUND:
+                    break  # enough: the rest is not decoded
+                try:
+                    raw = zf.open(info).read(MAX_BYTES + 1)  # bounded whatever the declared size said
+                    if len(raw) > MAX_BYTES or not raw.startswith(MAGIC):
+                        continue
+                    png, w, h, _ = _decode(raw)
+                except Exception:  # noqa: BLE001 - one bad entry (a lying size, a bad CRC) loses only itself
                     continue
-                png, w, h, _ = _decode(raw)
                 if png and min(w, h) >= MIN_SIDE:
                     found.append((info, png, w, h))
             hints = _hints(zf, ext) if found else {}
         out = []
         for info, png, w, h in found[:MAX_FOUND]:
-            hint = anonymise.apply(hints.get(info.filename, ""), clients) if clients else hints.get(info.filename, "")
-            hint = "".join(c for c in hint if c.isprintable())[:MAX_CAPTION].strip()
+            # control and invisible characters go first: a zero-width space inside a name would hide it from the anonymiser
+            hint = "".join(c for c in " ".join(hints.get(info.filename, "").split()) if c.isprintable())
+            hint = (anonymise.apply(hint, clients) if clients else hint)[:MAX_CAPTION].strip()
             out.append((png, w, h, hint))
         return out
     except Exception:  # noqa: BLE001 - a hostile or broken file must never fail ingest

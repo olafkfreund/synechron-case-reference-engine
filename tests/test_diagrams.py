@@ -238,3 +238,76 @@ def test_pptx_hint_falls_back_to_the_slide_title_and_filename_alt_text_is_ignore
     prs.save(out)
     (_, _, _, hint), = diagrams.document_images_from(out.getvalue(), "d.pptx")
     assert hint == "Payments platform overview"
+
+
+def docx_with_alt(alt, side=500):
+    import docx
+    d = docx.Document()
+    run = d.add_paragraph().add_run()
+    run.add_picture(BytesIO(noise_png(side)))
+    run._r.xpath(".//wp:docPr")[0].set("descr", alt)
+    out = BytesIO()
+    d.save(out)
+    return out.getvalue()
+
+
+def rewrite(data, part, fn):
+    src, out = zipfile.ZipFile(BytesIO(data)), BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for i in src.infolist():
+            body = src.read(i.filename)
+            z.writestr(i.filename, fn(body) if i.filename == part else body)
+    return out.getvalue()
+
+
+CLIENTS = [{"name": "Zorpale Bank", "aliases": [], "anonymised_label": "a retail bank", "referenceable": False}]
+
+
+def test_invisible_characters_cannot_hide_a_client_name_from_the_anonymiser():
+    # U+E000 (private use) is not a format character, so the anonymiser alone would not see through it
+    data = docx_with_alt("Plan for Zor\u200bpale Bank core, Zor\ue000pale Bank too")
+    (_, _, _, hint), = diagrams.document_images_from(data, "d.docx", CLIENTS)
+    assert "Zorpale" not in hint and hint.count("a retail bank") == 2 and "\u200b" not in hint and "\ue000" not in hint
+
+
+def test_xml_with_a_doctype_or_a_nul_byte_gives_no_hint_but_keeps_the_image():
+    data = docx_with_alt("Architecture overview")
+    assert diagrams.document_images_from(data, "d.docx")[0][3] == "Architecture overview"
+    doctype = rewrite(data, "word/document.xml", lambda b: b.replace(b"<w:document", b'<!DOCTYPE d [<!ENTITY a "b">]><w:document', 1))
+    utf16 = rewrite(data, "word/document.xml", lambda b: b.decode().split("?>", 1)[1].encode("utf-16"))  # no encoding declaration: it parses, and hides a DOCTYPE
+    for bad in (doctype, utf16):
+        (png, w, h, hint), = diagrams.document_images_from(bad, "d.docx")
+        assert (w, h, hint) == (500, 500, "")
+
+
+def test_xml_part_past_max_xml_and_the_total_budget_give_no_hint(monkeypatch):
+    data = docx_with_alt("Architecture overview")
+    monkeypatch.setattr(diagrams, "MAX_XML", 100)
+    assert diagrams.document_images_from(data, "d.docx")[0][3] == ""
+    monkeypatch.undo()
+    monkeypatch.setattr(diagrams, "MAX_XML_TOTAL", 600)  # the rels file fits, the document part does not
+    assert diagrams.document_images_from(data, "d.docx")[0][3] == ""
+    monkeypatch.setattr(diagrams, "MAX_XML_TOTAL", 10_000_000)
+    assert diagrams.document_images_from(data, "d.docx")[0][3] == "Architecture overview"
+
+
+def test_decoding_stops_once_enough_images_are_kept(monkeypatch):
+    z = pack({f"word/media/{i}.png": noise_png(420 + i) for i in range(13)})
+    calls = []
+    real = diagrams._decode
+    monkeypatch.setattr(diagrams, "_decode", lambda raw: (calls.append(1), real(raw))[1])
+    assert len(diagrams.document_images_from(z, "x.docx")) == diagrams.MAX_FOUND and len(calls) == diagrams.MAX_FOUND
+
+
+def test_a_declared_size_that_lies_is_bounded_and_loses_only_that_entry(monkeypatch):
+    z = pack({"word/media/liar.png": diagrams.MAGIC[0] + os.urandom(diagrams.MAX_BYTES + 5000), "word/media/ok.png": noise_png(450)})
+    real = zipfile.ZipFile.infolist
+
+    def lying(self):
+        infos = real(self)
+        for i in infos:
+            if i.filename.endswith("liar.png"):
+                i.file_size = 40_000  # the real entry is over 5 MB
+        return infos
+    monkeypatch.setattr(zipfile.ZipFile, "infolist", lying)
+    assert [g[1:3] for g in diagrams.document_images_from(z, "x.docx")] == [(450, 450)]

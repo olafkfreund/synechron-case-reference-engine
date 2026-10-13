@@ -672,6 +672,19 @@ client. Run the full suite, then PR 4.
     gets them once, so documents ingested before phase C are covered.
   - shortcut: a document with no usable image is re-read on each ingest of
     the same bytes, with no decode.
+- Phase C review fixes:
+  - `dismissed_images` survives re-extraction and re-merge, and removing a
+    used diagram dismisses it.
+  - A new document version re-offers its candidates with new ids
+    (accepted).
+  - Stale candidates are deleted in the ingest transaction.
+  - Hints are cleaned, then anonymised.
+  - XML with a NUL byte is refused.
+  - Decoding stops at `MAX_FOUND`, and `MAX_XML_TOTAL` is 20 MB per
+    document.
+  - Thumbnails of used or dismissed images give 404, and Use is hidden at
+    the cap.
+  - Each entry has its own try/except, so one bad entry loses only itself.
 
 ## Tests
 

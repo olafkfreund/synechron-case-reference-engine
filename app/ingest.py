@@ -132,6 +132,7 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
         if not got:
             raise LookupError(f"source {source_id} no longer exists")
         doc_id = got[0]
+        conn.execute("delete from document_images where document_id=%s", (doc_id,))  # new content: no stale candidate is offered meanwhile
         # a changed document re-opens its case for review, or retires it when it no longer
         # describes delivered work (a stale case must not stay approvable)
         conn.execute("update cases set status=%s, retired_by=null where document_id=%s",
