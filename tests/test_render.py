@@ -689,3 +689,21 @@ def test_case_study_withheld_gives_409(approved, reg, monkeypatch):
     monkeypatch.setattr(render.anonymise, "blocked", lambda *a, **k: True)
     assert gen([c], "case_study_docx").status_code == 409
 
+
+
+def test_case_study_docx_full_and_anonymised(approved, reg):
+    from app.schema import Prose
+    name, label_id = reg("Zorp", "a UK retailer")
+    c = with_refs(f"{name} payments API v2")
+    c = c.model_copy(update={"prose": {"challenge": Prose(text=f"{name} was slow.\n\nSecond paragraph.")}})
+    cid = approved(c)
+    link(cid, label_id)
+    add_diagram(cid, f"Flow at {name}")
+    r = gen([cid], "case_study_docx")
+    assert r.status_code == 200
+    t = doc_text(r.content)
+    for want in ("Architecture", "Technical references", "a UK retailer was slow.", "Second paragraph.",
+                 "Flow at a UK retailer", "payments API v2", "Based on 1 source document"):
+        assert want in t, want
+    assert name not in t and "{{" not in t and "{%" not in t
+    assert any(n.startswith("word/media/") for n in zipfile.ZipFile(BytesIO(r.content)).namelist())

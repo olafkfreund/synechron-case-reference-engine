@@ -401,3 +401,12 @@ def test_search_card_has_case_study_buttons_for_one_case(approved, monkeypatch):
     monkeypatch.setattr(sr, "complete_json", lambda *a_, **k: sr.Picks(picks=[sr.Pick(case_id=a, reason="", tailored="x")]))
     t = client([USER, DOCS]).post("/search", data={"bid_text": "onboarding"}).text
     assert 'value="case_study_docx"' in t and 'value="case_study_pdf"' in t
+
+
+def test_download_all_row_has_no_case_study_buttons(approved, monkeypatch):
+    a, b = approved(data()), approved(data(title="Other onboarding"))
+    monkeypatch.setattr(sr, "complete_json", lambda *a_, **k: sr.Picks(picks=[sr.Pick(case_id=a, reason="", tailored="x"),
+                                                                                sr.Pick(case_id=b, reason="", tailored="y")]))
+    t = client([USER, DOCS]).post("/search", data={"bid_text": "onboarding"}).text
+    all_row = t[t.index("Download all"):]
+    assert 'value="case_study' not in all_row and t.count('value="case_study_docx"') == 2
