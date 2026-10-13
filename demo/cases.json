@@ -1185,17 +1185,32 @@
    "file": "litware-citizen-portal.docx",
    "paragraphs": [
     "Litware citizen portal project.",
-    "Litware engaged us for its citizen portal project.",
-    "Litware operates in the public sector sector.",
-    "The programme was run for the Sweden market.",
-    "The old citizen portal process was slow and relied on manual work.",
-    "We rebuilt the citizen portal service as a modern, tested platform.",
-    "The work was delivered over 12 months.",
-    "The team had 8 engineers.",
-    "The stack used React and Node.js in production.",
-    "Our work covered web development for Litware.",
-    "Our work covered accessibility for Litware.",
-    "The new platform lifted online self-service to 71 percent."
+    "Litware engaged us for its citizen portal project. Litware runs public services for a regional government in Sweden and employs about 400 case officers.",
+    "The project was sponsored by the director of citizen services, who asked for a single front door to services that residents use several times a year.",
+    "Residents had to visit three separate websites and two offices to apply for permits, benefits and housing support, and each asked for the same documents again.",
+    "The three websites had grown over many years, each owned by a different department, and none of them shared accounts, forms or content with the others, so a change of address had to be repeated.",
+    "Applications arrived on paper or by email, and case officers typed them into the register, which caused errors and a median wait of 23 days.",
+    "Residents could not see where their application was, so the call centre answered about 1,200 status calls each month.",
+    "Accessibility complaints were rising, because the old websites did not work well with screen readers or on small phones.",
+    "Interviews with residents showed that people with the greatest need, such as older residents and new arrivals, were the ones who found the old websites hardest to use.",
+    "The scope was a single citizen portal where residents sign in once, submit applications online, upload documents and follow the status of each case.",
+    "Deliverables were the portal, an application form builder for the service teams, a status tracker, and a notification service built with Python and PostgreSQL.",
+    "Sign in uses OpenID Connect with the national identity provider, and the portal meets WCAG 2.1 level AA for accessibility.",
+    "The case register used by the officers stayed in place, and the portal sends each application to it through its existing import.",
+    "Services that need a signature or a meeting in person, such as some housing decisions, were kept as offline steps, and the portal books the appointment and reminds the resident.",
+    "The project took 9 months in three phases: research and design, a pilot with housing support, and the launch of permits and benefits.",
+    "The team had 6 people, including two developers, a designer, a content specialist, a tester and a delivery lead.",
+    "Work started in February 2024, the housing pilot opened in June 2024, and the full launch took place in October 2024.",
+    "Residents and case officers took part in usability sessions after every sprint, and 14 sessions were held in total.",
+    "The team also ran a small private beta with 200 residents before each launch, and the findings were reviewed by the steering group before the next service went live.",
+    "Median wait for a decision fell from 23 days to 9 days, and 71 percent of applications are now submitted online.",
+    "Status calls to the call centre fell from about 1,200 to about 300 each month.",
+    "Satisfaction with the application process, measured by a short survey after each decision, was reported to the steering group every month throughout the first year.",
+    "The steering group met every month and included the director of citizen services, a representative of the case officers and a resident who volunteered after the first usability sessions.",
+    "Usability sessions after every sprint found problems early, and the team would book them before the design starts next time.",
+    "The service teams needed more time than planned to rewrite their forms in plain language, and this work should start in the first month.",
+    "The portal is now maintained by a small in house team that Litware trained during the project, and the supplier role has moved from delivery to occasional advice.",
+    "Further services are planned for the next year, and the portal was built so that each service team can add its own forms without waiting for the developers."
    ],
    "case": {
     "title": {
@@ -1204,83 +1219,212 @@
     },
     "client_mention": {
      "value": "Litware",
-     "source_quote": "Litware engaged us for its citizen portal project."
+     "source_quote": "Litware engaged us for its citizen portal project. Litware runs public services for a regional government in Sweden and employs about 400 case officers."
     },
     "industry": {
      "value": "Public sector",
-     "source_quote": "Litware operates in the public sector sector."
+     "source_quote": "Litware engaged us for its citizen portal project. Litware runs public services for a regional government in Sweden and employs about 400 case officers."
     },
     "region": {
      "value": "Sweden",
-     "source_quote": "The programme was run for the Sweden market."
+     "source_quote": "Litware engaged us for its citizen portal project. Litware runs public services for a regional government in Sweden and employs about 400 case officers."
     },
     "engagement_type": {},
     "challenge": {
-     "value": "Manual, slow citizen portal process",
-     "source_quote": "The old citizen portal process was slow and relied on manual work."
+     "value": "Three websites and two offices for one resident",
+     "source_quote": "Residents had to visit three separate websites and two offices to apply for permits, benefits and housing support, and each asked for the same documents again."
     },
     "solution": {
-     "value": "Rebuilt citizen portal as a tested platform",
-     "source_quote": "We rebuilt the citizen portal service as a modern, tested platform."
+     "value": "One portal with a single sign in",
+     "source_quote": "The scope was a single citizen portal where residents sign in once, submit applications online, upload documents and follow the status of each case."
+    },
+    "implementation": {
+     "value": "Three phases over 9 months",
+     "source_quote": "The project took 9 months in three phases: research and design, a pilot with housing support, and the launch of permits and benefits."
+    },
+    "lessons_learned": {
+     "value": "Book usability sessions before the design starts",
+     "source_quote": "Usability sessions after every sprint found problems early, and the team would book them before the design starts next time."
     },
     "capabilities": [
      {
-      "value": "Web development",
-      "source_quote": "Our work covered web development for Litware."
+      "value": "Digital public services",
+      "source_quote": "The scope was a single citizen portal where residents sign in once, submit applications online, upload documents and follow the status of each case."
      },
      {
       "value": "Accessibility",
-      "source_quote": "Our work covered accessibility for Litware."
+      "source_quote": "Sign in uses OpenID Connect with the national identity provider, and the portal meets WCAG 2.1 level AA for accessibility."
+     },
+     {
+      "value": "Content design",
+      "source_quote": "The team had 6 people, including two developers, a designer, a content specialist, a tester and a delivery lead."
      }
     ],
     "tech_stack": [
      {
-      "value": "React",
-      "source_quote": "The stack used React and Node.js in production."
+      "value": "Python",
+      "source_quote": "Deliverables were the portal, an application form builder for the service teams, a status tracker, and a notification service built with Python and PostgreSQL."
      },
      {
-      "value": "Node.js",
-      "source_quote": "The stack used React and Node.js in production."
+      "value": "PostgreSQL",
+      "source_quote": "Deliverables were the portal, an application form builder for the service teams, a status tracker, and a notification service built with Python and PostgreSQL."
+     }
+    ],
+    "tech_references": [
+     {
+      "value": "OpenID Connect",
+      "source_quote": "Sign in uses OpenID Connect with the national identity provider, and the portal meets WCAG 2.1 level AA for accessibility."
+     },
+     {
+      "value": "WCAG 2.1",
+      "source_quote": "Sign in uses OpenID Connect with the national identity provider, and the portal meets WCAG 2.1 level AA for accessibility."
      }
     ],
     "outcomes": [
      {
-      "metric": "online self-service",
-      "value": "lifted online self-service to 71 percent",
-      "source_quote": "The new platform lifted online self-service to 71 percent."
+      "metric": "median wait for a decision",
+      "value": "fell from 23 days to 9 days",
+      "source_quote": "Median wait for a decision fell from 23 days to 9 days, and 71 percent of applications are now submitted online."
+     },
+     {
+      "metric": "applications submitted online",
+      "value": "71 percent",
+      "source_quote": "Median wait for a decision fell from 23 days to 9 days, and 71 percent of applications are now submitted online."
+     },
+     {
+      "metric": "monthly status calls",
+      "value": "fell from about 1,200 to about 300",
+      "source_quote": "Status calls to the call centre fell from about 1,200 to about 300 each month."
      }
     ],
+    "points": {
+     "challenge": [
+      {
+       "value": "Three websites and two offices for one resident",
+       "source_quote": "Residents had to visit three separate websites and two offices to apply for permits, benefits and housing support, and each asked for the same documents again."
+      },
+      {
+       "value": "Paper and email applications with a 23 day wait",
+       "source_quote": "Applications arrived on paper or by email, and case officers typed them into the register, which caused errors and a median wait of 23 days."
+      },
+      {
+       "value": "No visible status and about 1,200 status calls each month",
+       "source_quote": "Residents could not see where their application was, so the call centre answered about 1,200 status calls each month."
+      },
+      {
+       "value": "Accessibility complaints",
+       "source_quote": "Accessibility complaints were rising, because the old websites did not work well with screen readers or on small phones."
+      }
+     ],
+     "solution": [
+      {
+       "value": "One portal with a single sign in",
+       "source_quote": "The scope was a single citizen portal where residents sign in once, submit applications online, upload documents and follow the status of each case."
+      },
+      {
+       "value": "Portal, form builder, status tracker and notifications",
+       "source_quote": "Deliverables were the portal, an application form builder for the service teams, a status tracker, and a notification service built with Python and PostgreSQL."
+      },
+      {
+       "value": "OpenID Connect sign in and WCAG 2.1 level AA",
+       "source_quote": "Sign in uses OpenID Connect with the national identity provider, and the portal meets WCAG 2.1 level AA for accessibility."
+      },
+      {
+       "value": "Case register kept in place",
+       "source_quote": "The case register used by the officers stayed in place, and the portal sends each application to it through its existing import."
+      }
+     ],
+     "implementation": [
+      {
+       "value": "Three phases over 9 months",
+       "source_quote": "The project took 9 months in three phases: research and design, a pilot with housing support, and the launch of permits and benefits."
+      },
+      {
+       "value": "Team of 6 people",
+       "source_quote": "The team had 6 people, including two developers, a designer, a content specialist, a tester and a delivery lead."
+      },
+      {
+       "value": "February 2024 to October 2024 with a pilot in June",
+       "source_quote": "Work started in February 2024, the housing pilot opened in June 2024, and the full launch took place in October 2024."
+      },
+      {
+       "value": "Usability sessions after every sprint",
+       "source_quote": "Residents and case officers took part in usability sessions after every sprint, and 14 sessions were held in total."
+      }
+     ]
+    },
+    "prose": {
+     "challenge": {
+      "text": "Residents of Litware's region had to visit three separate websites and two offices to apply for permits, benefits and housing support, and each one asked for the same documents again. Applications arrived on paper or by email and were typed into the register by case officers, which caused errors and a median wait of 23 days. Because residents could not see where their application was, the call centre answered about 1,200 status calls each month. Accessibility complaints were also rising, since the old websites did not work well with screen readers or on small phones.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "solution": {
+      "text": "Litware introduced a single citizen portal where residents sign in once, submit applications online, upload documents and follow the status of each case. The delivery included the portal itself, an application form builder for the service teams, a status tracker and a notification service built with Python and PostgreSQL. Sign in uses OpenID Connect with the national identity provider, and the portal meets WCAG 2.1 level AA for accessibility. The case register used by the officers stayed in place, and the portal sends each application to it through its existing import.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "implementation": {
+      "text": "The project took 9 months and was delivered in three phases: research and design, a pilot with housing support, and the launch of permits and benefits. A team of 6 people, made up of two developers, a designer, a content specialist, a tester and a delivery lead, worked from February 2024 to October 2024, with the housing pilot opening in June 2024. Residents and case officers took part in usability sessions after every sprint, and 14 sessions were held in total, which kept the design close to the people who would use it.",
+      "by_reviewer": true,
+      "flags": []
+     }
+    },
     "duration_months": {
-     "value": 12,
-     "source_quote": "The work was delivered over 12 months."
+     "value": 9,
+     "source_quote": "The project took 9 months in three phases: research and design, a pilot with housing support, and the launch of permits and benefits."
     },
     "team_size": {
-     "value": 8,
-     "source_quote": "The team had 8 engineers."
+     "value": 6,
+     "source_quote": "The team had 6 people, including two developers, a designer, a content specialist, a tester and a delivery lead."
     },
-    "summary": "Litware citizen portal project, delivered over 12 months by 8 engineers. The new platform lifted online self-service to 71 percent.",
+    "period": {
+     "start": "2024-02",
+     "end": "2024-10",
+     "source_quote": "Work started in February 2024, the housing pilot opened in June 2024, and the full launch took place in October 2024."
+    },
+    "summary": "Litware citizen portal project, delivered over 9 months by 6 people. The median wait for a decision fell from 23 days to 9 days.",
     "organisations": [
      "Litware"
     ]
    },
-   "status": "approved"
+   "status": "approved",
+   "override": true
   },
   {
    "source": "Demo: Delivery archive",
    "file": "adventure-works-booking-platform.docx",
    "paragraphs": [
     "Adventure Works booking platform project.",
-    "Adventure Works engaged us for its booking platform project.",
-    "Adventure Works operates in the travel sector.",
-    "The programme was run for the France market.",
-    "The old booking platform process was slow and relied on manual work.",
-    "We rebuilt the booking platform service as a modern, tested platform.",
-    "The work was delivered over 16 months.",
-    "The team had 10 engineers.",
-    "The stack used Azure and Cosmos DB in production.",
-    "Our work covered cloud migration for Adventure Works.",
-    "Our work covered performance tuning for Adventure Works.",
-    "The new platform cut page load time from 6 seconds to 2 seconds."
+    "Adventure Works engaged us for its booking platform project. Adventure Works is a travel operator that sells guided trips and activity holidays across Spain.",
+    "Bookings were taken in three systems, one for trips, one for activities and one for accommodation, so a customer who wanted all three had to book separately.",
+    "Availability was updated by hand each evening, and about 6 percent of bookings were rejected afterwards because the place had already been sold.",
+    "Peak season traffic slowed the website to a crawl, and the old platform was taken offline twice in one summer.",
+    "Partner guides and hotels could not see their own bookings, so they phoned the office to confirm each group.",
+    "Adventure Works wanted to sell packages that combine trips, activities and rooms in one basket, with prices that change with demand.",
+    "The scope was a booking platform that sells trips, activities and accommodation in one basket with live availability.",
+    "Deliverables were a booking service, an inventory service that holds live availability, a payment integration, a partner portal and a customer web and mobile front end.",
+    "Partners manage their own availability in the portal, and a change is visible to customers within seconds.",
+    "The platform supports package pricing and seasonal rules, which the commercial team maintains without developer help.",
+    "Accounting and the customer relationship system remained as they were and receive booking events from the platform.",
+    "Scope decisions were taken by the product manager with the commercial director, and anything that did not help the combined basket or the partner portal was moved to a later list.",
+    "Delivery took 12 months in four phases: foundation, trips, activities and accommodation, and the partner portal.",
+    "The team had 11 people, including five developers, two testers, a designer, a product manager and two operations specialists from Adventure Works.",
+    "The programme began in May 2023, the first trips were sold on the new platform in November 2023, and the partner portal opened in April 2024.",
+    "A load test at three times the previous peak was run before every release in the final three months.",
+    "Trips moved first because they were the biggest product line, and each later product followed after two weeks of stable running.",
+    "The platform runs on Azure with services deployed as containers on Kubernetes, and it scales out automatically during peak season.",
+    "Availability is held in Redis for fast reads and written to PostgreSQL, and a reservation is held for 15 minutes while the customer pays.",
+    "Payments go through a card payment provider that applies the strong customer authentication required by PSD2, and the platform never stores card numbers.",
+    "Events about each booking are published to Kafka for accounting and the customer relationship system, and the front end is built in React.",
+    "The partner portal signs users in with SAML or OAuth 2.0, and the booking API follows the OpenAPI 3.0 specification.",
+    "Online conversion rose from 2.1 percent to 3.4 percent of visits after the launch of the combined basket.",
+    "Rejected bookings after payment fell from 6 percent to under 1 percent.",
+    "The platform handled the summer peak of 2024, with 4 times the daily bookings of an average day, without an outage.",
+    "Holding a reservation for a short time while the customer paid removed most double sales, and the team recommends it for any shared inventory.",
+    "Partners asked for mobile access to the portal late in the project, so a mobile first design would have saved time.",
+    "The operations team now reviews booking and availability figures each Monday, and the platform dashboards were designed around the questions that review asks.",
+    "The commercial director chaired a fortnightly review where the product manager showed working software and the sales team gave feedback on the basket."
    ],
    "case": {
     "title": {
@@ -1289,83 +1433,277 @@
     },
     "client_mention": {
      "value": "Adventure Works",
-     "source_quote": "Adventure Works engaged us for its booking platform project."
+     "source_quote": "Adventure Works engaged us for its booking platform project. Adventure Works is a travel operator that sells guided trips and activity holidays across Spain."
     },
     "industry": {
      "value": "Travel",
-     "source_quote": "Adventure Works operates in the travel sector."
+     "source_quote": "Adventure Works engaged us for its booking platform project. Adventure Works is a travel operator that sells guided trips and activity holidays across Spain."
     },
     "region": {
-     "value": "France",
-     "source_quote": "The programme was run for the France market."
+     "value": "Spain",
+     "source_quote": "Adventure Works engaged us for its booking platform project. Adventure Works is a travel operator that sells guided trips and activity holidays across Spain."
     },
     "engagement_type": {},
     "challenge": {
-     "value": "Manual, slow booking platform process",
-     "source_quote": "The old booking platform process was slow and relied on manual work."
+     "value": "Three booking systems for one holiday",
+     "source_quote": "Bookings were taken in three systems, one for trips, one for activities and one for accommodation, so a customer who wanted all three had to book separately."
     },
     "solution": {
-     "value": "Rebuilt booking platform as a tested platform",
-     "source_quote": "We rebuilt the booking platform service as a modern, tested platform."
+     "value": "One booking platform with live availability",
+     "source_quote": "The scope was a booking platform that sells trips, activities and accommodation in one basket with live availability."
+    },
+    "implementation": {
+     "value": "Four phases over 12 months",
+     "source_quote": "Delivery took 12 months in four phases: foundation, trips, activities and accommodation, and the partner portal."
+    },
+    "configuration": {
+     "value": "Azure and Kubernetes with automatic scaling",
+     "source_quote": "The platform runs on Azure with services deployed as containers on Kubernetes, and it scales out automatically during peak season."
+    },
+    "lessons_learned": {
+     "value": "Short reservations removed double sales",
+     "source_quote": "Holding a reservation for a short time while the customer paid removed most double sales, and the team recommends it for any shared inventory."
     },
     "capabilities": [
      {
-      "value": "Cloud migration",
-      "source_quote": "Our work covered cloud migration for Adventure Works."
+      "value": "Online booking",
+      "source_quote": "The scope was a booking platform that sells trips, activities and accommodation in one basket with live availability."
      },
      {
-      "value": "Performance tuning",
-      "source_quote": "Our work covered performance tuning for Adventure Works."
+      "value": "Inventory management",
+      "source_quote": "Deliverables were a booking service, an inventory service that holds live availability, a payment integration, a partner portal and a customer web and mobile front end."
+     },
+     {
+      "value": "Partner integration",
+      "source_quote": "Partners manage their own availability in the portal, and a change is visible to customers within seconds."
      }
     ],
     "tech_stack": [
      {
       "value": "Azure",
-      "source_quote": "The stack used Azure and Cosmos DB in production."
+      "source_quote": "The platform runs on Azure with services deployed as containers on Kubernetes, and it scales out automatically during peak season."
      },
      {
-      "value": "Cosmos DB",
-      "source_quote": "The stack used Azure and Cosmos DB in production."
+      "value": "Kubernetes",
+      "source_quote": "The platform runs on Azure with services deployed as containers on Kubernetes, and it scales out automatically during peak season."
+     },
+     {
+      "value": "Redis",
+      "source_quote": "Availability is held in Redis for fast reads and written to PostgreSQL, and a reservation is held for 15 minutes while the customer pays."
+     },
+     {
+      "value": "PostgreSQL",
+      "source_quote": "Availability is held in Redis for fast reads and written to PostgreSQL, and a reservation is held for 15 minutes while the customer pays."
+     },
+     {
+      "value": "Kafka",
+      "source_quote": "Events about each booking are published to Kafka for accounting and the customer relationship system, and the front end is built in React."
+     },
+     {
+      "value": "React",
+      "source_quote": "Events about each booking are published to Kafka for accounting and the customer relationship system, and the front end is built in React."
+     }
+    ],
+    "tech_references": [
+     {
+      "value": "PSD2",
+      "source_quote": "Payments go through a card payment provider that applies the strong customer authentication required by PSD2, and the platform never stores card numbers."
+     },
+     {
+      "value": "SAML",
+      "source_quote": "The partner portal signs users in with SAML or OAuth 2.0, and the booking API follows the OpenAPI 3.0 specification."
+     },
+     {
+      "value": "OAuth 2.0",
+      "source_quote": "The partner portal signs users in with SAML or OAuth 2.0, and the booking API follows the OpenAPI 3.0 specification."
+     },
+     {
+      "value": "OpenAPI 3.0",
+      "source_quote": "The partner portal signs users in with SAML or OAuth 2.0, and the booking API follows the OpenAPI 3.0 specification."
      }
     ],
     "outcomes": [
      {
-      "metric": "page load time",
-      "value": "cut page load time from 6 seconds to 2 seconds",
-      "source_quote": "The new platform cut page load time from 6 seconds to 2 seconds."
+      "metric": "online conversion",
+      "value": "rose from 2.1 percent to 3.4 percent of visits",
+      "source_quote": "Online conversion rose from 2.1 percent to 3.4 percent of visits after the launch of the combined basket."
+     },
+     {
+      "metric": "rejected bookings after payment",
+      "value": "fell from 6 percent to under 1 percent",
+      "source_quote": "Rejected bookings after payment fell from 6 percent to under 1 percent."
+     },
+     {
+      "metric": "summer peak load",
+      "value": "4 times the daily bookings of an average day without an outage",
+      "source_quote": "The platform handled the summer peak of 2024, with 4 times the daily bookings of an average day, without an outage."
      }
     ],
+    "points": {
+     "challenge": [
+      {
+       "value": "Three booking systems for one holiday",
+       "source_quote": "Bookings were taken in three systems, one for trips, one for activities and one for accommodation, so a customer who wanted all three had to book separately."
+      },
+      {
+       "value": "Manual availability and 6 percent of bookings rejected",
+       "source_quote": "Availability was updated by hand each evening, and about 6 percent of bookings were rejected afterwards because the place had already been sold."
+      },
+      {
+       "value": "Website outages at peak",
+       "source_quote": "Peak season traffic slowed the website to a crawl, and the old platform was taken offline twice in one summer."
+      },
+      {
+       "value": "Partners with no view of their bookings",
+       "source_quote": "Partner guides and hotels could not see their own bookings, so they phoned the office to confirm each group."
+      },
+      {
+       "value": "Demand for combined packages",
+       "source_quote": "Adventure Works wanted to sell packages that combine trips, activities and rooms in one basket, with prices that change with demand."
+      }
+     ],
+     "solution": [
+      {
+       "value": "One booking platform with live availability",
+       "source_quote": "The scope was a booking platform that sells trips, activities and accommodation in one basket with live availability."
+      },
+      {
+       "value": "Booking, inventory, payments, partner portal and front end",
+       "source_quote": "Deliverables were a booking service, an inventory service that holds live availability, a payment integration, a partner portal and a customer web and mobile front end."
+      },
+      {
+       "value": "Partners manage their own availability",
+       "source_quote": "Partners manage their own availability in the portal, and a change is visible to customers within seconds."
+      },
+      {
+       "value": "Package pricing and seasonal rules",
+       "source_quote": "The platform supports package pricing and seasonal rules, which the commercial team maintains without developer help."
+      },
+      {
+       "value": "Accounting and customer relationship system kept",
+       "source_quote": "Accounting and the customer relationship system remained as they were and receive booking events from the platform."
+      }
+     ],
+     "implementation": [
+      {
+       "value": "Four phases over 12 months",
+       "source_quote": "Delivery took 12 months in four phases: foundation, trips, activities and accommodation, and the partner portal."
+      },
+      {
+       "value": "Team of 11 people",
+       "source_quote": "The team had 11 people, including five developers, two testers, a designer, a product manager and two operations specialists from Adventure Works."
+      },
+      {
+       "value": "May 2023 to April 2024",
+       "source_quote": "The programme began in May 2023, the first trips were sold on the new platform in November 2023, and the partner portal opened in April 2024."
+      },
+      {
+       "value": "Load tests at three times the previous peak",
+       "source_quote": "A load test at three times the previous peak was run before every release in the final three months."
+      },
+      {
+       "value": "Trips first, then other products",
+       "source_quote": "Trips moved first because they were the biggest product line, and each later product followed after two weeks of stable running."
+      }
+     ],
+     "configuration": [
+      {
+       "value": "Azure and Kubernetes with automatic scaling",
+       "source_quote": "The platform runs on Azure with services deployed as containers on Kubernetes, and it scales out automatically during peak season."
+      },
+      {
+       "value": "Redis availability with PostgreSQL and timed reservations",
+       "source_quote": "Availability is held in Redis for fast reads and written to PostgreSQL, and a reservation is held for 15 minutes while the customer pays."
+      },
+      {
+       "value": "Card payments with strong customer authentication",
+       "source_quote": "Payments go through a card payment provider that applies the strong customer authentication required by PSD2, and the platform never stores card numbers."
+      },
+      {
+       "value": "Kafka booking events and a React front end",
+       "source_quote": "Events about each booking are published to Kafka for accounting and the customer relationship system, and the front end is built in React."
+      },
+      {
+       "value": "Partner sign in and booking API standard",
+       "source_quote": "The partner portal signs users in with SAML or OAuth 2.0, and the booking API follows the OpenAPI 3.0 specification."
+      }
+     ]
+    },
+    "prose": {
+     "challenge": {
+      "text": "Adventure Works took bookings in three systems, one for trips, one for activities and one for accommodation, so a customer who wanted all three had to book separately. Availability was updated by hand each evening, and about 6 percent of bookings were rejected afterwards because the place had already been sold. At peak season the website slowed to a crawl and the old platform was taken offline twice in one summer, while partner guides and hotels could not see their own bookings and phoned the office to confirm each group. The business also wanted to sell packages that combine trips, activities and rooms in one basket, with prices that change with demand.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "solution": {
+      "text": "Adventure Works replaced the three systems with one booking platform that sells trips, activities and accommodation in one basket with live availability. Delivery covered a booking service, an inventory service that holds live availability, a payment integration, a partner portal and a customer web and mobile front end. Partners manage their own availability in the portal, and a change is visible to customers within seconds. The platform supports package pricing and seasonal rules that the commercial team maintains without developer help, while accounting and the customer relationship system remained as they were and receive booking events from the platform.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "implementation": {
+      "text": "Delivery took 12 months in four phases: foundation, trips, activities and accommodation, and the partner portal. The team of 11 people included five developers, two testers, a designer, a product manager and two operations specialists from Adventure Works. The programme began in May 2023, the first trips were sold on the new platform in November 2023, and the partner portal opened in April 2024. Trips moved first because they were the biggest product line, and each later product followed after two weeks of stable running. Before every release in the final three months, a load test at three times the previous peak was run.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "configuration": {
+      "text": "The platform runs on Azure, with services deployed as containers on Kubernetes that scale out automatically during peak season. Availability is held in Redis for fast reads and written to PostgreSQL, and a reservation is held for 15 minutes while the customer pays. Payments go through a card payment provider that applies the strong customer authentication required by PSD2, and the platform never stores card numbers. Events about each booking are published to Kafka for accounting and the customer relationship system, and the front end is built in React. The partner portal signs users in with SAML or OAuth 2.0, and the booking API follows the OpenAPI 3.0 specification.",
+      "by_reviewer": true,
+      "flags": []
+     }
+    },
     "duration_months": {
-     "value": 16,
-     "source_quote": "The work was delivered over 16 months."
+     "value": 12,
+     "source_quote": "Delivery took 12 months in four phases: foundation, trips, activities and accommodation, and the partner portal."
     },
     "team_size": {
-     "value": 10,
-     "source_quote": "The team had 10 engineers."
+     "value": 11,
+     "source_quote": "The team had 11 people, including five developers, two testers, a designer, a product manager and two operations specialists from Adventure Works."
     },
-    "summary": "Adventure Works booking platform project, delivered over 16 months by 10 engineers. The new platform cut page load time from 6 seconds to 2 seconds.",
+    "period": {
+     "start": "2023-05",
+     "end": "2024-04",
+     "source_quote": "The programme began in May 2023, the first trips were sold on the new platform in November 2023, and the partner portal opened in April 2024."
+    },
+    "summary": "Adventure Works booking platform project, delivered over 12 months by 11 people. Rejected bookings after payment fell from 6 percent to under 1 percent.",
     "organisations": [
      "Adventure Works"
     ]
    },
-   "status": "approved"
+   "status": "approved",
+   "diagram": true
   },
   {
    "source": "Demo: Bid library",
    "file": "wide-world-importers-order-automation.docx",
    "paragraphs": [
     "Wide World Importers order automation project.",
-    "Wide World Importers engaged us for its order automation project.",
-    "Wide World Importers operates in the wholesale sector.",
-    "The programme was run for the Spain market.",
-    "The old order automation process was slow and relied on manual work.",
-    "We rebuilt the order automation service as a modern, tested platform.",
-    "The work was delivered over 9 months.",
-    "The team had 4 engineers.",
-    "The stack used Python and RabbitMQ in production.",
-    "Our work covered process automation for Wide World Importers.",
-    "Our work covered integration for Wide World Importers.",
-    "The new platform automated 64 percent of manual orders."
+    "Wide World Importers engaged us for its order automation project. Wide World Importers is a wholesale distributor of food and beverages that supplies restaurants and shops in Singapore.",
+    "Orders reached the sales desk by email, fax, phone and a customer web form, and clerks keyed each one into the order system, which took about 6 minutes for each order.",
+    "Keying errors affected 5 percent of orders, and each error led to a wrong delivery, a credit note or a phone call to the customer.",
+    "Customers could not see stock levels when they ordered, so substitutions were agreed by phone after the order was placed.",
+    "The sales desk worked until late every Thursday because restaurants placed their weekend orders at the last moment, and temporary staff were hired each month.",
+    "The scope was an order automation service that reads orders from email and the web form, matches them to products and customers, and creates the order without keying.",
+    "Deliverables were an email and document reader, a product matching service, a customer web portal with live stock, and an exceptions queue for the sales desk.",
+    "Orders that match with high confidence go straight through, and the rest wait in the queue with the suggested match shown for a clerk to confirm.",
+    "The portal shows stock levels and suggests substitutes when a product is not available, so the customer can decide at once.",
+    "The warehouse system and the finance system stayed the same, and the new service sends them orders through their existing interfaces.",
+    "The project did not change the way the warehouse picks or delivers goods, and the sales desk kept authority to override any order created by the service.",
+    "The project was delivered in 8 months in three phases: reading and matching, the exceptions queue, and the customer portal.",
+    "The team had 6 people, including a machine learning engineer, two developers, a tester, a business analyst and a delivery lead.",
+    "Work started in January 2024, the first customers went through the automatic flow in May 2024, and the portal launched in August 2024.",
+    "The matching service was trained on 18 months of past orders, and the sales desk reviewed its mistakes each week.",
+    "Phone orders were left for the last stage and are still taken by clerks, who now enter them in the portal.",
+    "A document reader extracts the lines from emails and attachments, and a Python service matches them to the product catalogue using text similarity.",
+    "Orders and the exceptions queue are stored in PostgreSQL, and a message queue on RabbitMQ decouples the reader from the order system.",
+    "The customer portal is built with Angular and calls a REST service, and customers sign in with accounts managed in Active Directory.",
+    "Orders are sent to the warehouse and finance systems as messages in the EDIFACT standard.",
+    "The share of orders created without keying rose to 82 percent within three months of launch.",
+    "Order errors fell from 5 percent to 1 percent, and credit notes for wrong deliveries fell by two thirds.",
+    "The sales desk no longer works late on Thursdays, and no temporary staff were hired in the year after launch.",
+    "Reviewing the matching mistakes every week built trust with the sales desk and improved accuracy faster than any change to the model.",
+    "Customers sent orders in many informal styles, so collecting real examples first was more useful than designing a clean input format.",
+    "The managing director followed progress through a one page report each month, which showed the share of orders handled automatically and the open exceptions.",
+    "The sales desk staff were involved from the first week, and two of the clerks became the owners of the exceptions queue after the launch."
    ],
    "case": {
     "title": {
@@ -1374,83 +1712,255 @@
     },
     "client_mention": {
      "value": "Wide World Importers",
-     "source_quote": "Wide World Importers engaged us for its order automation project."
+     "source_quote": "Wide World Importers engaged us for its order automation project. Wide World Importers is a wholesale distributor of food and beverages that supplies restaurants and shops in Singapore."
     },
     "industry": {
-     "value": "Wholesale",
-     "source_quote": "Wide World Importers operates in the wholesale sector."
+     "value": "Wholesale distribution",
+     "source_quote": "Wide World Importers engaged us for its order automation project. Wide World Importers is a wholesale distributor of food and beverages that supplies restaurants and shops in Singapore."
     },
     "region": {
-     "value": "Spain",
-     "source_quote": "The programme was run for the Spain market."
+     "value": "Singapore",
+     "source_quote": "Wide World Importers engaged us for its order automation project. Wide World Importers is a wholesale distributor of food and beverages that supplies restaurants and shops in Singapore."
     },
     "engagement_type": {},
     "challenge": {
-     "value": "Manual, slow order automation process",
-     "source_quote": "The old order automation process was slow and relied on manual work."
+     "value": "Orders by email, fax, phone and web form, keyed by hand",
+     "source_quote": "Orders reached the sales desk by email, fax, phone and a customer web form, and clerks keyed each one into the order system, which took about 6 minutes for each order."
     },
     "solution": {
-     "value": "Rebuilt order automation as a tested platform",
-     "source_quote": "We rebuilt the order automation service as a modern, tested platform."
+     "value": "Automatic reading, matching and order creation",
+     "source_quote": "The scope was an order automation service that reads orders from email and the web form, matches them to products and customers, and creates the order without keying."
+    },
+    "implementation": {
+     "value": "Three phases over 8 months",
+     "source_quote": "The project was delivered in 8 months in three phases: reading and matching, the exceptions queue, and the customer portal."
+    },
+    "configuration": {
+     "value": "Document reader and Python matching service",
+     "source_quote": "A document reader extracts the lines from emails and attachments, and a Python service matches them to the product catalogue using text similarity."
+    },
+    "lessons_learned": {
+     "value": "Weekly review of mistakes built trust and accuracy",
+     "source_quote": "Reviewing the matching mistakes every week built trust with the sales desk and improved accuracy faster than any change to the model."
     },
     "capabilities": [
      {
-      "value": "Process automation",
-      "source_quote": "Our work covered process automation for Wide World Importers."
+      "value": "Order automation",
+      "source_quote": "The scope was an order automation service that reads orders from email and the web form, matches them to products and customers, and creates the order without keying."
      },
      {
-      "value": "Integration",
-      "source_quote": "Our work covered integration for Wide World Importers."
+      "value": "Document processing",
+      "source_quote": "Deliverables were an email and document reader, a product matching service, a customer web portal with live stock, and an exceptions queue for the sales desk."
+     },
+     {
+      "value": "Customer self service",
+      "source_quote": "The portal shows stock levels and suggests substitutes when a product is not available, so the customer can decide at once."
      }
     ],
     "tech_stack": [
      {
       "value": "Python",
-      "source_quote": "The stack used Python and RabbitMQ in production."
+      "source_quote": "A document reader extracts the lines from emails and attachments, and a Python service matches them to the product catalogue using text similarity."
+     },
+     {
+      "value": "PostgreSQL",
+      "source_quote": "Orders and the exceptions queue are stored in PostgreSQL, and a message queue on RabbitMQ decouples the reader from the order system."
      },
      {
       "value": "RabbitMQ",
-      "source_quote": "The stack used Python and RabbitMQ in production."
+      "source_quote": "Orders and the exceptions queue are stored in PostgreSQL, and a message queue on RabbitMQ decouples the reader from the order system."
+     },
+     {
+      "value": "Angular",
+      "source_quote": "The customer portal is built with Angular and calls a REST service, and customers sign in with accounts managed in Active Directory."
+     }
+    ],
+    "tech_references": [
+     {
+      "value": "EDIFACT",
+      "source_quote": "Orders are sent to the warehouse and finance systems as messages in the EDIFACT standard."
+     },
+     {
+      "value": "Active Directory",
+      "source_quote": "The customer portal is built with Angular and calls a REST service, and customers sign in with accounts managed in Active Directory."
      }
     ],
     "outcomes": [
      {
-      "metric": "manual orders",
-      "value": "automated 64 percent of manual orders",
-      "source_quote": "The new platform automated 64 percent of manual orders."
+      "metric": "orders created without keying",
+      "value": "82 percent within three months of launch",
+      "source_quote": "The share of orders created without keying rose to 82 percent within three months of launch."
+     },
+     {
+      "metric": "order error rate",
+      "value": "fell from 5 percent to 1 percent",
+      "source_quote": "Order errors fell from 5 percent to 1 percent, and credit notes for wrong deliveries fell by two thirds."
+     },
+     {
+      "metric": "temporary staff for the sales desk",
+      "value": "none hired in the year after launch",
+      "source_quote": "The sales desk no longer works late on Thursdays, and no temporary staff were hired in the year after launch."
      }
     ],
+    "points": {
+     "challenge": [
+      {
+       "value": "Orders by email, fax, phone and web form, keyed by hand",
+       "source_quote": "Orders reached the sales desk by email, fax, phone and a customer web form, and clerks keyed each one into the order system, which took about 6 minutes for each order."
+      },
+      {
+       "value": "Keying errors in 5 percent of orders",
+       "source_quote": "Keying errors affected 5 percent of orders, and each error led to a wrong delivery, a credit note or a phone call to the customer."
+      },
+      {
+       "value": "No stock visibility when ordering",
+       "source_quote": "Customers could not see stock levels when they ordered, so substitutions were agreed by phone after the order was placed."
+      },
+      {
+       "value": "Late Thursdays and temporary staff",
+       "source_quote": "The sales desk worked until late every Thursday because restaurants placed their weekend orders at the last moment, and temporary staff were hired each month."
+      }
+     ],
+     "solution": [
+      {
+       "value": "Automatic reading, matching and order creation",
+       "source_quote": "The scope was an order automation service that reads orders from email and the web form, matches them to products and customers, and creates the order without keying."
+      },
+      {
+       "value": "Reader, matching service, customer portal and exceptions queue",
+       "source_quote": "Deliverables were an email and document reader, a product matching service, a customer web portal with live stock, and an exceptions queue for the sales desk."
+      },
+      {
+       "value": "Confident matches go straight through",
+       "source_quote": "Orders that match with high confidence go straight through, and the rest wait in the queue with the suggested match shown for a clerk to confirm."
+      },
+      {
+       "value": "Stock levels and substitutes in the portal",
+       "source_quote": "The portal shows stock levels and suggests substitutes when a product is not available, so the customer can decide at once."
+      },
+      {
+       "value": "Warehouse and finance systems unchanged",
+       "source_quote": "The warehouse system and the finance system stayed the same, and the new service sends them orders through their existing interfaces."
+      }
+     ],
+     "implementation": [
+      {
+       "value": "Three phases over 8 months",
+       "source_quote": "The project was delivered in 8 months in three phases: reading and matching, the exceptions queue, and the customer portal."
+      },
+      {
+       "value": "Team of 6 people",
+       "source_quote": "The team had 6 people, including a machine learning engineer, two developers, a tester, a business analyst and a delivery lead."
+      },
+      {
+       "value": "January 2024 to August 2024",
+       "source_quote": "Work started in January 2024, the first customers went through the automatic flow in May 2024, and the portal launched in August 2024."
+      },
+      {
+       "value": "Training on 18 months of past orders",
+       "source_quote": "The matching service was trained on 18 months of past orders, and the sales desk reviewed its mistakes each week."
+      },
+      {
+       "value": "Phone orders last",
+       "source_quote": "Phone orders were left for the last stage and are still taken by clerks, who now enter them in the portal."
+      }
+     ],
+     "configuration": [
+      {
+       "value": "Document reader and Python matching service",
+       "source_quote": "A document reader extracts the lines from emails and attachments, and a Python service matches them to the product catalogue using text similarity."
+      },
+      {
+       "value": "PostgreSQL and RabbitMQ",
+       "source_quote": "Orders and the exceptions queue are stored in PostgreSQL, and a message queue on RabbitMQ decouples the reader from the order system."
+      },
+      {
+       "value": "Angular portal with Active Directory sign in",
+       "source_quote": "The customer portal is built with Angular and calls a REST service, and customers sign in with accounts managed in Active Directory."
+      },
+      {
+       "value": "EDIFACT messages to warehouse and finance",
+       "source_quote": "Orders are sent to the warehouse and finance systems as messages in the EDIFACT standard."
+      }
+     ]
+    },
+    "prose": {
+     "challenge": {
+      "text": "Orders reached the sales desk of Wide World Importers by email, fax, phone and a customer web form, and clerks keyed each one into the order system, which took about 6 minutes for each order. Keying errors affected 5 percent of orders, and each error led to a wrong delivery, a credit note or a phone call to the customer. Customers could not see stock levels when they ordered, so substitutions were agreed by phone after the order was placed. The sales desk also worked until late every Thursday because restaurants placed their weekend orders at the last moment, and temporary staff were hired each month.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "solution": {
+      "text": "Wide World Importers introduced an order automation service that reads orders from email and the web form, matches them to products and customers, and creates the order without keying. The solution comprised an email and document reader, a product matching service, a customer web portal with live stock, and an exceptions queue for the sales desk. Orders that match with high confidence go straight through, and the rest wait in the queue with the suggested match shown for a clerk to confirm. The portal shows stock levels and suggests substitutes when a product is not available, so the customer can decide at once. The warehouse system and the finance system stayed the same.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "implementation": {
+      "text": "The project was delivered in 8 months in three phases: reading and matching, the exceptions queue, and the customer portal. A team of 6 people, including a machine learning engineer, two developers, a tester, a business analyst and a delivery lead, started work in January 2024. The first customers went through the automatic flow in May 2024 and the portal launched in August 2024. The matching service was trained on 18 months of past orders, and the sales desk reviewed its mistakes each week. Phone orders were left for the last stage and are still taken by clerks, who now enter them in the portal.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "configuration": {
+      "text": "Order lines are read by a document reader that extracts them from emails and attachments, after which a Python service matches them to the product catalogue using text similarity. Orders and the exceptions queue are stored in PostgreSQL, while a message queue on RabbitMQ decouples the reader from the order system. Customers use a portal built with Angular that calls a REST service, and they sign in with accounts managed in Active Directory. The warehouse and finance systems receive orders as messages in the EDIFACT standard.",
+      "by_reviewer": true,
+      "flags": []
+     }
+    },
     "duration_months": {
-     "value": 9,
-     "source_quote": "The work was delivered over 9 months."
+     "value": 8,
+     "source_quote": "The project was delivered in 8 months in three phases: reading and matching, the exceptions queue, and the customer portal."
     },
     "team_size": {
-     "value": 4,
-     "source_quote": "The team had 4 engineers."
+     "value": 6,
+     "source_quote": "The team had 6 people, including a machine learning engineer, two developers, a tester, a business analyst and a delivery lead."
     },
-    "summary": "Wide World Importers order automation project, delivered over 9 months by 4 engineers. The new platform automated 64 percent of manual orders.",
+    "period": {
+     "start": "2024-01",
+     "end": "2024-08",
+     "source_quote": "Work started in January 2024, the first customers went through the automatic flow in May 2024, and the portal launched in August 2024."
+    },
+    "summary": "Wide World Importers order automation project, delivered over 8 months by 6 people. The share of orders created without keying rose to 82 percent.",
     "organisations": [
      "Wide World Importers"
     ]
    },
-   "status": "approved"
+   "status": "approved",
+   "diagram": true
   },
   {
    "source": "Demo: Delivery archive",
    "file": "proseware-billing-modernisation.docx",
    "paragraphs": [
     "Proseware billing modernisation project.",
-    "Proseware engaged us for its billing modernisation project.",
-    "Proseware operates in the software sector.",
-    "The programme was run for the Ireland market.",
-    "The old billing modernisation process was slow and relied on manual work.",
-    "We rebuilt the billing modernisation service as a modern, tested platform.",
-    "The work was delivered over 15 months.",
-    "The team had 9 engineers.",
-    "The stack used Scala and Spark in production.",
-    "Our work covered data engineering for Proseware.",
-    "Our work covered billing for Proseware.",
-    "The new platform shortened invoice runs from 5 days to 1 day."
+    "Proseware engaged us for its billing modernisation project. Proseware is a telecommunications provider that serves about 2 million mobile and broadband customers in Poland.",
+    "The billing system was 19 years old and ran on a platform whose vendor had announced the end of support.",
+    "A bill run took 31 hours, so errors found at the end meant waiting another day before bills could go out.",
+    "New tariffs needed code changes, which meant the marketing team waited about 4 months to launch an offer.",
+    "Customer service saw only a summary of the bill, so questions about charges were passed to a specialist team and took days to answer.",
+    "Regulators required itemised bills in a standard format, which the old system could produce only through a manual export.",
+    "The scope was a new billing platform that rates usage, applies tariffs and discounts, produces bills and feeds the ledger.",
+    "Deliverables were a rating engine, a tariff configuration tool for marketing, a bill generator, and a billing view for customer service.",
+    "The tariff tool lets marketing define plans, bundles and discounts without code changes, with a test mode that shows the effect on sample accounts.",
+    "Customer service sees every charge on a bill with an explanation, and can correct a charge with an approval step.",
+    "The network mediation system, which supplies the usage records, and the general ledger stayed as they were.",
+    "Security, audit and data protection requirements were agreed with the compliance team before design started, and each release was checked against them before it went to production.",
+    "Delivery took 20 months in five phases, beginning with prepaid products and ending with the largest postpaid segment.",
+    "The team had 22 people at its peak, including developers, testers, data migration specialists and business analysts, with a Proseware product owner.",
+    "The programme started in October 2022 and the last postpaid accounts were moved in May 2024.",
+    "Every phase ran a parallel bill run, in which old and new systems billed the same accounts and the differences were explained before the move.",
+    "Customer accounts were moved in waves of about 100,000, each followed by a week of close monitoring.",
+    "The rating engine runs on Java services on Kubernetes and processes usage records from a Kafka stream as they arrive.",
+    "Account and bill data is stored in Oracle with partitioning by month, and a copy is streamed to a reporting database.",
+    "Usage records follow the 3GPP charging data record format, and the itemised bill follows the format required by the regulator.",
+    "Payment files from banks are read in the ISO 20022 format, and postings go to the general ledger every night.",
+    "The bill run now takes 4 hours instead of 31, and bills go out on the planned day in every cycle.",
+    "Marketing launches a new offer in about 3 weeks instead of 4 months, without code changes.",
+    "Billing questions answered at the first contact rose from 38 percent to 77 percent.",
+    "The old billing platform was switched off after a final archive of its bills was checked, and the saved licence and hardware costs were reported separately to the finance team.",
+    "The parallel bill runs found 140 rules that nobody had written down, and the team treats them as the most valuable part of the programme.",
+    "Moving accounts in waves meant that a problem in one wave never reached more than a small part of the customer base.",
+    "The programme report to the board each quarter listed the number of accounts moved, the open differences from parallel runs and the risks that the steering group had accepted.",
+    "A steering group of finance, marketing, customer service and technology leaders met every month, and any difference found in a parallel run was reported to it."
    ],
    "case": {
     "title": {
@@ -1459,66 +1969,224 @@
     },
     "client_mention": {
      "value": "Proseware",
-     "source_quote": "Proseware engaged us for its billing modernisation project."
+     "source_quote": "Proseware engaged us for its billing modernisation project. Proseware is a telecommunications provider that serves about 2 million mobile and broadband customers in Poland."
     },
     "industry": {
-     "value": "Software",
-     "source_quote": "Proseware operates in the software sector."
+     "value": "Telecommunications",
+     "source_quote": "Proseware engaged us for its billing modernisation project. Proseware is a telecommunications provider that serves about 2 million mobile and broadband customers in Poland."
     },
     "region": {
-     "value": "Ireland",
-     "source_quote": "The programme was run for the Ireland market."
+     "value": "Poland",
+     "source_quote": "Proseware engaged us for its billing modernisation project. Proseware is a telecommunications provider that serves about 2 million mobile and broadband customers in Poland."
     },
     "engagement_type": {},
     "challenge": {
-     "value": "Manual, slow billing modernisation process",
-     "source_quote": "The old billing modernisation process was slow and relied on manual work."
+     "value": "Billing system 19 years old and out of support",
+     "source_quote": "The billing system was 19 years old and ran on a platform whose vendor had announced the end of support."
     },
     "solution": {
-     "value": "Rebuilt billing modernisation as a tested platform",
-     "source_quote": "We rebuilt the billing modernisation service as a modern, tested platform."
+     "value": "New platform for rating, tariffs, bills and ledger",
+     "source_quote": "The scope was a new billing platform that rates usage, applies tariffs and discounts, produces bills and feeds the ledger."
+    },
+    "implementation": {
+     "value": "Five phases over 20 months",
+     "source_quote": "Delivery took 20 months in five phases, beginning with prepaid products and ending with the largest postpaid segment."
+    },
+    "configuration": {
+     "value": "Java rating engine on Kubernetes with Kafka",
+     "source_quote": "The rating engine runs on Java services on Kubernetes and processes usage records from a Kafka stream as they arrive."
+    },
+    "lessons_learned": {
+     "value": "Parallel runs found rules nobody had written down",
+     "source_quote": "The parallel bill runs found 140 rules that nobody had written down, and the team treats them as the most valuable part of the programme."
     },
     "capabilities": [
      {
-      "value": "Data engineering",
-      "source_quote": "Our work covered data engineering for Proseware."
+      "value": "Rating and charging",
+      "source_quote": "The scope was a new billing platform that rates usage, applies tariffs and discounts, produces bills and feeds the ledger."
      },
      {
-      "value": "Billing",
-      "source_quote": "Our work covered billing for Proseware."
+      "value": "Data migration",
+      "source_quote": "Customer accounts were moved in waves of about 100,000, each followed by a week of close monitoring."
+     },
+     {
+      "value": "Tariff configuration",
+      "source_quote": "The tariff tool lets marketing define plans, bundles and discounts without code changes, with a test mode that shows the effect on sample accounts."
      }
     ],
     "tech_stack": [
      {
-      "value": "Scala",
-      "source_quote": "The stack used Scala and Spark in production."
+      "value": "Java",
+      "source_quote": "The rating engine runs on Java services on Kubernetes and processes usage records from a Kafka stream as they arrive."
      },
      {
-      "value": "Spark",
-      "source_quote": "The stack used Scala and Spark in production."
+      "value": "Kubernetes",
+      "source_quote": "The rating engine runs on Java services on Kubernetes and processes usage records from a Kafka stream as they arrive."
+     },
+     {
+      "value": "Kafka",
+      "source_quote": "The rating engine runs on Java services on Kubernetes and processes usage records from a Kafka stream as they arrive."
+     },
+     {
+      "value": "Oracle",
+      "source_quote": "Account and bill data is stored in Oracle with partitioning by month, and a copy is streamed to a reporting database."
+     }
+    ],
+    "tech_references": [
+     {
+      "value": "3GPP",
+      "source_quote": "Usage records follow the 3GPP charging data record format, and the itemised bill follows the format required by the regulator."
+     },
+     {
+      "value": "ISO 20022",
+      "source_quote": "Payment files from banks are read in the ISO 20022 format, and postings go to the general ledger every night."
      }
     ],
     "outcomes": [
      {
-      "metric": "invoice runs",
-      "value": "shortened invoice runs from 5 days to 1 day",
-      "source_quote": "The new platform shortened invoice runs from 5 days to 1 day."
+      "metric": "bill run duration",
+      "value": "4 hours instead of 31",
+      "source_quote": "The bill run now takes 4 hours instead of 31, and bills go out on the planned day in every cycle."
+     },
+     {
+      "metric": "time to launch an offer",
+      "value": "about 3 weeks instead of 4 months",
+      "source_quote": "Marketing launches a new offer in about 3 weeks instead of 4 months, without code changes."
+     },
+     {
+      "metric": "billing questions answered at first contact",
+      "value": "rose from 38 percent to 77 percent",
+      "source_quote": "Billing questions answered at the first contact rose from 38 percent to 77 percent."
      }
     ],
+    "points": {
+     "challenge": [
+      {
+       "value": "Billing system 19 years old and out of support",
+       "source_quote": "The billing system was 19 years old and ran on a platform whose vendor had announced the end of support."
+      },
+      {
+       "value": "A bill run took 31 hours",
+       "source_quote": "A bill run took 31 hours, so errors found at the end meant waiting another day before bills could go out."
+      },
+      {
+       "value": "New tariffs took about 4 months",
+       "source_quote": "New tariffs needed code changes, which meant the marketing team waited about 4 months to launch an offer."
+      },
+      {
+       "value": "Customer service saw only a bill summary",
+       "source_quote": "Customer service saw only a summary of the bill, so questions about charges were passed to a specialist team and took days to answer."
+      },
+      {
+       "value": "Itemised bills only by manual export",
+       "source_quote": "Regulators required itemised bills in a standard format, which the old system could produce only through a manual export."
+      }
+     ],
+     "solution": [
+      {
+       "value": "New platform for rating, tariffs, bills and ledger",
+       "source_quote": "The scope was a new billing platform that rates usage, applies tariffs and discounts, produces bills and feeds the ledger."
+      },
+      {
+       "value": "Rating engine, tariff tool, bill generator and billing view",
+       "source_quote": "Deliverables were a rating engine, a tariff configuration tool for marketing, a bill generator, and a billing view for customer service."
+      },
+      {
+       "value": "Marketing defines plans without code changes",
+       "source_quote": "The tariff tool lets marketing define plans, bundles and discounts without code changes, with a test mode that shows the effect on sample accounts."
+      },
+      {
+       "value": "Charges explained and corrected with approval",
+       "source_quote": "Customer service sees every charge on a bill with an explanation, and can correct a charge with an approval step."
+      },
+      {
+       "value": "Mediation and ledger unchanged",
+       "source_quote": "The network mediation system, which supplies the usage records, and the general ledger stayed as they were."
+      }
+     ],
+     "implementation": [
+      {
+       "value": "Five phases over 20 months",
+       "source_quote": "Delivery took 20 months in five phases, beginning with prepaid products and ending with the largest postpaid segment."
+      },
+      {
+       "value": "Team of 22 people at its peak",
+       "source_quote": "The team had 22 people at its peak, including developers, testers, data migration specialists and business analysts, with a Proseware product owner."
+      },
+      {
+       "value": "October 2022 to May 2024",
+       "source_quote": "The programme started in October 2022 and the last postpaid accounts were moved in May 2024."
+      },
+      {
+       "value": "Parallel bill runs in every phase",
+       "source_quote": "Every phase ran a parallel bill run, in which old and new systems billed the same accounts and the differences were explained before the move."
+      },
+      {
+       "value": "Waves of about 100,000 accounts",
+       "source_quote": "Customer accounts were moved in waves of about 100,000, each followed by a week of close monitoring."
+      }
+     ],
+     "configuration": [
+      {
+       "value": "Java rating engine on Kubernetes with Kafka",
+       "source_quote": "The rating engine runs on Java services on Kubernetes and processes usage records from a Kafka stream as they arrive."
+      },
+      {
+       "value": "Oracle with monthly partitioning",
+       "source_quote": "Account and bill data is stored in Oracle with partitioning by month, and a copy is streamed to a reporting database."
+      },
+      {
+       "value": "3GPP records and regulator format",
+       "source_quote": "Usage records follow the 3GPP charging data record format, and the itemised bill follows the format required by the regulator."
+      },
+      {
+       "value": "ISO 20022 payment files",
+       "source_quote": "Payment files from banks are read in the ISO 20022 format, and postings go to the general ledger every night."
+      }
+     ]
+    },
+    "prose": {
+     "challenge": {
+      "text": "The billing system at Proseware was 19 years old and ran on a platform whose vendor had announced the end of support. A bill run took 31 hours, so errors found at the end meant waiting another day before bills could go out. New tariffs needed code changes, which meant the marketing team waited about 4 months to launch an offer. Customer service saw only a summary of the bill, so questions about charges were passed to a specialist team and took days to answer, and regulators required itemised bills in a standard format that the old system could produce only through a manual export.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "solution": {
+      "text": "Proseware moved to a new billing platform that rates usage, applies tariffs and discounts, produces bills and feeds the ledger. It consisted of a rating engine, a tariff configuration tool for marketing, a bill generator and a billing view for customer service. The tariff tool lets marketing define plans, bundles and discounts without code changes, with a test mode that shows the effect on sample accounts. Customer service sees every charge on a bill with an explanation and can correct a charge with an approval step. The network mediation system, which supplies the usage records, and the general ledger stayed as they were.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "implementation": {
+      "text": "Delivery took 20 months in five phases, beginning with prepaid products and ending with the largest postpaid segment. The team had 22 people at its peak, including developers, testers, data migration specialists and business analysts, together with a product owner from Proseware. The programme started in October 2022 and the last postpaid accounts were moved in May 2024. Every phase ran a parallel bill run, in which old and new systems billed the same accounts and the differences were explained before the move, and customer accounts were moved in waves of about 100,000, each followed by a week of close monitoring.",
+      "by_reviewer": true,
+      "flags": []
+     },
+     "configuration": {
+      "text": "The rating engine runs on Java services on Kubernetes and processes usage records from a Kafka stream as they arrive, and the records follow the 3GPP charging data record format. Account and bill data is stored in Oracle with partitioning by month, and a copy is streamed to a reporting database. The itemised bill follows the format required by the regulator. Payment files from banks are read in the ISO 20022 format, and postings go to the general ledger every night. These choices cover rating, storage, bill formats and payments in turn.",
+      "by_reviewer": true,
+      "flags": []
+     }
+    },
     "duration_months": {
-     "value": 15,
-     "source_quote": "The work was delivered over 15 months."
+     "value": 20,
+     "source_quote": "Delivery took 20 months in five phases, beginning with prepaid products and ending with the largest postpaid segment."
     },
     "team_size": {
-     "value": 9,
-     "source_quote": "The team had 9 engineers."
+     "value": 22,
+     "source_quote": "The team had 22 people at its peak, including developers, testers, data migration specialists and business analysts, with a Proseware product owner."
     },
-    "summary": "Proseware billing modernisation project, delivered over 15 months by 9 engineers. The new platform shortened invoice runs from 5 days to 1 day.",
+    "period": {
+     "start": "2022-10",
+     "end": "2024-05",
+     "source_quote": "The programme started in October 2022 and the last postpaid accounts were moved in May 2024."
+    },
+    "summary": "Proseware billing modernisation project, delivered over 20 months by 22 people. The bill run now takes 4 hours instead of 31.",
     "organisations": [
      "Proseware"
     ]
    },
-   "status": "approved"
+   "status": "approved",
+   "diagram": true
   },
   {
    "source": "Demo: Bid library",

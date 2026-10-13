@@ -115,7 +115,7 @@ def test_every_quote_is_in_its_document():
     assert seed.validate(DEMO, {e["file"]: md(e) for e in DEMO["cases"]}) == []
 
 
-ALLOWED = {"ServiceNow", "Kafka", "Azure", "Kubernetes", "PostgreSQL", "SWIFT", "ISO", "SAP", "Salesforce", "Oracle",
+ALLOWED = {"OpenID Connect", "ServiceNow", "Kafka", "Azure", "Kubernetes", "PostgreSQL", "SWIFT", "ISO", "SAP", "Salesforce", "Oracle",
            "Docker", "Terraform", "Redis", "Python", "Java", "React", "Angular", "Power BI", "Active Directory",
            "Microsoft", "Google", "Amazon", "AWS", "OAuth", "OpenAPI", "REST", "GraphQL", "SAML", "Okta",
            "Snowflake", "Databricks", "Elasticsearch", "RabbitMQ", "MongoDB", "Jenkins", "GitHub", "GitLab"}
