@@ -583,3 +583,38 @@ def test_bedrock_is_never_chunked(monkeypatch):
     assert ex.chunk_chars() is None and ex.split("x" * 100_000) == ["x" * 100_000]
     monkeypatch.setenv("EXTRACT_MODEL", "ollama_chat/m")
     assert ex.chunk_chars() == (12000 - ex.MAX_TOKENS - 2000) * 3
+
+
+def reviewer_prose(did, f="solution", text="Our own write-up."):
+    with db.connect() as c:
+        data = c.execute("select data from cases where document_id=%s", (did,)).fetchone()[0]
+        data["prose"] = {f: {"text": text, "by_reviewer": True, "flags": []}}
+        c.execute("update cases set data=%s where document_id=%s", (Jsonb(data), did))
+
+
+def test_build_writes_prose_from_points_and_merges_notes(monkeypatch):
+    from app import writeup
+    q = "cut customer onboarding from 12 days to 3 days"
+    monkeypatch.setattr(ex, "complete_json", lambda *a, **k: case(("solution", "Faster onboarding", q)))
+    monkeypatch.setattr(writeup, "complete_json", lambda *a, **k: writeup.Writeup(solution="Onboarding took 9 days."))
+    c = ex.build(DOC, "internal")
+    assert c.prose["solution"].flags == ["number 9 is in no quote"]
+    assert any("solution write-up has 1 unsupported" in n for n in c.needs_attention)
+
+
+def test_reextract_keeps_reviewer_prose_over_a_new_model_one(doc, monkeypatch):
+    from app import writeup
+    q = "cut customer onboarding from 12 days to 3 days"
+    monkeypatch.setattr(writeup, "complete_json", lambda *a, **k: writeup.Writeup(solution="Onboarding was faster."))
+    run(doc, case(("solution", "Faster onboarding", q)))
+    reviewer_prose(doc[0])
+    data, *_ = run(doc, case(("solution", "Faster onboarding", q)))
+    assert data["prose"]["solution"] == {"text": "Our own write-up.", "by_reviewer": True, "flags": []}
+    assert "Solution: your write-up from before the document changed was kept; check it still holds" in data["needs_attention"]
+
+
+def test_reextract_drops_model_prose_but_keeps_reviewer_prose_when_nothing_new(doc):
+    run(doc, case())
+    reviewer_prose(doc[0], "challenge")
+    data, *_ = run(doc, case())
+    assert list(data["prose"]) == ["challenge"] and data["prose"]["challenge"]["by_reviewer"] is True

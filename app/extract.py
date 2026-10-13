@@ -3,9 +3,9 @@ import re
 
 from psycopg.types.json import Jsonb
 
-from app import db
+from app import db, writeup
 from app.llm import MAX_TOKENS, complete_json, profile
-from app.schema import FIELDS, POINT_FIELDS, Extraction, Period, ReferenceCase, Sourced, assemble, quote_in, sourced, vague_metric
+from app.schema import FIELDS, POINT_FIELDS, Extraction, Period, Prose, ReferenceCase, Sourced, assemble, quote_in, sourced, vague_metric
 
 MAX_CHARS = 400_000  # budget: longer documents are cut; chunks fit the model's context
 
@@ -194,6 +194,8 @@ def build(full_text: str, data_class: str, basis: str = "delivered", basis_reaso
         case.lessons_learned = Sourced[str]()  # nor lessons (#198)
         if n := strip_commercial(case):
             notes.append(f"{n} item(s) with prices, rates or payment terms removed")
+    writeup.write(case, data_class)  # after strip_commercial, so a price never reaches the model
+    notes += case.needs_attention
     if n := sum(vague_metric(o) for o in case.outcomes):
         notes.append(f"{n} outcome(s) with no clear metric")
     if len(full_text) > MAX_CHARS:
@@ -239,6 +241,12 @@ def extract(document_id: int, basis: str = "delivered", basis_reason: str = "", 
                 else:
                     setattr(case, f, prev)
                     case.needs_attention.append(f"{label}: your text from before the document changed was kept; check it still holds")
+        for f, label in (("challenge", "Challenge"), ("solution", "Solution"), ("implementation", "Implementation approach"),
+                         ("configuration", "Configuration and integration")):
+            prev = Prose.model_validate((old[0].get("prose") or {}).get(f) or {}) if old else Prose()
+            if prev.by_reviewer and prev.text:  # the reviewer's write-up wins over a new model one
+                case.prose[f] = prev
+                case.needs_attention.append(f"{label}: your write-up from before the document changed was kept; check it still holds")
         data = case.model_dump()
         conn.execute(
             "insert into cases(document_id, data, summary, search_text, basis, status) "
