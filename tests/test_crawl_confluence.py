@@ -28,8 +28,9 @@ class Conf:
         anc = [a if isinstance(a, tuple) else (a, "page") for a in ancestors]
         self.pages[pid] = {"id": pid, "type": "page", "title": title or f"Page {pid}", "status": "current",
                            "version": {"when": when}, "body": {"storage": {"value": html}},
-                           "ancestors": [{"id": i} for i, t in anc if t == "page"], "_v2": anc,
-                           "space": {"key": space}}
+                           "ancestors": [{"id": i, "_links": {"webui": f"/spaces/{space}/pages/{i}"}} for i, t in anc if t == "page"],
+                           "_v2": anc, "space": {"key": space},
+                           "_links": {"webui": f"/spaces/{space}/pages/{pid}", "base": "https://evil.example/wiki"}}
 
     def attach(self, pid, aid, title="spec.docx", data=b"att", size=None, when="2026-01-01T00:00:00.000Z", number=None):
         self.atts.setdefault(pid, []).append({
@@ -536,3 +537,44 @@ def test_renamed_attachment_with_same_version_shows_new_title(cf):
         title = c.execute("select title from documents where source_id=%s and external_id=%s", (cf.sid, "att:p1:a1")).fetchone()[0]
     assert title == "renamed.docx"
     assert not any("/download/" in u for u in cf.calls) and counts["skipped"] >= 2  # the page and the attachment
+
+
+def urls(sid):
+    with db.connect() as c:
+        return {r[0]: r[1:] for r in c.execute(
+            "select external_id, web_url, folder_url from documents where source_id=%s", (sid,))}
+
+
+def test_links_are_built_on_the_configured_base_not_the_forged_one(cf):
+    cf.page("p1", ancestors=["top", "mid"])
+    cf.page("top")
+    cf.page("mid")
+    cf.attach("p1", "a1")
+    crawl.crawl_confluence(cf.sid)
+    u = urls(cf.sid)
+    page = f"{BASE}/wiki/spaces/ENG/pages/p1"  # /wiki once, and not evil.example
+    assert u["page:p1"] == (page, f"{BASE}/wiki/spaces/ENG/pages/mid")
+    assert u["att:p1:a1"] == (page, page)
+    assert u["page:top"][1] is None
+
+
+def test_recheck_backfills_missing_links(cf):
+    seed(cf)
+    crawl.crawl_confluence(cf.sid)
+    with db.connect() as c:
+        c.execute("update documents set web_url=null, folder_url=null where source_id=%s", (cf.sid,))
+    crawl.crawl_confluence(cf.sid)  # nothing changed: every document goes through the re-check
+    u = urls(cf.sid)
+    assert u["page:p2"][0] == f"{BASE}/wiki/spaces/ENG/pages/p2"
+    assert u["att:p1:a1"][0] == f"{BASE}/wiki/spaces/ENG/pages/p1"
+
+
+def test_unchanged_attachment_skip_passes_its_links(cf):
+    when = "2026-01-01T00:00:00.000Z"
+    cf.page("p1", when=when)
+    cf.attach("p1", "a1", when=when, number=1)
+    crawl.crawl_confluence(cf.sid)
+    with db.connect() as c:
+        c.execute("update documents set web_url=null, folder_url=null where external_id='att:p1:a1' and source_id=%s", (cf.sid,))
+    assert crawl.crawl_confluence(cf.sid)["skipped"] >= 1  # the attachment took the skip_unchanged path
+    assert urls(cf.sid)["att:p1:a1"] == (f"{BASE}/wiki/spaces/ENG/pages/p1",) * 2

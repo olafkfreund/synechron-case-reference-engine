@@ -241,6 +241,8 @@ create index if not exists document_images_document_idx on document_images (docu
 alter table documents add column if not exists updated_at timestamptz;
 update documents set updated_at = created_at where updated_at is null;  -- keep the real age of existing documents
 alter table documents alter column updated_at set default now(), alter column updated_at set not null;
+alter table documents add column if not exists web_url text;
+alter table documents add column if not exists folder_url text;
 create index if not exists documents_updated_idx on documents (updated_at desc, id desc);
 create index if not exists cases_approved_idx on cases (approved_at desc, id desc)
   where status = 'approved' and merged_into is null;

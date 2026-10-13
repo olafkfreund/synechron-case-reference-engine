@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
 {% macro completeness(s) %}<span class="badge neutral">{% if s[0] == s[1] %}Complete{% else %}Partial · {{ s[0] }}/{{ s[1] }}{% endif %}</span>{% endmacro %}
+{% macro sources(list) %}{% if list %}<details class="mini"><summary>Source documents ({{ list | map(attribute="docs") | map("length") | sum }})</summary>
+{% for e in list %}<p class="muted" style="margin:2px 0">{{ e.label }}{% for d in e.docs %} &middot;
+{% if d.web %}<a href="/go/{{ d.id }}" target="_blank" rel="noopener noreferrer">Open</a>{% endif %}{% if d.folder %} <a href="/go/{{ d.id }}/folder" target="_blank" rel="noopener noreferrer">Open folder</a>{% endif %}{% if not d.web and not d.folder %}stored in the engine; ask a reviewer{% endif %}{% endfor %}</p>{% endfor %}</details>{% endif %}{% endmacro %}
 {% macro basis(x) %}<span class="badge neutral">{{ "Engagement (contracted scope)" if x == "engagement" else "Delivered case" }}</span>{% endmacro %}
 {% block body %}
 <div class="page-head"><div><h1>Find reference cases</h1><p>Paste the bid requirement; narrow by industry, region or technology if you like.</p></div></div>
@@ -30,6 +33,7 @@
 <div class="who"><h3 style="display:inline">{{ r.title }}</h3><span>{{ r.label }}</span></div>{{ basis(r.basis) }} {{ completeness(r.score) }}</div>
 <p class="muted" style="margin:0">{{ [r.industry, r.region] | select | join(" · ") }}{% if r.approved_at %} &middot; Approved {{ r.approved_at.strftime("%Y-%m-%d") }}{% endif %}</p>
 {% if r.tech %}<div class="row">{% for t in r.tech %}<span class="badge neutral">{{ t }}</span>{% endfor %}</div>{% endif %}
+{{ sources(r.sources) }}
 <div class="action-row">
 {% with ids=[r.id], what="Download this case" %}<form method="post" action="/generate" class="generate">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}
 <button class="btn" formaction="/preview" aria-label="Preview {{ r.title }}">Preview</button>
@@ -48,6 +52,7 @@
 <div class="who"><h3 style="display:inline">{{ p.title }}</h3><span>{{ p.label }}</span></div>{{ basis(p.basis) }} {{ completeness(p.score) }}</div>
 {% if p.reason %}<p style="margin:0"><b>Why it fits:</b> {{ p.reason }}</p>{% endif %}
 {% if p.outcomes %}<ul class="outcome-list">{% for o in p.outcomes %}<li>{{ icon("check") }}<span>{{ o }}</span></li>{% endfor %}</ul>{% endif %}
+{{ sources(p.sources) }}
 <div class="inset"><div class="t">Suggested wording &middot; not in downloads</div>{{ p.tailored }}</div>
 <div class="action-row" style="border-top:1px solid var(--line);padding-top:12px">
 {% with ids=[p.id], what="Download this case" %}<form method="post" action="/generate" class="generate">{% for i in ids %}<input type="hidden" name="case_ids" value="{{ i }}">{% endfor %}
@@ -65,5 +70,5 @@
 <div class="row" style="padding-bottom:4px"><button class="btn dark" name="format" value="pptx">{{ what }} (PowerPoint)</button> <button class="btn dark" name="format" value="pdf_docx">{{ what }} (PDF)</button> <button class="btn dark" name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button class="btn dark" name="format" value="md">{{ what }} (Markdown)</button></div></details></form>{% endwith %}{% endif %}
 {% if top %}<p class="muted" style="font-size:13px">Downloads contain the approved case record only, not the suggested wording above.</p>{% endif %}
 {% if others %}<div class="section-card"><div class="card-head"><h2>Other matches</h2></div>
-{% for o in others %}<div class="other-row"><b>{{ o.title }}</b> {{ basis(o.basis) }} {{ completeness(o.score) }} <span class="muted">({{ o.label }})</span><p>{{ o.summary }}</p></div>{% endfor %}</div>{% endif %}
+{% for o in others %}<div class="other-row"><b>{{ o.title }}</b> {{ basis(o.basis) }} {{ completeness(o.score) }} <span class="muted">({{ o.label }})</span><p>{{ o.summary }}</p>{{ sources(o.sources) }}</div>{% endfor %}</div>{% endif %}
 {% endblock %}

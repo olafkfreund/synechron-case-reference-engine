@@ -2,7 +2,7 @@ import os
 import time
 from datetime import datetime, timedelta
 from pathlib import PurePosixPath
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import boto3
 import httpx
@@ -14,6 +14,17 @@ from app.ingest import ingest, skip_unchanged
 MAX_FAILED_KEYS = 20
 # multipart uploads (DataSync) get LastModified = upload *start*, so they can land behind the cursor
 CURSOR_SLACK = timedelta(days=1)
+
+
+def safe_link(url, host) -> str | None:
+    """A source link we may render: https, the source's own host, no userinfo, default port, at most 2,000 chars (#236)."""
+    try:
+        u = urlparse(url) if isinstance(url, str) and host and len(url) <= 2000 else None
+        ok = u and u.scheme == "https" and (u.hostname or "").lower() == host.lower() \
+            and u.username is None and u.password is None and u.port in (None, 443)
+    except ValueError:  # a malformed port
+        ok = False
+    return url if ok else None
 
 
 def crawl_s3(source_id: int) -> dict:
@@ -202,6 +213,22 @@ def crawl_sharepoint(source_id: int) -> dict:
         if not root_sig:
             raise GraphError("drive root permissions are not visible; grant Sites.Selected with fullcontrol", 403)
 
+        try:  # the links must be on the drive's own host; without it every link is null
+            host = urlparse(g.get(f"{GRAPH}/drives/{drive}?$select=webUrl").json().get("webUrl") or "").hostname
+        except Exception:  # noqa: BLE001
+            host = None
+        parents = {}  # parent id -> folder link, one lookup per parent per crawl
+
+        def links_of(item):
+            """(web_url, folder_url) from an item carrying webUrl and parentReference; never raises."""
+            pid = (item.get("parentReference") or {}).get("id")
+            if pid and pid not in parents:
+                try:
+                    parents[pid] = safe_link(g.get(f"{GRAPH}/drives/{drive}/items/{pid}?$select=webUrl").json().get("webUrl"), host)
+                except Exception:  # noqa: BLE001
+                    parents[pid] = None
+            return safe_link(item.get("webUrl"), host), parents.get(pid)
+
         def withdraw(iid):
             return lock.execute("update documents set deleted_at=coalesce(deleted_at, now()) "
                                 "where source_id=%s and external_id=%s and deleted_at is null", (source_id, iid)).rowcount
@@ -240,7 +267,7 @@ def crawl_sharepoint(source_id: int) -> dict:
                     too_large[iid] = len(data)
                     withdraw(iid)
                     return
-                counts[ingest(source_id, iid, name, data)] += 1
+                counts[ingest(source_id, iid, name, data, links=links_of(item))] += 1
             except Exception as e:  # noqa: BLE001 - one bad file must not stop the crawl
                 withdraw(iid)  # fail closed: an unverified file must not stay searchable on its old ACL
                 counts["failed"] += 1
@@ -299,17 +326,24 @@ def crawl_sharepoint(source_id: int) -> dict:
                 "and not (external_id = any(%s))", (source_id, list(seen))).rowcount
 
         # permission changes on descendants are not in delta: re-check every live document (daily crawl)
-        live = [r[0] for r in lock.execute(
-            "select external_id from documents where source_id=%s and deleted_at is null", (source_id,))]
-        for iid in live:
-            if iid in checked:
-                continue
-            try:
-                ok = same_access(iid)
-            except Exception:  # noqa: BLE001 - unverifiable (404, throttled, gone): fail closed
-                ok = False
-            if not ok:
-                counts["withdrawn_on_recheck"] += withdraw(iid)
+        live = lock.execute(
+            "select external_id, web_url is null or folder_url is null from documents where source_id=%s and deleted_at is null", (source_id,)).fetchall()
+        for iid, no_link in live:
+            if iid not in checked:
+                try:
+                    ok = same_access(iid)
+                except Exception:  # noqa: BLE001 - unverifiable (404, throttled, gone): fail closed
+                    ok = False
+                if not ok:
+                    counts["withdrawn_on_recheck"] += withdraw(iid)
+                    continue
+            if no_link and host and iid not in seen:  # backfill (this crawl's own items already carried their links): one metadata call; a failure here never withdraws (#236)
+                try:
+                    web, folder = links_of(g.get(f"{GRAPH}/drives/{drive}/items/{iid}?$select=webUrl,parentReference").json())
+                    lock.execute("update documents set web_url=coalesce(%s, web_url), folder_url=coalesce(%s, folder_url) "
+                                 "where source_id=%s and external_id=%s", (web, folder, source_id, iid))
+                except Exception:  # noqa: BLE001
+                    pass
 
         # the source's current groups, read in this one statement: admin ACL changes apply to everything ingested
         lock.execute("update documents d set acl_groups=s.acl_groups "
@@ -393,6 +427,14 @@ def crawl_confluence(source_id: int) -> dict:
         counts = {"new": 0, "updated": 0, "skipped": 0, "failed": 0, "skipped_restricted": 0, "skipped_type": 0,
                   "skipped_too_large": 0, "withdrawn_on_recheck": 0}
         failed, retry, done, cache, visited, too_large = [], [], set(), {}, set(), {}
+        chost = urlparse(config["base_url"]).hostname
+
+        def page_links(page):
+            """(page link, last ancestor's link) built on c.base, never on the response's own _links.base."""
+            def one(o):
+                w = ((o or {}).get("_links") or {}).get("webui")
+                return safe_link(c.base + w, chost) if w else None
+            return one(page), one((page.get("ancestors") or [None])[-1])
 
         def restricted(cid):  # one lookup per content id per crawl
             if cid not in cache:
@@ -434,8 +476,9 @@ def crawl_confluence(source_id: int) -> dict:
                     withdraw(f"page:{pid}")
                     withdraw(f"att:{pid}:", prefix=True)
                     return
+                links = page_links(page)
                 html = f"<html><body>{page['body']['storage']['value']}</body></html>".encode()
-                counts[ingest(source_id, f"page:{pid}", f"{page['title']}.html", html)] += 1
+                counts[ingest(source_id, f"page:{pid}", f"{page['title']}.html", html, links=links)] += 1
                 done.add(f"page:{pid}")
                 for results, base in c.paged(f"{c.api}/content/{pid}/child/attachment?" + urlencode({"expand": "version", "limit": 50})):
                     for att in results:
@@ -453,7 +496,7 @@ def crawl_confluence(source_id: int) -> dict:
                         try:
                             v = att.get("version") or {}
                             ver = f"{v['number']}:{v['when']}" if v.get("number") is not None and v.get("when") else None
-                            if ver and skip_unchanged(source_id, ext, ver, title):  # unchanged: no download (#46)
+                            if ver and skip_unchanged(source_id, ext, ver, title, (links[0], links[0])):  # unchanged: no download (#46)
                                 counts["skipped"] += 1
                                 done.add(ext)
                                 continue
@@ -463,7 +506,7 @@ def crawl_confluence(source_id: int) -> dict:
                                 too_large[ext] = len(data)
                                 withdraw(ext)
                                 continue
-                            counts[ingest(source_id, ext, title, data, source_version=ver)] += 1
+                            counts[ingest(source_id, ext, title, data, source_version=ver, links=(links[0], links[0]))] += 1
                             done.add(ext)
                         except Exception as e:  # noqa: BLE001
                             fail(pid, ext, e, page_ok=True)
@@ -537,9 +580,9 @@ def crawl_confluence(source_id: int) -> dict:
                 elif pid not in retry:
                     retry.append(pid)
 
-        live = [r[0] for r in lock.execute(
-            "select external_id from documents where source_id=%s and deleted_at is null", (source_id,))]
-        for ext in live:
+        live = lock.execute(
+            "select external_id, web_url is null from documents where source_id=%s and deleted_at is null", (source_id,)).fetchall()
+        for ext, no_link in live:
             if ext in done:
                 continue
             _, pid, *att = ext.split(":")
@@ -553,6 +596,10 @@ def crawl_confluence(source_id: int) -> dict:
                 ok = False
             if not ok:
                 counts["withdrawn_on_recheck"] += withdraw(ext)
+            elif no_link:  # backfill from the page just fetched; an attachment links to its page
+                web, folder = page_links(page)
+                lock.execute("update documents set web_url=coalesce(%s, web_url), folder_url=coalesce(%s, folder_url) "
+                             "where source_id=%s and external_id=%s", (web, folder if not att else web, source_id, ext))
 
         lock.execute("update documents d set acl_groups=s.acl_groups "
                      "from (select acl_groups from sources where id=%s for share) s "

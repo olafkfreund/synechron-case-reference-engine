@@ -72,6 +72,35 @@ def test_same_bytes_rename_updates_title(env):
     assert jobs() == n
 
 
+def _row(sid, key="a"):
+    with db.connect() as c:
+        return c.execute("select web_url, folder_url, updated_at from documents where source_id=%s and external_id=%s",
+                         (sid, key)).fetchone()
+
+
+def test_links_stored_filled_in_by_same_bytes_and_kept_by_none(env):
+    _, sid = env
+    L = ("https://h/a", "https://h/")
+    assert ing.ingest(sid, "a", "a", b"one", links=L) == "new"
+    assert _row(sid)[:2] == L
+    assert ing.ingest(sid, "b", "b", b"two") == "new"  # no links yet
+    before = _row(sid, "b")
+    assert before[:2] == (None, None)
+    assert ing.ingest(sid, "b", "b", b"two", links=L) == "skipped"  # filled in, no new version
+    after = _row(sid, "b")
+    assert after[:2] == L and after[2] == before[2]
+    assert ing.ingest(sid, "b", "b", b"two") == "skipped"  # (None, None) keeps them
+    assert ing.ingest(sid, "b", "b", b"three") == "updated"
+    assert _row(sid, "b")[:2] == L
+    assert ing.skip_unchanged(sid, "a", "v", "a") is False
+    with db.connect() as c:
+        c.execute("update documents set source_version='v', web_url=null, folder_url=null where source_id=%s and external_id='a'", (sid,))
+    assert ing.skip_unchanged(sid, "a", "v", "a", L) is True
+    assert _row(sid)[:2] == L
+    assert ing.skip_unchanged(sid, "a", "v", "a") is True
+    assert _row(sid)[:2] == L
+
+
 def test_new_version_updates_in_place_and_reopens_case(env):
     _, sid = env
     ing.ingest(sid, "a", "a", b"one")
