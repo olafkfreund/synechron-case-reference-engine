@@ -1,7 +1,7 @@
 import pytest
 
 from app import db
-from app.review import SKIP_CONTRACT, doc_status
+from app.review import RETRIAGED, SKIP_CONTRACT, doc_status
 from tests.test_auth import ADMIN, REV, USER, client, env  # noqa: F401
 from tests.test_review import DOCS, make  # noqa: F401
 from tests.test_search import reg  # noqa: F401
@@ -17,6 +17,7 @@ R = [REV, DOCS]
     (("case", "approved", None, None, "done"), ("Approved", "case")),
     (("contract", "rejected", "untick", None, "done"), (SKIP_CONTRACT, None)),
     (("case", "rejected", None, None, "done"), ("Rejected in review", "case")),
+    (("case", "rejected", "retriage", None, "done"), (RETRIAGED, "case")),  # #218: the document changed, no reviewer rejected it
     (("contract", None, None, None, None), (SKIP_CONTRACT, None)),
     (("proposal", None, None, None, None), ("Skipped: proposal or deck, not delivered work", None)),
     (("deck", None, None, None, "done"), ("Skipped: proposal or deck, not delivered work", None)),
