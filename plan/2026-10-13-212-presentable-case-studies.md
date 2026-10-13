@@ -685,6 +685,17 @@ client. Run the full suite, then PR 4.
   - Thumbnails of used or dismissed images give 404, and Use is hidden at
     the cap.
   - Each entry has its own try/except, so one bad entry loses only itself.
+- D deviation:
+  - A controlled comparison (2 runs per variant) showed that listing
+    `reference` in the main extraction's field list cut line 1's
+    capabilities and technologies from 14 / 20 to 7 / 5.
+  - The main prompts are back to the pre-D ones, byte for byte.
+  - References come from a separate `extract_references()` pass per part:
+    deduplicated, priced items stripped, capped at 20, literal-checked, and
+    failure-safe.
+  - Eval: line 1 14 / 20 caps and tech with 20 refs; line 3 6 / 5 with 19
+    refs. Summaries are kept and nothing is flagged. The pass adds about
+    12-25 s per document.
 
 ## Tests
 

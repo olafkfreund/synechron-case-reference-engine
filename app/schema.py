@@ -196,6 +196,24 @@ class Item(_Model):
         return "" if v is None else v
 
 
+class Ref(_Model):
+    """One technical reference as the references pass states it; lenient like Item."""
+    model_config = ConfigDict(extra="ignore", coerce_numbers_to_str=True,
+                              json_schema_extra={"additionalProperties": False, "required": ["value", "quote"]})
+    value: str = ""
+    quote: str = ""
+
+    @field_validator("value", "quote", mode="before")
+    @classmethod
+    def _null_is_empty(cls, v):
+        return "" if v is None else v
+
+
+class References(_Model):
+    model_config = ConfigDict(json_schema_extra={"required": ["items"]})
+    items: list[Ref] = []
+
+
 class Extraction(_Model):
     model_config = ConfigDict(json_schema_extra={"required": ["items", "summary"]})
     items: list[Item] = []
@@ -208,7 +226,7 @@ POINT_FIELDS = ("challenge", "solution", "implementation", "configuration")
 MAX_POINTS = 12
 _INTS = ("duration_months", "team_size")
 MAX_INT_CHARS = 12  # "1,000,000" fits; a longer run is a runaway reply, not a count (#131)
-FIELDS = (*_TEXTS, *_INTS, "period_start", "period_end", "capability", "technology", "outcome", "organisation", "reference")
+FIELDS = (*_TEXTS, *_INTS, "period_start", "period_end", "capability", "technology", "outcome", "organisation")
 
 
 def assemble(x: Extraction) -> tuple[ReferenceCase, list[str]]:
@@ -240,9 +258,6 @@ def assemble(x: Extraction) -> tuple[ReferenceCase, list[str]]:
             c.capabilities.append(Sourced[str](value=v, source_quote=q))
         elif f == "technology":
             c.tech_stack.append(Sourced[str](value=v, source_quote=q))
-        elif f == "reference":
-            if _norm(v) not in {_norm(r.value or "") for r in c.tech_references}:
-                c.tech_references.append(Sourced[str](value=v, source_quote=q))
         elif f == "outcome":
             metric, sep, val = v.partition(":")
             c.outcomes.append(Outcome(metric=metric.strip() if sep else "",
