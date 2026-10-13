@@ -285,6 +285,13 @@ Branch `feat/215-browse-latest`, worktree `../refs-engine-215`. One PR.
    running. The demo's `s3` container keeps the trial originals, so don't
    recreate it.
 
+## Deviations
+
+- Step 2: the page number reaches templates as `pageno`, because `page` is
+  the render helper; the query parameter is still `page`. The bid POST also
+  passes `facets`, `kind` and `sort`. `view()` moved to module level as
+  `view(c, clients, **extra)`.
+
 ## Tests
 
 ```bash
