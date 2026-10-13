@@ -85,9 +85,8 @@ def build(e: dict, text: str) -> ReferenceCase:
     case = ReferenceCase.model_validate(e["case"])
     check(case, text)
     fix_summary(case)
-    for f, p in case.prose.items():
-        if not p.by_reviewer:
-            p.flags = check_prose(p.text, quotes_of(case, f), case.quotes())
+    for f, p in case.prose.items():  # every section, reviewer's own included: the checker is the arbiter
+        p.flags = check_prose(p.text, quotes_of(case, f), case.quotes())
     case.extraction_version = EXTRACTION_VERSION
     return case
 
@@ -102,7 +101,7 @@ def validate(demo: dict, texts: dict[str, str]) -> list[str]:
         except Exception as ex:  # noqa: BLE001 - a pydantic error names the field
             errors.append(f"{name}: case does not fit the schema: {ex}")
             continue
-        planted = {f for f, it in _items(ReferenceCase.model_validate(e["case"])) if it.unsourced}  # the planted region example
+        planted = {f for f, it in _items(ReferenceCase.model_validate(e["case"])) if it.unsourced and f == "region"}  # the planted example
         for f, it in _items(case):
             if f in planted:
                 continue
@@ -110,6 +109,8 @@ def validate(demo: dict, texts: dict[str, str]) -> list[str]:
                 errors.append(f"{name}: {f}: source_quote is not in the document")
             elif it.unsourced:
                 errors.append(f"{name}: {f}: unsourced")
+        if (e.get("diagram") or e.get("document_image")) and len([t for t in case.tech_stack if t.value]) < 2:
+            errors.append(f"{name}: diagram or document_image needs at least 2 tech_stack values to draw")
         for f, p in case.prose.items():
             if p.flags and (p.by_reviewer or not e.get("expect_flag")):
                 errors.append(f"{name}: prose.{f}: {'; '.join(p.flags)}")

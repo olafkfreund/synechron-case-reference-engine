@@ -182,13 +182,43 @@ def test_refresh_updates_only_demo_rows(env, tmp_path, monkeypatch):
             c.execute("delete from sources where name='Other: not demo'")
 
 
-def test_failed_validation_writes_nothing(env, tmp_path, monkeypatch, capsys):
+def _bad_quote(d):
+    d["cases"][1]["case"]["title"]["source_quote"] = "A sentence that is nowhere in this document."
+
+
+def _reviewer_flag(d):  # a number no quote supports, in reviewer prose
+    d["cases"][1]["case"]["prose"]["challenge"]["text"] += " It affected 999 customers."
+
+
+def _unexpected_flag(d):  # a flagged section that is not marked expect_flag
+    p = d["cases"][1]["case"]["prose"]["solution"]
+    p["by_reviewer"], p["text"] = False, p["text"] + " Zorblax helped."
+
+
+def _flag_expected_but_clean(d):
+    d["cases"][1]["expect_flag"] = True
+    d["cases"][1]["case"]["prose"]["solution"]["by_reviewer"] = False
+
+
+def _planted_outside_region(d):  # only region may carry the planted unsourced exemption
+    d["cases"][1]["case"]["industry"]["unsourced"] = True
+    d["cases"][1]["case"]["industry"]["source_quote"] = "Not in the document at all."
+
+
+def _too_few_technologies(d):  # case 0 has a diagram and a candidate image to draw
+    d["cases"][0]["case"]["tech_stack"] = d["cases"][0]["case"]["tech_stack"][:1]
+
+
+@pytest.mark.parametrize("mutate,word", [(_bad_quote, "title"), (_reviewer_flag, "999"), (_unexpected_flag, "Zorblax"),
+                                         (_flag_expected_but_clean, "expect_flag"), (_planted_outside_region, "industry"),
+                                         (_too_few_technologies, "tech_stack")])
+def test_failed_validation_writes_nothing(env, tmp_path, monkeypatch, capsys, mutate, word):
     demo = subset()
-    demo["cases"][1]["case"]["title"]["source_quote"] = "A sentence that is nowhere in this document."
+    mutate(demo)
     use(tmp_path, monkeypatch, demo)
     assert seed.main() == 2
     err = capsys.readouterr().err
-    assert demo["cases"][1]["file"] in err and "title" in err
+    assert word in err
     with db.connect() as c:
         assert c.execute("select count(*) from sources where name like 'Demo: %'").fetchone()[0] == 0
     assert counts()[:2] == (0, 0)
@@ -204,3 +234,12 @@ def test_completeness_mix(env):
     for i, (ok, total) in want.items():
         assert score(checklist(rows[DEMO["cases"][i]["file"]])) == (ok, total), i
     assert sum(len(p.flags) for p in rows[DEMO["cases"][9]["file"]].prose.values()) == 1
+    assert [s for s, p in rows[DEMO["cases"][9]["file"]].prose.items() if p.flags] == ["solution"]
+    with db.connect() as c:
+        ids = {r[0]: r[1] for r in c.execute(
+            "select d.title, c.id from cases c join documents d on d.id=c.document_id join sources s on s.id=d.source_id "
+            "where s.name like 'Demo: %'").fetchall()}
+        for e in DEMO["cases"]:
+            n = c.execute("select count(*) from diagrams where case_id=%s and created_by='demo-seed'", (ids[e["file"]],)).fetchone()[0]
+            assert n == (1 if e.get("diagram") else 0), e["file"]
+        assert c.execute("select count(*) from case_approval_overrides where case_id = any(%s)", (list(ids.values()),)).fetchone()[0] == 1

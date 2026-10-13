@@ -2667,7 +2667,7 @@
       "flags": []
      },
      "configuration": {
-      "text": "The feature store keeps the history of each policy holder and claim in PostgreSQL and is refreshed from Kafka events as they arrive, and the model is a gradient boosted trees model trained in Python. The scoring API runs on Kubernetes and answers in under 200 milliseconds, writing the score and the top five reasons back to the claim record. Access to the API uses OAuth 2.0 tokens, and every score is logged with the model version for audit. Models are retrained each month and compared with the live model before release.",
+      "text": "The feature store keeps the history of each policy holder and claim in PostgreSQL and is refreshed from Kafka events as they arrive, and the model is a gradient boosted trees model trained in Python. The scoring API runs on Kubernetes and answers in under 200 milliseconds, writing the score and the top five reasons back to the claim record. Access to the API uses OAuth 2.0 tokens, and every score is logged with the model version for audit. Each month the model is retrained and compared with the live model before release.",
       "by_reviewer": true,
       "flags": []
      }
@@ -2920,7 +2920,7 @@
       "flags": []
      },
      "configuration": {
-      "text": "The points engine is written in Java and runs on Kubernetes, processing every purchase event from Kafka and updating the member balance within a second. Member data is held in PostgreSQL, with a search index in Elasticsearch for the support team, and members sign in to the app with an email address or with a social account through OAuth 2.0. The points API follows the OpenAPI 3.0 specification, the tills call it through a local gateway and the app is built in React. Marketing edits the offer rules in a web tool, each offer is limited to one use for each member, and messages are sent by email and push notification.",
+      "text": "The points engine is written in Java and runs on Kubernetes, processing every purchase event from Kafka and updating the member balance within a second. Member data is held in PostgreSQL, with a search index in Elasticsearch for the support team, and members sign in to the app with an email address or with a social account through OAuth 2.0. The points API follows the OpenAPI 3.0 specification, and the tills call it through a local gateway. Marketing edits the offer rules in a web tool, each offer is limited to one use for each member, and messages are sent by email and push notification.",
       "by_reviewer": true,
       "flags": []
      }
@@ -3152,7 +3152,7 @@
     },
     "prose": {
      "challenge": {
-      "text": "Paper and digital records at Litware were kept in 14 different places, including file servers, shared mailboxes and a basement archive, and staff could not tell which copy of a document was the official one. A request for a historical record took 12 working days on average because staff searched several places by hand, and legal deadlines for public access requests were missed in about 1 case in 6. Retention rules were applied by hand once a year, so many records were kept far longer than allowed, and the records manager had no list of what was held. The basement archive was also running out of space and a flood risk had been identified, so Litware wanted to digitise the oldest series and close the room.",
+      "text": "Paper and digital records at Litware were kept in 14 different places, including file servers, shared mailboxes and a basement archive, and staff could not tell which copy of a document was the official one. A request for a historical record took 12 working days on average because staff searched several places by hand, and legal deadlines for public access requests were also missed. Retention rules were applied by hand once a year, so many records were kept far longer than allowed, and the records manager had no list of what was held. The basement archive was also running out of space and a flood risk had been identified, so Litware wanted to digitise the oldest series and close the room.",
       "by_reviewer": true,
       "flags": []
      },
@@ -3397,7 +3397,7 @@
       "flags": []
      },
      "solution": {
-      "text": "The supplier will build a plant analytics platform that collects machine data from all five plants into one store, covering the 40 machine types listed in the annex. The deliverables are a data collection layer, a machine health dashboard, a model that predicts stops up to 7 days ahead and a maintenance planning view. The scope excludes new sensors, changes to machine controllers and changes to the maintenance management system, which stays as it is. Fabrikam will provide access to the plant networks and a named contact in each plant, so that the supplier can start the work without delay.",
+      "text": "The supplier will build a plant analytics platform that collects machine data from all five plants into one store, covering the machine types listed in the annex. The deliverables are a data collection layer, a machine health dashboard, a model that predicts stops up to 7 days ahead and a maintenance planning view. The scope excludes new sensors, changes to machine controllers and changes to the maintenance management system, which stays as it is. Fabrikam will provide access to the plant networks and a named contact in each plant, so that the supplier can start the work without delay.",
       "by_reviewer": true,
       "flags": []
      },
