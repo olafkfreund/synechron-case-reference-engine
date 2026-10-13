@@ -1,0 +1,300 @@
+{
+ "library brief": {
+  "bound": [
+   "hidden n form=attach=N"
+  ],
+  "forms": [
+   {
+    "action": "/library/N/checked",
+    "formats": [],
+    "hidden": [],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/library/N/delete",
+    "formats": [],
+    "hidden": [],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/library/N/download",
+    "formats": [],
+    "hidden": [],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/library/N/recheck",
+    "formats": [],
+    "hidden": [],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/logout",
+    "formats": [],
+    "hidden": [],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/sources/attach",
+    "formats": [],
+    "hidden": [
+     "library_id=N"
+    ],
+    "id": "attach",
+    "method": "post"
+   }
+  ]
+ },
+ "library quotes": {
+  "bound": [
+   "checkbox n form=attach"
+  ],
+  "forms": [
+   {
+    "action": "/library/N/checked",
+    "formats": [],
+    "hidden": [],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/library/N/delete",
+    "formats": [],
+    "hidden": [],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/library/N/export",
+    "formats": [
+     "copy",
+     "csv",
+     "md"
+    ],
+    "hidden": [],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/library/N/recheck",
+    "formats": [],
+    "hidden": [],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/logout",
+    "formats": [],
+    "hidden": [],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/sources/attach",
+    "formats": [],
+    "hidden": [
+     "library_id=N"
+    ],
+    "id": "attach",
+    "method": "post"
+   }
+  ]
+ },
+ "preview one": {
+  "bound": [],
+  "forms": [
+   {
+    "action": "/generate",
+    "formats": [
+     "case_study_docx",
+     "case_study_pdf",
+     "docx",
+     "md",
+     "pdf_docx",
+     "pdf_pptx",
+     "pptx"
+    ],
+    "hidden": [
+     "case_ids=N"
+    ],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/logout",
+    "formats": [],
+    "hidden": [],
+    "id": null,
+    "method": "post"
+   }
+  ]
+ },
+ "preview three": {
+  "bound": [],
+  "forms": [
+   {
+    "action": "/generate",
+    "formats": [
+     "docx",
+     "md",
+     "pdf_docx",
+     "pdf_pptx",
+     "pptx"
+    ],
+    "hidden": [
+     "case_ids=N",
+     "case_ids=N",
+     "case_ids=N",
+     "library_ids=N"
+    ],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/logout",
+    "formats": [],
+    "hidden": [],
+    "id": null,
+    "method": "post"
+   }
+  ]
+ },
+ "search": {
+  "bound": [
+   "checkbox library_ids form=gen-all"
+  ],
+  "forms": [
+   {
+    "action": "/generate",
+    "formats": [
+     "case_study_docx",
+     "case_study_pdf",
+     "docx",
+     "formaction=/preview",
+     "md",
+     "pdf_docx",
+     "pdf_pptx",
+     "pptx"
+    ],
+    "hidden": [
+     "case_ids=N"
+    ],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/generate",
+    "formats": [
+     "case_study_docx",
+     "case_study_pdf",
+     "docx",
+     "formaction=/preview",
+     "md",
+     "pdf_docx",
+     "pdf_pptx",
+     "pptx"
+    ],
+    "hidden": [
+     "case_ids=N"
+    ],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/generate",
+    "formats": [
+     "case_study_docx",
+     "case_study_pdf",
+     "docx",
+     "formaction=/preview",
+     "md",
+     "pdf_docx",
+     "pdf_pptx",
+     "pptx"
+    ],
+    "hidden": [
+     "case_ids=N"
+    ],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/generate",
+    "formats": [
+     "docx",
+     "formaction=/preview",
+     "md",
+     "pdf_docx",
+     "pdf_pptx",
+     "pptx"
+    ],
+    "hidden": [
+     "case_ids=N",
+     "case_ids=N",
+     "case_ids=N"
+    ],
+    "id": "gen-all",
+    "method": "post"
+   },
+   {
+    "action": "/logout",
+    "formats": [],
+    "hidden": [],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/research/from-case",
+    "formats": [],
+    "hidden": [
+     "case_id=N"
+    ],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/research/from-case",
+    "formats": [],
+    "hidden": [
+     "case_id=N"
+    ],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/research/from-case",
+    "formats": [],
+    "hidden": [
+     "case_id=N"
+    ],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/search",
+    "formats": [],
+    "hidden": [
+     "industry=",
+     "kind=",
+     "region=",
+     "sort=newest",
+     "tech="
+    ],
+    "id": null,
+    "method": "post"
+   },
+   {
+    "action": "/search",
+    "formats": [],
+    "hidden": [],
+    "id": null,
+    "method": "get"
+   }
+  ]
+ }
+}

@@ -137,3 +137,74 @@ def test_client_rows_are_scanned_for_labels(env):  # noqa: F811
     finally:
         with db.connect() as c:
             c.execute("delete from clients where name = 'UI Test Client'")
+
+
+# --- what the forms post must not change with the design (plan #243 step 1) ---
+import json  # noqa: E402
+import os  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from tests.test_industry import G, libs  # noqa: E402,F401
+from tests.test_research import as_user  # noqa: E402
+
+FORMS = Path(__file__).parent / "fixtures" / "forms_243.json"
+
+
+class Forms(HTMLParser):
+    """Per form: action, hidden name=value, button format values, formaction. Plus inputs bound with form=."""
+
+    def __init__(self):
+        super().__init__()
+        self.forms, self.cur, self.bound = [], None, set()
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        n = lambda v: re.sub(r"\d+", "N", v or "")  # ids differ per run
+        if tag == "form":
+            self.cur = {"method": a.get("method"), "action": n(a.get("action")), "id": a.get("id"), "hidden": [], "formats": set()}
+            self.forms.append(self.cur)
+        elif tag == "input" and a.get("form"):
+            self.bound.add(f"{a.get('type')} {a.get('name')} form={a['form']}" + (f"={n(a.get('value'))}" if a.get("type") == "hidden" else ""))
+        elif self.cur is not None and tag == "input" and a.get("type") == "hidden":
+            self.cur["hidden"].append(f"{a.get('name')}={n(a.get('value'))}")
+        elif self.cur is not None and tag == "button":
+            if a.get("name") == "format":
+                self.cur["formats"].add(a.get("value"))
+            if a.get("formaction"):
+                self.cur["formats"].add("formaction=" + n(a["formaction"]))
+
+    def handle_endtag(self, tag):
+        if tag == "form":
+            self.cur = None
+
+
+def form_shape(html):
+    f = Forms()
+    f.feed(html)
+    out = sorted(({**x, "hidden": sorted(x["hidden"]), "formats": sorted(x["formats"])} for x in f.forms),
+                 key=lambda x: json.dumps(x, sort_keys=True))
+    return {"forms": out, "bound": sorted(f.bound)}
+
+
+def form_pages(make, approved, monkeypatch, libs):  # noqa: F811
+    ids = [approved(data(title=f"Case {i}")) for i in range(3)]
+    picks_reply(monkeypatch, *(sr.Pick(case_id=i, reason="fits", tailored="Cut it.") for i in ids))
+    q, b = libs(), libs("brief")
+    with db.connect() as c:  # a topic the search finds, and a stored query so Re-check shows
+        c.execute("update library_items set topic='Onboarding sign in', query='onboarding sign in' where id=any(%s)", ([q, b],))
+    user = as_user("u1", G)
+    admin = client([ADMIN, DOCS])
+    return {
+        "search": user.post("/search", data={"bid_text": "onboarding"}).text,
+        "preview one": user.post("/preview", data={"case_ids": ids[:1]}).text,
+        "preview three": user.post("/preview", data={"case_ids": ids, "library_ids": [q]}).text,
+        "library quotes": admin.get(f"/library/{q}").text,
+        "library brief": admin.get(f"/library/{b}").text,
+    }
+
+
+def test_forms_post_the_same_fields(make, approved, monkeypatch, libs):  # noqa: F811
+    got = {k: form_shape(v) for k, v in form_pages(make, approved, monkeypatch, libs).items()}
+    if os.environ.get("REGEN_FORMS"):
+        FORMS.write_text(json.dumps(got, indent=1, sort_keys=True) + "\n")
+    assert got == json.loads(FORMS.read_text())
