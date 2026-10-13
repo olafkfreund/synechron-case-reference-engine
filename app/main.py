@@ -111,9 +111,9 @@ def create_app() -> FastAPI:
     if not origin:
         raise RuntimeError("APP_ORIGIN is required (e.g. https://references.example.com), for CSRF checks")
 
-    mcp_app = mcp_manager = None
+    mcp_app = mcp_manager = mcp_prm = None
     if mcp_server.enabled():
-        mcp_app, mcp_manager = mcp_server.build(origin)
+        mcp_app, mcp_manager, mcp_prm = mcp_server.build(origin)
 
     @asynccontextmanager
     async def lifespan(_):
@@ -187,6 +187,7 @@ def create_app() -> FastAPI:
     from app import models_admin
     app.include_router(models_admin.router)
     if mcp_app:
+        app.router.routes.extend(mcp_prm)  # before the mount: the root PRM path
         app.mount("/mcp", mcp_app)
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
     oauth = OAuth()
