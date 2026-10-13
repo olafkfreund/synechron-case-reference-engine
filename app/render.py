@@ -20,7 +20,7 @@ from pptx import Presentation
 from app import anonymise, db
 from app.main import User, require
 from app.review import PNG_HEADERS, VISIBLE, page
-from app.schema import ReferenceCase
+from app.schema import ReferenceCase, vague_metric
 
 router = APIRouter()
 TEMPLATE = Path(__file__).resolve().parent.parent / "brand" / "reference.docx"
@@ -176,14 +176,18 @@ def section(case: ReferenceCase, client: str) -> dict:
                ("Engagement type", v(case.engagement_type)),
                ("Duration", f"{v(case.duration_months)} months" if v(case.duration_months) else None),
                ("Team size", v(case.team_size)), ("Period", period)]
-    blocks = [("Challenge", v(case.challenge)), ("Solution", v(case.solution)),
-              ("Implementation approach", v(case.implementation)),
-              ("Configuration and integration", v(case.configuration)),
-              ("Lessons learned", None if case.basis == "engagement" else v(case.lessons_learned))]
+    def prose(f, head):  # approved prose replaces the one-line value only when it is unflagged or the reviewer's own
+        p = case.prose.get(f)
+        return p.text if p and p.text.strip() and (not p.flags or p.by_reviewer) else head
+
+    blocks = [("Challenge", prose("challenge", v(case.challenge))), ("Solution", prose("solution", v(case.solution))),
+              ("Implementation approach", prose("implementation", v(case.implementation))),
+              ("Configuration and integration", prose("configuration", v(case.configuration))),
+              ("Lessons learned", None if case.basis == "engagement" else prose("lessons_learned", v(case.lessons_learned)))]
     lists = [("Capabilities", [v(c) for c in case.capabilities]),
              ("Technology", [v(t) for t in case.tech_stack]),
              ("Technical references", [v(t) for t in case.tech_references]),
-             ("Outcomes", [(f"{o.metric}: {o.value}" if o.metric else o.value) for o in case.outcomes if not o.unsourced])]
+             ("Outcomes", [(f"{o.metric}: {o.value}" if not vague_metric(o) else o.value) for o in case.outcomes if not o.unsourced])]
     engagement = case.basis == "engagement"
     if engagement:  # contracted scope claims no results, whatever the record holds
         lists = [x for x in lists if x[0] != "Outcomes"]
@@ -191,7 +195,7 @@ def section(case: ReferenceCase, client: str) -> dict:
         title=v(case.title) or "", client=client, summary=case.summary,
         basis=case.basis, note=ENGAGEMENT_NOTE if engagement else "",
         details=[dict(label=a, value=str(b)) for a, b in details if b not in (None, "")],
-        blocks=[dict(heading=a, text=b) for a, b in blocks if b],
+        blocks=[dict(heading=a, text=b, paragraphs=[x.strip() for x in b.split("\n\n") if x.strip()]) for a, b in blocks if b],
         lists=[dict(heading=a, bullets=[str(i) for i in b if i]) for a, b in lists if any(b)],
         diagrams=[dict(id=d.id, caption=d.caption, width=d.width, height=d.height) for d in case.diagrams if d.status == "ready"])
 
@@ -427,9 +431,9 @@ MD = _env.from_string("""\
 {% for b in c.blocks %}
 ## {{ b.heading }}
 
-{{ b.text | md }}
+{% for p in b.paragraphs %}{{ p | md }}
 
-{% endfor %}
+{% endfor %}{% endfor %}
 {% for l in c.lists %}
 ## {{ l.heading }}
 

@@ -9,7 +9,7 @@
 {% if c.note %}<div class="note">{{ c.note }}</div>{% endif %}
 <p>{{ c.summary }}</p>
 <ul>{% for x in c.details %}<li><b>{{ x.label }}:</b> {{ x.value }}</li>{% endfor %}</ul>
-{% for b in c.blocks %}<h3>{{ b.heading }}</h3><p>{{ b.text }}</p>{% endfor %}
+{% for b in c.blocks %}<h3>{{ b.heading }}</h3>{% for p in b.paragraphs %}<p>{{ p }}</p>{% endfor %}{% endfor %}
 {% for l in c.lists %}<h3>{{ l.heading }}</h3><ul>{% for i in l.bullets %}<li>{{ i }}</li>{% endfor %}</ul>{% endfor %}
 {% set cid = ids[loop.index0] %}{% for d in c.diagrams %}<figure><img src="/cases/{{ cid }}/diagrams/{{ d.id }}.png" alt="{{ d.caption }}" width="{{ [d.width, 480] | min }}"><figcaption>{{ d.caption }}</figcaption></figure>{% endfor %}
 </article>

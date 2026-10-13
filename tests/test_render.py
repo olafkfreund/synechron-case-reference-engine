@@ -630,3 +630,23 @@ def test_a_reference_naming_a_protected_client_is_anonymised_or_withheld(approve
     monkeypatch.setattr(render.anonymise, "apply", lambda t, c: t)  # a missed replacement must withhold
     r = gen([cid], "md")
     assert r.status_code == 409 and name not in r.text
+
+
+def test_section_prose_replaces_value_only_when_clean():
+    from app.schema import Prose, ReferenceCase
+    c = ReferenceCase.model_validate({"title": Sourced[str](value="T", source_quote="T").model_dump()})
+    c.challenge = Sourced[str](value="one line", source_quote="one line")
+    c.solution = Sourced[str](value="sol line", source_quote="sol line")
+    c.prose = {"challenge": Prose(text="A\n\n\nB\n\n"), "solution": Prose(text="X", flags=["number"])}
+    b = {x["heading"]: x for x in render.section(c, "C")["blocks"]}
+    assert b["Challenge"]["paragraphs"] == ["A", "B"]
+    assert b["Solution"]["text"] == "sol line" and b["Solution"]["paragraphs"] == ["sol line"]
+
+
+def test_placeholder_metric_is_hidden_in_outputs():
+    from app.schema import ReferenceCase
+    c = ReferenceCase(title=Sourced[str](value="T", source_quote="T"), outcomes=[
+        Outcome(metric="metric", value="flagged 17 percent more", source_quote="q"),
+        Outcome(metric="Fraud", value="up 17%", source_quote="q")])
+    out = render.section(c, "C")["lists"][0]["bullets"]
+    assert out == ["flagged 17 percent more", "Fraud: up 17%"]
