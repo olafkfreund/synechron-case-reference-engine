@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 218
 intent: intent/2026-10-13-218-retriage-label.md
 ---
