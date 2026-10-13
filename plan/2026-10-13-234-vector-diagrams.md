@@ -179,6 +179,18 @@ dismissed (`dismissed_images`) would be offered again. So:
      present.
    - Traps: never print file names, text or hints.
 
+## Deviations
+
+- Step 1: no `libreoffice-draw` is needed. The installed core, writer and
+  impress packages convert EMF and WMF to PNG. Converted PNGs are a whole
+  A4 page, so step 3 crops them to their content before the size filter.
+- Step 2: `office.convert(..., limit=None)`. `to_pdf` passes no limit, so
+  PDFs over 5 MB still work. Vector conversion passes `MAX_BYTES`.
+- No-network rule: the LibreOffice lockdown blocks linked content. There's
+  no network namespace, because unsharing needs privileges the container
+  doesn't have, and production egress is already restricted. This is
+  accepted and noted.
+
 ## Tests
 
 ```bash

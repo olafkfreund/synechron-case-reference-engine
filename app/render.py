@@ -1,10 +1,4 @@
-import os
 import re
-import shutil
-import signal
-import subprocess
-import tempfile
-import threading
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -17,7 +11,7 @@ from fastapi.responses import Response
 from jinja2 import Environment
 from pptx import Presentation
 
-from app import anonymise, db
+from app import anonymise, db, office
 from app.main import User, require
 from app.review import PNG_HEADERS, VISIBLE, page
 from app.schema import ReferenceCase, plain, vague_metric
@@ -352,58 +346,25 @@ def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int
     return buf.getvalue()
 
 
-SOFFICE = "soffice"
 PDF_TIMEOUT = 60  # seconds
+PDF_WAIT = 10
 
 
 class PdfError(RuntimeError):
     """Conversion failed. Messages never carry case content."""
 
 
-# The template comes from marketing: never let it fetch linked images/remote content (the task can
-# still reach the VPC and the ECS metadata endpoint) or run macros.
-LOCKDOWN = """<?xml version="1.0" encoding="UTF-8"?>
-<oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema">
-<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="BlockUntrustedRefererLinks" oor:op="fuse"><value>true</value></prop></item>
-<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="DisableMacrosExecution" oor:op="fuse"><value>true</value></prop></item>
-</oor:items>
-"""
-# ~235 MB per soffice; the threadpool would otherwise allow ~40 at once
-PDF_SLOTS = threading.BoundedSemaphore(2)
-PDF_WAIT = 10
-
-
 def to_pdf(data: bytes, suffix: str) -> bytes:
-    """Convert docx/pptx bytes with headless LibreOffice. Own temp dir and profile per call:
-    concurrent soffice runs share (and lock) one profile otherwise."""
-    if not PDF_SLOTS.acquire(timeout=PDF_WAIT):
-        raise PdfError("PDF service busy; try again shortly")
-    tmp = tempfile.mkdtemp(prefix="pdf-")
+    """Convert docx/pptx bytes with headless LibreOffice (see office.convert)."""
+    name = f"in{suffix}"
     try:
-        src = Path(tmp) / f"in{suffix}"
-        src.write_bytes(data)
-        profile = Path(tmp) / "profile"
-        (profile / "user").mkdir(parents=True)
-        (profile / "user" / "registrymodifications.xcu").write_text(LOCKDOWN)
-        # new session so a timeout can kill soffice's child processes too; minimal env: no DB or AWS secrets
-        proc = subprocess.Popen(
-            [SOFFICE, f"-env:UserInstallation={profile.as_uri()}", "--headless", "--norestore",
-             "--convert-to", "pdf", "--outdir", tmp, str(src)],
-            env={"PATH": os.environ.get("PATH", ""), "HOME": tmp}, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, start_new_session=True)
-        try:
-            code = proc.wait(timeout=PDF_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
-            proc.wait()
-            raise PdfError("PDF conversion timed out") from None
-        out = Path(tmp) / "in.pdf"
-        if code or not out.exists():
-            raise PdfError(f"PDF conversion failed (exit {code})")
-        return out.read_bytes()
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-        PDF_SLOTS.release()
+        out = office.convert({name: data}, "pdf", PDF_TIMEOUT, PDF_WAIT)
+    except RuntimeError as e:
+        raise PdfError({"busy": "PDF service busy; try again shortly",
+                        "timeout": "PDF conversion timed out"}.get(str(e), f"PDF conversion failed ({e})")) from None
+    if name not in out:
+        raise PdfError("PDF conversion failed (exit 0)")
+    return out[name]
 
 
 def md(s: str) -> str:

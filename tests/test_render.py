@@ -6,7 +6,7 @@ from io import BytesIO
 import pytest
 from docx import Document
 
-from app import db, render
+from app import db, office, render
 from app.schema import Outcome, ReferenceCase, Sourced
 from tests.test_auth import client, env  # noqa: F401
 from tests.test_review import DOCS, make  # noqa: F401
@@ -442,17 +442,17 @@ def test_pdf_failures_are_clear_and_leak_nothing(monkeypatch):
     with pytest.raises(render.PdfError, match="timed out"):
         render.to_pdf(docx, ".docx")
     monkeypatch.setattr(render, "PDF_TIMEOUT", 60)
-    monkeypatch.setattr(render, "SOFFICE", "false")
+    monkeypatch.setattr(office, "SOFFICE", "false")
     with pytest.raises(render.PdfError, match=r"failed \(exit 1\)"):
         render.to_pdf(docx, ".docx")
-    monkeypatch.setattr(render, "SOFFICE", "true")  # exits 0 but writes nothing
+    monkeypatch.setattr(office, "SOFFICE", "true")  # exits 0 but writes nothing
     with pytest.raises(render.PdfError, match="failed"):
         render.to_pdf(docx, ".docx")
 
 
 def test_pdf_route_reports_503_and_no_audit_row(approved, monkeypatch):
     cid = approved()
-    monkeypatch.setattr(render, "SOFFICE", "false")
+    monkeypatch.setattr(office, "SOFFICE", "false")
     r = gen([cid], "pdf_docx")
     assert r.status_code == 503 and "PDF conversion failed" in r.json()["detail"]
     with db.connect() as conn:
@@ -520,13 +520,13 @@ def test_pdf_conversion_does_not_fetch_linked_content():
 
 def test_pdf_busy_when_slots_are_taken(monkeypatch):
     monkeypatch.setattr(render, "PDF_WAIT", 0.1)
-    held = [render.PDF_SLOTS.acquire() for _ in range(2)]
+    held = [office.SLOTS.acquire() for _ in range(2)]
     try:
         with pytest.raises(render.PdfError, match="busy"):
             render.to_pdf(b"x", ".docx")
     finally:
         for _ in held:
-            render.PDF_SLOTS.release()
+            office.SLOTS.release()
 
 
 def test_invisible_character_in_name_is_rewritten_not_shipped():
