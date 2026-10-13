@@ -282,3 +282,6 @@ ignored.
   - New `card_head` and `result_actions` macros are shared by both card loops.
   - The old `.result .action-row` phone grid rules are removed.
   - The stored-only check is its own test.
+- Step 5: no test asserted the old preview labels. A new test checks the
+  Download heading, the Bid pack group, the back link, and that the case
+  study group appears for one case and not for three.

@@ -263,6 +263,13 @@ h2.sub{font-size:15px;color:var(--muted);margin:20px 0 8px}
 .doc-list .icon{flex:none;color:var(--muted)}
 .doc-list .doc-label{flex:1 1 200px;min-width:0;overflow-wrap:anywhere}
 
+/* preview downloads: the groups sit side by side on wide screens */
+.download-groups{display:grid;grid-template-columns:1fr;gap:16px}
+@media (min-width:900px){.download-groups{grid-template-columns:3fr 2fr}}
+.download-group h3{font-size:var(--fs-m);margin:0 0 8px}
+.download-group p{margin:8px 0 0}
+.generate .download-groups,.generate h2{flex:1 1 100%}
+
 /* review */
 .field-row{display:grid;grid-template-columns:minmax(0,1fr);gap:8px 16px;padding:14px 0;border-top:1px solid var(--line)}
 .card-head + .field-row{border-top:0}

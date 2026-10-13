@@ -274,3 +274,11 @@ def test_theme_toggle_on_every_page(make, approved, monkeypatch):  # noqa: F811
         assert re.search(r'<script src="/static/theme\.js\?v=\w+"></script>', head) and "defer" not in head.split("theme.js")[1][:40], name
         assert re.search(r'<button[^>]*class="btn theme-toggle"[^>]*aria-pressed="false"[^>]*aria-label="Dark theme"', r.text), name
         assert "onclick" not in r.text, name
+
+
+def test_preview_groups_the_downloads_and_the_case_study_group_needs_one_case(make, approved, monkeypatch, libs):  # noqa: F811
+    p = form_pages(make, approved, monkeypatch, libs)
+    one, three = p["preview one"], p["preview three"]
+    for t in (one, three):
+        assert "<h2>Download</h2>" in t and "Bid pack" in t and 'href="/search"' in t
+    assert "Case study (this case only)" in one and "Case study (this case only)" not in three
