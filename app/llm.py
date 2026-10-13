@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from urllib.parse import urlparse
 
@@ -7,6 +8,12 @@ from pydantic import BaseModel, ValidationError
 
 from app import db
 from app.schema import llm_schema
+
+log = logging.getLogger(__name__)
+ECHO_RETRIES = 0  # for tests
+SCHEMA_WORDS = {"$defs", "properties", "required", "additionalProperties", "type", "title"}
+CORRECTION = ("That was the schema, not the answer. Reply with one JSON object containing the data, "
+              "using the field names above. Do not include the schema.")
 
 litellm.turn_off_message_logging = True  # document text is never logged
 MAX_TOKENS = 8192  # a full ReferenceCase with quotes; Bedrock's default may cut it off
@@ -71,8 +78,51 @@ def allowed(dest: str, data_class: str, model: str) -> bool:
             (model, data_class)).fetchone() is not None
 
 
+def _schema_echo(text: str, schema: dict) -> bool:
+    """True when a reply is the schema itself (or one key holding it), not data (#245). Never logs or returns content."""
+    try:
+        obj = json.loads(text or "")
+    except ValueError:
+        return False
+    if not isinstance(obj, dict):
+        return False
+    fields = set(schema.get("required", []))  # not all properties: ReferenceCase has a field "title"
+
+    def echo(o):
+        return isinstance(o, dict) and len(SCHEMA_WORDS & o.keys()) >= 2 and not fields & o.keys()
+    return echo(obj) or (len(obj) == 1 and echo(next(iter(obj.values()))))
+
+
+def _example(schema: dict) -> object:
+    """A placeholder instance of the schema, deterministic: "…", 0, false, one array item, first enum value."""
+    defs = schema.get("$defs", {})
+
+    def build(n):
+        if "$ref" in n:
+            return build(defs[n["$ref"].rsplit("/", 1)[-1]])
+        if "enum" in n:
+            return n["enum"][0]
+        for k in ("anyOf", "oneOf"):
+            if k in n:
+                return build(next((b for b in n[k] if b.get("type") != "null"), n[k][0]))
+        t = n.get("type")
+        if t == "object" or "properties" in n:
+            return {k: build(v) for k, v in n.get("properties", {}).items()}
+        if t == "array":
+            return [build(n.get("items", {}))]
+        return {"string": "…", "integer": 0, "number": 0, "boolean": False}.get(t, "…")
+    return build(schema)
+
+
+def json_cue(schema: dict) -> str:
+    return ("\n\nReply with one JSON object that follows this JSON Schema. The schema describes the format; do not repeat it."
+            f"\nSchema: {json.dumps(schema)}"
+            f"\nExample of the shape (values are placeholders): {json.dumps(_example(schema), ensure_ascii=False)}")
+
+
 def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: type[M], *, data_class: str) -> M:
     """alias is an env var name (EXTRACT_MODEL | DRAFT_MODEL) holding the LiteLLM model id."""
+    global ECHO_RETRIES
     model = os.environ.get(alias)
     if not model:
         raise RuntimeError(f"{alias} is not set; set it to a LiteLLM model id (e.g. bedrock/<model-id>)")
@@ -84,7 +134,7 @@ def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: t
     schema = llm_schema(model_cls)
     extra = {}
     if json_mode:
-        system += f"\n\nReply with JSON matching this schema: {json.dumps(schema)}"
+        system += json_cue(schema)
         extra["response_format"] = {"type": "json_object"}
     else:
         extra["response_format"] = {"type": "json_schema", "json_schema": {
@@ -96,27 +146,47 @@ def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: t
         # not OLLAMA_API_KEY: LiteLLM reads that one itself and sends it to every Ollama host
         if _ollama_cloud(effective_base(model, opts)) and os.environ.get("OLLAMA_CLOUD_KEY"):
             extra["api_key"] = os.environ["OLLAMA_CLOUD_KEY"]
-    if ollama and alias == "EXTRACT_MODEL" and "num_ctx" in opts:  # Ollama drops the start of a prompt that overflows its context, without an error
-        est = (len(system) + len(user)) // 3  # characters per token; the size only, never content
-        if est + MAX_TOKENS > opts["num_ctx"]:
-            raise ValueError(f"{alias} prompt (~{est} tokens) does not fit num_ctx={opts['num_ctx']}")
-    resp = litellm.completion(
-        model=model,
-        messages=[
-            {"role": "system", "content": [
-                {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]},
-            {"role": "user", "content": user},
-        ],
-        temperature=0,
-        max_tokens=MAX_TOKENS,
-        **extra,
-    )
-    choice = resp.choices[0]
-    if getattr(choice, "finish_reason", None) == "length":
-        raise ValueError(f"{alias} reply truncated at max_tokens={MAX_TOKENS}")
-    try:
-        return model_cls.model_validate_json(choice.message.content or "")
-    except ValidationError as e:
-        # errors without input values: the reply quotes the document, and job errors are stored
-        detail = e.errors(include_input=False, include_url=False)
-        raise ValueError(f"{alias} reply is not a valid {model_cls.__name__}: {detail}") from None
+
+    def too_long(more):  # Ollama drops the start of a prompt that overflows its context, without an error
+        est = (len(system) + len(user) + sum(len(m["content"]) for m in more)) // 3  # characters per token; size only
+        return ollama and alias == "EXTRACT_MODEL" and "num_ctx" in opts and est + MAX_TOKENS > opts["num_ctx"], est
+
+    def _call(more=()):
+        resp = litellm.completion(
+            model=model,
+            messages=[
+                {"role": "system", "content": [
+                    {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]},
+                {"role": "user", "content": user},
+                *more,
+            ],
+            temperature=0,
+            max_tokens=MAX_TOKENS,
+            **extra,
+        )
+        choice = resp.choices[0]
+        if getattr(choice, "finish_reason", None) == "length":
+            raise ValueError(f"{alias} reply truncated at max_tokens={MAX_TOKENS}")
+        return choice.message.content or ""
+
+    over, est = too_long(())
+    if over:
+        raise ValueError(f"{alias} prompt (~{est} tokens) does not fit num_ctx={opts['num_ctx']}")
+    text = _call()
+    retried = ""
+    for attempt in (0, 1):
+        try:
+            return model_cls.model_validate_json(text)
+        except ValidationError as e:
+            # errors without input values: the reply quotes the document, and job errors are stored
+            detail = e.errors(include_input=False, include_url=False)
+            err = ValueError(f"{alias} reply is not a valid {model_cls.__name__}: {detail}{retried}")
+            if attempt or not _schema_echo(text, schema):
+                raise err from None
+            more = ({"role": "assistant", "content": text}, {"role": "user", "content": CORRECTION})
+            if too_long(more)[0]:
+                raise err from None
+            ECHO_RETRIES += 1
+            log.warning("schema echo: alias=%s model=%s schema=%s", alias, model, model_cls.__name__)
+            text = _call(more)
+            retried = " (after a schema-echo retry)"

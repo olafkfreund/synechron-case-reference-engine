@@ -133,7 +133,7 @@ def test_policy_error_has_no_content_and_blocks_before_request(monkeypatch):
 def test_json_mode_request_shape(monkeypatch):
     _, kw = run(monkeypatch, '{"title": {}}', model=LOCAL, opts={"think": False, "num_ctx": 24576, "repeat_penalty": 1.05})
     assert kw["response_format"] == {"type": "json_object"}
-    assert "Reply with JSON matching this schema" in kw["messages"][0]["content"][0]["text"]
+    assert "do not repeat it" in kw["messages"][0]["content"][0]["text"]
     assert kw["think"] is False and kw["num_ctx"] == 24576 and kw["repeat_penalty"] == 1.05 and "api_key" not in kw
 
 
@@ -201,3 +201,107 @@ def test_overflow_guard_covers_extraction_only(monkeypatch):
     monkeypatch.setenv("DRAFT_MODEL_OPTIONS", json.dumps({"num_ctx": 100}))
     monkeypatch.setattr(llm.litellm, "completion", fake('{"title": {}}', []))
     llm.complete_json("DRAFT_MODEL", "s" * 3000, "u" * 3000, ReferenceCase, data_class="public")
+
+
+ECHO = json.dumps({"$defs": {}, "properties": {"title": {}}, "required": ["title"], "type": "object"})
+GOOD = '{"title": {"value": "T", "source_quote": "q"}}'
+
+
+def seq(replies, calls):
+    it = iter(replies)
+
+    def completion(**kw):
+        calls.append(kw)
+        msg = SimpleNamespace(content=next(it))
+        return SimpleNamespace(choices=[SimpleNamespace(message=msg, finish_reason="stop")])
+    return completion
+
+
+def go(monkeypatch, replies, opts=None, dc="public"):
+    calls = []
+    monkeypatch.setenv("EXTRACT_MODEL", LOCAL)
+    monkeypatch.delenv("EXTRACT_MODEL_OPTIONS", raising=False)
+    if opts:
+        monkeypatch.setenv("EXTRACT_MODEL_OPTIONS", json.dumps(opts))
+    monkeypatch.setattr(llm.litellm, "completion", seq(replies, calls))
+    return lambda: llm.complete_json("EXTRACT_MODEL", "sys", "usr", ReferenceCase, data_class=dc), calls
+
+
+def test_echo_then_valid_retries_once_with_the_correction(monkeypatch):
+    f, calls = go(monkeypatch, [ECHO, GOOD])
+    before = llm.ECHO_RETRIES
+    assert f().title.value == "T"
+    assert len(calls) == 2 and llm.ECHO_RETRIES == before + 1
+    assert calls[1]["messages"][:2] == calls[0]["messages"]  # same system block (cache_control) and user turn
+    assert calls[1]["messages"][2:] == [{"role": "assistant", "content": ECHO}, {"role": "user", "content": llm.CORRECTION}]
+    assert calls[1]["response_format"] == calls[0]["response_format"]
+
+
+def test_echo_twice_raises_without_content(monkeypatch):
+    echo = json.dumps({"properties": {}, "type": "SECRET client text"})
+    f, calls = go(monkeypatch, [echo, echo])
+    with pytest.raises(ValueError, match=r"after a schema-echo retry") as e:
+        f()
+    assert len(calls) == 2 and "SECRET" not in str(e.value)
+
+
+def test_nested_echo_is_detected():
+    schema = llm.llm_schema(ReferenceCase)
+    assert llm._schema_echo(json.dumps({"ReferenceCase": json.loads(ECHO)}), schema)
+    assert llm._schema_echo(ECHO, schema)
+    for ok in ('{"title": {"value": "T"}}', '{"type": "x"}', "[1]", "nope", ""):
+        assert not llm._schema_echo(ok, schema)
+
+
+def test_other_invalid_replies_are_not_retried(monkeypatch):
+    f, calls = go(monkeypatch, ['{"title": 5}', GOOD])
+    with pytest.raises(ValueError, match="not a valid") as e:
+        f()
+    assert len(calls) == 1 and "retry" not in str(e.value)
+
+
+def test_no_retry_when_it_would_overflow_num_ctx(monkeypatch):
+    big = ECHO + " " * 30000
+    f, calls = go(monkeypatch, [big, GOOD], opts={"num_ctx": 12000})
+    with pytest.raises(ValueError, match="not a valid") as e:
+        f()
+    assert len(calls) == 1 and "retry" not in str(e.value)
+
+
+def test_echo_log_line_has_no_content(monkeypatch, caplog):
+    f, _ = go(monkeypatch, [ECHO, GOOD])
+    with caplog.at_level("WARNING", logger="app.llm"):
+        f()
+    msg = caplog.text
+    assert "schema echo" in msg and "EXTRACT_MODEL" in msg and "properties" not in msg and "usr" not in msg
+
+
+def test_schema_mode_has_no_cue_and_no_retry_text_change(monkeypatch):
+    _, kw = run(monkeypatch, GOOD)
+    assert kw["messages"][0]["content"][0]["text"] == "sys"
+
+
+def all_models():
+    from app import brief, ingest, research, search, writeup
+    from app.schema import References
+    return [ReferenceCase, References, ingest.Triage, writeup.Writeup, research.Query, research.Claims,
+            brief.Brief, search.Picks]
+
+
+def test_no_model_field_is_named_like_a_schema_keyword():
+    for m in all_models():
+        assert not (llm.SCHEMA_WORDS - {"title", "type"}) & set(llm.llm_schema(m)["properties"]), m.__name__
+
+
+def test_example_is_deterministic_and_has_the_schema_keys():
+    for m in all_models():
+        s = llm.llm_schema(m)
+        ex = llm._example(s)
+        assert ex == llm._example(s) and set(ex) == set(s["properties"]), m.__name__
+
+
+def test_page_chars_still_fits_with_the_longer_cue(monkeypatch):
+    from app import research
+    monkeypatch.setenv("DRAFT_MODEL", LOCAL)
+    monkeypatch.setenv("DRAFT_MODEL_OPTIONS", json.dumps({"num_ctx": 24576}))
+    assert research.page_chars() > 500
