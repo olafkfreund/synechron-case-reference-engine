@@ -179,6 +179,7 @@ def crawl_sharepoint(source_id: int) -> dict:
     folder, with its own grants or with a sharing link is skipped, and withdrawn if ingested before.
     Delta does not report permission changes on descendants, so every crawl (daily) also re-checks
     the permissions of every live document. Failed items are retried by id on the next run.
+    Files skipped as too large are remembered with their size and fetched again once the cap admits them (#206).
     Needs the app's Sites.Selected grant with the fullcontrol role: a read-only caller sees only
     the sharing permissions that apply to itself, and the comparison would be meaningless.
     """
@@ -192,7 +193,7 @@ def crawl_sharepoint(source_id: int) -> dict:
         g = Graph(config["tenant_id"])
         counts = {"new": 0, "updated": 0, "skipped": 0, "deleted": 0, "failed": 0, "skipped_unique_permissions": 0,
                   "skipped_type": 0, "skipped_too_large": 0, "withdrawn_on_recheck": 0}
-        failed, retry, seen, checked = [], [], set(), set()
+        failed, retry, seen, checked, too_large = [], [], set(), set(), {}
 
         def perms_of(path):
             return [p for page in g.pages(f"{GRAPH}/drives/{drive}/{path}/permissions") for p in page.get("value", [])]
@@ -212,6 +213,7 @@ def crawl_sharepoint(source_id: int) -> dict:
         def handle(item):
             iid = item["id"]
             if "deleted" in item:
+                seen.add(iid)
                 counts["deleted"] += withdraw(iid)
                 return
             if "file" not in item:  # folders
@@ -224,6 +226,7 @@ def crawl_sharepoint(source_id: int) -> dict:
                 return
             if item.get("size", 0) > cap:
                 counts["skipped_too_large"] += 1
+                too_large[iid] = item.get("size", 0)
                 withdraw(iid)
                 return
             try:
@@ -234,6 +237,7 @@ def crawl_sharepoint(source_id: int) -> dict:
                 data = g.get(f"{GRAPH}/drives/{drive}/items/{iid}/content").content
                 if len(data) > cap:
                     counts["skipped_too_large"] += 1
+                    too_large[iid] = len(data)
                     withdraw(iid)
                     return
                 counts[ingest(source_id, iid, name, data)] += 1
@@ -274,6 +278,21 @@ def crawl_sharepoint(source_id: int) -> dict:
                 else:
                     retry.append(iid)
 
+        # last run's too-large files: delta will not offer them again; fetch those the cap now admits (#206)
+        for iid, size in ({} if full else (last or {}).get("too_large", {})).items():
+            if iid in seen:
+                continue
+            if size > cap:
+                too_large[iid] = size
+                continue
+            try:
+                handle(g.get(f"{GRAPH}/drives/{drive}/items/{iid}").json())
+            except Exception as e:  # noqa: BLE001 - one bad item must not stop the crawl (#129)
+                if getattr(e, "status", None) == 404:
+                    counts["deleted"] += withdraw(iid)
+                else:
+                    retry.append(iid)
+
         if full and seen:  # a full listing tells us what disappeared while we had no cursor
             counts["deleted"] += lock.execute(
                 "update documents set deleted_at=now() where source_id=%s and deleted_at is null "
@@ -297,7 +316,8 @@ def crawl_sharepoint(source_id: int) -> dict:
                      "from (select acl_groups from sources where id=%s for share) s "
                      "where d.source_id=%s and d.acl_groups is distinct from s.acl_groups", (source_id, source_id))
         lock.execute("update sources set cursor=%s, last_run_at=now(), last_counts=%s where id=%s",
-                     (delta_link, Jsonb({**counts, "failed_keys": failed, "retry_ids": retry}), source_id))
+                     (delta_link, Jsonb({**counts, "failed_keys": failed, "retry_ids": retry,
+                                "too_large": too_large}), source_id))
     return counts
 
 
