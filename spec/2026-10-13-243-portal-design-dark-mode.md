@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 243
 intent: intent/2026-10-13-243-portal-design-dark-mode.md
 ---
