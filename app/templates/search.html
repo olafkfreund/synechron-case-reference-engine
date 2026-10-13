@@ -34,7 +34,8 @@
 <button class="btn" formaction="/preview" aria-label="Preview {{ r.title }}">Preview</button>
 <button class="btn primary word" name="format" value="docx" aria-label="Download {{ r.title }} as Word">Download Word</button>
 <details class="mini"><summary class="btn-sm" aria-label="Other formats for {{ r.title }}">Other formats</summary>
-<div class="row" style="padding-bottom:4px"><button class="btn dark" name="format" value="pptx">{{ what }} (PowerPoint)</button> <button class="btn dark" name="format" value="pdf_docx">{{ what }} (PDF)</button> <button class="btn dark" name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button class="btn dark" name="format" value="md">{{ what }} (Markdown)</button></div></details></form>{% endwith %}</div>
+<div class="row" style="padding-bottom:4px"><button class="btn dark" name="format" value="pptx">{{ what }} (PowerPoint)</button> <button class="btn dark" name="format" value="pdf_docx">{{ what }} (PDF)</button> <button class="btn dark" name="format" value="pdf_pptx">{{ what }} (PDF slides)</button> <button class="btn dark" name="format" value="md">{{ what }} (Markdown)</button></div></details></form>{% endwith %}
+<form method="post" action="/research/from-case" class="research-form" style="margin:0 0 0 auto"><input type="hidden" name="case_id" value="{{ r.id }}"><button class="btn">Research this (public sources)</button></form></div>
 </article>
 {% endfor %}
 {% if not ran and (pageno > 1 or full) %}{% macro pg(n) %}{{ {"industry": f.industry, "region": f.region, "tech": f.tech, "kind": kind, "sort": sort, "page": n} | urlencode }}{% endmacro %}

@@ -292,6 +292,12 @@ Branch `feat/215-browse-latest`, worktree `../refs-engine-215`. One PR.
   passes `facets`, `kind` and `sort`. `view()` moved to module level as
   `view(c, clients, **extra)`.
 
+- Steps 5-6: a merged member shows "Part of a merged case", linked to its
+  parent. "Extraction failed" shows only when there is no case. Browse rows
+  carry the "Research this" form, as bid results do (`test_review.in_search`
+  relies on it). The `updated_at` ingest test is in `tests/test_ingest.py`,
+  for its S3 and triage fixtures. `tests/test_ui.py` expects the new tab.
+
 ## Tests
 
 ```bash
