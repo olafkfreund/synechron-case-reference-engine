@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 231
 author: olafkfreund
 ---
@@ -82,11 +82,16 @@ A research result for "MLflow / MLOps", seen in the demo on 2026-10-13:
 - The local model must stay usable. Ranking and diagram drafting must not
   blow the context (#217).
 
-## Open questions
+## Decisions (2026-10-13, approved with the intent)
 
-1. **Who confirms image rights:** the user who ran the research, or only
-   reviewers?
-2. **Diagram format:** generate Mermaid-like text rendered to PNG by us, or
-   SVG? The spec proposes the lightest one that Word and PDF accept.
-3. **Order:** clean quotes first (a quick fix), then better quotes and
-   notes, then images, then diagrams?
+1. Only reviewers confirm image usage rights. The confirmation and its
+   reviewer are recorded.
+2. The diagram format is the lightest one that Word and PDF accept; the
+   spec chooses.
+3. Order:
+   - (a) clean quotes
+   - (b) longer and better quotes, plus technical notes
+   - (c) images with confirmed rights
+   - (d) generated diagrams
+
+   Each is its own PR.
