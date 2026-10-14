@@ -306,7 +306,7 @@ label, cite}]}`.
    reviewer chooses to use.
 6. The phase order is (a), (b), (c), (d), each its own PR.
 
-## Revision 2026-10-14: phase (d) reuses the architecture renderer (draft, needs approval)
+## Revision 2026-10-14: phase (d) reuses the architecture renderer (approved by the user 2026-10-14)
 
 **Why.** Phase (d) was designed before #246 shipped `app/archdiagram.py`,
 the customer-grade renderer behind case architectures:
