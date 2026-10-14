@@ -178,3 +178,13 @@ None yet.
     14 px radius.
   - **Sources:** at 900 px and wider, the badge stays beside the name.
   - **Tests:** the full suite passed, 1446.
+- **Review fixes, batch 1** (Opus and Codex; full suite 1447 passed; 5
+  tests fail with the old behaviour):
+  - **Badges** use `min-height` 20 px, so sentence-long notices wrap.
+  - **Dark `--input-border`** is `#747474`, at least 3:1 on bg, surface
+    and subtle. Tested against all three in both themes.
+  - **Touch targets.** The 44 px block uses `any-pointer:coarse`, which
+    covers touchscreen laptops.
+  - **Accented letters.** Montserrat's latin-ext subset is added, with
+    fontsource's `unicode-range`.
+  - **Stale comment** refreshed.

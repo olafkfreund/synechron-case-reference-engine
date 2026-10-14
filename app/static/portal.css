@@ -1,6 +1,9 @@
-@font-face{font-family:"Montserrat";font-weight:400;font-display:swap;src:url(fonts/montserrat-400.woff2) format("woff2")}
-@font-face{font-family:"Montserrat";font-weight:500;font-display:swap;src:url(fonts/montserrat-500.woff2) format("woff2")}
-@font-face{font-family:"Montserrat";font-weight:600;font-display:swap;src:url(fonts/montserrat-600.woff2) format("woff2")}
+@font-face{font-family:"Montserrat";font-weight:400;font-display:swap;src:url(fonts/montserrat-400.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Montserrat";font-weight:400;font-display:swap;src:url(fonts/montserrat-ext-400.woff2) format("woff2");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"Montserrat";font-weight:500;font-display:swap;src:url(fonts/montserrat-500.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Montserrat";font-weight:500;font-display:swap;src:url(fonts/montserrat-ext-500.woff2) format("woff2");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"Montserrat";font-weight:600;font-display:swap;src:url(fonts/montserrat-600.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Montserrat";font-weight:600;font-display:swap;src:url(fonts/montserrat-ext-600.woff2) format("woff2");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
 @font-face{font-family:"IBM Plex Mono";font-weight:400;font-display:swap;src:url(fonts/ibm-plex-mono-400.woff2) format("woff2")}
 
 /* tokens */
@@ -18,14 +21,14 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;
 --bg:#0A0A0A;--surface:#171717;--text:#FAFAFA;--muted:#A1A1A1;--border:#2E2E2E;--subtle:#262626;
 --accent:#F0B100;--accent-hover:#F5C842;--on-accent:#733E0A;--link:#F0B100;--focus:#F0B100;--header:#0A0A0A;--paper:#F4F6F8;
---input-border:#6B6B6B;
+--input-border:#747474;
 --ok-bg:#173A26;--ok-fg:#9DE0B4;--warn-bg:#3D2F12;--warn-fg:#F5CF85;--bad-bg:#452627;--bad-fg:#FF6467;
 --header-text:#D4D4D4;--header-strong:#FAFAFA;--header-tag:#A1A1A1;--header-border:#6B6B6B;--header-focus:#F0B100;--header-hover:#262626;
 --shadow:0 1px 2px rgb(0 0 0/.3),0 2px 12px rgb(0 0 0/.3)}}
 :root[data-theme="dark"]{color-scheme:dark;
 --bg:#0A0A0A;--surface:#171717;--text:#FAFAFA;--muted:#A1A1A1;--border:#2E2E2E;--subtle:#262626;
 --accent:#F0B100;--accent-hover:#F5C842;--on-accent:#733E0A;--link:#F0B100;--focus:#F0B100;--header:#0A0A0A;--paper:#F4F6F8;
---input-border:#6B6B6B;
+--input-border:#747474;
 --ok-bg:#173A26;--ok-fg:#9DE0B4;--warn-bg:#3D2F12;--warn-fg:#F5CF85;--bad-bg:#452627;--bad-fg:#FF6467;
 --header-text:#D4D4D4;--header-strong:#FAFAFA;--header-tag:#A1A1A1;--header-border:#6B6B6B;--header-focus:#F0B100;--header-hover:#262626;
 --shadow:0 1px 2px rgb(0 0 0/.3),0 2px 12px rgb(0 0 0/.3)}
@@ -72,7 +75,7 @@ main{max-width:1200px;margin:0 auto;padding:28px 24px 64px}
 .muted{color:var(--muted)}
 .tag{font-family:"IBM Plex Mono",monospace;font-size:12px;padding:3px 8px;border-radius:6px;background:var(--subtle);border:1px solid var(--border)}
 
-.badge{display:inline-flex;align-items:center;height:20px;font-size:12px;font-weight:500;padding:0 8px;border-radius:999px;background:var(--subtle);color:var(--muted)}
+.badge{display:inline-flex;align-items:center;min-height:20px;line-height:1.4;font-size:12px;font-weight:500;padding:0 8px;border-radius:999px;background:var(--subtle);color:var(--muted)}
 .badge.ok{background:var(--ok-bg);color:var(--ok-fg)}
 .badge.warn{background:var(--warn-bg);color:var(--warn-fg)}
 .badge.bad{background:var(--bad-bg);color:var(--bad-fg)}
@@ -117,7 +120,7 @@ a.card b{color:var(--link)}
 a.card:hover{border-color:var(--link)}
 a.card:hover b{text-decoration:underline}
 
-/* the accent ring is weak on the dark header bar: it gets its own light ring */
+/* the header has its own ring colour, tuned to its bar in both themes */
 .site-header :focus-visible{outline-color:var(--header-focus)}
 
 /* header: two rows, brand and user, then tabs; DOM order = visual order */
@@ -388,4 +391,4 @@ main img{background:var(--paper);padding:8px;border-radius:var(--r-control);max-
 .paper svg{width:100%;height:auto;display:block}
 
 /* touch: every control and nav link keeps a 44px target */
-@media (pointer:coarse){.btn,button,.btn-sm,details.mini>summary,.source-row.src details.mini>summary,.site-nav a,textarea,input[type=text],input[type=search],input[type=email],input[type=number],input[type=date],input[type=password],select{min-height:44px}}
+@media (any-pointer:coarse){.btn,button,.btn-sm,details.mini>summary,.source-row.src details.mini>summary,.site-nav a,textarea,input[type=text],input[type=search],input[type=email],input[type=number],input[type=date],input[type=password],select{min-height:44px}}

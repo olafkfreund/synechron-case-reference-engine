@@ -261,7 +261,7 @@ def test_theme_contrast():
             assert ratio(t[f"{k}-fg"], t[f"{k}-bg"]) >= 4.5, (name, k)
         assert ratio(t["focus"], t["surface"]) >= 3 and ratio(t["focus"], t["bg"]) >= 3, name
         assert ratio(t["muted"], t["subtle"]) >= 4.5, name
-        assert ratio(t["input-border"], t["surface"]) >= 3, name  # a field's edge is a UI component
+        assert min(ratio(t["input-border"], t[b]) for b in ("bg", "surface", "subtle")) >= 3, name  # a field's edge is a UI component
         assert ratio(t["header-text"], t["header"]) >= 4.5 and ratio(t["header-tag"], t["header"]) >= 4.5, name
         assert ratio(t["header-text"], t["header-hover"]) >= 4.5, name
         assert ratio(t["header-strong"], t["header"]) >= 4.5, name  # the brand link on hover

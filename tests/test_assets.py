@@ -10,7 +10,7 @@ NAMES = "search globe inbox users database shield clock file check building aler
 
 def test_every_font_face_file_exists_and_licence_ships():
     urls = re.findall(r"@font-face\{[^}]*url\(([^)]+)\)", (STATIC / "portal.css").read_text())
-    assert len(urls) == 4
+    assert len(urls) == 7 and len([x for x in urls if "-ext-" in x]) == 3  # 3 latin, 3 latin-ext, Plex Mono
     assert all((STATIC / u).is_file() for u in urls)
     assert "Montserrat" in (STATIC / "fonts" / "OFL.txt").read_text()
 
@@ -25,7 +25,7 @@ def test_every_icon_renders_an_svg():
 
 def test_coarse_pointer_keeps_44px_targets():
     css = (STATIC / "portal.css").read_text()
-    block = css[css.index("@media (pointer:coarse)"):]
+    block = css[css.index("@media (any-pointer:coarse)"):]
     assert "min-height:44px" in block
     for sel in (".btn", ".btn-sm", "details.mini>summary", ".site-nav a", "select"):
         assert sel in block.split("{")[1].split(","), sel
@@ -36,3 +36,9 @@ def test_open_mini_panel_is_a_plain_subtle_surface_and_the_badge_stays_by_the_na
     panel = re.search(r"details\.mini\[open\]\{([^}]*)\}", css).group(1)
     assert "var(--subtle)" in panel and "var(--border)" in panel and "blur" not in css
     assert re.search(r"\n\.src \.who\{display:flex", css)
+
+
+def test_badge_height_is_a_minimum_so_long_notices_wrap():
+    css = (STATIC / "portal.css").read_text()
+    rule = re.search(r"\n\.badge\{([^}]*)\}", css).group(1)
+    assert "min-height:20px" in rule and not re.search(r"(?<!-)height:20px", rule)
