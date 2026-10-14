@@ -18,7 +18,7 @@ from app import anonymise, db, office
 from app.archdiagram import layout, to_mermaid, to_pptx_shapes, to_png, to_svg
 from app.main import User, require, wants_html
 from app.clients import logo_for
-from app.review import PNG_HEADERS, VISIBLE, page
+from app.review import CAPABILITY_NOTE, PNG_HEADERS, VISIBLE, page
 from app.writeup import PRICE_FLAG
 from app.schema import ArchCallout, ArchComponent, ArchFlow, Architecture, ReferenceCase, fence, plain, vague_metric
 
@@ -33,6 +33,7 @@ CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")  # invalid in XML; also used 
 SLIDE_TEXT = 300  # challenge/solution excerpt on a slide; the Word version has the full text
 SLIDE_OUTCOMES = 5
 ENGAGEMENT_NOTE = "Engagement reference: contracted scope; no outcomes are claimed."
+NOTES = {"engagement": ENGAGEMENT_NOTE, "capability": CAPABILITY_NOTE}
 
 
 class Withheld(Exception):
@@ -214,17 +215,16 @@ def section(case: ReferenceCase, client: str) -> dict:
     blocks = [("Challenge", prose("challenge", v(case.challenge))), ("Solution", prose("solution", v(case.solution))),
               ("Implementation approach", prose("implementation", v(case.implementation))),
               ("Configuration and integration", prose("configuration", v(case.configuration))),
-              ("Lessons learned", (None, []) if case.basis == "engagement" else prose("lessons_learned", v(case.lessons_learned)))]
+              ("Lessons learned", (None, []) if case.basis != "delivered" else prose("lessons_learned", v(case.lessons_learned)))]
     lists = [("Capabilities", [v(c) for c in case.capabilities]),
              ("Technology", [v(t) for t in case.tech_stack]),
              ("Technical references", [v(t) for t in case.tech_references]),
              ("Outcomes", [(f"{o.metric}: {o.value}" if not vague_metric(o) else o.value) for o in case.outcomes if not o.unsourced])]
-    engagement = case.basis == "engagement"
-    if engagement:  # contracted scope claims no results, whatever the record holds
+    if case.basis != "delivered":  # contracted scope or an offering claims no results, whatever the record holds
         lists = [x for x in lists if x[0] != "Outcomes"]
     return dict(
         title=v(case.title) or "", client=client, summary=case.summary,
-        basis=case.basis, note=ENGAGEMENT_NOTE if engagement else "",
+        basis=case.basis, note=NOTES.get(case.basis, ""),
         details=[dict(label=a, value=str(b)) for a, b in details if b not in (None, "")],
         blocks=[dict(heading=a, text=t, paragraphs=ps) for a, (t, ps) in blocks if t],
         lists=[dict(heading=a, bullets=[str(i) for i in b if i]) for a, b in lists if any(b)],

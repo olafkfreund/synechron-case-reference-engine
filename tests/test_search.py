@@ -526,3 +526,28 @@ def test_go_is_404_for_everything_else(approved):
 
 def test_card_for_an_upload_says_stored_in_the_engine(approved, monkeypatch):
     assert "Stored in the engine. Ask a reviewer for a copy." in card_html(approved, None, None, monkeypatch)
+
+
+def test_capability_is_never_in_default_results_and_has_its_own_filter(approved, monkeypatch):  # #213
+    d = approved(data(title="Delivered onboarding"))
+    e = approved(data(title="Engagement onboarding"))
+    k = approved(data(title="Capability onboarding"))
+    set_basis(e, "engagement")
+    set_basis(k, "capability")
+    # the default set is exactly what it was before the third basis: delivered and engagement only
+    assert sorted(ids()) == sorted([d, e])
+    assert sorted(c["id"] for c in sr.search(ME, "", {})) == sorted([d, e])
+    assert [c["id"] for c in sr.search(ME, "onboarding", {}, "capability")] == [k]
+    assert sr.search(ME, "onboarding", {}, "capability", count=True) == 1
+    picks_reply(monkeypatch)
+    top, others, _ = sr.results(ME, "onboarding", {})
+    assert k not in {x["id"] for x in top + others}
+    c = client(GUEST)
+    page = c.get("/search").text
+    assert "Capability onboarding" not in page and "capability document matches" in page and "Show them" in page
+    page = c.post("/search", data={"bid_text": "onboarding"}).text
+    assert "Capability onboarding" not in page and 'name="kind" value="capability"' in page and 'value="onboarding"' in page
+    page = c.get("/search?kind=capability").text
+    assert "Capability onboarding" in page and "Delivered onboarding" not in page
+    assert "Capability document" in page and "not delivery evidence" in page and "Show them" not in page
+    assert "documents match" not in c.post("/search", data={"bid_text": "zzzz nothing", "kind": ""}).text

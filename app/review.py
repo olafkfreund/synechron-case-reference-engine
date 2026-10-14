@@ -24,6 +24,8 @@ from app.schema import (CITE_POINTS, POINT_FIELDS, ArchCallout, ArchComponent, A
                         ReferenceCase, Sourced, _norm, check_architecture, plain)
 from app.writeup import PRICE_FLAG, check_prose, quotes_of
 
+CAPABILITY_NOTE = "Capability document: describes what we offer, not delivery evidence."  # render imports review, so the text lives here (#213)
+
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")  # autoescape on
 # the stylesheet URL changes with its content, so a browser never pairs new pages with an old cached CSS (#90)
@@ -277,7 +279,7 @@ def _detail(cid, request, user, arch_form=None):
     return page(request, "review_detail.html", user, arch=_arch_panel(case, arch_form), id=cid, checks=checks, minimum=meets_minimum(checks), rows=rows(case, {m[7]: m[1] for m in members}), notes=notes, infos=infos,
                 sections=sections, found=found, max_diagrams=diagrams.MAX_PER_CASE,
                 unlisted=unlisted, diagrams=case.diagrams, members=members, cands=cands, remerge=remerge,
-                basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
+                basis=case.basis, basis_reason=case.basis_reason, capability_note=CAPABILITY_NOTE, status=r[1], document=r[2],
                 external_id=r[3], source=r[4], merged=bool(members),
                 reviewable=r[5] and not any(m[6] for m in members), v=r[6], sources=sources, sources_v=r[11],
                 uploaded_by=r[12], due=r[9].strftime("%Y-%m-%d") if r[9] else None)  # in date by the database clock, as search judges it

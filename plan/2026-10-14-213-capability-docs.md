@@ -132,3 +132,11 @@ exist, which would stop the app starting. This goes in the PR.
   - **Prompts.** The write-up prompt gains a "basis: capability"
     instruction (present or conditional tense, never delivered), and
     `ARCH_SYSTEM` sets callouts to `[]`.
+- **Step 3.**
+  - **Where the note lives.** `CAPABILITY_NOTE` is in `app/review.py`,
+    because `render` imports `review`. `render` re-exports it.
+  - **Count line.** It is a real `count(*)`, not capped at 20.
+  - **"Show them".** It posts the bid text, so confidential text never
+    lands in a URL.
+  - **Preview.** It shows the note through `section()` with no template
+    change.

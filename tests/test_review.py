@@ -1819,3 +1819,10 @@ def test_apply_edit_matches_the_route(make):  # the MCP tool calls apply_edit; i
         new_v = review.apply_edit(c, User(sub="u", name="u", groups=frozenset(R), roles=frozenset({"reviewer"})), b, ver(b), **edit)
     assert row(a)[1] == row(b)[1] and new_v == ver(b)
     assert row(b)[1]["industry"]["value"] == "Banking"
+
+
+def test_review_labels_a_capability_document(make):  # #213
+    cid = make("extracted", basis="capability")
+    page = client(R).get(f"/review/{cid}").text
+    assert "Capability document" in page and "not delivery evidence" in page
+    assert "not delivery evidence" not in client(R).get(f"/review/{make('extracted')}").text

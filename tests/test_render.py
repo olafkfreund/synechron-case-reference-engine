@@ -913,3 +913,12 @@ def test_produce_matches_generate_bytes(approved, fmt):
         return za.namelist() == zb.namelist() and all(za.read(n) == zb.read(n) for n in za.namelist() if n != "docProps/core.xml")
     assert r.status_code == 200 and same(body, r.content) and mime == r.headers["content-type"]
     assert r.headers["content-disposition"] == f'attachment; filename="{name}"'
+
+
+def test_section_of_a_capability_case_has_the_note_and_no_results_or_lessons():  # #213
+    case = ReferenceCase(title=Sourced[str](value="Offer", source_quote="q"), basis="capability",
+                         outcomes=[Outcome(metric="m", value="3 days", source_quote="q")],
+                         lessons_learned=Sourced[str](value="Start early", source_quote="q"))
+    s = render.section(case, "a client")
+    assert s["note"] == render.CAPABILITY_NOTE
+    assert "Outcomes" not in [x["heading"] for x in s["lists"]] and "Lessons learned" not in [b["heading"] for b in s["blocks"]]

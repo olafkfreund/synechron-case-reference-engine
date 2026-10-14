@@ -20,7 +20,7 @@
 {% for r in rows %}{% if r.unsourced and not r.new %}{% set attn.n = attn.n + 1 %}{% endif %}{% endfor %}
 <div class="page-head"><div><h1>{{ title or "Case " ~ id }}</h1>
 <div class="row"><span class="badge neutral">{{ status }}</span>
-<span class="badge {{ "ok" if basis == "delivered" else "neutral" }}">{{ "Engagement (contracted scope)" if basis == "engagement" else "Delivered case" }}</span>
+<span class="badge {{ "ok" if basis == "delivered" else "neutral" }}">{{ {"engagement": "Engagement (contracted scope)", "capability": "Capability document"}.get(basis, "Delivered case") }}</span>
 {% if attn.n %}<span class="badge bad">{{ attn.n }} unsourced</span>{% endif %}{% if notes %}<span class="badge warn">{{ notes | length }} notes</span>{% endif %}</div></div></div>
 {% if reviewable and status == "approved" and due %}<p class="muted" role="note">This case is approved and in search until {{ due }}. Approving it again renews it for 12 months. Saving any change takes it out of search until you approve it again.</p>{% endif %}
 
@@ -31,6 +31,7 @@
 {% for m in members %}<tr><td>{{ m[1] }}{% if m[6] %} <span class="badge bad">withdrawn</span>{% endif %}{% if m[8] %} <span class="badge warn">changed since merge</span>{% endif %}</td><td>{{ m[2] }}</td><td><code>{{ m[3] }}</code></td><td>{{ m[4] }}</td><td>{{ m[5] }}</td></tr>{% endfor %}</tbody></table></div>
 {% else %}<dl class="status-list"><dt>Document</dt><dd><b>{{ document }}</b></dd><dt>Source</dt><dd>{{ source }}</dd><dt>External id</dt><dd><code>{{ external_id }}</code></dd>{% if uploaded_by %}<dt>Uploaded by</dt><dd>{{ uploaded_by }}</dd>{% endif %}</dl>{% endif %}
 {% if basis_reason %}<p class="muted" style="margin:12px 0 0">{{ basis_reason }}</p>{% endif %}
+{% if basis == "capability" %}<div class="note">{{ capability_note }}</div>{% endif %}
 </div>
 {% set tx = "text" if sections else "fields" %}{% set anchors = {"challenge": tx, "solution": tx, "implementation": tx, "configuration": tx, "capabilities": "fields", "technologies": "fields", "results": "fields", "period": "fields", "diagram": "diagrams"} %}
 <div class="section-card"><div class="card-head"><h2>Completeness: {{ checks | selectattr("ok") | list | length }} of {{ checks | length }}</h2></div>

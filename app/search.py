@@ -7,6 +7,7 @@ from app.clients import logo_cids
 from app.completeness import checklist, score
 from app.llm import complete_json
 from app.main import User, require
+from app.render import NOTES
 from app.review import REVIEWABLE, VISIBLE, page
 from app.schema import ReferenceCase, numbers, vague_metric
 
@@ -55,7 +56,7 @@ ORDER = {"newest": "c.approved_at desc nulls last, c.id desc",
 FACET_KEYS = {"industry": "c.data->'industry'->>'value'", "region": "c.data->'region'->>'value'"}
 
 
-def search(user: User, bid_text: str, filters: dict, kind: str = "", sort: str = "newest", page: int = 1) -> list[dict]:
+def search(user: User, bid_text: str, filters: dict, kind: str = "", sort: str = "newest", page: int = 1, count: bool = False):
     """Top 20 approved, in-date, ACL-visible cases. Candidates: id, case, label, basis, rank (best first).
 
     label is unchecked: show it only through results(), whose view() blocks protected names.
@@ -78,9 +79,14 @@ def search(user: User, bid_text: str, filters: dict, kind: str = "", sort: str =
         where.append("exists (select 1 from jsonb_array_elements(c.data->'tech_stack') t "
                      "where position(lower(%s) in lower(t->>'value')) > 0)")
         params.append(v)
-    if kind in ("delivered", "engagement"):
+    if kind in ("delivered", "engagement", "capability"):
         where.append("c.basis = %s")
         params.append(kind)
+    else:
+        where.append("c.basis <> 'capability'")  # an offering is never mixed into reference results (#213)
+    if count:  # how many match, for the "N capability documents" line
+        with db.connect() as conn:
+            return conn.execute(f"select count(*) from cases c {join} where {' and '.join(where)}", params).fetchone()[0]
     # with bid text: ranked, no paging. Without: the chosen sort, paged
     # shortcut: offset paging; switch to keyset past ~50k approved cases
     order = "rank desc, (c.basis = 'delivered') desc, c.id"
@@ -151,7 +157,7 @@ def pick(bid_text: str, candidates: list[dict], clients) -> tuple[list[dict], li
 
 def view(c, clients, **extra):
     case = c["case"]
-    return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label=clean(c["label"], clients, "a client"), basis=c["basis"], score=score(checklist(case)), logo=c.get("logo"), **extra)
+    return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label=clean(c["label"], clients, "a client"), basis=c["basis"], note=NOTES.get(c["basis"], ""), score=score(checklist(case)), logo=c.get("logo"), **extra)
 
 
 def source_docs(case_ids: list[int], user: User, clients) -> dict[int, list[dict]]:
@@ -257,11 +263,17 @@ def results(user: User, bid_text: str, filters: dict, kind: str = ""):
     return top, others, notes
 
 
+def capability_count(user, bid_text, filters, kind):
+    """Capability documents matching the same search, shown as a line under the results; 0 when they are the results."""
+    return 0 if kind == "capability" else search(user, bid_text, filters, "capability", count=True)
+
+
 def browse_page(request, user, filters, kind, sort, pageno, bid_text=""):
-    kind, sort, pageno = (kind if kind in ("delivered", "engagement") else ""), (sort if sort in ORDER else "newest"), min(max(pageno, 1), 1000)
+    kind, sort, pageno = (kind if kind in ("delivered", "engagement", "capability") else ""), (sort if sort in ORDER else "newest"), min(max(pageno, 1), 1000)
     rows = browse(user, filters, kind, sort, pageno)
     return page(request, "search.html", user, bid_text=bid_text, f=filters, kind=kind, sort=sort, pageno=pageno, rows=rows,
-                facets=facets(user), full=len(rows) == TOP, ran=False, top=[], others=[], notes=[])
+                facets=facets(user), full=len(rows) == TOP, ran=False, top=[], others=[], notes=[],
+                capability=capability_count(user, bid_text, filters, kind))
 
 
 @router.get("/search")
@@ -282,4 +294,5 @@ def search_page(request: Request, bid_text: str = Form(""), industry: str = Form
     from app import library  # library imports search
     lib = library.suggest(bid_text, filters, anonymise.load_clients())
     return page(request, "search.html", user, bid_text=bid_text, f=filters, kind=kind, sort=sort, pageno=1, rows=[],
-                facets=facets(user), full=False, ran=True, top=top, others=others, notes=notes, library=lib)
+                facets=facets(user), full=False, ran=True, top=top, others=others, notes=notes, library=lib,
+                capability=capability_count(user, bid_text, filters, kind))
