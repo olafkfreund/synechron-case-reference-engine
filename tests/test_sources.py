@@ -343,8 +343,8 @@ def test_sources_css_keeps_44px_targets_and_the_opened_panel_on_row_two():
     from pathlib import Path
     css = (Path(__file__).parent.parent / "app" / "static" / "portal.css").read_text()
     assert re.search(r"details\.mini>summary\{[^}]*min-height:44px", css)
-    assert re.search(r"\.source-row details\.mini>summary::before\{content:\"\";position:absolute;inset:-4px 0\}", css)
-    assert ".source-row>*{grid-row:1}" in css and "grid-column:1 / -1;grid-row:2}" in css
+    assert re.search(r"\.source-row\.src details\.mini>summary::before\{content:\"\";position:absolute;inset:-4px 0\}", css)
+    assert ".src>*{grid-row:1}" in css and "grid-column:1 / -1;grid-row:2}" in css
     assert not re.search(r"\.head-panel>summary\{", css) and ".src-add>summary" in css
 
 
@@ -363,3 +363,16 @@ def test_last_run_shows_as_an_age_and_summaries_hide_the_marker(env):  # noqa: F
             c.execute("delete from sources where name=%s", (name,))
     css = (Path(__file__).parent.parent / "app" / "static" / "portal.css").read_text()
     assert re.search(r"details\.mini>summary::-webkit-details-marker[^{]*\{display:none\}", css) and "details.mini>summary{list-style:none" in css
+
+
+def test_source_grid_is_scoped_to_the_sources_rows_and_review_rows_keep_their_layout():  # plan #259 review
+    from pathlib import Path
+    root = Path(__file__).parent.parent / "app"
+    css = (root / "static" / "portal.css").read_text()
+    assert not re.search(r"\.source-row\{display:grid", css) and ".source-row.src{display:grid" in css
+    assert 'class="source-row src"' in (root / "templates" / "sources.html").read_text()
+    for page in ("review_list.html", "documents.html"):
+        assert 'source-row src' not in (root / "templates" / page).read_text()
+    block = css.split("@media (min-width:900px){\n.source-row.src")[1].split("\n}")[0]
+    assert not re.search(r"^\.source-row[ >:{.]", block.split("\n", 1)[1], re.M) and ".field-row>:nth-child(3):last-child{grid-column:3 / -1}" in css
+    assert re.search(r"\.field-row \.acts\{display:flex;flex-wrap:wrap;gap:6px\}\n@media \(min-width:900px\)\{\n\.field-row \.acts\{flex-direction:column", css)

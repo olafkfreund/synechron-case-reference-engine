@@ -37,7 +37,7 @@ S3 and SharePoint: optional <code>"include_ext"</code> (default docx, pptx, pdf)
 <div class="card-head"><h2>Sources ({{ sources | length }})</h2>{% if older %}<form method="post" action="/admin/reextract" class="action-row"><button class="btn btn-sm">Re-extract older cases ({{ older }}): cases go back to review</button></form>{% endif %}</div>
 {% if not sources %}<div class="empty-state">{{ icon("database") }}<p>No sources yet.</p><p>Use “+ Add source” above.</p></div>{% endif %}
 {% for id, kind, name, config, acl, enabled, last_run, counts, dc, days in sources %}
-<div class="source-row">
+<div class="source-row src">
 {{ icon("database") }}
 <div class="who"><b>{{ name }}</b><span class="badge neutral">{{ kind }}</span></div>
 <div class="chips"><span class="badge {{ 'ok' if enabled else 'neutral' }}">{{ "Enabled" if enabled else "Disabled" }}</span>

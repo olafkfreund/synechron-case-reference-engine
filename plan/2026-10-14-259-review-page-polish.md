@@ -235,3 +235,19 @@ Revert the merge commit. There is no data or schema change.
     quote panel has a 1 px `--input-border` edge and a `:focus-within`
     outline.
   - **Sources age** is elapsed whole days, clamped at 0.
+- **agy review fixes** (full suite 1439 passed; the 2 new tests fail with
+  the old behaviour):
+  - **Scoped grid.** Every new Sources row rule is scoped to `.src`. The
+    review queue and Latest documents share `.source-row` and were being
+    crushed.
+  - **Word count.** "1 word" for a single word.
+  - **Review queue.** The "Needs attention" tile and the row badges count
+    action notes only.
+  - **Architecture reason.** An "architecture…" note wins over the
+    extraction-version reason.
+  - **Preview.**
+    - the label stays "Preview" and only `aria-pressed` toggles
+    - empty text shows "Nothing to preview yet."
+    - paragraphs are split as `render.py` splits them
+  - **Field-row actions.** They sit in a row below 900 px. At 900 px and
+    wider, rows with three cells span the last cell to the end.

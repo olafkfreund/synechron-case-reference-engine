@@ -1723,3 +1723,15 @@ def test_failed_hand_save_keeps_the_editor_open_and_review_js_is_accessible(make
     assert '<details class="mini"><summary>Write it by hand' in client(R).get(f"/review/{cid}").text
     js = client(R).get("/static/review.js").text
     assert 'aria-live' in js and 'aria-pressed' in js and 'f.addEventListener("keydown"' in js
+
+
+def test_list_counts_action_notes_only_and_a_failed_generate_note_wins_the_reason(make):  # plan #259 review
+    quiet = make(data=case_data(extraction_version=4, needs_attention=["read in 3 parts"]))
+    loud = make(data=case_data(extraction_version=3, needs_attention=["read in 3 parts", "architecture: no new proposal; the current one is kept", "check it"]))
+    c = client(R)
+    page = c.get("/review").text
+    assert page.count('badge warn">') == 1 and "2 notes" in page
+    assert "architecture: no new proposal; the current one is kept" in c.get(f"/review/{loud}").text.split("Architecture</h2>")[1]
+    assert "Extracted before architecture" not in c.get(f"/review/{loud}").text.split("Architecture</h2>")[1]
+    js = c.get("/static/review.js").text
+    assert '" word"' in js and "Nothing to preview yet." in js and 'split("\\n\\n")' in js and 'pv.textContent' not in js

@@ -180,7 +180,7 @@ def review_list(request: Request, user: User = Depends(require("reviewer"))):
             f"where {REVIEWABLE} and c.status = 'approved' and c.review_due > now() "
             "and c.review_due <= now() + interval '30 days' order by c.review_due", (list(user.groups),)).fetchall()
     cases = [dict(id=i, status=s, title=d["title"]["value"], document=t,
-                  attention=len(d.get("needs_attention", [])), unsourced=count_unsourced(d), members=n)
+                  attention=len(split_notes(d.get("needs_attention", []))[0]), unsourced=count_unsourced(d), members=n)
              for i, s, d, t, n in found]
     due_soon = [dict(id=i, title=d["title"]["value"], document=t, due=due.strftime("%Y-%m-%d"), members=n) for i, d, t, due, n in soon]
     return page(request, "review_list.html", user, cases=cases, due_soon=due_soon)
@@ -569,7 +569,7 @@ def _arch_panel(case, form):
     cites += [(f"reference {i}", r.value, r.source_quote) for i, r in enumerate(case.tech_references, 1) if r.value and r.source_quote and not r.unsourced]
     text, errors = form if form else (arch_lines(a) if a else "", [])
     note = next((n for n in case.needs_attention if n.lower().startswith("architecture")), None)
-    reason = "Extracted before architecture diagrams were added." if case.extraction_version < 4 else note or "No architecture yet."
+    reason = note or ("Extracted before architecture diagrams were added." if case.extraction_version < 4 else "No architecture yet.")
     return dict(a=a, svg=svg, cites=cites, text=text, reason=reason, errors=errors, outcomes=[f"{i}. {o.metric} {o.value}" for i, o in enumerate(case.outcomes, 1) if not o.unsourced])
 
 

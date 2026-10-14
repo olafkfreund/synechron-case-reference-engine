@@ -10,7 +10,7 @@
     foot.insertBefore(count, save); foot.insertBefore(dirty, save); foot.appendChild(rev); foot.appendChild(pv); f.insertBefore(box, foot);
     function sync() {
       var n = t.value.trim().split(/\s+/).filter(Boolean).length;
-      count.textContent = n ? n + " words" + (min ? " · minimum " + min : "") : "";  // empty: the checker counts the sourced points instead
+      count.textContent = n ? n + (n === 1 ? " word" : " words") + (min ? " · minimum " + min : "") : "";  // empty: the checker counts the sourced points instead
       count.className = min && n >= min ? "ok" : "";
       dirty.hidden = t.value === t.defaultValue; rev.disabled = dirty.hidden;
     }
@@ -20,8 +20,12 @@
     pv.addEventListener("click", function () {  // textContent only: the text is never parsed as HTML
       var show = box.hidden;
       box.textContent = "";
-      if (show) t.value.split(/\n\s*\n/).forEach(function (p) { if (p.trim()) box.appendChild(el("p", "", p.trim())); });
-      box.hidden = !show; t.hidden = show; pv.textContent = show ? "Edit" : "Preview"; pv.setAttribute("aria-pressed", show ? "true" : "false");
+      if (show) {  // paragraphs split exactly as the outputs do
+        var ps = t.value.split("\n\n").map(function (p) { return p.trim(); }).filter(Boolean);
+        if (!ps.length) box.appendChild(el("p", "muted", "Nothing to preview yet."));
+        ps.forEach(function (p) { box.appendChild(el("p", "", p)); });
+      }
+      box.hidden = !show; t.hidden = show; pv.setAttribute("aria-pressed", show ? "true" : "false");
     });
     sync();
   });
