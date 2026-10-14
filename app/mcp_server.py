@@ -249,6 +249,7 @@ class DownloadOut(BaseModel):
 
 
 class Claim(BaseModel):
+    n: int  # the stored index: what save_library_item and create_brief take
     type: str
     statement: str
     quote: str
@@ -358,7 +359,7 @@ def _claim(c: dict) -> Claim:
     if c.get("type") == "technical_note":
         from app import research
         quote = quote[:research.MAX_NOTE_CHARS]  # the portal's cap on a copied note
-    return Claim(type=str(c.get("type") or ""), statement=str(c.get("statement") or ""), quote=quote, publisher=str(c.get("publisher") or ""),
+    return Claim(n=int(c["n"]), type=str(c.get("type") or ""), statement=str(c.get("statement") or ""), quote=quote, publisher=str(c.get("publisher") or ""),
                  url=str(c.get("url") or ""), title=str(c.get("title") or ""), date=str(c.get("retrieved_at") or "")[:10])
 
 
@@ -387,6 +388,15 @@ def record(user_key: str, client_id: str, tool: str, ids: list[int], outcome: st
             dict(u=user_key, c=client_id[:200], t=tool, i=ids, o=outcome, ms=ms, once=once))
 
 
+def over_limit(user_key: str) -> int:
+    """The calls this user made in the last minute when that is the limit or more, else 0."""
+    from app import db
+    with db.connect() as conn:
+        n = conn.execute("select count(*) from tool_calls where user_key = %s and outcome <> 'rate_limited' "
+                         "and created_at > now() - interval '1 minute'", (user_key,)).fetchone()[0]
+    return n if n >= RATE_LIMIT else 0
+
+
 async def _run(work, name: str, daily: int = 0):
     """One tool call: rate limit, the portal function, the audit row. `work(user)` returns (output model, case ids).
     Failures are isError results carrying the portal's own message; arguments and results are never stored."""
@@ -396,19 +406,21 @@ async def _run(work, name: str, daily: int = 0):
     user, client_id, t0 = replace(token.claims["_user"], roles=frozenset({"user"})), token.client_id, time.monotonic()
 
     def go():
-        outcome, out, ids = attempt()
-        record(user.sub, client_id, name, ids, outcome, int((time.monotonic() - t0) * 1000), once=outcome == "rate_limited")
+        # a capped tool holds a per-user, per-tool lock from the count to the audit row, so a parallel burst cannot pass the cap
+        with db.connect() as lock:
+            if daily:
+                lock.execute("select pg_advisory_xact_lock(hashtext(%s))", (f"mcp-daily:{user.sub}{name}",))
+            outcome, out, ids = attempt()
+            record(user.sub, client_id, name, ids, outcome, int((time.monotonic() - t0) * 1000), once=outcome == "rate_limited")
         return outcome, out
 
     def attempt():
-        with db.connect() as conn:  # shortcut: a concurrent burst can pass the count together; tighten with an advisory lock if it matters
-            n = conn.execute("select count(*) from tool_calls where user_key = %s and outcome <> 'rate_limited' "
-                             "and created_at > now() - interval '1 minute'", (user.sub,)).fetchone()[0]
-        if n >= RATE_LIMIT:
+        # shortcut: the per-minute count is not locked, so a burst can pass it together; the daily cap is
+        if n := over_limit(user.sub):
             return "rate_limited", f"slow down: {n} calls in the last minute", []
-        if daily:  # a rolling day of successful calls: an agent loop must not queue unbounded model and Brave work
+        if daily:  # a rolling day of calls that ran, whatever their outcome: failing calls still cost a model call
             with db.connect() as conn:
-                today = conn.execute("select count(*) from tool_calls where user_key = %s and tool = %s and outcome = 'ok' "
+                today = conn.execute("select count(*) from tool_calls where user_key = %s and tool = %s and outcome <> 'rate_limited' "
                                      "and created_at > now() - interval '24 hours'", (user.sub, name)).fetchone()[0]
             if today >= daily:
                 return "rate_limited", f"daily limit reached for {name}", []
@@ -547,9 +559,10 @@ def register(server, origin: str) -> None:
                 clients = anonymise.load_clients(conn)
             if not row:
                 raise HTTPException(404, "no such research")
-            claims, omitted = research.visible_claims(row[3].get("claims", []), clients) if row[1] == "done" else ([], 0)
+            claims, omitted = research.visible_claims([{**c, "n": i} for i, c in enumerate(row[3].get("claims", []))], clients) if row[1] == "done" else ([], 0)
             query = "[withheld]" if anonymise.blocked(row[0], clients) else row[0]  # a client protected after it was sent
-            return ResearchOut(research_id=research_id, status=row[1], query=query, error=row[2],
+            error = "research failed" if row[2] and anonymise.blocked(row[2], clients) else row[2]  # the stored error may echo a name
+            return ResearchOut(research_id=research_id, status=row[1], query=query, error=error,
                                claims=[_claim(c) for c in claims], omitted=omitted), []
         return await _run(work, "get_research")
 
@@ -590,7 +603,7 @@ def register(server, origin: str) -> None:
             shown = library.WITHHELD if anonymise.blocked(topic, clients) else anonymise.apply(topic, clients)
             out = dict(id=library_id, topic=shown, kind=kind, age=age, stale=bool(stale), saved_by=saved_by or library.COLLEAGUE)
             if kind == "quotes":
-                claims, omitted = research.visible_claims(body["quotes"], clients)
+                claims, omitted = research.visible_claims([{**q, "n": i} for i, q in enumerate(body["quotes"])], clients)
                 return LibraryItemOut(**out, claims=[_claim(c) for c in claims], omitted=omitted), []
             try:
                 return LibraryItemOut(**out, brief=BriefBody(**render.brief_section(body["brief"], body["quotes"], clients))), []
@@ -735,17 +748,27 @@ def download_route(verifier: EntraVerifier, client_ids: frozenset[str]) -> Route
                 client = client_of(got.claims)
             else:
                 user, client = await run_in_threadpool(main.current_user, request), "portal"
-            p = read_download(request.path_params["token"])
-            if p["k"] != user.sub:
-                raise Refused(403, "this link was made for another user")
-            user = replace(user, roles=frozenset({"user"}))  # the plain-user view, as in the tools
-            return await run_in_threadpool(work, user, p, client)
+            if "user" not in user.roles:  # current_user() checks no role
+                raise Refused(403, "user role required")
         except Refused as e:
             return JSONResponse({"detail": e.detail}, status_code=e.status, headers={"Cache-Control": "no-store"})
         except HTTPException as e:
             if e.status_code == 401 and not auth:
                 raise  # the portal's own handler: browsers go to the login page
             return JSONResponse({"detail": e.detail}, status_code=e.status_code, headers={"Cache-Control": "no-store"})
+        user = replace(user, roles=frozenset({"user"}))  # the plain-user view, as in the tools
+        try:
+            if await run_in_threadpool(over_limit, user.sub):  # downloads share the 60 a minute with the tools
+                raise Refused(429, "slow down: too many calls in the last minute")
+            p = read_download(request.path_params["token"])
+            if p["k"] != user.sub:
+                raise Refused(403, "this link was made for another user")
+            return await run_in_threadpool(work, user, p, client)
+        except (Refused, HTTPException) as e:
+            status, detail = (e.status, e.detail) if isinstance(e, Refused) else (e.status_code, e.detail)
+            outcome = "rate_limited" if status == 429 else "denied" if status in (403, 409, 410) else OUTCOMES.get(status, "error")
+            await run_in_threadpool(record, user.sub, client, "download", [], outcome, 0, once=True)  # a refused try leaves a trace
+            return JSONResponse({"detail": detail}, status_code=status, headers={"Cache-Control": "no-store"})
 
     return Route("/mcp/download/{token}", handler, methods=["GET"])
 

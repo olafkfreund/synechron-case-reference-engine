@@ -18,11 +18,21 @@ GROUPS = ["g-user", DOCS]
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
-def link(who="o1", kind="case", fmt="md", **ids):
+ME = []  # the default user of a test: fresh each time, so the per-minute limit never carries over
+
+
+@pytest.fixture(autouse=True)
+def fresh_user():
+    ME[:] = [f"o-{uuid.uuid4()}"]
+
+
+def link(who=None, kind="case", fmt="md", **ids):
+    who = who or ME[0]
     return f"/mcp/download/{mcp_server.sign_download(who, kind, fmt, **ids)}"
 
 
-def bearer(who="o1", groups=GROUPS, **over):
+def bearer(who=None, groups=GROUPS, **over):
+    who = who or ME[0]
     return {"Authorization": f"Bearer {token(oid=who, groups=groups, **over)}"}
 
 
@@ -42,7 +52,7 @@ def test_session_and_bearer_give_the_same_file(web, approved):
     url = link(case_ids=[cid])
     by_token = web.get(url, headers=bearer())
     web.cookies.clear()
-    session = portal_client(GROUPS, sub="o1").get(url)
+    session = portal_client(GROUPS, sub=ME[0]).get(url)
     assert by_token.status_code == session.status_code == 200
     assert by_token.content == session.content
     assert by_token.headers["cache-control"] == "no-store" and by_token.headers["x-content-type-options"] == "nosniff"
@@ -61,7 +71,7 @@ def test_download_writes_the_audit_rows_then(web, approved):
 
 
 def test_another_user_gets_403_and_no_file(web, approved):
-    url = link("o1", case_ids=[approved()])
+    url = link(ME[0], case_ids=[approved()])
     other = f"o-{uuid.uuid4()}"
     r = web.get(url, headers=bearer(other))
     assert r.status_code == 403 and gens(other) == 0
@@ -77,10 +87,10 @@ def test_no_credentials_and_unapproved_client_are_refused(web, approved):
 
 def test_expired_and_tampered_tokens_give_410(web, approved, monkeypatch):
     cid = approved()
-    t = mcp_server.sign_download("o1", "case", "md", case_ids=[cid])
+    t = mcp_server.sign_download(ME[0], "case", "md", case_ids=[cid])
     assert web.get(f"/mcp/download/{t[:-2]}xx", headers=bearer()).status_code == 410
     assert web.get("/mcp/download/garbage", headers=bearer()).status_code == 410
-    forged = URLSafeTimedSerializer("another-secret", salt="mcp-download").dumps({"k": "o1", "kind": "case", "f": "md", "case_ids": [cid]})
+    forged = URLSafeTimedSerializer("another-secret", salt="mcp-download").dumps({"k": ME[0], "kind": "case", "f": "md", "case_ids": [cid]})
     assert web.get(f"/mcp/download/{forged}", headers=bearer()).status_code == 410
     later = time.time() + mcp_server.DOWNLOAD_TTL + 5
     monkeypatch.setattr("itsdangerous.timed.time.time", lambda: later)
@@ -154,3 +164,24 @@ def test_access_log_filter_masks_the_token(web):
     assert mcp_server.MaskDownloadToken().filter(rec) and "SECRET" not in rec.getMessage()
     assert "/mcp/download/***?x=1" in rec.getMessage()
     assert any(isinstance(f, mcp_server.MaskDownloadToken) for f in logging.getLogger("uvicorn.access").filters)
+
+
+def test_a_session_without_the_user_role_gets_403_and_no_file(web, approved):
+    who = f"o-{uuid.uuid4()}"
+    url = link(who, case_ids=[approved()])
+    r = portal_client(["noise-group"], sub=who).get(url)  # a valid session and a valid link, but no role
+    assert r.status_code == 403 and gens(who) == 0 and r.headers.get("content-disposition") is None
+
+
+def test_refused_downloads_leave_a_trace_and_share_the_rate_limit(web, approved):
+    who = f"o-{uuid.uuid4()}"
+    assert web.get(link(who, case_ids=[987654321]), headers=bearer(who)).status_code == 404
+    assert web.get(link(who, "case", "md", case_ids=[987654321]) + "x", headers=bearer(who)).status_code == 410
+    with db.connect() as c:
+        got = c.execute("select outcome from tool_calls where user_key = %s and tool = 'download' order by id", (who,)).fetchall()
+    assert [g[0] for g in got] == ["not_found", "denied"]
+    with db.connect() as c:
+        c.execute("insert into tool_calls(user_key, client_id, tool, object_ids, outcome, ms) "
+                  "select %s, 'client-1', 'list_latest', '{}', 'ok', 1 from generate_series(1, 60)", (who,))
+    r = web.get(link(who, case_ids=[approved()]), headers=bearer(who))
+    assert r.status_code == 429 and gens(who) == 0

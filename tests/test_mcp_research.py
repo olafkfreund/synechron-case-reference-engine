@@ -185,3 +185,53 @@ def test_nothing_leaks_through_the_new_tools(mcp, reg, make):  # noqa: F811
     with db.connect() as c:
         rows = repr(c.execute("select * from tool_calls where user_key=%s", (who,)).fetchall())
     assert secret not in rows and bid_text not in rows and url.rsplit("/", 1)[1] not in rows
+
+
+def test_claims_carry_their_stored_index_when_an_earlier_one_is_hidden(mcp, reg):  # noqa: F811
+    who = user_id()
+    rid = done_research(who, "First quote that names a protected client here", Q, publisher="v.example")
+    with db.connect() as c:  # stored claim 0 is hidden by its publisher, claim 1 is clean
+        c.execute("update research set results = jsonb_set(results, '{claims,0,publisher}', to_jsonb(%s::text)) where id=%s", (f"{reg}.example", rid))
+    s = mcp(who=who)
+    got = s.out("get_research", research_id=rid)
+    assert [(c["n"], c["quote"]) for c in got["claims"]] == [(1, Q)] and got["omitted"] == 1
+    lid = s.out("save_library_item", research_id=rid, n=[got["claims"][0]["n"]], topic="Sign in")["library_id"]
+    assert [c["quote"] for c in s.out("get_library_item", library_id=lid)["claims"]] == [Q]
+
+
+def test_failing_calls_count_toward_the_daily_cap(mcp, reg):  # noqa: F811
+    who = user_id()
+    with db.connect() as c:
+        c.execute("insert into tool_calls(user_key, client_id, tool, object_ids, outcome, ms) "
+                  "select %s, 'client-1', 'start_research', '{}', o, 1 from unnest(array['error','denied','not_found','ok','error','error','ok','denied','error','ok']) o",
+                  (who,))
+    res = mcp(who=who).call("start_research", question="kyc automation")
+    assert res["isError"] and res["content"][0]["text"] == "daily limit reached for start_research"
+
+
+def test_a_parallel_burst_cannot_pass_the_daily_cap(env, reg):  # noqa: F811
+    import threading
+    db.init()
+    who = user_id()
+    with db.connect() as c:
+        c.execute("insert into tool_calls(user_key, client_id, tool, object_ids, outcome, ms) "
+                  "select %s, 'client-1', 'start_research', '{}', 'ok', 1 from generate_series(1, 7)", (who,))
+    results = []
+
+    def fire():
+        with TestClient(main.create_app()) as c:
+            results.append(Session(c, who=who, groups=U).call("start_research", question="kyc automation").get("isError", False))
+    threads = [threading.Thread(target=fire) for _ in range(6)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert results.count(False) == 3 and count("select count(*) from research where created_by=%s", who) == 3
+
+
+def test_get_research_error_naming_a_client_is_not_echoed(mcp, reg):  # noqa: F811
+    who = user_id()
+    loc = sent(as_user(who), None)
+    rid = int(loc.rsplit("/", 1)[1])
+    with db.connect() as c:
+        c.execute("update research set status='failed', error=%s where id=%s", (f"fetch failed for {reg}", rid))
+    got = mcp(who=who).out("get_research", research_id=rid)
+    assert got["error"] == "research failed" and reg not in json.dumps(got)
