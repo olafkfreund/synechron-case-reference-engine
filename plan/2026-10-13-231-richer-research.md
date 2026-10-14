@@ -516,6 +516,15 @@ with a diagram, in light and dark. Opus, Codex and agy reviews. Run
     untouched.
   - **Parser untouched.** `parse_architecture` never used its case
     argument.
+- **Phase (d) revised, d2.**
+  - **Prompt.** `ARCH_BRIEF_SYSTEM` is `ARCH_SYSTEM` with "numbered
+    quotes", "cite source N" and `<quotes>` substituted. The message
+    starts with `basis: capability`, so the existing rule drops outcome
+    callouts; a brief has no delivered outcomes.
+  - **Flags.** They use `where: "diagram"`, with the label in `sentence`,
+    which is what the brief page prints.
+  - **Saving.** `save()` keeps `diagram` and `diagram_note` across edits.
+  - **Tests.** The existing brief fakes answer only the `Brief` call.
 
 ## Tests
 
