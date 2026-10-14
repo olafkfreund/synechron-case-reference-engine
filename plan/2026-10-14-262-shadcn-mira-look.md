@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 262
 spec: spec/2026-10-14-262-shadcn-mira-look.md
 ---
