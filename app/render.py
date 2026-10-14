@@ -240,7 +240,7 @@ def architecture_dict(case: ReferenceCase) -> dict | None:
         return None  # a reviewer's confirmation lets a flag pass, never a price
     shown = [i for i, o in enumerate(case.outcomes) if not o.unsourced]  # the Outcomes list as section() shows it
     # a contract claims no results (as in section()); a callout is numbered by its outcome's place in the shown list
-    callouts = [] if case.basis == "engagement" else [{"text": c.text, "outcome": shown.index(c.outcome)} for c in a.callouts if c.outcome in shown]
+    callouts = [] if case.basis != "delivered" else [{"text": c.text, "outcome": shown.index(c.outcome)} for c in a.callouts if c.outcome in shown]
     return {"title": a.title, "components": [c.model_dump(exclude={"cite"}) for c in a.components],
             "flows": [f.model_dump(exclude={"cite"}) for f in a.flows], "callouts": callouts, "footer": ""}
 

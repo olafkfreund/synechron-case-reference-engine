@@ -122,3 +122,13 @@ exist, which would stop the app starting. This goes in the PR.
   - **Changed tests.** Five existing ingest tests that pinned "skipped"
     were updated to expect `capability`. `other` is the kind that is still
     skipped.
+- **Step 2.**
+  - **One rule.** Outcomes, lessons and callouts are cleared for any basis
+    other than `delivered` (`basis != "delivered"`), which covers
+    engagement and capability with one rule.
+  - **What "metrics" means.** It is read as the outcomes list.
+    `duration_months` and `team_size` are kept, as for engagement. They are
+    the intent's "team shape".
+  - **Prompts.** The write-up prompt gains a "basis: capability"
+    instruction (present or conditional tense, never delivered), and
+    `ARCH_SYSTEM` sets callouts to `[]`.

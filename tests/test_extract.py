@@ -560,6 +560,36 @@ def test_engagement_keeps_points_and_drops_lessons(monkeypatch):
     assert c.lessons_learned.value is None
 
 
+def test_capability_is_an_offering_without_results_or_prices(monkeypatch):
+    from app import writeup
+    q = "we propose to migrate system 1 in 3 weeks"
+    text = f"Offer: {q}. Fees of £1,200 per day apply to the migration work."
+    seen = []
+
+    def fake(alias, system, user, model, **k):
+        seen.append((system, user))
+        if model is References:
+            return References()
+        if model is writeup.Writeup:
+            return writeup.Writeup()
+        if model is writeup.ArchProposal:
+            return writeup.ArchProposal(components=[writeup.ArchItem(name="System", zone="core", kind="service", cite="solution 1")],
+                                        callouts=[writeup.ArchNote(text="3 weeks", outcome=1)])
+        return Extraction(items=[
+            Item(field="solution", value="Migrate system 1", quote=q),
+            Item(field="solution", value="Priced work", quote="Fees of £1,200 per day apply"),
+            Item(field="outcome", value="migration time: 3 weeks", quote=q),
+            Item(field="lessons_learned", value="Start earlier", quote=q)])
+    monkeypatch.setattr(ex, "complete_json", fake)
+    monkeypatch.setattr(writeup, "complete_json", fake)
+    c = ex.build(text, "internal", "capability")
+    assert c.basis == "capability" and c.outcomes == [] and c.lessons_learned.value is None
+    assert [p.value for p in c.points["solution"]] == ["Migrate system 1"]  # the commercial strip ran
+    assert c.architecture.callouts == []
+    assert ex.CAPABILITY_SYSTEM in [s for s, _ in seen]
+    assert any("basis: capability" in u for _, u in seen) and "never as delivered" in writeup.WRITEUP_SYSTEM
+
+
 def test_chunks_ignore_a_blank_line_near_the_start():
     t = "head\n\n" + "z" * 1200  # the only blank line is at the start
     parts = ex.chunks(t, 500, overlap=100)
@@ -724,7 +754,7 @@ def test_references_are_checked_literally_and_stripped_of_prices():
 
 
 def test_main_prompts_have_no_reference_field_and_the_pass_has_its_own(monkeypatch):
-    for prompt in (ex.SYSTEM, ex.CONTRACT_SYSTEM):
+    for prompt in (ex.SYSTEM, ex.CONTRACT_SYSTEM, ex.CAPABILITY_SYSTEM):
         assert "reference" not in prompt.lower()  # a `reference` field in the main prompt cut capabilities and technologies in half
     seen = []
 
