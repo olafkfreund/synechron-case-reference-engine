@@ -194,3 +194,11 @@ Revert the merge commit. There is no data or schema change.
   - The registry help text moved below its form. The form itself is
     unchanged.
   - "Extraction notes" is muted through `p.muted` on its items.
+- Step 5:
+  - The source row query gives the last run's age in days. The "+ Add
+    source" summary gets the same sizing as the others.
+  - The marker hiding already existed; the step only asserted it.
+  - `details.mini > summary` sizing also applies to "Cited points" and
+    "Write it by hand", per the plan's wording.
+  - Below 900 px the existing flex wrap stacks the row.
+  - Full suite: 1394 passed. The branch predates #261.

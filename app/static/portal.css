@@ -180,7 +180,7 @@ label.check{display:inline-flex;align-items:center;gap:10px;min-height:44px;min-
 .client-row .chips{display:flex;gap:6px;flex-wrap:wrap}
 /* a closed mini panel is just a small button; open, it takes its own full-width line */
 details.mini{margin:0}
-details.mini>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border:1px solid var(--input-border);border-radius:var(--r-control);background:var(--surface);color:var(--text);font-weight:500;font-size:14px}
+details.mini>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 12px;border:1px solid var(--input-border);border-radius:var(--r-control);background:var(--surface);color:var(--text);font-weight:500;font-size:13px}
 details.mini>summary:hover{border-color:var(--text)}
 details.mini>summary::after{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .15s}
 details.mini[open]>summary::after{transform:rotate(-135deg) translateY(-2px)}
@@ -192,6 +192,7 @@ details.mini .field{margin-top:0}
 .head-panel{width:min(100%,460px)}
 .head-panel[open]{flex:1 1 100%}
 .head-panel>form{padding:0 14px}
+.head-panel>summary{min-height:36px;padding:0 12px;font-size:13px}
 details.help-link>summary{list-style:none;cursor:pointer;color:var(--accent);text-decoration:underline;min-height:44px;display:inline-flex;align-items:center;font-size:14px}
 details.help-link[open]{max-width:70ch}
 
@@ -209,6 +210,16 @@ details.mini:not([open])>summary,.client-row .slot{min-width:84px;justify-conten
 .source-row .counts{font-size:13px;display:flex;gap:10px}
 .source-row form.inline{margin:0}
 .source-row .status-list{margin:0 0 12px}
+.source-row .run{white-space:nowrap}
+.source-row .btn-sm,.source-row summary{white-space:nowrap}
+@media (min-width:900px){
+.source-row{display:grid;grid-template-columns:24px minmax(160px,1.4fr) auto minmax(0,1fr) auto 88px 88px 88px;gap:6px 12px}
+.source-row form.inline{grid-column:6}
+.source-row details.up{grid-column:7}
+.source-row details.mini:last-child{grid-column:8}
+.source-row details.mini[open]{grid-column:1 / -1}
+.source-row .counts{display:flex;gap:10px}
+}
 .source-row input[type=text],.source-row select{width:100%}
 .help-links{display:flex;flex-wrap:wrap;gap:0 20px}
 .help-links details.help-link[open]{flex:1 1 100%}

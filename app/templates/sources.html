@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% from "_macros.html" import age %}
 {% block body %}
 <div class="page-head"><div><h1>Sources</h1>
 <p>Where reference documents are crawled from, and who may read them.</p>
@@ -32,21 +33,19 @@ S3 and SharePoint: optional <code>"include_ext"</code> (default docx, pptx, pdf)
 </form></details></div></div>
 {% if notice %}<p class="badge {{ notice[0] }}" role="status">{{ notice[1] }}{% if queued is not none %}: {{ queued }} of {{ total }}{% endif %}{% if job %}: job {{ job }}{% if source_name %} to {{ source_name }}{% endif %}{% endif %}</p>{% endif %}
 
-{% if older %}<form method="post" action="/admin/reextract" class="action-row"><button class="btn">Re-extract older cases ({{ older }}): cases go back to review</button></form>{% endif %}
-
 <div class="section-card client-list">
-<div class="card-head"><h2>Sources ({{ sources | length }})</h2></div>
+<div class="card-head"><h2>Sources ({{ sources | length }})</h2>{% if older %}<form method="post" action="/admin/reextract" class="action-row"><button class="btn btn-sm">Re-extract older cases ({{ older }}): cases go back to review</button></form>{% endif %}</div>
 {% if not sources %}<div class="empty-state">{{ icon("database") }}<p>No sources yet.</p><p>Use “+ Add source” above.</p></div>{% endif %}
-{% for id, kind, name, config, acl, enabled, last_run, counts, dc in sources %}
+{% for id, kind, name, config, acl, enabled, last_run, counts, dc, days in sources %}
 <div class="source-row">
 {{ icon("database") }}
 <div class="who"><b>{{ name }}</b><span class="badge neutral">{{ kind }}</span></div>
 <div class="chips"><span class="badge {{ 'ok' if enabled else 'neutral' }}">{{ "Enabled" if enabled else "Disabled" }}</span>
 <span class="badge {{ 'warn' if dc == 'confidential' else 'neutral' }}">{{ dc | capitalize }}</span></div>
-<span class="run">Last run: {% if last_run %}{{ last_run }}{% else %}<span class="muted">never</span>{% endif %}</span>
-{% if counts %}<span class="counts"><span>New {{ counts.get("new", 0) }}</span><span>Skipped {{ counts.get("skipped", 0) }}</span><span>Failed {{ counts.get("failed", 0) }}</span></span>{% endif %}
+<span class="run">Last run: {% if last_run %}<span title="{{ last_run }}">{{ age(days) }}{{ " ago" if days }}</span>{% else %}<span class="muted">never</span>{% endif %}</span>
+<span class="counts">{% if counts %}<span>New {{ counts.get("new", 0) }}</span><span>Skipped {{ counts.get("skipped", 0) }}</span><span>Failed {{ counts.get("failed", 0) }}</span>{% endif %}</span>
 {% if enabled %}<form class="inline" method="post" action="/admin/sources/{{ id }}/crawl"><button class="btn-sm" aria-label="Crawl {{ name }} now">Crawl now</button></form>{% endif %}
-{% if kind == 'upload' and enabled %}<details class="mini"><summary class="btn-sm" aria-label="Upload to {{ name }}">Upload</summary>
+{% if kind == 'upload' and enabled %}<details class="mini up"><summary class="btn-sm" aria-label="Upload to {{ name }}">Upload</summary>
 <form method="post" action="/admin/upload" enctype="multipart/form-data">
 <input type="hidden" name="source_id" value="{{ id }}">
 <div class="field"><label for="u{{ id }}-file">File</label>

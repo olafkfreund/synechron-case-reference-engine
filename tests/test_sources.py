@@ -1,3 +1,4 @@
+import re
 import uuid
 
 from psycopg.types.json import Jsonb
@@ -319,3 +320,20 @@ def test_reextract_is_capped_per_click(env):  # noqa: F811
         assert "queued=25&total=26" in r.headers["location"]
     finally:
         _clean(sid)
+
+
+def test_last_run_shows_as_an_age_and_summaries_hide_the_marker(env):  # noqa: F811  plan #259 step 5
+    from pathlib import Path
+    db.init()
+    name = f"age-{uuid.uuid4().hex[:8]}"
+    with db.connect() as c:
+        c.execute("insert into sources (kind, name, config, acl_groups, last_run_at) values ('upload', %s, '{}', %s, now() - interval '3 days')",
+                  (name, ["g"]))
+    try:
+        html = client([ADMIN]).get("/admin/sources").text
+        assert 'title="' in html.split(name)[1].split("Last run:")[1][:120] and "3 days ago" in html
+    finally:
+        with db.connect() as c:
+            c.execute("delete from sources where name=%s", (name,))
+    css = (Path(__file__).parent.parent / "app" / "static" / "portal.css").read_text()
+    assert re.search(r"details\.mini>summary::-webkit-details-marker[^{]*\{display:none\}", css) and "details.mini>summary{list-style:none" in css
