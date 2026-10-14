@@ -14,8 +14,7 @@
 </form>
 <div class="section-card"><div class="card-head"><h2>Your uploads</h2><span class="muted">{{ mine | length }}</span></div>
 {% if pending %}<p class="muted">This page updates every 15 seconds while files are processing. <noscript>Reload to see progress.</noscript></p>{% endif %}
-{% for id, name, when, (code, label, detail) in mine %}<div class="other-row"><div><b>{{ name }}</b><span class="field-help">{{ detail }}</span></div>
-<span class="badge {{ 'ok' if code == 'approved' else 'bad' if code in ('failed', 'rejected') else 'neutral' }}">{% if code in ('queued', 'reading', 'writing') %}<span class="dot" aria-hidden="true"></span>{% endif %}{{ label }}</span>
+{% for id, name, when, (code, label, detail) in mine %}<div class="other-row"><div><b>{{ name }}</b> <span class="badge {{ 'ok' if code == 'approved' else 'bad' if code in ('failed', 'rejected') else 'neutral' }}">{% if code in ('queued', 'reading', 'writing') %}<span class="dot" aria-hidden="true"></span>{% endif %}{{ label }}</span><span class="field-help">{{ detail }}</span></div>
 <span class="muted push">{{ when.strftime("%Y-%m-%d %H:%M") }}</span></div>
 {% else %}<p class="muted">Nothing uploaded yet.</p>{% endfor %}</div>
 {% endif %}
