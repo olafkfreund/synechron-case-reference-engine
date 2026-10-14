@@ -387,6 +387,9 @@ check the brief has a diagram, counts only.
   - Image URLs also pass robots.txt through `allowed()`.
   - SSRF test: an image at the link-local metadata address, and a redirect
     to a private one, are refused. The research still ends `done`.
+- **Phase (c), c3.** An alt text naming a client is anonymised by
+  `apply()` and shown, as claims are. Only a protected name left in the
+  page or image URL hides the image.
 
 ## Tests
 

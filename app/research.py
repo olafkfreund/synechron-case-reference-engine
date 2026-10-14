@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from app import anonymise, db, diagrams, ingest
 from app.llm import MAX_TOKENS, complete_json, json_cue, profile
 from app.main import User, require
-from app.review import VISIBLE, page, reviewable_cases
+from app.review import PNG_HEADERS, VISIBLE, page, reviewable_cases
 from app.schema import ReferenceCase, fence, llm_schema, numbers, plain, quote_in
 from app.search import clean
 
@@ -189,6 +189,22 @@ def visible_claims(claims, clients) -> tuple[list[dict], int]:
     return out, len(claims) - len(out)
 
 
+def visible_images(rows, clients) -> list[dict]:
+    """(id, page url, image url, alt) rows as dicts; one naming a protected client, in any field, is hidden."""
+    out = [{"id": i, "page_url": p, "image_url": u, "alt": anonymise.apply(a, clients)} for i, p, u, a in rows]
+    return [i for i in out if not anonymise.blocked("\n".join((i["alt"], i["page_url"], i["image_url"])), clients)]
+
+
+@router.get("/research/{rid}/images/{iid}.png")
+def research_image(rid: int, iid: int, user: User = Depends(require("user"))):
+    with db.connect() as conn:  # the owner's own research only
+        row = conn.execute("select i.id, i.page_url, i.image_url, i.alt, i.png from research_images i join research r on r.id=i.research_id "
+                           "where i.id=%s and r.id=%s and r.created_by=%s", (iid, rid, user.sub)).fetchone()
+        if not row or not visible_images([row[:4]], anonymise.load_clients(conn)):
+            raise HTTPException(404, "no such image")
+    return Response(bytes(row[4]), media_type="image/png", headers=PNG_HEADERS)
+
+
 @router.get("/research/{rid}")
 def research_view(rid: int, request: Request, user: User = Depends(require("user"))):
     with db.connect() as conn:
@@ -198,6 +214,8 @@ def research_view(rid: int, request: Request, user: User = Depends(require("user
             raise HTTPException(404, "no such research")
         case = visible_case(conn, row[4], user) if row[4] else None  # re-checked now: access may have changed
         clients = anonymise.load_clients(conn)
+        images = visible_images(conn.execute("select id, page_url, image_url, alt from research_images where research_id=%s order by id",
+                                             (rid,)).fetchall(), clients)
     ours = None
     if case:
         text = "; ".join(x for x in [case.solution.value if not case.solution.unsourced else None,
@@ -218,7 +236,7 @@ def research_view(rid: int, request: Request, user: User = Depends(require("user
     return page(request, "research_view.html", user, query=query, status=row[1], error=row[2], ours=ours,
                 pages=pages, skipped=skipped, omitted=omitted, claims=claims, groups=groups,
                 note=row[3].get("note"), case_id=row[4] if case else None, research_id=rid,
-                attach_cases=attach_cases)
+                attach_cases=attach_cases, images=images)
 
 
 def picked_claims(conn, rid, n, user, strict=False, verbatim=False) -> list[dict]:

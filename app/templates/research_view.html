@@ -42,6 +42,12 @@
 {% for publisher, items in groups.items() %}<tr><td>{{ publisher }}</td><td>{% for c in items %}{% if c.type == "technical_note" %}<pre>{{ c.quote }}</pre>{% else %}<q>{{ c.quote }}</q><br>{% endif %}{% endfor %}</td></tr>{% endfor %}
 </tbody></table></div></div>
 {% endif %}
+{% if images %}<div class="section-card"><div class="card-head"><h2>Images on the cited pages</h2></div>
+<p class="muted" style="font-size:13px">Copyright of its owner. Shown to you only; it reaches no output unless a reviewer confirms the right to use it.</p>
+{% for i in images %}<div class="claim"><img src="/research/{{ research_id }}/images/{{ i.id }}.png" alt="{{ i.alt }}" width="240">
+<div class="meta">{% if i.page_url.startswith(("http://", "https://")) %}<a href="{{ i.page_url }}" rel="noopener noreferrer">{{ i.page_url }}</a>{% endif %}</div>
+{% if i.alt %}<p>{{ i.alt }}</p>{% endif %}</div>{% endfor %}</div>
+{% endif %}
 <div class="section-card"><div class="card-head"><h2>Sources</h2></div>
 {% for p in pages %}<p style="margin:0 0 6px"><b>{{ p.publisher }}</b> &middot; <a href="{{ p.url }}" rel="noopener noreferrer">{{ p.url }}</a>
 &middot; retrieved {{ p.retrieved_at[:10] }}</p>{% endfor %}
