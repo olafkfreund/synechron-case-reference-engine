@@ -67,6 +67,14 @@ def basis_for(t: Triage, source_config: dict) -> str | None:
     return None
 
 
+def ingest_upload(source_id: int, key: str) -> str:
+    """One uploaded object, the same call the S3 crawl makes (#249)."""
+    with db.connect() as conn:
+        bucket = conn.execute("select config->>'bucket' from sources where id=%s", (source_id,)).fetchone()[0]
+    body = boto3.client("s3").get_object(Bucket=bucket, Key=key)["Body"].read()
+    return ingest(source_id, key, key.rsplit("/", 1)[-1], body)
+
+
 def reopen_merged(conn, doc_ids: list[int]) -> None:
     """A merged engagement whose member document changed or was retired goes back to review (#55)."""
     conn.execute("update cases set status = 'extracted' where status <> 'rejected' and id in "

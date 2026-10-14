@@ -3,7 +3,7 @@ import sys
 import threading
 import time
 
-from app import brief, crawl, db, diagrams, extract, llm, research
+from app import brief, crawl, db, diagrams, extract, ingest, llm, research
 
 MAX_ATTEMPTS = 3
 HEARTBEAT = 60  # seconds; 15 ticks inside the shortest stale window
@@ -12,6 +12,7 @@ HANDLERS = {
     "crawl_s3": lambda p: crawl.crawl_s3(p["source_id"]),
     "crawl_sharepoint": lambda p: crawl.crawl_sharepoint(p["source_id"]),
     "crawl_confluence": lambda p: crawl.crawl_confluence(p["source_id"]),
+    "ingest_upload": lambda p: ingest.ingest_upload(p["source_id"], p["key"]),
     "research": lambda p: research.run(p["research_id"]),
     "diagram": lambda p: diagrams.process(p["diagram_id"]),
     "brief": lambda p: brief.run(p["brief_id"]),
