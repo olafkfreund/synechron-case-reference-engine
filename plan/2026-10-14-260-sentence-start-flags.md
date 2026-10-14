@@ -102,3 +102,23 @@ None yet.
 - **Step 4, replaced.** Re-run check_prose, old and new, over the stored
   prose of the demo database, counts only (`scratchpad/m260`). Expected:
   name flags drop from 7 to the true unknowns only.
+
+## Deviations
+
+- **Step 4 on the eval documents measured nothing.** `eval_extraction`
+  writes no prose, so both runs gave 0 flags. Following the revision,
+  check_prose was re-run over the stored prose instead: 16 cases and 63
+  sections in the demo database, counts only.
+
+  | Version | Name flags |
+  |---|---|
+  | Before | 7 |
+  | First design (lowercase evidence) | 6 |
+  | With the word list | 1 |
+
+  The remaining flag is an invented product name, which is correct.
+- **Existing assertions updated** for the accepted risk: "Ledgers moved."
+  and "Phase 2 began." no longer flag the opening word. The
+  "no self-vouching" test now uses a non-word, "Zorbulate". The Snowflake
+  mid-sentence test uses a quote without "Snowflake".
+- **Negative control:** without the word list, the 2 new tests fail.

@@ -1,5 +1,7 @@
 """Second extraction pass: write each section from its sourced points, never from the document (#212)."""
 import re
+from functools import lru_cache
+from pathlib import Path
 from typing import get_args
 
 from pydantic import Field
@@ -49,6 +51,12 @@ _TERM = re.compile(rf"\b[A-Z]{_TAIL}(?:[^\S\r\n]+[A-Z0-9]{_TAIL})*")
 _SENTENCE_START = re.compile(r"(?:^|[.!?]\s+|\n\s*\n)$")
 
 
+@lru_cache(maxsize=1)
+def common_words() -> frozenset[str]:
+    """Lowercase English words (SCOWL size 35, app/data/common_words.LICENSE): an ordinary sentence opener is no name (#260)."""
+    return frozenset((Path(__file__).parent / "data" / "common_words.txt").read_text().split())
+
+
 def check_prose(text: str, section_quotes: list[str], case_quotes: list[str], *, heading: bool = False) -> list[str]:
     """What in `text` no quote supports: numbers, capitalised names and prices. Empty means clean.
 
@@ -68,8 +76,8 @@ def check_prose(text: str, section_quotes: list[str], case_quotes: list[str], *,
         term = m.group().rstrip(".-")
         first, _, rest = term.partition(" ")
         # an ordinary word at a sentence start is no name (an acronym or a word with a digit always is): drop that word only.
-        # Ordinary: a common start, an opener verb, or the document uses it in lowercase elsewhere (#260)
-        ordinary = first.lower() in COMMON_STARTS or first.lower() in lower or _opener(first)
+        # Ordinary: a common start, an opener verb, used in lowercase elsewhere, or a common English word (#260)
+        ordinary = first.lower() in COMMON_STARTS or first.lower() in lower or _opener(first) or first.lower() in common_words()
         if _SENTENCE_START.search(text[:m.start()]) and (heading or ordinary) and not (first.isupper() and len(first) > 1):
             term = rest.strip()
         term = " ".join(w for w in term.split() if w.lower() not in DATE_WORDS and not w.isdigit())

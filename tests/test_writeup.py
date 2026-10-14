@@ -34,11 +34,12 @@ def test_check_prose_sentence_start_is_not_a_name_unless_acronym_digit_or_uncomm
     # an uncommon word at a sentence start is checked like any name (it used to be skipped), as a whole word in any case
     assert wu.check_prose("Okta beats it.", [Q1], [Q1]) == ["names 'Okta', which no quote supports"]
     assert wu.check_prose("Ledgers moved.", ["the ledgers moved"], ["the ledgers moved"]) == []
-    assert wu.check_prose("Ledgers moved.", ["the ledgerservice moved"], ["the ledgerservice moved"]) == ["names 'Ledgers', which no quote supports"]
+    # a common English word at a sentence start is no name since #260 (a product named like one is the accepted risk)
+    assert wu.check_prose("Ledgers moved.", ["the ledgerservice moved"], ["the ledgerservice moved"]) == []
     assert wu.check_prose("Setup is easy", [Q1], [Q1], heading=True) == []  # a heading may open with any word
     assert wu.check_prose("SLA terms applied.", [Q1], [Q1]) == ["names 'SLA', which no quote supports"]
     # "2" is a number, not a name; "Phase" opens the sentence but is not a common start word, so it is checked now
-    assert wu.check_prose("Phase 2 began.", [Q1], [Q1]) == ["number 2 is in no quote", "names 'Phase', which no quote supports"]
+    assert wu.check_prose("Phase 2 began.", [Q1], [Q1]) == ["number 2 is in no quote"]  # "Phase" is a common word (#260)
     assert wu.check_prose("Phase 2 began.", ["phase 2 began"], ["phase 2 began"]) == []
 
 
@@ -219,8 +220,17 @@ def test_check_prose_ordinary_sentence_openers_are_not_names():  # #260
     q = ["we need to update the timeline and define new dates"]
     assert wu.check_prose("Need to update the timeline.", q, q) == []  # "need" is used in lowercase
     assert wu.check_prose("Deploying it came first.", [Q1], [Q1]) == []  # an opener verb (OPENERS), by stemming
-    assert wu.check_prose("Need to update the timeline.", [Q1], [Q1]) == ["names 'Need', which no quote supports"]  # no self-vouching
+    assert wu.check_prose("Zorbulate the timeline.", [Q1], [Q1]) == ["names 'Zorbulate', which no quote supports"]  # no self-vouching
     assert wu.check_prose("Kafka streams the events.", q, q) == ["names 'Kafka', which no quote supports"]
     assert wu.check_prose("SAP runs it.", q, q) == ["names 'SAP', which no quote supports"]
     assert wu.check_prose("Define Azure Data Factory pipelines.", q, q) == ["names 'Azure Data Factory', which no quote supports"]
     assert wu.check_prose("Need2 is new.", q, q) == ["number 2 is in no quote", "names 'Need2', which no quote supports"]
+
+
+def test_check_prose_common_english_openers_are_not_names():  # #260 revision: no lowercase evidence needed
+    for opener in ("Need", "Amend", "Append", "Define", "Development"):
+        assert wu.check_prose(f"{opener} of the plan came first.", [Q1], [Q1]) == [], opener
+    assert wu.check_prose("Kafka streams it.", [Q1], [Q1]) == ["names 'Kafka', which no quote supports"]
+    assert wu.check_prose("Okta guards it.", [Q1], [Q1]) == ["names 'Okta', which no quote supports"]
+    q = ["the ledger moved in seven weeks"]
+    assert wu.check_prose("They chose Snowflake.", q, q) == ["names 'Snowflake', which no quote supports"]  # mid-sentence: still checked
