@@ -1,5 +1,7 @@
 """Second extraction pass: write each section from its sourced points, never from the document (#212)."""
 import re
+from functools import lru_cache
+from pathlib import Path
 from typing import get_args
 
 from pydantic import Field
@@ -49,6 +51,12 @@ _TERM = re.compile(rf"\b[A-Z]{_TAIL}(?:[^\S\r\n]+[A-Z0-9]{_TAIL})*")
 _SENTENCE_START = re.compile(r"(?:^|[.!?]\s+|\n\s*\n)$")
 
 
+@lru_cache(maxsize=1)
+def common_words() -> frozenset[str]:
+    """Lowercase English words (SCOWL size 40, app/data/common_words.LICENSE): an ordinary sentence opener is no name (#260)."""
+    return frozenset((Path(__file__).parent / "data" / "common_words.txt").read_text().split())
+
+
 def check_prose(text: str, section_quotes: list[str], case_quotes: list[str], *, heading: bool = False) -> list[str]:
     """What in `text` no quote supports: numbers, capitalised names and prices. Empty means clean.
 
@@ -58,14 +66,18 @@ def check_prose(text: str, section_quotes: list[str], case_quotes: list[str], *,
     """
     from app.extract import COMMERCIAL  # extract imports this module inside build()
     flags = []
+    # lowercase uses in the quotes only: the prose must not vouch for its own names ("bids@globex.com")
+    lower = set(re.findall(r"\b[a-z][a-z-]*\b", " ".join(case_quotes)))
     for n in sorted(numbers(text) - set().union(*map(numbers, section_quotes))):
         flags.append(f"number {n} is in no quote")
     haystack = _norm(" ".join(case_quotes))
     for m in _TERM.finditer(text):
         term = m.group().rstrip(".-")
         first, _, rest = term.partition(" ")
-        # a common word at a sentence start is no name (an acronym or a word with a digit always is): drop that word only
-        if _SENTENCE_START.search(text[:m.start()]) and (heading or first.lower() in COMMON_STARTS) and not (first.isupper() and len(first) > 1):
+        # an ordinary word at a sentence start is no name (an acronym or a word with a digit always is): drop that word only.
+        # Ordinary: a common start, used in lowercase in the quotes, or a common English word (#260)
+        ordinary = first.lower() in COMMON_STARTS or first.lower() in lower or first.lower() in common_words()
+        if _SENTENCE_START.search(text[:m.start()]) and (heading or ordinary) and not (first.isupper() and len(first) > 1) and not any(c.isdigit() for c in first):
             term = rest.strip()
         term = " ".join(w for w in term.split() if w.lower() not in DATE_WORDS and not w.isdigit())
         if not term:
