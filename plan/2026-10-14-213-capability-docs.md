@@ -1,0 +1,117 @@
+---
+status: draft
+issue: 213
+spec: spec/2026-10-14-213-capability-docs.md
+---
+
+# Plan: Presale documents as clearly labelled capability documents
+
+Worktree `../refs-engine-213`, branch `feat/213-capability-docs`. One PR.
+
+## Approved decisions (from the spec)
+
+1. **A third basis `capability`.**
+   - **Schema:** the `ReferenceCase.basis` Literal and the
+     `cases_basis_check` constraint.
+   - **Triage:** `basis_for` returns `capability` for a proposal or deck
+     that is not delivered work, and for a contract that is not executed.
+     `other` gives `None`. The delivered and engagement rules are
+     unchanged.
+   - **Extraction:** a `CAPABILITY_SYSTEM` prompt (an offering, never
+     results). `outcomes`, `lessons_learned`, metrics and callouts are
+     cleared. The commercial strip runs as for engagement, and the
+     write-up is told "offering, never delivered".
+2. **Label.** `CAPABILITY_NOTE = "Capability document: describes what we
+   offer, not delivery evidence."` It appears on review (a badge), search
+   rows, preview, outputs and MCP (`basis` plus the note).
+3. **Search.**
+   - Defaults return delivered and engagement only.
+   - The "Capability" kind filter shows only capability documents.
+   - A count line under the results reads "N capability documents match
+     · Show them".
+4. **Outputs.**
+   - **Bid pack** (`docx`, `pdf_docx`) and **Markdown:** capability
+     documents go in a separate "Our capability" section after "Reference
+     cases", with the note and no Results block.
+   - **Formats that refuse a capability selection** with 400 "capability
+     documents can't be case studies":
+     - `case_study_docx` and `case_study_pdf`
+     - the slide formats (`pptx`, `pdf_pptx`), which are one reference
+       slide per case and so count as the spec's "one-pager"
+5. **Admin action.** "Capability drafts from skipped documents (N)"
+   queues `extract` jobs with `basis=capability` for live documents that
+   have no case and whose `documents.kind` is `proposal`, `deck` or
+   `contract`.
+6. **MCP.** `kind="capability"` on `search_references` and `list_latest`.
+   Rows carry `basis`. `generate_output` follows decision 4.
+
+## Steps
+
+1. **Schema and triage.**
+   - `app/schema.py:223`: add `"capability"` to the Literal.
+   - `sql/schema.sql:82`: add `'capability'` to the check constraint.
+   - `app/ingest.py` `basis_for` (decision 1).
+   - → verify: `basis_for` unit tests for all five kinds, and
+     `tests/test_db.py`. Existing triage tests stay green.
+   - Trap: the schema runs at every start, so drop and re-add the
+     constraint idempotently, as `:81-82` already does.
+2. **Extraction** (`app/extract.py`).
+   - `CAPABILITY_SYSTEM` next to `CONTRACT_SYSTEM` (`:28`).
+   - In `build`, choose the prompt by basis (`:205`), and clear
+     outcomes, lessons and metrics for `capability` (`:223`, the same
+     block as engagement, plus metrics). Callouts are dropped by the
+     existing engagement rule; extend it to capability in
+     `render.py:232`.
+   - Pass an "offering, never delivered" instruction to `writeup.write`
+     for capability.
+   - → verify: a fake-LLM test where a capability build has no outcomes,
+     lessons, metrics or callouts, and the commercial strip ran.
+3. **Label, review and search.**
+   - `render.py`: `CAPABILITY_NOTE` at `:33`, set in `section()` at
+     `:216`.
+   - Review templates: the badge.
+   - `search.py:80,258`: the kind filter, with default results restricted
+     to delivered and engagement.
+   - `search.html:27`: the "Capability" option and the count line.
+   - → verify:
+     - default results never include capability; the filter returns only
+       them; the count line is right
+     - the existing search tests stay green, with the default result set
+       pinned as unchanged
+4. **Outputs** (`render.py:658-680` `build` and `to_docx`/`to_markdown`):
+   the "Our capability" section and the 400 refusals (decision 4).
+   - → verify: docx and Markdown section and label tests; 400 for the
+     case-study and slide formats.
+5. **Admin action** (`app/sources.py`, `sources.html`), following the
+   re-extract action at `:31-39` and `:81`.
+   - → verify: it queues exactly the skipped proposals, decks and
+     contracts, and N matches.
+6. **MCP** (`app/mcp_server.py:476-510`): the kind values and `basis` in
+   rows.
+   - → verify: MCP tests for the capability kind and the label, and
+     `generate_output` refuses a case-study format.
+7. **Eval, by the session.** `eval_extraction` on the 11 presale documents
+   with local `qwen3:14b`: counts only, masked names, a private file.
+   Report:
+   - the number of capability drafts
+   - unsupported flags
+   - commercial-term leaks (0)
+   - "delivered"-style phrases in capability prose (0)
+8. **Full suite, then the reviews and the PR.**
+   `docker compose build app && docker compose run --rm app pytest`, then
+   Opus, Codex and agy.
+
+## Tests
+
+As listed per step. Every new check is negative-controlled once.
+
+## Rollback
+
+Revert the merge commit. Capability cases then fail the old check
+constraint on their next update, so before reverting run
+`update cases set status='rejected' where basis='capability'`. This is
+documented in the PR.
+
+## Deviations
+
+None yet.
