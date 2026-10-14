@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 207
 intent: intent/2026-10-14-207-stalled-fetch-thread.md
 ---
