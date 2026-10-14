@@ -311,3 +311,9 @@ def test_brand_hover_uses_the_header_colour_and_theme_js_follows_the_os():
     js = (CSS.parent / "theme.js").read_text()
     assert 'addEventListener("change"' in js and "prefers-color-scheme: dark" in js and "if (!stored()) sync()" in js
     assert "onclick" not in js
+
+
+def test_review_rows_keep_capitals_off_and_the_action_column_fixed():  # plan #259 step 1
+    css = (Path(__file__).parent.parent / "app" / "static" / "portal.css").read_text()
+    rows = "".join(re.findall(r"\.field-row[^{]*\{[^}]*\}|\.mini-label\{[^}]*\}", css))
+    assert "capitalize" not in rows and "200px minmax(0,1fr) minmax(0,1.4fr) 136px" in css

@@ -285,13 +285,17 @@ h2.sub{font-size:15px;color:var(--muted);margin:20px 0 8px}
 /* review */
 .field-row{display:grid;grid-template-columns:minmax(0,1fr);gap:8px 16px;padding:14px 0;border-top:1px solid var(--line)}
 .card-head + .field-row{border-top:0}
-@media (min-width:900px){.field-row{grid-template-columns:200px minmax(0,1fr) minmax(0,1fr) auto}}
-.field-row .fname{font-weight:600;text-transform:capitalize}
-.field-row .fname small{display:block;font-weight:400;text-transform:none;color:var(--muted)}
+@media (min-width:900px){.field-row{grid-template-columns:200px minmax(0,1fr) minmax(0,1.4fr) 136px}}
+.field-row.add{border-top:1px dashed var(--border)}
+.field-row .fname{display:flex;flex-direction:column;align-items:flex-start;gap:4px;font-weight:600}
+.field-row .fname small{display:block;font-weight:400;color:var(--muted)}
 .field-row .vals{display:flex;flex-direction:column;gap:6px}
-.field-row .quote{background:var(--subtle);border-left:3px solid var(--accent);border-radius:6px;padding:8px 10px}
+.field-row .quote{background:var(--subtle);border-radius:6px;padding:8px 10px}
 .field-row .quote label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
-.field-row .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start}
+.field-row .quote textarea{field-sizing:content;min-height:3lh;max-height:14lh;width:100%;border:0;background:transparent;padding:0;box-sizing:border-box}
+.field-row .acts{display:flex;flex-direction:column;gap:6px}
+.field-row .acts .btn{width:100%;justify-content:center;text-align:center}
+.checks{list-style:none;padding:0;margin:0}.checks li{display:flex;gap:8px;align-items:center;padding:2px 0}.checks .icon{flex:none;width:18px;height:18px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .warn-line{display:flex;gap:10px;align-items:flex-start}
 .warn-line .icon{flex:none;color:var(--warn-fg)}
@@ -332,7 +336,7 @@ fieldset.pick legend{font-weight:600;padding:0 6px;text-transform:capitalize}
 .client-row details.del[open]{grid-column:1 / -1;grid-row:4}
 .client-row .slot{display:block}
 }
-.mini-label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:2px;text-transform:capitalize}
+.mini-label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:2px}
 
 .detail-panel>summary::-webkit-details-marker,details.mini>summary::-webkit-details-marker,details.help-link>summary::-webkit-details-marker{display:none}
 

@@ -165,4 +165,10 @@ Revert the merge commit. There is no data or schema change.
 
 ## Deviations
 
-None yet.
+- Step 1:
+  - Labels stay lowercase at source, because the `aria-label`s that embed
+    them must stay byte-identical. The capital comes from the existing
+    `.cap-first::first-letter` rule.
+  - The Remove button's `danger-ghost` class went in with step 1
+    (decision 2).
+  - No existing test asserted the old "of N words" wording.

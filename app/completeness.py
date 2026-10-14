@@ -16,12 +16,12 @@ def section_text(case, f: str) -> str:
 
 def _words(case, f: str, key: str):
     n = len(section_text(case, f).split())
-    return n >= CHECKS[key], f"{n} of {CHECKS[key]} words"
+    return n >= CHECKS[key], f"{n} words (minimum {CHECKS[key]})"
 
 
 def _count(items, key: str):
     n = sum(1 for i in items if i.value and not i.unsourced)
-    return n >= CHECKS[key], f"{n} of {CHECKS[key]}"
+    return n >= CHECKS[key], f"{n} (minimum {CHECKS[key]})"
 
 
 def checklist(case) -> list[dict]:
