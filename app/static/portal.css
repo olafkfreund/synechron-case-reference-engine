@@ -6,10 +6,10 @@
 /* tokens */
 :root{color-scheme:light;
 --bg:#FAFAFA;--surface:#FFFFFF;--text:#0A0A0A;--muted:#6B6B6B;--border:#E5E5E5;--subtle:#F5F5F5;
---accent:#FDC700;--accent-hover:#FDD233;--on-accent:#733E0A;--link:#733E0A;--focus:#733E0A;--header:#17212B;--paper:#FFFFFF;
+--accent:#FDC700;--accent-hover:#FDD233;--on-accent:#733E0A;--link:#733E0A;--focus:#733E0A;--header:#FFFFFF;--paper:#FFFFFF;
 --input-border:#8A8A8A;
 --ok-bg:#E5F2E9;--ok-fg:#1E6B3A;--warn-bg:#FBF0D9;--warn-fg:#6B4600;--bad-bg:#FDE5E7;--bad-fg:#C10007;
---header-text:#D6DDE5;--header-strong:#FFFFFF;--header-tag:#B8C2CE;--header-border:#5B6675;--header-focus:#73D5CF;--header-hover:#2B3744;
+--header-text:#404040;--header-strong:#0A0A0A;--header-tag:#6B6B6B;--header-border:#8A8A8A;--header-focus:#733E0A;--header-hover:#F5F5F5;
 --shadow:0 1px 2px rgb(0 0 0/.04),0 2px 12px rgb(0 0 0/.06);
 --r-control:10px;--r-card:14px;
 --fs-s:13px;--fs-m:15px;--fs-l:18px;--fs-xl:20px;--fs-xxl:28px;
@@ -17,17 +17,17 @@
 --ink:var(--text);--ground:var(--bg);--card-border:var(--border);--line:var(--border);--thead:var(--subtle)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;
 --bg:#0A0A0A;--surface:#171717;--text:#FAFAFA;--muted:#A1A1A1;--border:#2E2E2E;--subtle:#262626;
---accent:#F0B100;--accent-hover:#F5C842;--on-accent:#733E0A;--link:#F0B100;--focus:#F0B100;--header:#0A1015;--paper:#F4F6F8;
+--accent:#F0B100;--accent-hover:#F5C842;--on-accent:#733E0A;--link:#F0B100;--focus:#F0B100;--header:#0A0A0A;--paper:#F4F6F8;
 --input-border:#6B6B6B;
 --ok-bg:#173A26;--ok-fg:#9DE0B4;--warn-bg:#3D2F12;--warn-fg:#F5CF85;--bad-bg:#452627;--bad-fg:#FF6467;
---header-hover:#22313B;
+--header-text:#D4D4D4;--header-strong:#FAFAFA;--header-tag:#A1A1A1;--header-border:#6B6B6B;--header-focus:#F0B100;--header-hover:#262626;
 --shadow:0 1px 2px rgb(0 0 0/.3),0 2px 12px rgb(0 0 0/.3)}}
 :root[data-theme="dark"]{color-scheme:dark;
 --bg:#0A0A0A;--surface:#171717;--text:#FAFAFA;--muted:#A1A1A1;--border:#2E2E2E;--subtle:#262626;
---accent:#F0B100;--accent-hover:#F5C842;--on-accent:#733E0A;--link:#F0B100;--focus:#F0B100;--header:#0A1015;--paper:#F4F6F8;
+--accent:#F0B100;--accent-hover:#F5C842;--on-accent:#733E0A;--link:#F0B100;--focus:#F0B100;--header:#0A0A0A;--paper:#F4F6F8;
 --input-border:#6B6B6B;
 --ok-bg:#173A26;--ok-fg:#9DE0B4;--warn-bg:#3D2F12;--warn-fg:#F5CF85;--bad-bg:#452627;--bad-fg:#FF6467;
---header-hover:#22313B;
+--header-text:#D4D4D4;--header-strong:#FAFAFA;--header-tag:#A1A1A1;--header-border:#6B6B6B;--header-focus:#F0B100;--header-hover:#262626;
 --shadow:0 1px 2px rgb(0 0 0/.3),0 2px 12px rgb(0 0 0/.3)}
 /* end tokens */
 
@@ -44,7 +44,7 @@ code,.mono{font-family:"IBM Plex Mono",monospace;font-size:13px}
 .skip:focus{left:8px;top:8px;z-index:10;background:var(--surface);color:var(--text);padding:8px 12px;border-radius:var(--r-control)}
 
 /* header */
-.site-header{background:var(--header);color:var(--header-strong)}
+.site-header{background:var(--header);color:var(--header-strong);border-bottom:1px solid var(--border)}
 .site-header-in{max-width:1280px;margin:0 auto;padding:10px 24px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 24px}
 .brand{display:flex;align-items:baseline;gap:10px;text-decoration:none;color:inherit}
 .site-header .brand:hover{color:var(--header-strong)}
@@ -189,7 +189,9 @@ details.mini>summary::after{content:"";width:7px;height:7px;border-right:2px sol
 details.mini[open]>summary::after{transform:rotate(-135deg) translateY(-2px)}
 details.mini>summary.btn-sm::after{position:static;inset:auto}  /* the chevron, not .btn-sm's touch-target overlay */
 /* open: the summary stays put; the rest is a subtle block under it */
-details.mini[open]{flex:1 1 100%;background:var(--subtle);border-radius:var(--r-card);padding:0 0 12px}
+details.mini[open]{flex:1 1 100%;background:color-mix(in srgb,var(--text) 90%,transparent);color:var(--bg);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border-radius:var(--r-card);padding:0 0 12px}
+/* the inverted panel: text on it takes the panel colour; controls keep their own surfaces */
+details.mini[open] a:not(.btn),details.mini[open] .muted{color:inherit}
 details.mini[open]>summary{margin:0 0 12px}
 details.mini[open]>:not(summary){margin-left:12px;margin-right:12px}
 details.mini .field{margin-top:0}

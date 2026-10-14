@@ -164,3 +164,9 @@ None yet.
   - **Changed #259 test.** `test_sources_css_keeps_44px_targets…` now
     looks for the 44 px rule inside the coarse-pointer block. Its intent,
     44 px on touch, is kept.
+- **Step 3b** (full suite 1445 passed):
+  - **Header tokens.** Light: `#FFFFFF` bar, `#404040` text and
+    `#733E0A` focus. Dark: `#0A0A0A` bar, `#D4D4D4` text and `#F0B100`
+    focus. Both dark blocks now set every `--header-*` token.
+  - **Panels.** An open `details.mini` panel is `--text` at 90 % with
+    `--bg` text and an 8 px blur, built from existing tokens.
