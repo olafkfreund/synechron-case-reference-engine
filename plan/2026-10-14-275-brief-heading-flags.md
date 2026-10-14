@@ -51,3 +51,19 @@ Revert the merge commit. Stored brief flags refresh on the next check.
   are gone, and the 3 real "has no citation" flags remain.
 - **Negative control.** With the heading filter disabled, the heading
   test fails.
+- **Review fixes (Opus, Codex, agy).**
+  - The first word of a heading is no longer dropped just for being first.
+    It is dropped only when ordinary, so "Zorbulate Integration Guide"
+    flags Zorbulate.
+  - A hyphenated word with an acronym part is a name ("SAP-Ready").
+  - Heading names left after the ordinary words are dropped are checked
+    one contiguous run at a time. "Use GitLab And ServiceNow" no longer
+    becomes the unsupported "GitLab ServiceNow", and "Use IBM Cloud Pak"
+    no longer becomes "IBM Pak".
+  - Negative control: reverting each fix fails its test. Brief 1 still
+    measures 3 flags, all "has no citation".
+- **Accepted risk, wider than the spec states.** A product named with
+  common words passes in a heading: "Microsoft Copilot Studio" (when
+  Microsoft is quoted), Oracle, Azure, Slack, Teams. Checking those would
+  bring back false flags such as "GitLab Actions". Body text is still
+  checked.

@@ -266,5 +266,10 @@ def test_check_prose_heading_drops_ordinary_words_anywhere():  # #275
     assert h("Use Zorbulate for Integration") == ["names 'Zorbulate', which no quote supports"]
     assert h("SAP Rollout Plan")[0].startswith("names 'SAP")  # an acronym is always checked
     assert "names 'Plan9', which no quote supports" in h("Plan9 Migration")
+    assert h("Zorbulate Integration Guide") == ["names 'Zorbulate', which no quote supports"]  # the first word is checked too
+    assert h("Use SAP-Ready Tools") == ["names 'SAP-Ready', which no quote supports"]  # an acronym inside a hyphen
+    assert h("Use GitLab And ServiceNow") == []  # two quoted names are not joined into one
+    assert h("Use GitLab And Zorbulate") == ["names 'Zorbulate', which no quote supports"]
+    assert wu.check_prose("Use IBM Cloud Pak", ["IBM Cloud Pak runs it"], ["IBM Cloud Pak runs it"], heading=True) == []  # the quoted phrase whole
     # body text is unchanged: a mid-sentence capitalised run is still checked whole
     assert wu.check_prose("We followed Best Practices.", q, q) == ["names 'Best Practices', which no quote supports"]
