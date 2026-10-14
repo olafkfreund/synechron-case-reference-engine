@@ -195,6 +195,16 @@ def visible_images(rows, clients) -> list[dict]:
     return [i for i in out if not anonymise.blocked("\n".join((i["alt"], i["page_url"], i["image_url"])), clients)]
 
 
+def image_links(conn, rid, quotes) -> list[dict]:
+    """Links (never pixels) to the images on the pages the quotes cite: [{title, publisher, url}], at most MAX_IMAGES."""
+    if rid is None:
+        return []
+    titles = {q.get("url"): q.get("title") for q in quotes}
+    rows = conn.execute("select page_url, image_url from research_images where research_id=%s and page_url = any(%s) order by id limit %s",
+                        (rid, list(titles), MAX_IMAGES)).fetchall()
+    return [{"title": titles[p] or "", "publisher": httpx.URL(p).host, "url": u} for p, u in rows]
+
+
 @router.get("/research/{rid}/images/{iid}.png")
 def research_image(rid: int, iid: int, user: User = Depends(require("user"))):
     with db.connect() as conn:  # the owner's own research only

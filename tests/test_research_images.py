@@ -1,10 +1,13 @@
 import uuid
+
+import pytest
 from io import BytesIO
 
 from PIL import Image
 
 from app import db, research as rs
 from tests.test_research import cleanup, env, make_row, reg, web  # noqa: F401
+from tests.test_research import as_user  # noqa: F401
 
 PNG_HEADERS = {"content-type": "image/png"}
 
@@ -149,13 +152,13 @@ def case_diagrams(cid):
         return c.execute("select data->'diagrams' from cases where id=%s", (cid,)).fetchone()[0] or []
 
 
-def reviewer_row(approved, reg, echo):  # noqa: F811
+def reviewer_row(approved, reg, echo, claims=True):  # noqa: F811
     from tests.test_research import as_user
     cid = approved(case_with())
     c = as_user("u1", ["g-rev", DOCS])
     loc = sent(c, cid)
     rid = int(loc.rsplit("/", 1)[1])
-    finish(loc, [{**BASE, "quote": "q q q q", "url": PAGE["url"], "publisher": "docs.example"}], pages=[PAGE])  # the picker shows with claims
+    finish(loc, [{**BASE, "quote": "q q q q", "url": PAGE["url"], "publisher": "docs.example"}] if claims else [], pages=[PAGE])
     return c, cid, rid, add_image(rid, alt="Kafka topology")
 
 
@@ -212,3 +215,93 @@ def test_picker_fields_are_on_the_reviewer_page_only(approved, reg, echo):  # no
     t = c.get(f"/research/{rid}").text
     assert f'name="basis_{iid}"' in t and f'name="rights_ok_{iid}"' in t and f'name="no_logo_{iid}"' in t
     assert 'name="basis_' not in as_user("u1", ["g-user", DOCS]).get(f"/research/{rid}").text
+
+
+def test_picker_and_attach_work_without_any_quotes(approved, reg, echo):  # noqa: F811
+    from tests.test_research import as_user
+    c, cid, rid, iid = reviewer_row(approved, reg, echo, claims=False)
+    t = c.get(f"/research/{rid}").text
+    assert f'name="basis_{iid}"' in t and 'formaction="/sources/attach"' in t
+    assert 'formaction="/sources/attach"' not in as_user("u1", ["g-user", DOCS]).get(f"/research/{rid}").text
+    assert attach_form(c, cid, rid, iid).status_code == 303 and len(case_diagrams(cid)) == 1
+
+
+def test_an_image_is_attached_once_per_case_and_the_reviewer_sees_the_credit(approved, reg, echo):  # noqa: F811
+    c, cid, rid, iid = reviewer_row(approved, reg, echo)
+    attach_form(c, cid, rid, iid)
+    attach_form(c, cid, rid, iid)
+    (d,) = case_diagrams(cid)
+    assert d["research_image_id"] == iid
+    diagrams.process(d["id"])
+    t = c.get(f"/review/{cid}").text
+    assert "Image: Guide to Kafka, docs.example" in t
+
+
+# --- briefs and the library: links only -----------------------------------------------------------------
+
+import io  # noqa: E402
+import json  # noqa: E402
+import zipfile  # noqa: E402
+
+from tests.test_research import as_user  # noqa: E402,F811
+from tests.test_brief import Q, body  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def drop_briefs():
+    yield
+    with db.connect() as c:
+        c.execute("delete from briefs where created_by = 'u1'")
+
+
+def brief_of(rid, url="https://docs.example/guide"):
+    quotes = [{"quote": Q[0], "publisher": "docs.example", "url": url, "title": "Kafka guide", "type": "vendor_claim"},
+              {"quote": Q[1], "publisher": "docs.example", "url": url, "title": "Kafka guide", "type": "vendor_claim"}]
+    with db.connect() as c:
+        return c.execute("insert into briefs(created_by, title, quotes, body, status, research_id) values ('u1','t',%s,%s,'done',%s) returning id",
+                         (json.dumps(quotes), json.dumps({**body(), "flags": []}), rid)).fetchone()[0]
+
+
+def with_image(reg):  # noqa: F811
+    rid = make_row("research test links", created_by="u1")
+    add_image(rid, alt="topology")
+    with db.connect() as c:
+        c.execute("update research_images set image_url='https://cdn.example/topology.png' where research_id=%s", (rid,))
+    return rid
+
+
+def test_a_brief_lists_images_as_links_only(reg):  # noqa: F811
+    rid = with_image(reg)
+    bid = brief_of(rid)
+    c = as_user("u1")
+    t = c.post(f"/briefs/{bid}/download", data={"format": "md"}).text
+    assert "## Images on the cited pages" in t and "Kafka guide, docs.example, <https://cdn.example/topology.png>" in t
+    for fmt in ("docx", "pdf_docx"):
+        assert c.post(f"/briefs/{bid}/download", data={"format": fmt}).status_code == 200
+    z = zipfile.ZipFile(io.BytesIO(c.post(f"/briefs/{bid}/download", data={"format": "docx"}).content))
+    assert "Images on the cited pages" in z.read("word/document.xml").decode() and "https://cdn.example/topology.png" in z.read("word/document.xml").decode()
+    assert not [n for n in z.namelist() if n.startswith("word/media/")]  # a link, never pixels
+    assert "Images on the cited pages" not in c.post(f"/briefs/{brief_of(None)}/download", data={"format": "md"}).text
+
+
+def test_an_image_on_an_uncited_page_or_naming_a_client_is_not_listed(reg):  # noqa: F811
+    rid = with_image(reg)
+    c = as_user("u1")
+    assert "Images on the cited pages" not in c.post(f"/briefs/{brief_of(rid, 'https://other.example/p')}/download", data={"format": "md"}).text
+    with db.connect() as conn:
+        conn.execute("update research_images set image_url=%s where research_id=%s", (f"https://cdn.example/{reg}.png", rid))
+    r = c.post(f"/briefs/{brief_of(rid)}/download", data={"format": "md"})
+    assert r.status_code == 200 and "Images on the cited pages" not in r.text  # the link is left out, the brief is not withheld
+
+
+def test_a_library_brief_keeps_its_image_links_after_the_research_is_gone(reg):  # noqa: F811
+    rid = with_image(reg)
+    bid = brief_of(rid)
+    c = as_user("u1")
+    lid = int(c.post("/library/save", data={"brief_id": bid, "topic": "Kafka"}, follow_redirects=False).headers["location"].rsplit("/", 1)[1])
+    with db.connect() as conn:
+        conn.execute("delete from research where id=%s", (rid,))
+    t = as_user("u2").post(f"/library/{lid}/download", data={"format": "md"}).text
+    assert "https://cdn.example/topology.png" in t
+    with db.connect() as conn:
+        conn.execute("delete from library_items where id=%s", (lid,))

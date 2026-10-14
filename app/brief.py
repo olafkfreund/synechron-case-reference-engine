@@ -178,11 +178,11 @@ def save(bid: int, title: str = Form(), takeaways: str = Form(""), heading: list
     return RedirectResponse(f"/briefs/{bid}", status_code=303)
 
 
-def make_output(body, quotes, clients, format) -> tuple[bytes, str, str]:
+def make_output(body, quotes, clients, format, images=()) -> tuple[bytes, str, str]:
     """(bytes, media type, extension) of a brief in docx, pdf_docx or md. Shared with the library."""
     from app import render  # here: render imports this module's neighbours
     try:
-        sec = render.brief_section(body, quotes, clients)
+        sec = render.brief_section(body, quotes, clients, images)
     except render.Withheld as e:
         raise HTTPException(409, str(e)) from None
     try:
@@ -204,7 +204,8 @@ def output(conn, user: User, bid: int, fmt: str) -> tuple[bytes, str, str]:
         raise HTTPException(409, "the brief is not ready")
     if body.get("flags"):
         raise HTTPException(409, "fix the flagged sentences first")
-    data, mime, ext = make_output(body, quotes, anonymise.load_clients(conn), fmt)  # re-checked now: a client may be protected since
+    images = research.image_links(conn, conn.execute("select research_id from briefs where id=%s", (bid,)).fetchone()[0], quotes)
+    data, mime, ext = make_output(body, quotes, anonymise.load_clients(conn), fmt, images)  # re-checked now: a client may be protected since
     conn.execute("insert into generations(user_id, format, research_id) "
                  "select %s, %s, research_id from briefs where id=%s", (user.sub, f"brief-{fmt}", bid))
     return data, mime, f"brief-{bid}.{ext}"

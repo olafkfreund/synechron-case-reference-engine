@@ -44,6 +44,10 @@
 {% endif %}
 {% if images %}<div class="section-card"><div class="card-head"><h2>Images on the cited pages</h2></div>
 <p class="muted" style="font-size:13px">Copyright of its owner. Shown to you only; it reaches no output unless a reviewer confirms the right to use it.</p>
+{% if attach_cases and not claims %}<form id="pick" method="post"><input type="hidden" name="research_id" value="{{ research_id }}">
+<div class="row"><label for="attach-to">Attach the ticked images to</label>
+<select id="attach-to" name="target" style="max-width:320px">{% for value, title, origin in attach_cases %}<option value="{{ value }}"{% if origin %} selected{% endif %}>{{ title }}</option>{% endfor %}</select>
+<button class="btn" formaction="/sources/attach">Attach</button></div></form>{% endif %}
 {% for i in images %}<div class="claim"><img src="/research/{{ research_id }}/images/{{ i.id }}.png" alt="{{ i.alt }}" width="240">
 <div class="meta">{% if i.page_url.startswith(("http://", "https://")) %}<a href="{{ i.page_url }}" rel="noopener noreferrer">{{ i.page_url }}</a>{% endif %}</div>
 {% if i.alt %}<p>{{ i.alt }}</p>{% endif %}

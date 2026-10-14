@@ -391,13 +391,13 @@ def add_diagram(cid: int, file: UploadFile, caption: str = Form(), v: str = Form
     return RedirectResponse(f"/review/{cid}", status_code=303)
 
 
-def _queue_diagram(conn, cid, case, raw, caption, user, image_id=None, credit=""):
+def _queue_diagram(conn, cid, case, raw, caption, user, image_id=None, credit="", research_image_id=None):
     """A new pending diagram for the worker to decode (#200); the case row is locked by the caller."""
     if len(case.diagrams) >= diagrams.MAX_PER_CASE:
         raise HTTPException(400, f"a case has at most {diagrams.MAX_PER_CASE} diagrams")
     did = conn.execute("insert into diagrams(case_id, raw, created_by) values (%s, %s, %s) returning id",
                        (cid, raw, user.sub)).fetchone()[0]
-    case.diagrams.append(Diagram(id=did, caption=caption, status="pending", image_id=image_id, credit=credit))
+    case.diagrams.append(Diagram(id=did, caption=caption, status="pending", image_id=image_id, credit=credit, research_image_id=research_image_id))
     save(conn, cid, case)
     conn.execute("insert into jobs(kind, payload) values ('diagram', jsonb_build_object('diagram_id', %s::bigint))", (did,))
     _reopen(conn, cid)
@@ -788,6 +788,8 @@ def _attach_images(conn, cid, case, research_id, imgs, user):
     for im in imgs:
         if not (im["ok"] and im["no_logo"] and 1 <= len(im["basis"]) <= 200):
             raise HTTPException(400, "confirm the rights, the basis (at most 200 characters) and that no client name or logo shows")
+        if any(d.research_image_id == im["id"] for d in case.diagrams):
+            continue  # already on this case
         row = conn.execute("select i.id, i.page_url, i.image_url, i.alt, i.png, r.results from research_images i "
                            "join research r on r.id = i.research_id where i.id = %s and i.research_id = %s "
                            "and r.created_by = %s and r.status = 'done'", (im["id"], research_id, user.sub)).fetchone()
@@ -802,7 +804,7 @@ def _attach_images(conn, cid, case, research_id, imgs, user):
             raise HTTPException(400, "the credit names a protected client")
         caption = _caption(conn, alt or f"Image from {host}")
         conn.execute("update research_images set rights_by=%s, rights_at=now(), rights_basis=%s where id=%s", (user.sub, im["basis"], im["id"]))
-        _queue_diagram(conn, cid, case, bytes(row[4]), caption, user, credit=credit)  # the reviewer is recorded, never credited
+        _queue_diagram(conn, cid, case, bytes(row[4]), caption, user, credit=credit, research_image_id=im["id"])  # the reviewer is recorded, never credited
 
 
 def _attach(cid, s, research_id, library_id, n, user, imgs=()):

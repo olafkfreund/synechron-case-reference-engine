@@ -132,6 +132,7 @@ class Diagram(_Model):
     width: int = 0
     height: int = 0
     image_id: int | None = None  # the document_images candidate it came from (#212)
+    research_image_id: int | None = None  # the research_images row it came from (#231): attached once per case
     credit: str = ""  # "Image: <title>, <host>, <url>, retrieved <date>" for a web image whose rights a reviewer confirmed (#231)
 
 

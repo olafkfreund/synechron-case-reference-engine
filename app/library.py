@@ -73,6 +73,7 @@ def save_item(conn, user: User, research_id: int | None, brief_id: int | None, n
     if research_id is not None:
         claims = research.picked_claims(conn, research_id, n, user, strict=True)  # stored row, by index
         rid, kind, body = research_id, "quotes", {"quotes": [{k: c.get(k) for k in SOURCE_KEYS} for c in claims]}
+        body["images"] = research.image_links(conn, rid, claims)
         fallback = ""
     else:
         status, _, title, quotes, b = brief.owned(conn, brief_id, user)
@@ -80,6 +81,7 @@ def save_item(conn, user: User, research_id: int | None, brief_id: int | None, n
             raise HTTPException(409, "only a finished brief with no flagged sentences can be saved")
         rid = conn.execute("select research_id from briefs where id=%s", (brief_id,)).fetchone()[0]
         kind, body = "brief", {"quotes": quotes, "brief": {k: b[k] for k in ("title", "takeaways", "themes")}}
+        body["images"] = research.image_links(conn, rid, quotes)  # links kept with the item: the research may be gone
         fallback = b.get("title") or title or ""
     query = (conn.execute("select query from research where id=%s", (rid,)).fetchone() or [""])[0] if rid else ""
     try:
@@ -254,7 +256,7 @@ def output(conn, user: User, lid: int, fmt: str) -> tuple[bytes, str, str]:
     _, kind, _, body, *_ = _item(conn, lid)
     if kind != "brief":
         raise HTTPException(400, "export quotes as Markdown or CSV")
-    data, mime, ext = brief.make_output(body["brief"], body["quotes"], anonymise.load_clients(conn), fmt)
+    data, mime, ext = brief.make_output(body["brief"], body["quotes"], anonymise.load_clients(conn), fmt, body.get("images", []))
     conn.execute("insert into generations(user_id, format) values (%s,%s)", (user.sub, f"library-{fmt}"))
     return data, mime, f"library-{lid}.{ext}"
 

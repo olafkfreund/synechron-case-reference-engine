@@ -396,6 +396,23 @@ check the brief has a diagram, counts only.
   - **Form shape.** The picker posts `img` ids with per-id
     `rights_ok_<id>`, `no_logo_<id>` and `basis_<id>` fields.
   - **Images only.** Attach accepts images with no quotes ticked.
+- **Phase (c), c4 fixes, c5 and c6** (full suite 1458 passed):
+  - **c4 fixes:**
+    - The picker shows whenever the research has visible images, and each
+      image card has its own attach form when there are no quotes.
+    - `Diagram.research_image_id` stops an image being attached twice to
+      the same case.
+    - The credit shows to the reviewer under the diagram.
+  - **c5, links only.** Image links appear in the standalone brief and
+    library-brief outputs (md, docx, pdf). The library stores them at save
+    time, so they survive the research being deleted.
+    - **Not listed:** a library brief embedded in a case download, or the
+      library page. Both would need the `reference` and `case_study`
+      templates edited.
+  - **Template.** `brand/brief.docx` was regenerated from
+    `scripts/make_reference_template.py`.
+  - **Test gap.** `case_study_docx` has no test of its own; it shares the
+    caption path that the md, preview and bid docx tests cover.
 
 ## Tests
 
