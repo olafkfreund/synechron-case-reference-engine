@@ -731,13 +731,13 @@ def test_headline_value_is_one_unsplit_paragraph_in_md_and_docx(approved):
 
 
 # --- solution architecture (#246 step A5) ---
-def with_arch(*names, flags=(), label="Open account", **kw):
+def with_arch(*names, flags=(), label="Open account", by_reviewer=False, **kw):
     from app.schema import Architecture
     names = names or ("Customer portal", "Account engine")
     comps = [{"id": f"c{i}", "name": n, "role": "Does the work", "zone": z, "kind": "service"}
              for i, (n, z) in enumerate(zip(names, ("channels", "core", "data", "external")))]
     flows = [{"src": "c0", "dst": "c1", "label": label, "mode": "api"}]
-    arch = Architecture.model_validate({"components": comps, "flows": flows, "flags": list(flags),
+    arch = Architecture.model_validate({"components": comps, "flows": flows, "flags": list(flags), "by_reviewer": by_reviewer,
                                         "callouts": [{"text": "Onboarding in 3 days", "outcome": 0}]})
     return full(**kw).model_copy(update={"architecture": arch})
 
@@ -793,6 +793,13 @@ def test_unapproved_or_flagged_architecture_is_not_output(approved):
     flagged = approved(with_arch(flags=["a number not in the quote"]))
     assert "## Architecture" not in gen([flagged], "md").text and 'class="paper"' not in prev([flagged]).text
     assert not pptx_arch(gen([flagged], "pptx").content)
+
+
+def test_a_reviewer_confirmed_architecture_renders_despite_flags_but_a_price_never_does(approved):
+    ok = approved(with_arch(flags=["a number not in the quote"], by_reviewer=True))
+    assert "## Architecture" in gen([ok], "md").text
+    priced = approved(with_arch(flags=["component 'X': contains a price or payment term"], by_reviewer=True))
+    assert "## Architecture" not in gen([priced], "md").text
 
 
 def test_architecture_preview_escapes_a_hostile_label(approved):

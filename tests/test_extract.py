@@ -627,11 +627,35 @@ def test_reextract_keeps_a_reviewer_architecture_over_a_new_proposal(doc, monkey
     run(doc, case(("solution", "Faster onboarding", q)))
     with db.connect() as c:
         data = c.execute("select data from cases where document_id=%s", (doc[0],)).fetchone()[0]
-        data["architecture"] = {"title": "Mine", "components": [], "flows": [], "callouts": [], "by_reviewer": True, "flags": []}
+        data["architecture"] = {"title": "Solution architecture", "components": [], "flows": [], "callouts": [], "by_reviewer": True, "flags": []}
         c.execute("update cases set data=%s where document_id=%s", (Jsonb(data), doc[0]))
     data, *_ = run(doc, case(("solution", "Faster onboarding", q)))
-    assert data["architecture"]["title"] == "Mine" and data["architecture"]["by_reviewer"] is True
+    assert data["architecture"]["title"] == "Solution architecture" and data["architecture"]["by_reviewer"] is True
     assert any(n.startswith("Architecture: your diagram") for n in data["needs_attention"])
+
+
+def reviewer_arch(did, cite="solution 1"):
+    arch = {"title": "Solution architecture", "components": [{"id": "c1", "name": "Onboarding", "role": "", "zone": "core", "kind": "service", "cite": cite}],
+            "flows": [], "callouts": [], "by_reviewer": True, "flags": []}
+    with db.connect() as c:
+        data = c.execute("select data from cases where document_id=%s", (did,)).fetchone()[0]
+        data["architecture"] = arch
+        c.execute("update cases set data=%s where document_id=%s", (Jsonb(data), did))
+
+
+def test_reextract_recomputes_a_kept_architectures_flags_and_asks_for_a_fresh_confirmation(doc, monkeypatch):
+    from app import writeup
+    q = "cut customer onboarding from 12 days to 3 days"
+    calls = []
+    monkeypatch.setattr(writeup, "complete_json", lambda a, s, u, model, **k: calls.append(model) or model())
+    run(doc, case(("solution", "Faster onboarding", q)))
+    reviewer_arch(doc[0])
+    calls.clear()
+    data, *_ = run(doc, case(("solution", "Faster onboarding", q)))  # still supported: kept and confirmed
+    assert data["architecture"]["by_reviewer"] is True and data["architecture"]["flags"] == []
+    assert writeup.ArchProposal not in calls  # a kept diagram costs no proposal call
+    data, *_ = run(doc, case())  # the point is gone: flags appear and the confirmation is withdrawn
+    assert data["architecture"]["flags"] and data["architecture"]["by_reviewer"] is False
 
 
 def test_reextract_drops_model_prose_but_keeps_reviewer_prose_when_nothing_new(doc):
@@ -655,7 +679,7 @@ def test_build_stamps_the_extraction_version(monkeypatch):
 
 
 def test_extraction_version_is_pinned():
-    assert ex.EXTRACTION_VERSION == 3  # a change to extraction output must bump this
+    assert ex.EXTRACTION_VERSION == 4  # a change to extraction output must bump this
 
 
 NOTE = "Re-extracted with richer extraction: check and approve again"

@@ -380,3 +380,20 @@ code ignores it. The demo can be re-seeded.
   listed on `/admin/audit`.
 - B4: `eval_extraction.py` prints architecture counts per document. The
   test only covers the empty case; the session runs the real eval.
+- Phase B review fixes (Codex gpt-6-sol + Opus):
+  - Regenerate: no lock is held over the model call; a `v` reload before
+    saving; a failure keeps the old architecture, with the note added once.
+  - Exports honour `by_reviewer`, but a price still blocks.
+  - Approve recomputes the flags.
+  - Re-extraction resets `by_reviewer` when the flags change, and skips the
+    model call for a kept diagram.
+  - Every name word (3+ letters) must come from the quote, tech,
+    references or `ARCH_VOCAB`.
+  - First words are checked unless they're in `OPENERS`, a heuristic list
+    of common verbs.
+  - `EXTRACTION_VERSION` is 4.
+  - The append-only test covers `architecture_changes` and
+    `case_approval_overrides`.
+  - The parser takes ASCII digits only and caps its errors at 20.
+  - Known: `approve()` dropping unsourced points can shift stored cite
+    numbers. This predates phase B and doesn't affect exports.

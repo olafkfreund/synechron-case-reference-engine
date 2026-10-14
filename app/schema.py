@@ -364,6 +364,7 @@ def assemble(x: Extraction) -> tuple[ReferenceCase, list[str]]:
 
 # --- the architecture check (#246) ---------------------------------------------------------------
 _GENERIC = frozenset("the and for with service services system systems layer platform engine store app api portal queue hub".split())
+DEFAULT_TITLE = "Solution architecture"
 CITE_POINTS = ("solution", "implementation", "configuration")
 
 
@@ -395,18 +396,58 @@ def _known(token: str, vocab: set[str]) -> bool:
     return any(t == v or (len(t) >= 5 and len(v) >= 5 and t[:5] == v[:5]) for v in vocab)
 
 
+# words a component name may use with no quote behind them: they name a kind of part, not a product
+ARCH_VOCAB = frozenset("""api apis cluster clusters topic topics job jobs table tables bucket worker workers function application applications exception exceptions view views service services system systems layer platform engine store app apps portal queue hub bus event events
+data database web mobile gateway adapter adapters console ledger scheduler cache broker registry monitor monitoring
+gateway engine processor pipeline lake warehouse server client channel channels connector connectors interface interfaces
+module manager management workflow orchestrator router repository storage identity auth authentication core
+integration reporting analytics dashboard notification notifications messaging stream streaming batch file files
+user users customer customers staff internal external legacy cloud network security backup""".split())
+
+
+# ordinary words that open a role, label or callout ("Validate claims"): a capital there proves nothing; any other capitalised
+# word is checked. Base forms: -s, -es, -ed, -ing and -ies endings are removed before the lookup.
+OPENERS = frozenset("""submit send receive route publish save check validate verify authorise authorize serve transform train prepare run review
+store read write fetch load sync push pull stream notify alert issue approve reject match enrich clean normalise normalize aggregate calculate
+compute forecast predict score classify extract convert generate render display show list search index query expose host deploy schedule
+trigger call invoke process handle accept record log monitor archive upload download import export map ingest collect track report hold keep
+carry provide support manage control orchestrate coordinate cache queue buffer open close create update delete remove capture deliver feed
+request respond reply tell give get set put end start stop pass forward relay secure encrypt protect post translate propose rate buy sell
+pay bill charge book reserve assign allocate dispatch plan optimise optimize detect flag escalate resolve confirm sign verify look find
+take offer kept told read left unchanged incoming outgoing low high new old all each any the one two three four five users customer customers""".split())
+
+
+def _opener(word: str) -> bool:
+    w = word.casefold()
+    return any(c in OPENERS for c in (w, w[:-1], w[:-2], w[:-3], w[:-3] + "e", w[:-2] + "e", w[:-3] + "y", w[:-1] + "e", w[:-4]))
+
+
+def _prose(text, section_quotes, case_quotes):
+    """check_prose without the flag for an ordinary opening word (OPENERS)."""
+    from app.writeup import check_prose
+    first = re.match(r"\s*([A-Za-z]+)", text)
+    if first and _opener(first.group(1)):
+        text = text[first.end():]  # the rest is still checked, the opening word is not
+    return check_prose(text, section_quotes, case_quotes)
+
+
 def unsupported_terms(name: str, vocab: set[str]) -> list[str]:
-    """Capitalised words, acronyms and words with a digit in a component name that the cited quote, the tech stack and the
-    references never use, the first word included: only an ordinary opener ("The", "Using") is exempt (a product is not one)."""
+    """Words in a component name that the cited quote, the tech stack and the references never use and that are not generic
+    architecture words: any word of 3 letters or more, and any capitalised word, acronym or word with a digit. Only an ordinary
+    opener ("The", "Using") at the start is exempt (a product is not one)."""
     from app.writeup import COMMON_STARTS
+    known = vocab | ARCH_VOCAB
     out = []
-    for i, w in enumerate(name.split()):
+    for i, w in enumerate(re.split(r"[\s/&-]+", name)):
         bare = w.strip(".,;:()[]\"'")
-        if not bare or not (bare[0].isupper() or any(ch.isdigit() for ch in bare)):
+        if not bare:
             continue
-        if i == 0 and bare.casefold() in COMMON_STARTS:
+        marked = bare[0].isupper() or any(ch.isdigit() for ch in bare)
+        if len(bare) < 3 and not marked:
             continue
-        if not _known(bare, vocab):
+        if bare.casefold() in COMMON_STARTS:  # "for", "and", "The": never a product
+            continue
+        if not _known(bare, known):
             out.append(bare)
     return out
 
@@ -443,19 +484,20 @@ def check_architecture(case: "ReferenceCase") -> list[str]:
             flags.append(f"{who} matches neither its cited point nor the technology")  # one flag when there is no cite either: above
         flags += [f"{who} names '{t}', which neither its cited point nor the technology uses"
                   for t in unsupported_terms(c.name, _tokens(q or "") | _tokens(tech))]
-        flags += [f"{who}: {f}" for t in (c.name, c.role) for f in check_prose(t, [q] if q else [], allq, heading=True)]
+        flags += [f"{who}: {f}" for t in (c.name, c.role) for f in _prose(t, [q] if q else [], allq)]
     names = {c.id: c.name for c in a.components}
     for f in a.flows:
         q = _cite_quote(case, f.cite) if f.cite.strip() else None
         who = f"flow '{names.get(f.src, f.src)}' to '{names.get(f.dst, f.dst)}'"
         if not f.cite.strip() or q is None:
             flags.append(f"{who} cites no sourced point" if not f.cite.strip() else f"{who} cites '{f.cite}', which is no sourced point")
-        flags += [f"{who}: {m}" for m in check_prose(f.label, [q] if q else [], allq, heading=True)]
+        flags += [f"{who}: {m}" for m in _prose(f.label, [q] if q else [], allq)]
     for co in a.callouts:
         o = case.outcomes[co.outcome] if 0 <= co.outcome < len(case.outcomes) else None
         if o is None or o.unsourced:
             flags.append(f"callout '{co.text}' points at outcome {co.outcome}, which is no sourced outcome")
             continue
-        flags += [f"callout '{co.text}': {m}" for m in check_prose(co.text, [o.source_quote], allq, heading=True)]
-    flags += [f"title: {m}" for m in check_prose(a.title, allq, allq, heading=True)]
+        flags += [f"callout '{co.text}': {m}" for m in _prose(co.text, [o.source_quote], allq)]
+    if a.title != DEFAULT_TITLE:
+        flags += [f"title: {m}" for m in _prose(a.title, allq, allq)]
     return list(dict.fromkeys(flags))

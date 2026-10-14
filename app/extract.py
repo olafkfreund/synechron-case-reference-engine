@@ -7,7 +7,7 @@ from app import db, writeup
 from app.llm import MAX_TOKENS, complete_json, profile
 from app.schema import FIELDS, POINT_FIELDS, Architecture, Extraction, Period, Prose, ReferenceCase, References, Sourced, _norm, assemble, check_architecture, quote_in, sourced, vague_metric
 
-EXTRACTION_VERSION = 3  # #212 phases A, B and D; every PR that changes extraction output bumps it (#222)
+EXTRACTION_VERSION = 4  # #212 phases A, B and D; #246 architectures; every PR that changes extraction output bumps it (#222)
 MAX_CHARS = 400_000  # budget: longer documents are cut; chunks fit the model's context
 
 SYSTEM = (
@@ -198,7 +198,7 @@ def split(text: str) -> list[str]:
     return chunks(text, size) if size and len(text) > size else [text]
 
 
-def build(full_text: str, data_class: str, basis: str = "delivered", basis_reason: str = "") -> ReferenceCase:
+def build(full_text: str, data_class: str, basis: str = "delivered", basis_reason: str = "", propose: bool = True) -> ReferenceCase:
     """The extraction steps on a text, without the database (also run by scripts/eval_extraction.py)."""
     text = full_text[:MAX_CHARS]
     parts = split(text)
@@ -227,7 +227,8 @@ def build(full_text: str, data_class: str, basis: str = "delivered", basis_reaso
             notes.append(f"{n} item(s) with prices, rates or payment terms removed")
     # engagements had prices stripped above, so none reaches the model; a delivered case's prose is caught by the price flag
     writeup.write(case, data_class)
-    writeup.propose(case, data_class)
+    if propose:
+        writeup.propose(case, data_class)
     notes += case.needs_attention
     if n := sum(vague_metric(o) for o in case.outcomes):
         notes.append(f"{n} outcome(s) with no clear metric")
@@ -252,7 +253,8 @@ def extract(document_id: int, basis: str = "delivered", basis_reason: str = "", 
             return  # a newer version replaced this one (#132)
         if flagged and row[3] is not True:
             return  # the source was unticked: no case, and no model call (#159)
-        case = build(row[0], row[1], basis, basis_reason)
+        kept = conn.execute("select data->'architecture'->>'by_reviewer' = 'true' from cases where document_id=%s", (document_id,)).fetchone()
+        case = build(row[0], row[1], basis, basis_reason, propose=not (kept and kept[0]))  # a reviewer's diagram is kept: no model call
         # under the lock the admin's save takes, so an untick during the model call applies here (#159)
         if flagged and not conn.execute(
                 "select 1 from sources s join documents d on d.source_id = s.id where d.id = %s "
@@ -286,7 +288,10 @@ def extract(document_id: int, basis: str = "delivered", basis_reason: str = "", 
                 case.needs_attention.append(f"{label}: your write-up from before the document changed was kept; check it still holds")
         if old and (old[0].get("architecture") or {}).get("by_reviewer"):  # the reviewer's diagram wins over a new proposal
             case.architecture = Architecture.model_validate(old[0]["architecture"])
+            before = case.architecture.flags
             case.architecture.flags = check_architecture(case)  # against the new quotes
+            if case.architecture.flags != before:
+                case.architecture.by_reviewer = False  # the evidence moved: it needs a fresh confirmation
             case.needs_attention.append("Architecture: your diagram from before the document changed was kept; check it still holds")
         data = case.model_dump()
         conn.execute(

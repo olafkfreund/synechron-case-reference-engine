@@ -68,8 +68,9 @@ def test_app_role_is_idempotent_and_cannot_change_the_schema(app_role):
 def test_audit_log_tables_are_append_only_for_the_app(app_role):
     with db.connect() as c:
         db.apply_app_role(c, "pw-1")
-    for t in ("source_class_changes", "source_acl_changes"):
-        for stmt in (f"update {t} set changed_by='x'", f"delete from {t}"):
+    for t, col in (("source_class_changes", "changed_by"), ("source_acl_changes", "changed_by"),
+                   ("case_approval_overrides", "approved_by"), ("architecture_changes", "changed_by")):
+        for stmt in (f"update {t} set {col}='x'", f"delete from {t}"):
             with as_app("pw-1") as a:
                 with pytest.raises(psycopg.errors.InsufficientPrivilege):
                     a.execute(stmt)

@@ -1,4 +1,5 @@
 import hashlib
+import re
 import copy
 from datetime import datetime, timezone
 
@@ -500,7 +501,7 @@ def parse_architecture(text: str, case: ReferenceCase) -> tuple[Architecture | N
                         raise ValueError("a flow joins two components listed above it")
                     flows.append(ArchFlow(src=ids[src], dst=ids[dst], label=parts[1], mode=parts[2], cite=parts[3]))
                 case "callout":
-                    if len(parts) != 2 or not parts[1].isdigit():
+                    if len(parts) != 2 or not re.fullmatch(r"[0-9]{1,3}", parts[1]):
                         raise ValueError("a callout is: text | outcome number")
                     notes.append(ArchCallout(text=parts[0], outcome=int(parts[1]) - 1))
                 case _:
@@ -514,6 +515,8 @@ def parse_architecture(text: str, case: ReferenceCase) -> tuple[Architecture | N
             errs.append(f"At most {cap} {what}; there are {len(items)}")
     if not comps and not errs:
         errs.append("Add at least one component, or use Remove")
+    if len(errs) > 20:
+        errs = [*errs[:20], f"and {len(errs) - 20} more"]
     return (None, errs) if errs else (Architecture(title=title, components=comps, flows=flows, callouts=notes, by_reviewer=True), [])
 
 
@@ -560,17 +563,25 @@ DATA_CLASSES = ("confidential", "sanitised", "public")  # strictest first
 
 @router.post("/review/{cid}/architecture/regenerate")
 def regenerate_architecture(cid: int, v: str = Form(), confirm: bool = Form(False), user: User = Depends(require("reviewer"))):
-    with db.connect() as conn:
+    with db.connect() as conn:  # no lock is held over the model call below
         case, _ = load(conn, cid, user, v)
         if case.architecture and case.architecture.by_reviewer and not confirm:
             raise HTTPException(400, "confirm that your edited architecture may be replaced")
         classes = {r[0] for r in conn.execute(
             "select s.data_class from cases m join documents d on d.id = m.document_id join sources s on s.id = d.source_id "
             "where m.id = %s or m.merged_into = %s", (cid, cid))}
-        case.architecture = None
-        writeup.propose(case, next((c for c in DATA_CLASSES if c in classes), "confidential"))
-        if case.architecture is None and not any("architecture proposal failed" in n for n in case.needs_attention):
-            case.needs_attention.append("architecture: the model proposed nothing the points support")
+    work = case.model_copy(deep=True)
+    work.architecture = None
+    writeup.propose(work, next((c for c in DATA_CLASSES if c in classes), "confidential"))
+    with db.connect() as conn:
+        case, _ = load(conn, cid, user, v)  # 409 if the case changed meanwhile
+        if work.architecture:
+            case.architecture = work.architecture
+        elif case.architecture:
+            work.needs_attention.append("architecture: no new proposal; the current one is kept")
+        else:
+            work.needs_attention.append("architecture: the model proposed nothing the points support")
+        case.needs_attention += [n for n in dict.fromkeys(work.needs_attention) if n not in case.needs_attention]
         save(conn, cid, case)
         _arch_log(conn, cid, "regenerate", user)
         _reopen(conn, cid)
@@ -627,6 +638,8 @@ def approve(cid: int, v: str = Form(), diagrams_checked: bool = Form(False), rea
         if any(p.flags and not p.by_reviewer for p in case.prose.values()):
             raise HTTPException(400, "fix or confirm the flagged write-up")  # editing it counts as confirming
         a = case.architecture
+        if a:
+            a.flags = check_architecture(case)  # against the evidence as it stands now: an edit may have made the stored flags stale
         if a and any(PRICE_FLAG in f for f in a.flags):
             raise HTTPException(400, "remove the price or payment term from the architecture")
         if a and a.flags and not a.by_reviewer:

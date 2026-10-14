@@ -1496,7 +1496,8 @@ def test_merge_prefers_a_sourced_technical_reference_over_an_unsourced_copy(make
 
 
 def arch_gate(make, **arch):
-    flagged = {"title": "Solution architecture", "components": [], "flows": [], "callouts": [], "flags": ["component 'X': names 'Zorbulon', which no quote supports"], **arch}
+    comp = dict(id="c1", name="Zorbulon", role="", zone="core", kind="service", cite="solution 1")
+    flagged = {"title": "Solution architecture", "components": [comp], "flows": [], "callouts": [], "flags": ["stale"], **arch}
     prose = {f: {"text": LONG, "by_reviewer": True, "flags": []} for f in ("challenge", "implementation", "configuration", "solution")}
     return prosed(make, prose=prose, architecture=flagged)
 
@@ -1510,13 +1511,14 @@ def test_flagged_architecture_blocks_approval_until_the_reviewer_confirms_it(mak
 
 
 def test_a_price_in_the_architecture_blocks_even_a_reviewers_diagram(make):
-    cid = arch_gate(make, by_reviewer=True, flags=["component 'X': contains a price or payment term"])
+    comp = dict(id="c1", name="Onboarding", role="Costs EUR 50,000 per year", zone="core", kind="service", cite="solution 1")
+    cid = arch_gate(make, by_reviewer=True, components=[comp])
     r = client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)})
     assert r.status_code == 400 and "price or payment term" in r.text
 
 
 def test_a_clean_architecture_is_approved(make):
-    cid = arch_gate(make, flags=[])
+    cid = arch_gate(make, components=[], flags=[])
     assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}, follow_redirects=False).status_code == 303
 
 
@@ -1615,3 +1617,62 @@ def test_architecture_png_is_served_to_a_reviewer_who_can_see_the_case_only(make
     assert client([REV, "g-other"]).get(f"/review/{cid}/architecture.png").status_code == 404
     other = arch_case(make)
     assert client(R).get(f"/review/{other}/architecture.png").status_code == 404  # none yet
+
+
+def test_architecture_parser_rejects_non_ascii_digits_without_echo_and_caps_the_errors(make):
+    from app.review import parse_architecture
+    case = ReferenceCase.model_validate(row(arch_case(make))[1])
+    arch, errs = parse_architecture(ARCH_TEXT.replace("| 1", "| \u00b2"), case)
+    assert arch is None and errs == ["Line 5: a callout is: text | outcome number"]
+    arch, errs = parse_architecture("\n".join(["nonsense"] * 30), case)
+    assert len(errs) == 21 and errs[-1] == "and 10 more"
+
+
+def test_approve_recomputes_architecture_flags_instead_of_trusting_stored_ones(make):
+    stored_clean = dict(title="Solution architecture", flows=[], callouts=[], flags=[],
+                        components=[dict(id="c1", name="Zorbulon", role="", zone="core", kind="service", cite="solution 1")])
+    cid = arch_gate(make, **stored_clean)
+    r = client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)})
+    assert r.status_code == 400 and "flagged architecture" in r.text and row(cid)[0] == "extracted"
+
+
+def test_failed_regenerate_keeps_the_architecture_and_notes_once(make, monkeypatch):
+    from app import writeup
+    cid = arch_case(make)
+    post_arch(cid, text=ARCH_TEXT)
+    monkeypatch.setattr(writeup, "complete_json", lambda *a, **k: (_ for _ in ()).throw(ValueError("echo Zorbulon")))
+    for _ in range(2):
+        assert post_arch(cid, "/regenerate", confirm="true").status_code == 303
+    data = row(cid)[1]
+    assert data["architecture"]["by_reviewer"] is True and len(data["architecture"]["components"]) == 2
+    assert data["needs_attention"].count("architecture proposal failed (ValueError)") == 1 and "Zorbulon" not in json.dumps(data)
+
+
+def test_regenerate_holds_no_lock_over_the_model_call_and_a_change_meanwhile_is_409(make, monkeypatch):
+    from app import writeup
+    cid = arch_case(make)
+    seen = []
+
+    def slow(alias, system, user, model, **k):
+        with db.connect() as c:  # the case row is free during the call
+            c.execute("set local lock_timeout = '1s'")
+            c.execute("select 1 from cases where id=%s for update", (cid,))
+            if not seen:
+                c.execute("update cases set data = jsonb_set(data, '{summary}', '\"changed\"') where id=%s", (cid,))
+        seen.append(k["data_class"])
+        return model()
+    monkeypatch.setattr(writeup, "complete_json", slow)
+    assert post_arch(cid, "/regenerate").status_code == 409 and seen == ["confidential"]
+
+
+def test_regenerate_uses_the_strictest_class_among_the_members(make, monkeypatch):
+    from app import writeup
+    parent, m1, m2 = arch_case(make), arch_case(make), arch_case(make)
+    with db.connect() as c:
+        c.execute("update cases set document_id = null, member_count = 2 where id = %s", (parent,))
+        c.execute("update cases set merged_into = %s where id in (%s, %s)", (parent, m1, m2))
+        for cid, cls in ((m1, "public"), (m2, "sanitised")):
+            c.execute("update sources set data_class = %s where id = (select source_id from documents d join cases k on k.document_id = d.id where k.id = %s)", (cls, cid))
+    seen = []
+    monkeypatch.setattr(writeup, "complete_json", lambda a, s, u, model, **k: seen.append(k["data_class"]) or model())
+    assert post_arch(parent, "/regenerate").status_code == 303 and seen == ["sanitised"]
