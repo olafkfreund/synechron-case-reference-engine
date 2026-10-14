@@ -254,3 +254,17 @@ def test_capability_prose_that_claims_a_result_is_flagged(monkeypatch):  # #213
     wu.write(c, "internal")
     assert c.prose["solution"].flags == [wu.RESULT_FLAG] and c.needs_attention
     assert "resulted in" in wu.WRITEUP_SYSTEM
+
+
+def test_check_prose_heading_drops_ordinary_words_anywhere():  # #275
+    q = ["GitLab integrates with ServiceNow; configure GitLab as an OAuth 2.0 provider"]
+    h = lambda t: wu.check_prose(t, q, q, heading=True)  # noqa: E731
+    assert h("Best Practices for Integrating GitLab with ServiceNow") == []
+    assert h("OAuth 2.0 Configuration is Essential") == []
+    assert h("Use No-Code Integration Tools") == []  # every part of a hyphenated word is ordinary
+    assert h("Use Zorb-Code Tools") == ["names 'Zorb-Code', which no quote supports"]
+    assert h("Use Zorbulate for Integration") == ["names 'Zorbulate', which no quote supports"]
+    assert h("SAP Rollout Plan")[0].startswith("names 'SAP")  # an acronym is always checked
+    assert "names 'Plan9', which no quote supports" in h("Plan9 Migration")
+    # body text is unchanged: a mid-sentence capitalised run is still checked whole
+    assert wu.check_prose("We followed Best Practices.", q, q) == ["names 'Best Practices', which no quote supports"]

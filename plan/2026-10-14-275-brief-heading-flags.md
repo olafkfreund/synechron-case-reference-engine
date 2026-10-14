@@ -44,4 +44,10 @@ Revert the merge commit. Stored brief flags refresh on the next check.
 
 ## Deviations
 
-None yet.
+- **Hyphenated words.** A hyphenated word is ordinary when every part is
+  ("No-Code"). The measurement showed it was the last false flag.
+- **Measured** on the demo's stored briefs, running branch code against
+  the demo database: brief 1 went from 9 flags to 3. The 6 heading flags
+  are gone, and the 3 real "has no citation" flags remain.
+- **Negative control.** With the heading filter disabled, the heading
+  test fails.

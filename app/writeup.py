@@ -83,6 +83,10 @@ def check_prose(text: str, section_quotes: list[str], case_quotes: list[str], *,
         ordinary = first.lower() in COMMON_STARTS or first.lower() in lower or first.lower() in common_words()
         if _SENTENCE_START.search(text[:m.start()]) and (heading or ordinary) and not (first.isupper() and len(first) > 1) and not any(c.isdigit() for c in first):
             term = rest.strip()
+        if heading:  # title case capitalises every word: an ordinary one is no name, wherever it stands (#275)
+            plain = lambda p: p in COMMON_STARTS or p in lower or p in common_words()  # noqa: E731
+            term = " ".join(w for w in term.split() if (w.isupper() and len(w) > 1) or any(c.isdigit() for c in w)
+                            or not all(plain(p) for p in w.lower().split("-") if p))  # "No-Code": every part ordinary
         term = " ".join(w for w in term.split() if w.lower() not in DATE_WORDS and not w.isdigit())
         if not term:
             continue
