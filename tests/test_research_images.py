@@ -120,3 +120,95 @@ def test_an_image_naming_a_protected_client_is_hidden_everywhere(reg):  # noqa: 
     assert c.get(f"/research/{rid}/images/{iid}.png").status_code == 404
     page = c.get(f"/research/{rid}").text
     assert reg not in page and f"images/{iid}.png" not in page and f"images/{ok}.png" in page and f"images/{named}.png" in page
+
+
+# --- rights through attach ---------------------------------------------------------------------------
+
+from app import diagrams  # noqa: E402
+from tests.test_render import doc_text, gen, prev  # noqa: E402
+from tests.test_research_claims import BASE, case_with, echo, finish, sent  # noqa: E402,F401
+from tests.test_review import DOCS, make  # noqa: E402,F401
+from tests.test_search import approved  # noqa: E402,F401
+
+PAGE = {"url": "https://docs.example/guide", "publisher": "docs.example", "title": "**Guide** to Kafka",
+        "retrieved_at": "2026-10-01T00:00:00+00:00", "markdown": "m"}
+OK = {"rights_ok_{i}": "on", "no_logo_{i}": "on", "basis_{i}": "Licensed CC-BY, see footer"}
+
+
+def attach_form(c, cid, rid, iid, page=None, **over):
+    import re
+    t = c.get(f"/research/{page or rid}").text
+    target = re.search(rf'<option value="({cid}:[0-9a-f]+)"', t).group(1)
+    data = {"target": target, "research_id": rid, "img": iid, **{k.format(i=iid): v for k, v in OK.items()}}
+    data.update({k.format(i=iid): v for k, v in over.items()})
+    return c.post("/sources/attach", data={k: v for k, v in data.items() if v is not None}, follow_redirects=False)
+
+
+def case_diagrams(cid):
+    with db.connect() as c:
+        return c.execute("select data->'diagrams' from cases where id=%s", (cid,)).fetchone()[0] or []
+
+
+def reviewer_row(approved, reg, echo):  # noqa: F811
+    from tests.test_research import as_user
+    cid = approved(case_with())
+    c = as_user("u1", ["g-rev", DOCS])
+    loc = sent(c, cid)
+    rid = int(loc.rsplit("/", 1)[1])
+    finish(loc, [{**BASE, "quote": "q q q q", "url": PAGE["url"], "publisher": "docs.example"}], pages=[PAGE])  # the picker shows with claims
+    return c, cid, rid, add_image(rid, alt="Kafka topology")
+
+
+def test_confirmed_image_becomes_a_pending_diagram_with_a_credit_and_no_reviewer(approved, reg, echo):  # noqa: F811
+    c, cid, rid, iid = reviewer_row(approved, reg, echo)
+    assert attach_form(c, cid, rid, iid).status_code == 303
+    (d,) = case_diagrams(cid)
+    assert d["status"] == "pending" and d["caption"] == "Kafka topology"
+    assert d["credit"] == "Image: Guide to Kafka, docs.example, https://docs.example/guide, retrieved 2026-10-01"
+    assert "u1" not in str(d)
+    with db.connect() as conn:
+        assert conn.execute("select rights_by, rights_at is not null, rights_basis from research_images where id=%s", (iid,)).fetchone() \
+            == ("u1", True, "Licensed CC-BY, see footer")
+        assert conn.execute("select count(*) from jobs where kind='diagram' and payload->>'diagram_id'=%s", (str(d["id"]),)).fetchone()[0] == 1
+    diagrams.process(d["id"])
+    (d,) = case_diagrams(cid)
+    assert d["status"] == "ready"
+    with db.connect() as conn:  # the attach reopened the case; a reviewer approves it again
+        conn.execute("update cases set status='approved', review_due=now() + interval '30 days' where id=%s", (cid,))
+    md = gen([cid], "md").text
+    assert "Kafka topology Image: Guide to Kafka, docs.example" in md and "u1" not in md
+    assert "Image: Guide to Kafka" in prev([cid]).text
+    assert "Image: Guide to Kafka" in doc_text(gen([cid], "docx").content)
+
+
+def test_missing_confirmation_basis_or_wrong_owner_changes_nothing(approved, reg, echo):  # noqa: F811
+    from tests.test_research import as_user
+    c, cid, rid, iid = reviewer_row(approved, reg, echo)
+    for over in ({"rights_ok_{i}": None}, {"no_logo_{i}": None}, {"basis_{i}": ""}, {"basis_{i}": "x" * 201}):
+        assert attach_form(c, cid, rid, iid, **over).status_code == 400, over
+    other = as_user("u2", ["g-rev", DOCS])  # a reviewer who does not own the research
+    import re
+    target = re.search(rf'<option value="({cid}:[0-9a-f]+)"', c.get(f"/research/{rid}").text).group(1)  # a valid token
+    assert other.post("/sources/attach", data={"target": target, "research_id": rid, "img": iid, f"rights_ok_{iid}": "on",
+                                               f"no_logo_{iid}": "on", f"basis_{iid}": "b"}).status_code == 404
+    mine = make_row("research test mine", created_by="u1")
+    assert attach_form(c, cid, mine, iid, page=rid).status_code == 404  # the image belongs to another research
+    assert case_diagrams(cid) == []
+    with db.connect() as conn:
+        assert conn.execute("select rights_by from research_images where id=%s", (iid,)).fetchone()[0] is None
+
+
+def test_only_a_reviewer_may_confirm_rights(approved, reg, echo):  # noqa: F811
+    from tests.test_research import as_user
+    c, cid, rid, iid = reviewer_row(approved, reg, echo)
+    r = as_user("u1", ["g-user", DOCS]).post("/sources/attach", data={"target": f"{cid}:x", "research_id": rid, "img": iid})
+    assert r.status_code == 403
+    assert case_diagrams(cid) == []
+
+
+def test_picker_fields_are_on_the_reviewer_page_only(approved, reg, echo):  # noqa: F811
+    from tests.test_research import as_user
+    c, cid, rid, iid = reviewer_row(approved, reg, echo)
+    t = c.get(f"/research/{rid}").text
+    assert f'name="basis_{iid}"' in t and f'name="rights_ok_{iid}"' in t and f'name="no_logo_{iid}"' in t
+    assert 'name="basis_' not in as_user("u1", ["g-user", DOCS]).get(f"/research/{rid}").text

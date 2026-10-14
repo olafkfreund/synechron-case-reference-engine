@@ -217,7 +217,7 @@ def section(case: ReferenceCase, client: str) -> dict:
         details=[dict(label=a, value=str(b)) for a, b in details if b not in (None, "")],
         blocks=[dict(heading=a, text=t, paragraphs=ps) for a, (t, ps) in blocks if t],
         lists=[dict(heading=a, bullets=[str(i) for i in b if i]) for a, b in lists if any(b)],
-        diagrams=[dict(id=d.id, caption=d.caption, width=d.width, height=d.height) for d in case.diagrams if d.status == "ready"],
+        diagrams=[dict(id=d.id, caption=f"{d.caption} {d.credit}" if d.credit else d.caption, width=d.width, height=d.height) for d in case.diagrams if d.status == "ready"],
         architecture=architecture_dict(case))
 
 

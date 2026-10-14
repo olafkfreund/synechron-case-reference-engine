@@ -390,6 +390,12 @@ check the brief has a diagram, counts only.
 - **Phase (c), c3.** An alt text naming a client is anonymised by
   `apply()` and shown, as claims are. Only a protected name left in the
   page or image URL hides the image.
+- **Phase (c), c4.**
+  - **Credit placement.** The credit follows the caption on the same
+    line, so the templates are unchanged.
+  - **Form shape.** The picker posts `img` ids with per-id
+    `rights_ok_<id>`, `no_logo_<id>` and `basis_<id>` fields.
+  - **Images only.** Attach accepts images with no quotes ticked.
 
 ## Tests
 

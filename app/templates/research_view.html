@@ -46,7 +46,11 @@
 <p class="muted" style="font-size:13px">Copyright of its owner. Shown to you only; it reaches no output unless a reviewer confirms the right to use it.</p>
 {% for i in images %}<div class="claim"><img src="/research/{{ research_id }}/images/{{ i.id }}.png" alt="{{ i.alt }}" width="240">
 <div class="meta">{% if i.page_url.startswith(("http://", "https://")) %}<a href="{{ i.page_url }}" rel="noopener noreferrer">{{ i.page_url }}</a>{% endif %}</div>
-{% if i.alt %}<p>{{ i.alt }}</p>{% endif %}</div>{% endfor %}</div>
+{% if i.alt %}<p>{{ i.alt }}</p>{% endif %}
+{% if attach_cases %}<label class="check"><input type="checkbox" name="img" value="{{ i.id }}" form="pick"> Use in the case selected under the quotes</label>
+<label class="check"><input type="checkbox" name="rights_ok_{{ i.id }}" form="pick"> We have the right to use this image</label>
+<label class="check"><input type="checkbox" name="no_logo_{{ i.id }}" form="pick"> No client name or logo shows</label>
+<label for="basis-{{ i.id }}">Basis for the right (at most 200 characters)</label><input type="text" id="basis-{{ i.id }}" name="basis_{{ i.id }}" form="pick" maxlength="200">{% endif %}</div>{% endfor %}</div>
 {% endif %}
 <div class="section-card"><div class="card-head"><h2>Sources</h2></div>
 {% for p in pages %}<p style="margin:0 0 6px"><b>{{ p.publisher }}</b> &middot; <a href="{{ p.url }}" rel="noopener noreferrer">{{ p.url }}</a>
