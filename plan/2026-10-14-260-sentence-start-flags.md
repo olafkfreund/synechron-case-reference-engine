@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 260
 spec: spec/2026-10-14-260-sentence-start-flags.md
 ---
