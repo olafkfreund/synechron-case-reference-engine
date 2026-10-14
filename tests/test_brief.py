@@ -376,3 +376,49 @@ def test_a_diagram_failure_leaves_a_class_only_note_and_the_brief(env):
     db.init()
     b, _ = run_with(RuntimeError("secret quote text"))
     assert b["diagram_note"] == "diagram proposal failed (RuntimeError)" and "diagram" not in b and b["title"] == "passwordless sign in"
+
+
+# ---- the diagram page (#231 d3) ----
+LINES = "title: Sign in\ncomponent: Entra | Accepts sign in | core | service | source 1\ncomponent: Conditional access | Needs a policy | core | service | source 2\nflow: Entra -> Conditional access | Needs policy | api | source 2"
+
+
+def with_diagram(made):
+    bid = made({**body(), "flags": [], "diagram": {"components": [
+        {"id": "c1", "name": "Entra", "role": "Accepts sign in", "zone": "core", "kind": "service", "cite": "source 1"}]}})
+    with db.connect() as conn:
+        v = conn.execute("select md5(body::text) from briefs where id=%s", (bid,)).fetchone()[0]
+    return bid, v
+
+
+def stored(bid):
+    with db.connect() as conn:
+        return conn.execute("select body from briefs where id=%s", (bid,)).fetchone()[0]
+
+
+def test_the_diagram_png_is_the_owners_only(made):
+    bid, _ = with_diagram(made)
+    ok = as_user("u1").get(f"/brief/{bid}/diagram.png")
+    assert ok.status_code == 200 and ok.content.startswith(b"\x89PNG") and ok.headers["cache-control"] == "private, no-store"
+    assert as_user("u2").get(f"/brief/{bid}/diagram.png").status_code == 404
+    assert as_user("u1").get(f"/brief/{made()}/diagram.png").status_code == 404  # none yet
+    assert as_user("u2").post(f"/brief/{bid}/diagram", data={"text": "", "v": "x"}).status_code == 404
+
+
+def test_saving_a_diagram_checks_it_a_stale_version_is_409_and_errors_keep_the_old(made):
+    bid, v = with_diagram(made)
+    c = as_user("u1")
+    assert "Entra" in c.get(f"/briefs/{bid}").text
+    r = c.post(f"/brief/{bid}/diagram", data={"text": LINES, "v": v}, follow_redirects=False)
+    assert r.status_code == 303 and [x["name"] for x in stored(bid)["diagram"]["components"]] == ["Entra", "Conditional access"]
+    assert stored(bid)["diagram"]["by_reviewer"] is True and stored(bid)["flags"] == []
+    assert c.post(f"/brief/{bid}/diagram", data={"text": LINES, "v": v}).status_code == 409  # v is stale now
+    with db.connect() as conn:
+        v2 = conn.execute("select md5(body::text) from briefs where id=%s", (bid,)).fetchone()[0]
+    bad = c.post(f"/brief/{bid}/diagram", data={"text": "nonsense", "v": v2})
+    assert bad.status_code == 400 and "Not saved" in bad.text and len(stored(bid)["diagram"]["components"]) == 2
+    c.post(f"/brief/{bid}/diagram", data={"text": LINES.replace("Entra", "Okta"), "v": v2})
+    assert any("Okta" in f["sentence"] for f in stored(bid)["flags"])  # an invented name blocks
+    with db.connect() as conn:
+        v3 = conn.execute("select md5(body::text) from briefs where id=%s", (bid,)).fetchone()[0]
+    assert c.post(f"/brief/{bid}/diagram", data={"text": " ", "v": v3}, follow_redirects=False).status_code == 303
+    assert "diagram" not in stored(bid) and stored(bid)["flags"] == []

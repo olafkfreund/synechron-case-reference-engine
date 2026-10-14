@@ -525,6 +525,12 @@ with a diagram, in light and dark. Opus, Codex and agy reviews. Run
     which is what the brief page prints.
   - **Saving.** `save()` keeps `diagram` and `diagram_note` across edits.
   - **Tests.** The existing brief fakes answer only the `Brief` call.
+- **Phase (d) revised, d3.**
+  - **Version.** `v` is `md5(body::text)`, as on the case page.
+  - **Save.** A saved diagram is checked but not pruned, as the case
+    editor does.
+  - **Errors.** A parse error re-renders the page with status 400 and
+    keeps the stored diagram.
 
 ## Tests
 

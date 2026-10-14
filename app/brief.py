@@ -3,12 +3,13 @@ import re
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
+from markupsafe import Markup
 from psycopg.types.json import Jsonb
 
-from app import anonymise, db, research
+from app import anonymise, archdiagram, db, research
 from app.llm import complete_json
 from app.main import User, require
-from app.review import SOURCE_KEYS, page
+from app.review import PNG_HEADERS, SOURCE_KEYS, arch_lines, page, parse_architecture
 from app.schema import Architecture, _Model, check_architecture, evidence_of_quotes, plain, prune_architecture
 from app.writeup import ARCH_SYSTEM, ArchProposal, _build_arch, check_prose
 
@@ -174,11 +175,59 @@ def start(rid: int, n: list[int] = Form([]), title: str = Form(""), user: User =
     return RedirectResponse(f"/briefs/{bid}", status_code=303)
 
 
-@router.get("/briefs/{bid}")
-def view(bid: int, request: Request, user: User = Depends(require("user"))):
+def _panel(body, form=None):
+    """What the Diagram card shows: the SVG and the editable lines (`form` is a rejected (text, errors) pair)."""
+    a = Architecture.model_validate(body["diagram"]) if body.get("diagram") else None
+    svg = Markup(archdiagram.to_svg(archdiagram.layout(a), a.title)) if a else None  # to_svg escapes every string
+    text, errors = form or (arch_lines(a) if a else "", [])
+    return dict(a=a, svg=svg, text=text, errors=errors, note=body.get("diagram_note"))
+
+
+def _page(bid, request, user, form=None):
     with db.connect() as conn:
         status, error, title, _, body = owned(conn, bid, user)
-    return page(request, "brief.html", user, bid=bid, status=status, error=error, title=title, body=body)
+        v = conn.execute("select md5(body::text) from briefs where id=%s", (bid,)).fetchone()[0]
+    return page(request, "brief.html", user, bid=bid, status=status, error=error, title=title, body=body, v=v, diagram=_panel(body, form))
+
+
+@router.get("/briefs/{bid}")
+def view(bid: int, request: Request, user: User = Depends(require("user"))):
+    return _page(bid, request, user)
+
+
+@router.get("/brief/{bid}/diagram.png")
+def diagram_png(bid: int, user: User = Depends(require("user"))):
+    with db.connect() as conn:
+        d = owned(conn, bid, user)[4].get("diagram")
+    if not d:
+        raise HTTPException(404, "no such diagram")
+    return Response(archdiagram.to_png(archdiagram.layout(Architecture.model_validate(d))), media_type="image/png", headers=PNG_HEADERS)
+
+
+@router.post("/brief/{bid}/diagram")
+def save_diagram(bid: int, request: Request, text: str = Form(""), v: str = Form(), user: User = Depends(require("user"))):
+    with db.connect() as conn:
+        row = conn.execute("select status, quotes, body, md5(body::text) = %s from briefs where id=%s and created_by=%s for update",
+                           (v, bid, user.sub)).fetchone()
+        if not row:
+            raise HTTPException(404, "no such brief")
+        if row[0] != "done":
+            raise HTTPException(409, "the brief is not ready")
+        if not row[3]:
+            raise HTTPException(409, "the brief changed; reload the page")
+        body, clients = row[2], anonymise.load_clients(conn)
+        texts = quote_texts(row[1][:MAX_QUOTES], clients)
+        arch, errs = parse_architecture(text[:20000], evidence_of_quotes(texts)) if text.strip() else (None, [])
+        if not errs:  # an empty box removes the diagram
+            body.pop("diagram_note", None)
+            body.pop("diagram", None) if arch is None else body.update(diagram=arch.model_dump())
+            body["flags"] = check(body, texts, clients)
+            conn.execute("update briefs set body=%s where id=%s", (Jsonb(body), bid))
+    if errs:  # the earlier diagram stays; the page shows what to fix
+        r = _page(bid, request, user, (text, errs))
+        r.status_code = 400
+        return r
+    return RedirectResponse(f"/briefs/{bid}#diagram", status_code=303)
 
 
 @router.post("/briefs/{bid}")

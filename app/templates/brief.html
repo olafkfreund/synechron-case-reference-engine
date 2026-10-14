@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block body %}
 <div class="page-head"><div><h1>Brief</h1><p>{{ body.title or title }}</p></div></div>
 {% if status == "queued" %}
@@ -14,6 +15,14 @@
 {% for t in body.themes %}<label for="h{{ loop.index }}">Theme {{ loop.index }}</label><input type="text" id="h{{ loop.index }}" name="heading" value="{{ t.heading }}">
 <textarea name="text" rows="5" aria-label="Theme {{ loop.index }} text">{{ t.text }}</textarea>{% endfor %}
 <div class="row"><button class="btn primary">Save and check</button></div></form>
+<div class="section-card" id="diagram"><div class="card-head"><h2>Diagram</h2></div>
+{% if diagram.svg %}{% set u = "/brief/" ~ bid ~ "/diagram.png" %}<figure class="paper"><a href="{{ u }}" target="_blank" rel="noopener" class="zoom" aria-label="Open {{ diagram.a.title }} full size">{{ diagram.svg }}</a></figure>
+{% else %}<p class="muted">{{ diagram.note or "No diagram was proposed." }}</p>{% endif %}
+{% if diagram.errors %}<div role="alert" class="warn-line">{{ icon("alert") }}<span>Not saved. The earlier version is kept:</span></div><ul>{% for e in diagram.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+<form method="post" action="/brief/{{ bid }}/diagram" class="stack"><input type="hidden" name="v" value="{{ v }}">
+<label for="arch-text" class="field-help" style="display:block">One line each: title: ... / component: name | role | zone | kind | cite (source N) / flow: A -&gt; B | label | mode | cite. Empty removes the diagram.</label>
+<textarea id="arch-text" name="text" rows="10" maxlength="20000">{{ diagram.text }}</textarea>
+<div class="row"><button class="btn primary">Save diagram</button></div></form></div>
 <form method="post" action="/briefs/{{ bid }}/download" class="section-card stack">
 <div class="row"><label for="b-format">Format</label><select id="b-format" name="format" style="max-width:200px"><option value="docx">Word</option><option value="pdf_docx">PDF</option><option value="md">Markdown</option></select>
 <button class="btn primary"{% if body.flags %} disabled{% endif %}>Download</button></div></form>
