@@ -52,10 +52,15 @@ latest `extract` job of the document.
 - **Each row** shows the label as a badge (the in-progress stages use a
   neutral badge with a small pulsing dot) and the detail as `field-help`
   text under the file name.
-- **Refresh.** While any row is `queued`, `reading` or `writing`, the page
-  includes `<meta http-equiv="refresh" content="15">` and a muted line:
-  "This page refreshes every 15 seconds while files are processing."
-  With nothing pending, there is no refresh.
+- **Refresh.** While any row is `queued`, `reading` or `writing`, the
+  page shows a muted line: "This page updates every 15 seconds while
+  files are processing." It also loads `app/static/upload.js`, which
+  reloads the page every 15 seconds **unless a file has been chosen** in
+  the form, so a reload never discards the user's pick.
+  - With nothing pending, the script isn't loaded at all.
+  - Without JavaScript, the line says "Reload to see progress".
+  - The script is static, with no inline code, so the CSP is unchanged
+    (the `review.js` pattern).
 - **After an upload.** The notice reads "File received. It is waiting to
   be processed; this page updates by itself."
 
@@ -74,19 +79,17 @@ latest `extract` job of the document.
   the truth, and duplicating it would drift.
 - **Client-side polling and a status endpoint.** A meta refresh does the
   job with no JavaScript and no new route.
+- **A meta refresh.** It can't be paused once a file is chosen, so it
+  would discard the user's pick.
 - **A per-document live progress percentage.** The model call gives no
   progress, so any percentage would be invented.
 
 ## Risks
 
 - **Rough estimate.** It is shown as a range and labelled "about".
-- **Refresh during a POST.** A meta refresh while the user is choosing a
-  file could reset the file picker. Mitigation: refresh only the "Your
-  uploads" section, via an `<iframe>`-free approach. Since that is not
-  possible with meta refresh, the refresh is disabled while the file input
-  has a value, using a tiny inline-free script in an existing static file
-  (`review.js` pattern, a new `upload.js`). Without JavaScript the page
-  still refreshes.
+- **A reload could lose a chosen file.** Covered by the script's
+  file-chosen check (tested with a stub). Without JavaScript nothing
+  reloads by itself.
 
 ## Verification
 
@@ -96,7 +99,8 @@ latest `extract` job of the document.
   - the estimate with fewer than 5 jobs and with 20
   - owner-only, unchanged
   - the MCP codes and `detail`
-  - the meta refresh present only while something is pending
+  - `upload.js` is referenced only while something is pending
+  - a stub test that the script doesn't reload when a file is chosen
   - the review-queue line counts only visible documents and is hidden at 0
 - **Screenshots:** the upload page with "Writing the case" and "Waiting"
   rows, and the review queue line, in light and dark.
