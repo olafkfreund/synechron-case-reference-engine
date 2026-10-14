@@ -1,4 +1,4 @@
-app/data/common_words.txt: lowercase entries of SCOWL size-35 english/american/british word lists (scowl 2020.12.07, nixpkgs). #260
+app/data/common_words.txt: lowercase entries of SCOWL size-40 english/american/british word lists (scowl 2020.12.07, nixpkgs). #260
 
 This English word list is comes directly from SCOWL unknown (up to level 60,
 using the speller/make-aspell-dict script, http://wordlist.sourceforge.net/) 

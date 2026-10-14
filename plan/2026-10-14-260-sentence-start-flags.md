@@ -122,3 +122,20 @@ None yet.
   "no self-vouching" test now uses a non-word, "Zorbulate". The Snowflake
   mid-sentence test uses a quote without "Snowflake".
 - **Negative control:** without the word list, the 2 new tests fail.
+- **Opus review fixes** (full suite 1431 passed):
+  - **Digit words.** A word containing a digit is always checked, as
+    decision 2 says ("Plan9" is checked).
+  - **No stemming on prose.** `_opener` is no longer used for prose. Its
+    loose stemming let coined names such as "Trackly" through. The word
+    list covers inflections instead, so the list moved to SCOWL **size
+    40**: 45,123 words, which include "deploying", while "trackly",
+    "paypal", "kafka", "okta" and "databricks" are absent.
+  - **Quotes only.** Lowercase evidence comes from the quotes only, so the
+    prose cannot vouch for its own names (for example "bids@globex.com").
+  - **Counter removed.** The `name_flags` counter is gone from
+    `eval_extraction`; it measured nothing there.
+  - **Accepted risk, listed.** Common-word product names at a sentence
+    start are no longer flagged: Snowflake, Azure, Oracle, Spark, Slack,
+    Teams, Python, Sage, Zoom, Dynamics, Outlook and Apple. They are still
+    flagged mid-sentence.
+- **Codex** (gpt-6-sol): no findings.

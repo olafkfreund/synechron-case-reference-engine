@@ -53,7 +53,7 @@ _SENTENCE_START = re.compile(r"(?:^|[.!?]\s+|\n\s*\n)$")
 
 @lru_cache(maxsize=1)
 def common_words() -> frozenset[str]:
-    """Lowercase English words (SCOWL size 35, app/data/common_words.LICENSE): an ordinary sentence opener is no name (#260)."""
+    """Lowercase English words (SCOWL size 40, app/data/common_words.LICENSE): an ordinary sentence opener is no name (#260)."""
     return frozenset((Path(__file__).parent / "data" / "common_words.txt").read_text().split())
 
 
@@ -65,10 +65,9 @@ def check_prose(text: str, section_quotes: list[str], case_quotes: list[str], *,
     capitalised word ("Setup"): only its later words and acronyms are checked.
     """
     from app.extract import COMMERCIAL  # extract imports this module inside build()
-    from app.schema import _opener  # schema imports this module lazily too
     flags = []
-    # lowercase uses only: a capitalised "Need" never vouches for itself
-    lower = set(re.findall(r"\b[a-z][a-z-]*\b", " ".join(case_quotes) + " " + text))
+    # lowercase uses in the quotes only: the prose must not vouch for its own names ("bids@globex.com")
+    lower = set(re.findall(r"\b[a-z][a-z-]*\b", " ".join(case_quotes)))
     for n in sorted(numbers(text) - set().union(*map(numbers, section_quotes))):
         flags.append(f"number {n} is in no quote")
     haystack = _norm(" ".join(case_quotes))
@@ -76,9 +75,9 @@ def check_prose(text: str, section_quotes: list[str], case_quotes: list[str], *,
         term = m.group().rstrip(".-")
         first, _, rest = term.partition(" ")
         # an ordinary word at a sentence start is no name (an acronym or a word with a digit always is): drop that word only.
-        # Ordinary: a common start, an opener verb, used in lowercase elsewhere, or a common English word (#260)
-        ordinary = first.lower() in COMMON_STARTS or first.lower() in lower or _opener(first) or first.lower() in common_words()
-        if _SENTENCE_START.search(text[:m.start()]) and (heading or ordinary) and not (first.isupper() and len(first) > 1):
+        # Ordinary: a common start, used in lowercase in the quotes, or a common English word (#260)
+        ordinary = first.lower() in COMMON_STARTS or first.lower() in lower or first.lower() in common_words()
+        if _SENTENCE_START.search(text[:m.start()]) and (heading or ordinary) and not (first.isupper() and len(first) > 1) and not any(c.isdigit() for c in first):
             term = rest.strip()
         term = " ".join(w for w in term.split() if w.lower() not in DATE_WORDS and not w.isdigit())
         if not term:

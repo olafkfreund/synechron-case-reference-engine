@@ -219,7 +219,7 @@ def test_an_engagement_proposal_has_no_callouts_and_a_delivered_one_keeps_them(m
 def test_check_prose_ordinary_sentence_openers_are_not_names():  # #260
     q = ["we need to update the timeline and define new dates"]
     assert wu.check_prose("Need to update the timeline.", q, q) == []  # "need" is used in lowercase
-    assert wu.check_prose("Deploying it came first.", [Q1], [Q1]) == []  # an opener verb (OPENERS), by stemming
+    assert wu.check_prose("Deploying it came first.", [Q1], [Q1]) == []  # a common word (SCOWL 40)
     assert wu.check_prose("Zorbulate the timeline.", [Q1], [Q1]) == ["names 'Zorbulate', which no quote supports"]  # no self-vouching
     assert wu.check_prose("Kafka streams the events.", q, q) == ["names 'Kafka', which no quote supports"]
     assert wu.check_prose("SAP runs it.", q, q) == ["names 'SAP', which no quote supports"]
@@ -234,3 +234,10 @@ def test_check_prose_common_english_openers_are_not_names():  # #260 revision: n
     assert wu.check_prose("Okta guards it.", [Q1], [Q1]) == ["names 'Okta', which no quote supports"]
     q = ["the ledger moved in seven weeks"]
     assert wu.check_prose("They chose Snowflake.", q, q) == ["names 'Snowflake', which no quote supports"]  # mid-sentence: still checked
+
+
+def test_check_prose_opener_review_fixes():  # #260 review: digits, coined names, self-vouching
+    q = ["the ledger moved in seven weeks"]
+    assert "names 'Plan9', which no quote supports" in wu.check_prose("Plan9 consolidated the ledgers.", q, q)
+    assert wu.check_prose("Trackly monitored the fleet.", q, q) == ["names 'Trackly', which no quote supports"]
+    assert wu.check_prose("Globex won the bid. Contact bids@globex.com.", q, q)[0] == "names 'Globex', which no quote supports"
