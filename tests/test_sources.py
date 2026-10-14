@@ -390,6 +390,7 @@ def test_capability_drafts_queue_only_skipped_proposals_decks_and_contracts(env)
         _doc(c, sid, "proposal", deleted=True)
         _case(c, _doc(c, sid, "proposal"), "extracted", "delivered", "")
         _job(c, _doc(c, sid, "deck"))
+        _job(c, _doc(c, sid, "proposal"), status="failed")  # a failed extract of a delivered/engagement document is not "skipped"
     try:
         assert "Capability drafts from skipped documents (" + str(n0 + 3) + ")" in client([ADMIN]).get("/admin/sources").text
         assert client([REV]).post("/admin/capability-drafts").status_code == 403

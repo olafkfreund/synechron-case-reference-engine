@@ -1826,3 +1826,32 @@ def test_review_labels_a_capability_document(make):  # #213
     page = client(R).get(f"/review/{cid}").text
     assert "Capability document" in page and "not delivery evidence" in page
     assert "not delivery evidence" not in client(R).get(f"/review/{make('extracted')}").text
+
+
+def capability_data(**kw):
+    return case_data(basis="capability", **kw)
+
+
+@pytest.mark.parametrize("kw,field", [
+    (dict(summary="Costs were reduced by half."), "summary"),
+    (dict(prose={"solution": Prose(text="This resulted in speed.", by_reviewer=True, flags=[])}), "solution"),  # a reviewer's own text, flag cleared
+    (dict(solution=Sourced[str](value="Delivered a new ledger", source_quote=Q_TITLE)), "solution"),
+    (dict(capabilities=[Sourced[str](value="Improved onboarding", source_quote=Q_TITLE)]), "capabilities"),
+])
+def test_capability_approval_refuses_result_language_in_any_field(make, kw, field):  # #213
+    cid = make(basis="capability", data=capability_data(**kw))
+    r = client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)})
+    assert r.status_code == 400 and field in r.text and row(cid)[0] == "extracted"
+
+
+def test_capability_approves_clean_text_and_drops_outcomes(make):  # #213
+    cid = make(basis="capability", data=capability_data(summary="We offer faster onboarding."))
+    assert client(R).post(f"/review/{cid}/approve", data={"v": ver(cid)}, follow_redirects=False).status_code == 303
+    assert row(cid)[0] == "approved" and row(cid)[1]["outcomes"] == []
+
+
+def test_capability_has_no_outcome_editing(make):  # #213
+    cid = make(basis="capability")
+    assert post(client(R), cid, field="outcomes.new", metric="cost", value="30 percent", quote=Q_TITLE).status_code == 400
+    assert post(client(R), cid, field="outcomes.0", metric="cost", value="40 percent", quote=Q_TITLE).status_code == 400
+    assert "outcomes.new" not in client(R).get(f"/review/{cid}").text

@@ -239,6 +239,9 @@ def build(full_text: str, data_class: str, basis: str = "delivered", basis_reaso
             notes.append(f"{n} item(s) with prices, rates or payment terms removed")
     # engagements had prices stripped above, so none reaches the model; a delivered case's prose is caught by the price flag
     writeup.write(case, data_class)
+    if case.basis == "capability" and writeup.RESULT_WORDS.search(case.summary):
+        case.summary = ""  # an offering's summary may not claim a result
+        notes.append("summary claimed a result; cleared")
     if propose:
         writeup.propose(case, data_class)
     notes += case.needs_attention

@@ -22,7 +22,7 @@ from app.completeness import CHECKS, checklist, meets_minimum, score
 from app import archdiagram, writeup
 from app.schema import (CITE_POINTS, POINT_FIELDS, ArchCallout, ArchComponent, ArchFlow, Architecture, Diagram, Outcome, Period, Prose,
                         ReferenceCase, Sourced, _norm, check_architecture, plain)
-from app.writeup import PRICE_FLAG, check_prose, quotes_of
+from app.writeup import PRICE_FLAG, check_prose, quotes_of, result_fields
 
 CAPABILITY_NOTE = "Capability document: describes what we offer, not delivery evidence."  # render imports review, so the text lives here (#213)
 
@@ -140,7 +140,7 @@ def rows(case, docs=None):
                     written=getattr(obj, "by_reviewer", False), writable=path in WRITABLE,
                     inputs=[(n, "" if getattr(obj, n) is None else getattr(obj, n)) for n in names])
     out = [row(n, n.replace("_", " "), getattr(case, n), ["value"]) for n in SCALARS
-           if not (n == "lessons_learned" and case.basis == "engagement")]  # as outcomes (#198)
+           if not (n == "lessons_learned" and case.basis != "delivered")]  # as outcomes (#198)
     def new(n, label, names):
         return dict(path=f"{n}.new", label=label, quote="", unsourced=False, new=True, inputs=[(i, "") for i in names])
     for n, label in (("capabilities", "capability"), ("tech_stack", "tech"), ("tech_references", "technical reference")):
@@ -148,7 +148,7 @@ def rows(case, docs=None):
                 for i, o in enumerate(getattr(case, n))]
         out.append(new(n, f"add {label}", ["value"]))
     out += [dict(row(f"outcomes.{i}", f"outcome #{i + 1}", o, ["metric", "value"]), item=True) for i, o in enumerate(case.outcomes)]
-    if case.basis != "engagement": out.append(new("outcomes", "add outcome", ["metric", "value"]))  # contracted scope claims no results (#139)
+    if case.basis == "delivered": out.append(new("outcomes", "add outcome", ["metric", "value"]))  # contracted scope claims no results (#139)
     out.append(row("period", "period", case.period, ["start", "end"]))
     out.append(dict(path="summary", label="summary", quote="", unsourced=False, no_quote=True,
                     inputs=[("value", case.summary)]))
@@ -297,7 +297,7 @@ def apply_edit(conn, user, cid, v, field, value=None, metric=None, start=None, e
             raise HTTPException(400, "unknown action")
         if action == "remove" and not (name in LISTS and idx and idx != "new"):
             raise HTTPException(400, "unknown field")
-        if (written and field not in WRITABLE) or (field == "lessons_learned" and case.basis == "engagement"):
+        if (written and field not in WRITABLE) or (field == "lessons_learned" and case.basis != "delivered"):
             raise HTTPException(400, "unknown field")
         if field == "summary":
             case.summary = value or ""
@@ -322,7 +322,7 @@ def apply_edit(conn, user, cid, v, field, value=None, metric=None, start=None, e
                 obj.by_reviewer = False
         elif name in LISTS and idx == "new":
             if not (value or "").strip() or not (quote or "").strip() or (name == "outcomes" and not (metric or "").strip()) \
-                    or (name == "outcomes" and case.basis == "engagement"):
+                    or (name == "outcomes" and case.basis != "delivered"):
                 raise ValueError
             obj = Outcome(metric=metric, value=value) if name == "outcomes" else Sourced[str](value=value)
             getattr(case, name).append(obj)
@@ -336,7 +336,7 @@ def apply_edit(conn, user, cid, v, field, value=None, metric=None, start=None, e
                 raise IndexError
             obj = getattr(case, name)[int(idx)]
             if isinstance(obj, Outcome):
-                if not value or case.basis == "engagement":  # empty: removed, not saved (#108); engagement: remove only (#139)
+                if not value or case.basis != "delivered":  # empty: removed, not saved (#108); engagement and capability: remove only (#139)
                     raise ValueError
                 obj.metric, obj.value = metric or "", value or ""
             elif value is not None:
@@ -707,9 +707,11 @@ def approve(cid: int, v: str = Form(), diagrams_checked: bool = Form(False), rea
         case.tech_stack = [t for t in case.tech_stack if not t.unsourced]
         case.tech_references = [t for t in case.tech_references if not t.unsourced]
         case.points = {f: [p for p in ps if not p.unsourced] for f, ps in case.points.items()}
-        case.outcomes = [] if case.basis == "engagement" else [o for o in case.outcomes if not o.unsourced]  # contracted scope claims no results (#139, spec #52)
-        if case.basis == "engagement":
+        case.outcomes = [] if case.basis != "delivered" else [o for o in case.outcomes if not o.unsourced]  # contracted scope and offerings claim no results (#139, #213)
+        if case.basis != "delivered":
             case.lessons_learned = Sourced[str]()  # nor lessons (#198)
+        if case.basis == "capability" and (bad := result_fields(case)):  # whoever wrote it, reviewer included: an offering is not delivery evidence
+            raise HTTPException(400, f"remove result language from {', '.join(bad)}: capability documents describe an offering")
         if case.period.unsourced:
             case.period = type(case.period)()
         items = checklist(case)  # after the drops: only what stays counts

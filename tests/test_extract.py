@@ -811,3 +811,12 @@ def test_references_pass_reads_every_part_and_one_failed_part_loses_only_itself(
     assert len(calls) == 4 and [r.value for r in refs] == ["Std 1", "Std 2", "Std 4"]  # the other parts are still read
     assert notes == ["technical references could not be read from every part (RuntimeError)"]  # once, not per failure
     assert all(f"<document>\np{i}\n</document>" == u for i, u in enumerate(calls, 1))
+
+
+def test_capability_summary_that_claims_a_result_is_cleared(monkeypatch):  # #213
+    q = "we propose to migrate system 1 in 3 weeks"
+    monkeypatch.setattr(ex, "complete_json", lambda a, system, user, model, **k: References() if model is References else Extraction(
+        items=[Item(field="solution", value="Migrate system 1", quote=q)], summary="We achieved a migration in 3 weeks."))
+    monkeypatch.setattr(ex.writeup, "write", lambda case, dc: None)
+    c = ex.build(q, "internal", "capability")
+    assert c.summary == "" and "summary claimed a result; cleared" in c.needs_attention

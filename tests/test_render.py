@@ -7,7 +7,7 @@ import pytest
 from docx import Document
 
 from app import db, office, render
-from app.schema import Outcome, ReferenceCase, Sourced
+from app.schema import Outcome, Prose, ReferenceCase, Sourced
 from tests.test_auth import client, env  # noqa: F401
 from tests.test_review import DOCS, make  # noqa: F401
 from tests.test_search import approved, data, link, reg  # noqa: F401
@@ -950,3 +950,13 @@ def test_capability_refuses_case_study_and_slide_formats(approved, fmt):
     r = gen([approved(capability())], fmt)
     assert r.status_code == 400 and r.json()["detail"] == "capability documents can't be case studies"
     assert gen([approved(full())], "md").status_code == 200
+
+
+def test_section_never_outputs_capability_text_that_claims_a_result():  # #213
+    from app.writeup import RESULT_FLAG
+    case = ReferenceCase(title=Sourced[str](value="Offer", source_quote="q"), basis="capability", summary="It reduced cost.",
+                         solution=Sourced[str](value="Delivered a ledger", source_quote="q"),
+                         prose={"challenge": Prose(text="This resulted in speed.", by_reviewer=True, flags=[RESULT_FLAG])})
+    s = render.section(case, "a client")
+    assert s["summary"] == "" and not s["blocks"]
+    assert render.section(case.model_copy(update={"basis": "delivered"}), "a client")["summary"] == "It reduced cost."

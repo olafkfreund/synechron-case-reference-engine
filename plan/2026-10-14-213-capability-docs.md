@@ -184,3 +184,26 @@ exist, which would stop the app starting. This goes in the PR.
     can be approved without a reviewer's fix.
   - The prompt reduces result language; the guard is the control that
     enforces it.
+- **Review fixes** (Opus, Codex and agy; full suite 1524 passed after a
+  rebuild):
+  - **Result flag can't be overridden.** For capability cases,
+    `render.section()` drops any prose, value or summary that matches
+    `RESULT_WORDS`, even the reviewer's own.
+  - **One approval gate.** `writeup.result_fields(case)` scans every
+    output text field: title, summary, capabilities, write-ups, headline
+    values and the points of the four sections. `approve()` refuses,
+    naming the fields. Reviewer edits are checked at approval, not at
+    edit time. A point value copied from the source that uses result
+    wording, such as "Delivered via Agile", has to be edited before
+    approval; that is deliberately conservative.
+  - **Summary.** An extracted capability summary that matches is cleared,
+    with a note.
+  - **Outcomes and lessons.** The guards are now `!= "delivered"` in
+    review and search. Capability has its own completeness Results rule
+    (a described solution, no outcomes or duration).
+  - **Pick prompt.** It knows about capability documents. A capability
+    row's tailored text or reason that matches is replaced or blanked.
+  - **Facets** follow the kind.
+  - **Admin action.** It never re-queues documents that have any extract
+    job.
+  - **Formats.** Capability cards offer only Word, PDF and Markdown.

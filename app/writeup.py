@@ -95,6 +95,16 @@ def check_prose(text: str, section_quotes: list[str], case_quotes: list[str], *,
     return list(dict.fromkeys(flags))
 
 
+def result_fields(case: ReferenceCase) -> list[str]:
+    """Names of the fields of a capability case whose text claims a result (RESULT_WORDS): everything that can reach an output."""
+    texts = {"title": [case.title.value], "summary": [case.summary], "capabilities": [c.value for c in case.capabilities if not c.unsourced]}
+    for f in POINT_FIELDS:
+        texts[f] = [getattr(case, f, None) and getattr(case, f).value, *(p.value for p in case.points.get(f, []) if not p.unsourced)]
+        if f in case.prose:
+            texts[f] += [case.prose[f].text]
+    return [n for n, ts in texts.items() if any(t and RESULT_WORDS.search(str(t)) for t in ts)]
+
+
 def quotes_of(case: ReferenceCase, field: str) -> list[str]:
     return [p.source_quote for p in case.points.get(field, []) if p.source_quote and not p.unsourced]
 

@@ -551,3 +551,34 @@ def test_capability_is_never_in_default_results_and_has_its_own_filter(approved,
     assert "Capability onboarding" in page and "Delivered onboarding" not in page
     assert "Capability document" in page and "not delivery evidence" in page and "Show them" not in page
     assert "documents match" not in c.post("/search", data={"bid_text": "zzzz nothing", "kind": ""}).text
+
+
+def test_capability_pick_text_with_result_language_is_replaced_and_prompt_says_offering(approved, monkeypatch):  # #213
+    k = approved(data(title="Capability onboarding", basis="capability"))
+    set_basis(k, "capability")
+    seen = []
+    monkeypatch.setattr(sr, "complete_json", lambda m, s, user, *a, **kw: seen.append(s) or sr.Picks(
+        picks=[sr.Pick(case_id=k, reason="It reduced onboarding time.", tailored="We delivered onboarding.")]))
+    top, _, _ = sr.results(ME, "onboarding", {}, "capability")
+    assert top[0]["reason"] == "" and top[0]["tailored"] == "Onboarding fell from 12 days to 3 days."
+    assert "Capability documents describe an offering" in seen[0] and top[0]["outcomes"] == []
+
+
+def test_facets_follow_the_kind_like_the_results(approved):  # #213
+    cid = approved(data(industry="Zzcap-only industry", basis="capability"))
+    set_basis(cid, "capability")
+    d = approved(data(industry="Zzdelivered industry"))
+    assert "Zzcap-only industry" not in [v for v, _ in sr.facets(ME)["industry"]]
+    assert "Zzdelivered industry" in [v for v, _ in sr.facets(ME)["industry"]]
+    cap = [v for v, _ in sr.facets(ME, "capability")["industry"]]
+    assert "Zzcap-only industry" in cap and "Zzdelivered industry" not in cap
+
+
+def test_capability_cards_offer_no_case_study_or_slide_formats(approved):  # #213
+    k = approved(data(title="Capability onboarding", basis="capability"))
+    set_basis(k, "capability")
+    d = approved(data(title="Delivered onboarding"))
+    page = client(GUEST).get("/search?kind=capability").text
+    assert 'value="docx"' in page and 'value="md"' in page
+    assert 'value="pptx"' not in page and "case_study" not in page and 'value="pdf_pptx"' not in page
+    assert 'value="case_study_docx"' in client(GUEST).get("/search?kind=delivered").text

@@ -41,8 +41,7 @@ REEXTRACT = ("insert into jobs(kind, payload) select 'extract', jsonb_build_obje
 # #213: proposals, decks and contracts triage skipped before capability documents existed (live, no case, nothing queued)
 SKIPPED = """from documents d where d.kind in ('proposal','deck','contract') and d.deleted_at is null
     and not exists (select 1 from cases c where c.document_id = d.id)
-    and not exists (select 1 from jobs j where j.kind='extract' and j.status in ('queued','running')
-                    and (j.payload->>'document_id')::bigint = d.id)"""
+    and not exists (select 1 from jobs j where j.kind='extract' and (j.payload->>'document_id')::bigint = d.id)"""  # any status: a failed one is not skipped
 CAPABILITY_DRAFTS = ("insert into jobs(kind, payload) select 'extract', jsonb_build_object('document_id', d.id, 'basis', 'capability', "
                      "'basis_reason', '', 'checksum', d.checksum) " + SKIPPED + " order by d.id limit %s")
 DATA_CLASSES = ("confidential", "sanitised", "public")

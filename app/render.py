@@ -19,7 +19,7 @@ from app.archdiagram import layout, to_mermaid, to_pptx_shapes, to_png, to_svg
 from app.main import User, require, wants_html
 from app.clients import logo_for
 from app.review import CAPABILITY_NOTE, PNG_HEADERS, VISIBLE, page
-from app.writeup import PRICE_FLAG
+from app.writeup import PRICE_FLAG, RESULT_WORDS
 from app.schema import ArchCallout, ArchComponent, ArchFlow, Architecture, ReferenceCase, fence, plain, vague_metric
 
 router = APIRouter()
@@ -207,11 +207,12 @@ def section(case: ReferenceCase, client: str) -> dict:
                ("Engagement type", v(case.engagement_type)),
                ("Duration", f"{v(case.duration_months)} months" if v(case.duration_months) else None),
                ("Team size", v(case.team_size)), ("Period", period)]
+    claims = lambda t: case.basis == "capability" and bool(RESULT_WORDS.search(t or ""))  # an offering never goes out claiming a result (#213)
     def prose(f, head):  # approved prose replaces the one-line value only when it is unflagged or the reviewer's own
         p = case.prose.get(f)
-        if p and p.text.strip() and (not p.flags or p.by_reviewer):
+        if p and p.text.strip() and (not p.flags or p.by_reviewer) and not claims(p.text):
             return p.text, [x.strip() for x in p.text.split("\n\n") if x.strip()]
-        return head, [head]  # the headline value goes out unchanged: one paragraph, no split
+        return (None, []) if claims(head) else (head, [head])  # the headline value goes out unchanged: one paragraph, no split
 
     blocks = [("Challenge", prose("challenge", v(case.challenge))), ("Solution", prose("solution", v(case.solution))),
               ("Implementation approach", prose("implementation", v(case.implementation))),
@@ -224,7 +225,7 @@ def section(case: ReferenceCase, client: str) -> dict:
     if case.basis != "delivered":  # contracted scope or an offering claims no results, whatever the record holds
         lists = [x for x in lists if x[0] != "Outcomes"]
     return dict(
-        title=v(case.title) or "", client=client, summary=case.summary,
+        title=v(case.title) or "", client=client, summary="" if claims(case.summary) else case.summary,
         basis=case.basis, note=NOTES.get(case.basis, ""),
         details=[dict(label=a, value=str(b)) for a, b in details if b not in (None, "")],
         blocks=[dict(heading=a, text=t, paragraphs=ps) for a, (t, ps) in blocks if t],

@@ -33,7 +33,9 @@ def checklist(case) -> list[dict]:
     rows.append(("capabilities", "Capabilities", *_count(case.capabilities, "capabilities")))
     rows.append(("technologies", "Technologies", *_count(case.tech_stack, "technologies")))
     months = bool(case.duration_months.value) and not case.duration_months.unsourced
-    if case.basis == "engagement":
+    if case.basis == "capability":  # an offering claims no results and may state no duration
+        rows.append(("results", "Results", bool(section_text(case, "solution").strip()), "offering described"))
+    elif case.basis == "engagement":
         has_sol = bool(section_text(case, "solution").strip())
         rows.append(("results", "Results", has_sol and months,
                      f"solution {'yes' if has_sol else 'no'}, duration {'yes' if months else 'no'}"))
