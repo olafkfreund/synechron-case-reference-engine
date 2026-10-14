@@ -6,7 +6,7 @@ import uuid
 
 import pytest
 
-from app import db, research as rs
+from app import db, llm, research as rs
 from app.schema import Sourced
 from tests.test_auth import env  # noqa: F401
 from tests.test_research import KEY, Web, as_user, make_row, reg, row, web  # noqa: F401
@@ -424,7 +424,7 @@ def test_page_chars_follows_num_ctx_for_ollama_only(monkeypatch):
     monkeypatch.setenv("DRAFT_MODEL_OPTIONS", json.dumps({"num_ctx": 24576}))
     n = rs.page_chars()
     assert 4500 < n < 6000
-    system = len(rs.CLAIMS_SYSTEM) + len(json.dumps(rs.llm_schema(rs.Claims))) + 60
+    system = len(rs.CLAIMS_SYSTEM) + len(rs.json_cue(rs.llm_schema(rs.Claims), True))
     assert rs.MAX_RESULTS * n + system <= (24576 - rs.MAX_TOKENS - 2000) * 3  # 8 pages fit with no silent cut (#217)
     monkeypatch.setenv("DRAFT_MODEL", "bedrock/x")
     assert rs.page_chars() == 6000  # llm.py sends num_ctx to Ollama only
@@ -584,3 +584,22 @@ def test_a_comment_inside_code_is_not_the_nearest_heading():
     assert rs.notes_from(page, "registry") == ["# registry setup"]  # the second block sits under "## Cats"
 
 
+
+
+def test_a_schema_echo_retry_fits_a_full_set_of_pages_at_the_readme_num_ctx(monkeypatch):
+    """The 2000-token slack in page_chars() covers one schema-echo retry (#245); a budget change that breaks it fails here."""
+    from types import SimpleNamespace
+    monkeypatch.setenv("DRAFT_MODEL", "ollama_chat/qwen3:14b")
+    monkeypatch.setenv("DRAFT_MODEL_OPTIONS", json.dumps({"num_ctx": 24576}))
+    n = rs.page_chars()
+    assert n > 500
+    replies = iter([json.dumps(rs.llm_schema(rs.Claims)), '{"claims": []}'])
+    calls = []
+
+    def completion(**kw):
+        calls.append(kw)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=next(replies)), finish_reason="stop")])
+    monkeypatch.setattr(llm.litellm, "completion", completion)
+    text = "QUERY: " + "q" * 200 + "".join(f"\n\n[page {i}] {'p' * 30}\n{'x' * n}" for i in range(rs.MAX_RESULTS))
+    rs.complete_json("DRAFT_MODEL", rs.CLAIMS_SYSTEM, text, rs.Claims, data_class="public", shape_hint=True)
+    assert len(calls) == 2  # the retry was not skipped by the overflow guard
