@@ -14,7 +14,7 @@ The intent's open questions were approved as proposed (2026-10-14):
    in amber.
 3. **Density:** mira-sized controls (32 px, 13 px text), with 15 px kept
    for reading text.
-4. **Icons:** all 14 are swapped for Hugeicons equivalents.
+4. **Icons:** all 13 are swapped for Hugeicons equivalents.
 
 ## Design
 
@@ -119,9 +119,8 @@ enforced by `tests/test_ui.py`:
 
 ### 5. Icons: Hugeicons free set (`app/templates/_icons.html`)
 
-- **Which icons.** The same 14 macro names, so no template changes:
-  - search, database, alert, users, shield, inbox, clock, file, check, sun,
-    moon, globe, building, plus the 14th, already in the file
+- **Which icons.** The same 13 macro names, so no template changes:
+  search, globe, inbox, users, database, shield, clock, file, check, building, alert, sun, moon
 - **Source.** The SVG paths come from `@hugeicons/core-free-icons` (MIT) at
   a pinned version, converted once to inline SVG with `stroke-width` 1.5
   and `currentColor`. A licence note is added at the top of the file.
