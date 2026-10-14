@@ -74,6 +74,7 @@ services:
       AWS_SECRET_ACCESS_KEY: test
       AWS_DEFAULT_REGION: eu-west-1
       S3_BUCKET: refs-local
+      MCP_ISSUER: ${MCP_ISSUER:-http://idp.localhost:8080/refs-mcp}  # scripts/seed_demo.py approves the dev MCP client only against the mock
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

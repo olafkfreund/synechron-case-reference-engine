@@ -136,7 +136,11 @@ Every reviewer call passes all of these, and a refusal is audited:
 Setup:
 
 - **Entra:** add the delegated scope `refs.review` (admin consent only) next to `refs.access`, and
-  pre-authorise only the client apps that should review. A client that is not pre-authorised for it cannot
+  pre-authorise only the client apps that should review. The server lists both scopes in its protected
+  resource metadata; a client that asks only for `refs.access` gets a token that works for every other tool
+  but not these. To review, the client requests `api://<app id>/refs.access api://<app id>/refs.review`
+  (for Claude Code, remove and add the server again with that scope, or sign in again when it asks for more
+  scope), so a reviewer's token is issued deliberately. A client that is not pre-authorised for it cannot
   get a token with the scope.
 - **Admin:** in Model approvals add `mcp-client:<the client's app id>` with data class `confidential` and an
   expiry. Without it the reviewer tools refuse, even with the scope.

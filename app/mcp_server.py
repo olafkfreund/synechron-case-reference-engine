@@ -476,7 +476,7 @@ def require_review(user, claims: dict, conn) -> None:
         raise Refused(403, "reviewer role required")
     if "refs.review" not in str(claims.get("scp", "")).split():
         raise Refused(403, "this token has no refs.review scope; get a new token with it")
-    if not conn.execute("select 1 from model_approvals where model = %s and data_class = 'confidential' and expires_at > now()",
+    if not conn.execute("select 1 from model_approvals where model = %s and data_class = 'confidential' and expires_at > now() and revoked_by is null",
                         (f"mcp-client:{client_of(claims)}",)).fetchone():
         raise Refused(403, "this AI client is not approved to handle confidential data; an admin approves it under Model approvals")
 
@@ -497,9 +497,10 @@ def review_view(case, cid: int, status: str, title: str, v: str) -> dict:
                 notes=split_notes(case.needs_attention)[0], completeness=checklist(case))
 
 
-async def _run(work, name: str, daily: int = 0, review: bool = False):
+async def _run(work, name: str, daily: int = 0, review: bool = False, asked=()):
     """One tool call: rate limit, the portal function, the audit row. `work(user)` returns (output model, case ids).
     Failures are isError results carrying the portal's own message; arguments and results are never stored.
+    `asked`: the case a reviewer tool was asked for, kept in the audit row even when it is refused.
     `review`: a reviewer tool, which passes the reviewer gate first and gets the user's real roles."""
     from app import db
     token = get_access_token()
@@ -534,10 +535,10 @@ async def _run(work, name: str, daily: int = 0, review: bool = False):
             out, ids = work(user)
             return "ok", out, ids
         except Refused as e:
-            return "denied", e.detail, []
+            return "denied", e.detail, list(asked)
         except HTTPException as e:
             detail = str(e.detail).replace("reload the page", "fetch it again with get_review_case and retry with the new v") if review else str(e.detail)
-            return OUTCOMES.get(e.status_code, "error"), detail, []
+            return OUTCOMES.get(e.status_code, "error"), detail, list(asked)
         except Exception as e:  # noqa: BLE001 - the client gets no detail; the type is enough to find it in the log
             log.error("tool %s failed: %s", name, type(e).__name__)
             return "error", "the tool failed", []
@@ -552,6 +553,7 @@ READ_ONLY = ToolAnnotations(read_only_hint=True, idempotent_hint=True, destructi
 WRITES = ToolAnnotations(read_only_hint=False, idempotent_hint=False, destructive_hint=False, open_world_hint=False)
 STARTS_WORK = ToolAnnotations(read_only_hint=False, idempotent_hint=False, destructive_hint=False, open_world_hint=True)  # the web
 DAILY_CAP = 10  # start_research and create_brief per user per day
+EDIT_CAP = 200  # edit_case per user per day
 FORMATS = ("docx", "pdf_docx", "md")  # a brief's formats
 
 
@@ -853,11 +855,11 @@ def register(server, origin: str) -> None:
             from app import db, review
             with db.connect() as conn:
                 r = conn.execute(f"select c.data, c.status, d.title, md5(c.data::text) from cases c left join documents d on d.id = c.document_id "
-                                 f"where c.id = %s and {review.REVIEWABLE}", (case_id, list(user.groups))).fetchone()
+                                 f"where c.id = %s and {review.VISIBLE}", (case_id, list(user.groups))).fetchone()
             if not r:
                 raise HTTPException(404, "no such case")
             return ReviewCaseOut(**review_view(review.ReferenceCase.model_validate(r[0]), case_id, r[1], r[2] or "", r[3])), [case_id]
-        return await _run(work, "get_review_case", review=True)
+        return await _run(work, "get_review_case", review=True, asked=[case_id])
 
     @server.tool(annotations=WRITES)
     async def edit_case(
@@ -873,12 +875,12 @@ def register(server, origin: str) -> None:
             from app import db, review
             with db.connect() as conn:
                 new_v = review.apply_edit(conn, user, case_id, v, field, value, metric, start, end, quote, written, action)
-                case, _ = review.load(conn, case_id, user, new_v)
+                case = review.ReferenceCase.model_validate(conn.execute("select data from cases where id = %s", (case_id,)).fetchone()[0])
             name, _, idx = field.partition(".")
             paths = [f for f in review_fields(case) if f["path"] == field or (idx == "new" and f["path"].startswith(f"{name}."))]
             p = case.prose.get(idx) if name == "prose" else None
             return EditOut(v=new_v, state=paths[-1]["state"] if paths and action == "save" else None, flags=p.flags if p else []), [case_id]
-        return await _run(work, "edit_case", review=True)
+        return await _run(work, "edit_case", daily=EDIT_CAP, review=True, asked=[case_id])
 
 
 def _signer(salt: str = "mcp-download"):
@@ -1087,6 +1089,6 @@ def build(origin: str):
     route = next(r for r in app.routes if getattr(r, "path", None) == "/")
     route.app = UserGate(route.app, str(build_resource_metadata_url(resource)), client_ids)
     # the SDK registers the PRM inside the mount (/mcp/.well-known/...); the challenge names the root path
-    prm = create_protected_resource_routes(resource, [issuer], [f"{audience}/{scope}"])  # full Entra form, as a client requests it
+    prm = create_protected_resource_routes(resource, [issuer], [f"{audience}/{scope}", f"{audience}/refs.review"])  # full Entra form, as a client requests it
     logging.getLogger("uvicorn.access").addFilter(MaskDownloadToken())
     return app, server.session_manager, [*prm, download_route(verifier, client_ids), upload_route(verifier, client_ids)]

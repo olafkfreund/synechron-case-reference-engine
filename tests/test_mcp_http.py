@@ -64,7 +64,7 @@ def test_no_token_gets_challenge_and_prm_resolves(env):
         prm = c.get(url.removeprefix(ORIGIN))
         assert prm.status_code == 200
         assert prm.json()["authorization_servers"] == [ISS]
-        assert prm.json()["scopes_supported"] == [f"{AUD}/refs.access"]
+        assert prm.json()["scopes_supported"] == [f"{AUD}/refs.access", f"{AUD}/refs.review"]  # review is asked for, not required
 
 
 @pytest.mark.parametrize("bad,status", [

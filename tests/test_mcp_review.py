@@ -10,7 +10,7 @@ from app import db, main, mcp_server as ms
 from app.mcp_server import AccessToken
 from app.review import load
 from tests.test_mcp_http import env  # noqa: F401
-from tests.test_review import DOC, DOCS, make  # noqa: F401
+from tests.test_review import DOC, DOCS, acme, make  # noqa: F401
 
 CLIENT = "client-1"
 
@@ -34,7 +34,7 @@ def gate(env, monkeypatch):  # noqa: F811
             if approval:
                 c.execute("insert into model_approvals(model, data_class, approved_by, expires_at, revoked_by) values "
                           "(%s, 'confidential', 'admin', now() + %s::interval, %s)",
-                          (f"mcp-client:{CLIENT}", "1 day" if approval == "live" else "-1 day", "admin" if approval == "revoked" else None))
+                          (f"mcp-client:{CLIENT}", "-1 day" if approval == "expired" else "1 day", "admin" if approval == "revoked" else None))  # revoked: still in date
         ran = []
         res = asyncio.run(ms._run(lambda u: (ran.append(1), (Out(), []))[1], "gate_probe", review=True))
         with db.connect() as c:
@@ -49,6 +49,14 @@ def gate(env, monkeypatch):  # noqa: F811
 def test_the_gate_passes_with_all_three(gate):
     res, rows, ran = gate()
     assert not res.is_error and rows == [("gate_probe", "ok")] and ran
+
+
+def test_a_refusal_keeps_the_case_id(gate, monkeypatch):
+    gate(approval=None)  # sets up the token; now run a probe that names a case
+    res = asyncio.run(ms._run(lambda u: (Out(), []), "gate_probe", review=True, asked=[42]))
+    assert res.is_error
+    with db.connect() as c:
+        assert c.execute("select object_ids from tool_calls where tool = 'gate_probe' order by id desc limit 1").fetchone()[0] == [42]
 
 
 @pytest.mark.parametrize("kw, text", [
@@ -90,7 +98,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from tests.test_auth import client as portal_client  # noqa: E402
 from tests.test_mcp_http import rpc, token  # noqa: E402
 from tests.test_mcp_tools import parse  # noqa: E402
-from tests.test_review import Q_TITLE, REV, case_data, ver  # noqa: E402
+from tests.test_review import Q_TITLE, R as R_, REV, case_data, ver  # noqa: E402
 from app.schema import Sourced  # noqa: E402
 
 TECH = [Sourced[str](value="Kafka", source_quote=Q_TITLE), Sourced[str](value="Spark", source_quote=Q_TITLE)]
@@ -193,6 +201,40 @@ def test_edits(rev, make):  # noqa: F811
     res = r.call("edit_case", case_id=hidden, v=ver(hidden), field="summary", value="X.")
     assert res["isError"] and "no such case" in res["content"][0]["text"]
     assert [o for _, o in r.audit()].count("not_found") == 2 and "denied" in [o for _, o in r.audit()]
+    with db.connect() as c:  # the audit row of a 404 still names the case asked for
+        assert c.execute("select object_ids from tool_calls where user_key = %s and outcome = 'not_found' limit 1", (r.who,)).fetchone()[0] == [hidden]
+
+
+def test_a_merged_case_with_a_withdrawn_member_is_not_found(rev, make, acme):  # noqa: F811
+    from tests.test_review import client, eng, merge, TEXT_A, TEXT_B
+    a, b = eng(make, TEXT_A, ["x"], []), eng(make, TEXT_B, ["y"], [])
+    new = int(merge(client(R_), [a, b]).headers["location"].rsplit("/", 1)[1])
+    r = rev()
+    assert not r.call("get_review_case", case_id=new).get("isError")
+    with db.connect() as c:
+        c.execute("update documents set deleted_at = now() where id = (select document_id from cases where id = %s)", (b,))
+    for name, args in (("get_review_case", dict(case_id=new)), ("edit_case", dict(case_id=new, v=ver(new), field="summary", value="X."))):
+        res = r.call(name, **args)
+        assert res["isError"] and "no such case" in res["content"][0]["text"], name
+
+
+def test_edit_case_has_a_daily_cap(rev, make):  # noqa: F811
+    cid = make()
+    r = rev()
+    with db.connect() as c:
+        c.execute("insert into tool_calls(user_key, client_id, tool, object_ids, outcome, ms, created_at) "
+                  "select %s, 'client-1', 'edit_case', '{}', 'ok', 1, now() - interval '2 hours' from generate_series(1, %s)", (r.who, ms.EDIT_CAP - 1))
+    assert not r.call("edit_case", case_id=cid, v=ver(cid), field="summary", value="One.").get("isError")  # the last one
+    res = r.call("edit_case", case_id=cid, v=ver(cid), field="summary", value="Two.")
+    assert res["isError"] and res["content"][0]["text"] == "daily limit reached for edit_case"
+    assert not r.call("get_review_case", case_id=cid).get("isError")  # reads are not capped
+
+
+def test_prm_lists_review_but_ordinary_tools_need_only_access(rev):  # noqa: F811
+    j = rev().c.get("/.well-known/oauth-protected-resource/mcp").json()
+    assert j["scopes_supported"][-1].endswith("/refs.review")
+    ok = rev(scp="refs.access")  # a token without it still lists and reads
+    assert "tools" in parse(rpc(ok.c, "tools/list", "2025-06-18", tok=ok.tok))
 
 
 def test_edit_withdraws_an_approval(rev, make):  # noqa: F811
