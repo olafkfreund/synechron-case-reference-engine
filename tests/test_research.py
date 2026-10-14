@@ -196,6 +196,30 @@ def test_slow_headers_hit_the_wall_clock_limit(web, monkeypatch):
     assert time.monotonic() - t < 1.5
 
 
+def test_header_stall_frees_the_thread_at_the_limit(monkeypatch):  # #207: real sockets, no web fixture
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen()
+    port = server.getsockname()[1]
+    monkeypatch.setattr(rs, "public_ip", lambda host, port: "127.0.0.1")
+    monkeypatch.setattr(rs, "vet_url", lambda url: (httpx.URL(url), 443))  # the real one refuses the port
+    fetcher = rs.Fetcher()  # httpx's per-read timeout stays the real 10 s
+    monkeypatch.setattr(rs, "TIMEOUT", 0.3)  # only the wall-clock give-up is short
+    before = threading.active_count()
+    with pytest.raises(rs.ResearchError, match="took too long"):
+        fetcher._get(f"http://stall.example:{port}/p", 1000)  # straight to _get: no robots.txt
+    end = time.monotonic() + 1
+    while threading.active_count() > before and time.monotonic() < end:
+        time.sleep(0.01)
+    assert threading.active_count() == before  # the fetch thread is gone, not blocked for another 10 s
+    server.close()
+
+
+def test_fetcher_tracks_sockets_on_the_real_transport():  # a renamed httpx internal must fail here (#207)
+    assert rs.TRANSPORT is None
+    assert isinstance(rs.Fetcher().http._transport._pool._network_backend, rs._Sockets)
+
+
 def test_slow_robots_txt_is_disallowed(web, monkeypatch):
     monkeypatch.setattr(rs, "TIMEOUT", 0.3)
     web.html("slow.example", "/robots.txt", "")

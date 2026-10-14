@@ -88,3 +88,16 @@ docker compose build app && docker compose run --rm app pytest -q   # full suite
 
 Revert the commit. Behaviour returns to the bounded, roughly 10 s
 lingering thread.
+
+## Deviations
+
+- **The stall test checks the thread, not the server's EOF.** The planned
+  check (the server reads to EOF) and `TIMEOUT=0.3` both passed with the fix
+  disabled, for two reasons:
+  - the patched timeout also shortened httpx's per-read timeout
+  - the server sees EOF either way
+
+  The test now builds the Fetcher with the real 10 s read timeout, patches
+  only the give-up limit to 0.3 s, and asserts the live thread count is back
+  to its baseline within 1 s. Negative control: with the socket close
+  disabled, this fails (`2 == 1`).

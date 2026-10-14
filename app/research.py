@@ -14,6 +14,7 @@ from pathlib import PurePosixPath
 from urllib.parse import urljoin
 from urllib.robotparser import RobotFileParser
 
+import httpcore
 import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
@@ -368,14 +369,36 @@ def _within(seconds, fn):
     return out["v"]
 
 
+class _Sockets(httpcore.SyncBackend):
+    """Records each socket opened, so a stalled hop can be cut off: closing a socket from another
+    thread does not wake a blocked recv, shutting it down does (#207)."""
+
+    def __init__(self):
+        self.socks = []
+
+    def connect_tcp(self, *a, **kw):
+        stream = super().connect_tcp(*a, **kw)
+        self.socks.append(stream.get_extra_info("socket"))
+        return stream
+
+
 class Fetcher:
     """SSRF-safe fetching: we run inside the VPC, so every hop is vetted before a byte is sent."""
 
     def __init__(self):
-        # trust_env=False: a proxy from the environment would bypass the pinned address and SNI
-        self.http = httpx.Client(transport=TRANSPORT, timeout=TIMEOUT, follow_redirects=False, trust_env=False)
+        self.backend = None
+        self.http = self._client()
         # shortcut: per job only; needs a shared (Postgres) limit before worker_desired_count > 1 (#45)
         self.robots, self.last = {}, {}
+
+    def _client(self):
+        transport = TRANSPORT
+        if transport is None:
+            transport = httpx.HTTPTransport()
+            # httpx 0.28 has no public network_backend argument; a test fails if this attribute moves
+            transport._pool._network_backend = self.backend = _Sockets()
+        # trust_env=False: a proxy from the environment would bypass the pinned address and SNI
+        return httpx.Client(transport=transport, timeout=TIMEOUT, follow_redirects=False, trust_env=False)
 
     def _get(self, url: str, limit: int, check_robots: bool = False, accept: str = "text/html,application/pdf") -> tuple[bytes, str, str]:
         """One vetted GET with manual redirects. Returns (body, content type, final URL by name, not by IP)."""
@@ -393,8 +416,14 @@ class Fetcher:
             except ResearchError:
                 for r in opened:
                     r.close()  # the abandoned hop stops at its next read
-                # ponytail: a host that stalls before its headers leaves nothing to close; that daemon thread
-                # lives until httpx's per-read timeout. A custom transport could kill it if threads pile up.
+                if self.backend:  # a host that stalls before its headers leaves no response to close
+                    for s in self.backend.socks:
+                        try:
+                            s.shutdown(socket.SHUT_RDWR)
+                        except OSError:
+                            pass  # already closed
+                    self.backend.socks.clear()
+                    self.http = self._client()  # the old pool's connections are dead
                 raise
             if body is None:
                 url = urljoin(str(u), location)
