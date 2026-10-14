@@ -283,81 +283,88 @@ def _detail(cid, request, user, arch_form=None):
                 uploaded_by=r[12], due=r[9].strftime("%Y-%m-%d") if r[9] else None)  # in date by the database clock, as search judges it
 
 
+def apply_edit(conn, user, cid, v, field, value=None, metric=None, start=None, end=None, quote=None,
+               written=False, action="save"):
+    """One reviewer edit, shared by the portal route and the MCP tool; raises HTTPException. Returns the new version."""
+    # `unsourced` is never read from the form: check() recomputes it against the document
+    value, metric, start, end, quote = (s.strip() if s is not None else None for s in (value, metric, start, end, quote))
+    case, text = load(conn, cid, user, v)
+    name, _, idx = field.partition(".")
+    try:
+        if action not in ("save", "remove"):
+            raise HTTPException(400, "unknown action")
+        if action == "remove" and not (name in LISTS and idx and idx != "new"):
+            raise HTTPException(400, "unknown field")
+        if (written and field not in WRITABLE) or (field == "lessons_learned" and case.basis == "engagement"):
+            raise HTTPException(400, "unknown field")
+        if field == "summary":
+            case.summary = value or ""
+            obj = None
+        elif name == "prose":  # the reviewer's own write-up: checked against the quotes, never against the document
+            if idx not in POINT_FIELDS:
+                raise HTTPException(400, "unknown field")
+            if value:
+                case.prose[idx] = Prose(text=value, by_reviewer=True, flags=check_prose(value, quotes_of(case, idx), case.quotes()))
+            else:
+                case.prose.pop(idx, None)  # empty removes it
+            obj = None
+        elif name in SCALARS and not idx:
+            obj = getattr(case, name)
+            if value is not None:
+                obj.value = (int(value) if value.strip() else None) if name in INTS else (value or None)
+            if written:  # the reviewer's own text: no quote, never checked against the document (#198)
+                if not value:
+                    raise ValueError
+                obj.by_reviewer, obj.source_quote, obj.document_id = True, "", None
+            elif name in WRITABLE:
+                obj.by_reviewer = False
+        elif name in LISTS and idx == "new":
+            if not (value or "").strip() or not (quote or "").strip() or (name == "outcomes" and not (metric or "").strip()) \
+                    or (name == "outcomes" and case.basis == "engagement"):
+                raise ValueError
+            obj = Outcome(metric=metric, value=value) if name == "outcomes" else Sourced[str](value=value)
+            getattr(case, name).append(obj)
+        elif name in LISTS and idx and action == "remove":
+            if int(idx) < 0:
+                raise IndexError
+            del getattr(case, name)[int(idx)]
+            obj = None
+        elif name in LISTS and idx:
+            if int(idx) < 0:
+                raise IndexError
+            obj = getattr(case, name)[int(idx)]
+            if isinstance(obj, Outcome):
+                if not value or case.basis == "engagement":  # empty: removed, not saved (#108); engagement: remove only (#139)
+                    raise ValueError
+                obj.metric, obj.value = metric or "", value or ""
+            elif value is not None:
+                obj.value = value or None
+        elif field == "period":
+            obj = case.period
+            obj.start, obj.end = start or None, end or None
+        else:
+            raise HTTPException(400, "unknown field")
+        if obj is not None and quote is not None and not written:
+            if _norm(quote) != _norm(obj.source_quote or ""):  # line breaks or spacing are not a new quote
+                obj.document_id = None  # a new quote has no origin yet: check() finds the member that sources it (#128)
+            obj.source_quote = quote
+        case = ReferenceCase.model_validate(case.model_dump())  # re-run validators (summary length)
+    except (ValueError, IndexError, ValidationError):  # no input echoed back
+        raise HTTPException(400, "invalid value")
+    check(case, text)
+    fix_summary(case)
+    save(conn, cid, case)
+    conn.execute("update cases set status='extracted', approved_by=null, approved_at=null, review_due=null "
+                 "where id=%s and status='approved' and review_due > now()", (cid,))  # unreviewed edits never go live (#143)
+    return conn.execute("select md5(data::text) from cases where id=%s", (cid,)).fetchone()[0]
+
+
 @router.post("/review/{cid}/edit")
 def edit(cid: int, field: str = Form(), value: str | None = Form(None), metric: str | None = Form(None),
          start: str | None = Form(None), end: str | None = Form(None), quote: str | None = Form(None),
          written: bool = Form(False), action: str = Form("save"), v: str = Form(), user: User = Depends(require("reviewer"))):
-    # `unsourced` is never read from the form: check() recomputes it against the document
-    value, metric, start, end, quote = (s.strip() if s is not None else None for s in (value, metric, start, end, quote))
     with db.connect() as conn:
-        case, text = load(conn, cid, user, v)
-        name, _, idx = field.partition(".")
-        try:
-            if action not in ("save", "remove"):
-                raise HTTPException(400, "unknown action")
-            if action == "remove" and not (name in LISTS and idx and idx != "new"):
-                raise HTTPException(400, "unknown field")
-            if (written and field not in WRITABLE) or (field == "lessons_learned" and case.basis == "engagement"):
-                raise HTTPException(400, "unknown field")
-            if field == "summary":
-                case.summary = value or ""
-                obj = None
-            elif name == "prose":  # the reviewer's own write-up: checked against the quotes, never against the document
-                if idx not in POINT_FIELDS:
-                    raise HTTPException(400, "unknown field")
-                if value:
-                    case.prose[idx] = Prose(text=value, by_reviewer=True, flags=check_prose(value, quotes_of(case, idx), case.quotes()))
-                else:
-                    case.prose.pop(idx, None)  # empty removes it
-                obj = None
-            elif name in SCALARS and not idx:
-                obj = getattr(case, name)
-                if value is not None:
-                    obj.value = (int(value) if value.strip() else None) if name in INTS else (value or None)
-                if written:  # the reviewer's own text: no quote, never checked against the document (#198)
-                    if not value:
-                        raise ValueError
-                    obj.by_reviewer, obj.source_quote, obj.document_id = True, "", None
-                elif name in WRITABLE:
-                    obj.by_reviewer = False
-            elif name in LISTS and idx == "new":
-                if not (value or "").strip() or not (quote or "").strip() or (name == "outcomes" and not (metric or "").strip()) \
-                        or (name == "outcomes" and case.basis == "engagement"):
-                    raise ValueError
-                obj = Outcome(metric=metric, value=value) if name == "outcomes" else Sourced[str](value=value)
-                getattr(case, name).append(obj)
-            elif name in LISTS and idx and action == "remove":
-                if int(idx) < 0:
-                    raise IndexError
-                del getattr(case, name)[int(idx)]
-                obj = None
-            elif name in LISTS and idx:
-                if int(idx) < 0:
-                    raise IndexError
-                obj = getattr(case, name)[int(idx)]
-                if isinstance(obj, Outcome):
-                    if not value or case.basis == "engagement":  # empty: removed, not saved (#108); engagement: remove only (#139)
-                        raise ValueError
-                    obj.metric, obj.value = metric or "", value or ""
-                elif value is not None:
-                    obj.value = value or None
-            elif field == "period":
-                obj = case.period
-                obj.start, obj.end = start or None, end or None
-            else:
-                raise HTTPException(400, "unknown field")
-            if obj is not None and quote is not None and not written:
-                if _norm(quote) != _norm(obj.source_quote or ""):  # line breaks or spacing are not a new quote
-                    obj.document_id = None  # a new quote has no origin yet: check() finds the member that sources it (#128)
-                obj.source_quote = quote
-            case = ReferenceCase.model_validate(case.model_dump())  # re-run validators (summary length)
-        except (ValueError, IndexError, ValidationError):  # no input echoed back
-            raise HTTPException(400, "invalid value")
-        check(case, text)
-        fix_summary(case)
-        save(conn, cid, case)
-        conn.execute("update cases set status='extracted', approved_by=null, approved_at=null, review_due=null "
-                     "where id=%s and status='approved' and review_due > now()", (cid,))  # unreviewed edits never go live (#143)
+        apply_edit(conn, user, cid, v, field, value, metric, start, end, quote, written, action)
     return RedirectResponse(f"/review/{cid}", status_code=303)
 
 

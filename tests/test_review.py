@@ -1807,3 +1807,15 @@ def test_set_arch_note_adds_nothing_for_a_clean_architecture():
     case.architecture = Architecture(title="t", components=[], flows=[], callouts=[], flags=[])
     writeup.set_arch_note(case)
     assert case.needs_attention == [STALE[0]]  # the capitalised kept note is an architecture note too
+
+
+def test_apply_edit_matches_the_route(make):  # the MCP tool calls apply_edit; it must do what the form does
+    from app import review
+    from app.main import User
+    a, b = make(), make()
+    edit = dict(field="industry", value="Banking", quote=Q_REGION)
+    client(R).post(f"/review/{a}/edit", data={**edit, "v": ver(a)})
+    with db.connect() as c:
+        new_v = review.apply_edit(c, User(sub="u", name="u", groups=frozenset(R), roles=frozenset({"reviewer"})), b, ver(b), **edit)
+    assert row(a)[1] == row(b)[1] and new_v == ver(b)
+    assert row(b)[1]["industry"]["value"] == "Banking"
