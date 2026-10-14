@@ -94,6 +94,7 @@
 {% for d in diagrams %}<div class="field-row">
 <div class="fname">Diagram #{{ loop.index }} <span class="badge {{ "ok" if d.status == "ready" else "bad" if d.status == "rejected" else "neutral" }}">{{ d.status }}</span></div>
 <div>{% if d.status == "ready" %}{% set u = "/review/" ~ id ~ "/diagrams/" ~ d.id ~ ".png" %}{{ zoom(u, d.caption) }}{{ zoom_hint(u, d.caption) }}
+{% if d.credit %}<p class="muted">{{ d.credit }}</p>{% endif %}
 {% elif d.status == "pending" %}<p class="muted">Processing: reload in a moment</p>
 {% else %}<p class="muted">Rejected: {{ d.reason }}</p>{% endif %}</div>
 <div>{% if reviewable %}<form method="post" action="/review/{{ id }}/diagrams/{{ d.id }}/caption" class="row"><input type="hidden" name="v" value="{{ v }}">

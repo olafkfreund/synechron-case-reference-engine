@@ -381,6 +381,58 @@ check the brief has a diagram, counts only.
     needs several pages, and each bad claim is also run alone. It replaces
     `test_quotes_are_ranked_capped_and_the_drops_apply`.
 
+- **Phase (c), c2.**
+  - `Fetcher._get` and `_hop` gain an `accept` parameter, defaulting to
+    the old header, so the image fetch sends the image `Accept` header.
+  - Image URLs also pass robots.txt through `allowed()`.
+  - SSRF test: an image at the link-local metadata address, and a redirect
+    to a private one, are refused. The research still ends `done`.
+- **Phase (c), c3.** An alt text naming a client is anonymised by
+  `apply()` and shown, as claims are. Only a protected name left in the
+  page or image URL hides the image.
+- **Phase (c), c4.**
+  - **Credit placement.** The credit follows the caption on the same
+    line, so the templates are unchanged.
+  - **Form shape.** The picker posts `img` ids with per-id
+    `rights_ok_<id>`, `no_logo_<id>` and `basis_<id>` fields.
+  - **Images only.** Attach accepts images with no quotes ticked.
+- **Phase (c), c4 fixes, c5 and c6** (full suite 1458 passed):
+  - **c4 fixes:**
+    - The picker shows whenever the research has visible images, and each
+      image card has its own attach form when there are no quotes.
+    - `Diagram.research_image_id` stops an image being attached twice to
+      the same case.
+    - The credit shows to the reviewer under the diagram.
+  - **c5, links only.** Image links appear in the standalone brief and
+    library-brief outputs (md, docx, pdf). The library stores them at save
+    time, so they survive the research being deleted.
+    - **Not listed:** a library brief embedded in a case download, or the
+      library page. Both would need the `reference` and `case_study`
+      templates edited.
+  - **Template.** `brand/brief.docx` was regenerated from
+    `scripts/make_reference_template.py`.
+  - **Test gap.** `case_study_docx` has no test of its own; it shares the
+    caption path that the md, preview and bid docx tests cover.
+- **Phase (c) review fixes** (Opus, Codex and agy; full suite 1466
+  passed; each fix negative-controlled):
+  - **Insert isolation.** Image inserts run after the `done` commit, each
+    on its own, and control characters are stripped from the alt.
+  - **Final URL.** It is stored, and an image whose alt, page, src or
+    final URL names a protected client is not stored at all. The view
+    filter stays as a second layer.
+  - **Attempt caps.** 6 per page and 24 per run, with identical `src`
+    deduped.
+  - **Width parsing** is safe for `px` and non-ASCII digits.
+  - **Long alt.** One over 200 characters is dropped, not cut.
+  - **Captions** come from `<figcaption>` only.
+  - **Library saves** drop blocked links.
+  - **Brief links** come only from the pages of quotes that survive
+    `brief_section`.
+  - **Credit.** Only the title goes through `apply()`; the URLs are
+    checked, never rewritten.
+  - **Rights per attach.** Rights are recorded on the case diagram itself.
+    The `research_images.rights_*` columns from c1 are left unused.
+
 ## Tests
 
 ```bash

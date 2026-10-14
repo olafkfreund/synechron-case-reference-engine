@@ -100,7 +100,7 @@ def industry_section(claims: list[dict], clients, heading=INDUSTRY_HEADING, page
             "statements": statements, "note": note}
 
 
-def brief_section(body: dict, quotes: list[dict], clients) -> dict:
+def brief_section(body: dict, quotes: list[dict], clients, images=()) -> dict:
     """A brief for output: apply() on every string, then blocked() PER SENTENCE and per quote. What still names a
     protected client is dropped and counted, as in industry_section. Numbers [n] are the quote numbers the brief cites."""
     from app import brief  # brief imports render's neighbours; import here to keep render importable on its own
@@ -130,6 +130,15 @@ def brief_section(body: dict, quotes: list[dict], clients) -> dict:
                 kept.append(c)
         return " ".join(kept)
 
+    links = []  # links only, never pixels; one naming a protected client is left out
+    alive = {s["url"] for s in sources}  # only the pages of the quotes that survived above
+    for i in images:
+        if CTRL.sub("", str(i.get("page") or "")) not in alive:
+            continue
+        link = {"title": clean(plain(str(i.get("title") or "")) or i.get("publisher")), "publisher": CTRL.sub("", str(i.get("publisher") or "")),
+                "url": CTRL.sub("", str(i.get("url") or ""))}
+        if not anonymise.blocked("\n".join(link.values()), clients):
+            links.append(link)
     title = clean(body.get("title"))
     if not title or anonymise.blocked(title, clients):
         title = "Best practice brief"
@@ -141,7 +150,7 @@ def brief_section(body: dict, quotes: list[dict], clients) -> dict:
         elif text := prose(t.get("text")):
             themes.append({"heading": heading, "text": text})
     out = {"title": title, "disclaimer": INDUSTRY_DISCLAIMER, "takeaways": [x for x in map(prose, body.get("takeaways", [])) if x],
-           "themes": themes, "sources": sources, "appendix": appendix,
+           "themes": themes, "sources": sources, "images": links, "appendix": appendix,
            "note": (f"{omitted} statement{'s' if omitted != 1 else ''} omitted: "
                     f"{'they' if omitted != 1 else 'it'} named a protected client") if omitted else ""}
     if anonymise.blocked("\n".join(_strings(out)), clients):
@@ -217,7 +226,7 @@ def section(case: ReferenceCase, client: str) -> dict:
         details=[dict(label=a, value=str(b)) for a, b in details if b not in (None, "")],
         blocks=[dict(heading=a, text=t, paragraphs=ps) for a, (t, ps) in blocks if t],
         lists=[dict(heading=a, bullets=[str(i) for i in b if i]) for a, b in lists if any(b)],
-        diagrams=[dict(id=d.id, caption=d.caption, width=d.width, height=d.height) for d in case.diagrams if d.status == "ready"],
+        diagrams=[dict(id=d.id, caption=f"{d.caption} {d.credit}" if d.credit else d.caption, width=d.width, height=d.height) for d in case.diagrams if d.status == "ready"],
         architecture=architecture_dict(case))
 
 
@@ -629,6 +638,16 @@ BRIEF_MD = _env.from_string("""\
 {% for s in b.sources %}
 {{ s.n }}. {{ s.title | md }}, {{ s.publisher | md }}, {{ s.url | link }}, retrieved {{ s.date | md }}
 {% endfor %}
+{% if b.images %}
+
+## Images on the cited pages
+
+Links only; each image is the copyright of its owner.
+
+{% for i in b.images %}
+- {{ i.title | md }}, {{ i.publisher | md }}, {{ i.url | link }}
+{% endfor %}
+{% endif %}
 
 ## Quotes
 

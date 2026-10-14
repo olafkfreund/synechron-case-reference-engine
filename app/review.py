@@ -1,4 +1,5 @@
 import time
+import httpx
 import hashlib
 import re
 import copy
@@ -20,7 +21,7 @@ from app.main import User, require
 from app.completeness import CHECKS, checklist, meets_minimum, score
 from app import archdiagram, writeup
 from app.schema import (CITE_POINTS, POINT_FIELDS, ArchCallout, ArchComponent, ArchFlow, Architecture, Diagram, Outcome, Period, Prose,
-                        ReferenceCase, Sourced, _norm, check_architecture)
+                        ReferenceCase, Sourced, _norm, check_architecture, plain)
 from app.writeup import PRICE_FLAG, check_prose, quotes_of
 
 router = APIRouter()
@@ -390,13 +391,13 @@ def add_diagram(cid: int, file: UploadFile, caption: str = Form(), v: str = Form
     return RedirectResponse(f"/review/{cid}", status_code=303)
 
 
-def _queue_diagram(conn, cid, case, raw, caption, user, image_id=None):
+def _queue_diagram(conn, cid, case, raw, caption, user, image_id=None, credit="", research_image_id=None, rights=None):
     """A new pending diagram for the worker to decode (#200); the case row is locked by the caller."""
     if len(case.diagrams) >= diagrams.MAX_PER_CASE:
         raise HTTPException(400, f"a case has at most {diagrams.MAX_PER_CASE} diagrams")
     did = conn.execute("insert into diagrams(case_id, raw, created_by) values (%s, %s, %s) returning id",
                        (cid, raw, user.sub)).fetchone()[0]
-    case.diagrams.append(Diagram(id=did, caption=caption, status="pending", image_id=image_id))
+    case.diagrams.append(Diagram(id=did, caption=caption, status="pending", image_id=image_id, credit=credit, research_image_id=research_image_id, **(rights or {})))
     save(conn, cid, case)
     conn.execute("insert into jobs(kind, payload) values ('diagram', jsonb_build_object('diagram_id', %s::bigint))", (did,))
     _reopen(conn, cid)
@@ -770,7 +771,45 @@ def reviewable_cases(conn, user, first=None, limit=50):
                         "order by c.id = %s desc, c.id desc limit %s", (list(user.groups), first or 0, limit)).fetchall()
 
 
-def _attach(cid, s, research_id, library_id, n, user):
+async def image_rights(request: Request) -> list[dict]:
+    """The ticked images of the attach form: img = ids; rights_ok_<id>, basis_<id>, no_logo_<id> per image."""
+    f = await request.form()
+    ids = dict.fromkeys(int(i) for i in f.getlist("img") if isinstance(i, str) and i.isascii() and i.isdigit() and len(i) <= 18)
+    return [{"id": i, "ok": f.get(f"rights_ok_{i}") == "on", "no_logo": f.get(f"no_logo_{i}") == "on",
+             "basis": str(f.get(f"basis_{i}") or "").strip()} for i in ids]
+
+
+def _attach_images(conn, cid, case, research_id, imgs, user):
+    """Queue each ticked image of the user's own research as a pending case diagram, after the reviewer confirmed its rights."""
+    from app import research  # here: research imports this module
+    if research_id is None:
+        raise HTTPException(400, "images come from research")
+    clients = anonymise.load_clients(conn)
+    for im in imgs:
+        if not (im["ok"] and im["no_logo"] and 1 <= len(im["basis"]) <= 200):
+            raise HTTPException(400, "confirm the rights, the basis (at most 200 characters) and that no client name or logo shows")
+        if any(d.research_image_id == im["id"] for d in case.diagrams):
+            continue  # already on this case
+        row = conn.execute("select i.id, i.page_url, i.image_url, i.alt, i.png, r.results from research_images i "
+                           "join research r on r.id = i.research_id where i.id = %s and i.research_id = %s "
+                           "and r.created_by = %s and r.status = 'done'", (im["id"], research_id, user.sub)).fetchone()
+        if not row or not research.visible_images([row[:4]], clients):  # not the user's, or hidden on the research page
+            raise HTTPException(404, "no such image")
+        page_url, alt = row[1], research.visible_images([row[:4]], clients)[0]["alt"]
+        src = next((p for p in row[5].get("pages", []) if p.get("url") == page_url), {})
+        host = httpx.URL(page_url).host
+        if anonymise.blocked(f"{host}\n{page_url}", clients):  # a url is never rewritten
+            raise HTTPException(400, "the credit names a protected client")
+        title = anonymise.apply(plain(src.get("title") or "") or host, clients)
+        credit = f"Image: {title}, {host}, {page_url}, retrieved {str(src.get('retrieved_at') or '')[:10]}"
+        if anonymise.blocked(credit, clients):
+            raise HTTPException(400, "the credit names a protected client")
+        caption = _caption(conn, alt or f"Image from {host}")
+        rights = {"rights_by": user.sub, "rights_at": datetime.now(timezone.utc).isoformat(), "rights_basis": im["basis"]}
+        _queue_diagram(conn, cid, case, bytes(row[4]), caption, user, credit=credit, research_image_id=im["id"], rights=rights)  # the reviewer is recorded, never credited
+
+
+def _attach(cid, s, research_id, library_id, n, user, imgs=()):
     """Attach picked quotes from the user's own finished research, or from a library item, to a case they may review."""
     from app import research  # here: research imports this module
     if (research_id is None) == (library_id is None):
@@ -778,7 +817,7 @@ def _attach(cid, s, research_id, library_id, n, user):
     with db.connect() as conn:
         old = _lock_sources(conn, cid, user, s)
         if research_id is not None:
-            kept, ref = research.picked_claims(conn, research_id, n, user, verbatim=True), {"research_id": research_id}
+            kept, ref = (research.picked_claims(conn, research_id, n, user, verbatim=True) if n or not imgs else []), {"research_id": research_id}
         else:
             row = conn.execute("select body from library_items where id=%s", (library_id,)).fetchone()
             if not row:
@@ -797,23 +836,28 @@ def _attach(cid, s, research_id, library_id, n, user):
         if len(merged) > MAX_SOURCES:
             raise HTTPException(400, f"at most {MAX_SOURCES} public sources per case")
         conn.execute("update cases set public_sources=%s where id=%s", (Jsonb(merged), cid))
+        if imgs:  # the case row is locked by _lock_sources
+            _attach_images(conn, cid, ReferenceCase.model_validate(conn.execute("select data from cases where id=%s", (cid,)).fetchone()[0]),
+                           research_id, imgs, user)
     return RedirectResponse(f"/review/{cid}", status_code=303)
 
 
 @router.post("/review/{cid}/sources")
 def attach_sources(cid: int, research_id: int | None = Form(None), library_id: int | None = Form(None),
-                   n: list[int] = Form([]), s: str = Form(), user: User = Depends(require("reviewer"))):
-    return _attach(cid, s, research_id, library_id, n, user)
+                   n: list[int] = Form([]), s: str = Form(), user: User = Depends(require("reviewer")),
+                   imgs: list[dict] = Depends(image_rights)):
+    return _attach(cid, s, research_id, library_id, n, user, imgs)
 
 
 @router.post("/sources/attach")
 def attach_to_chosen_case(target: str = Form(""), research_id: int | None = Form(None), library_id: int | None = Form(None),
-                          n: list[int] = Form([]), user: User = Depends(require("reviewer"))):
+                          n: list[int] = Form([]), user: User = Depends(require("reviewer")),
+                          imgs: list[dict] = Depends(image_rights)):
     """The research and library pages pick the case: target is "<case id>:<version of its attached list>"."""
     cid, _, s = target.partition(":")
     if not (cid.isascii() and cid.isdigit() and len(cid) <= 18):  # str.isdigit() accepts "²"; a bigint holds 18 digits
         raise HTTPException(400, "choose a case")
-    return _attach(int(cid), s, research_id, library_id, n, user)
+    return _attach(int(cid), s, research_id, library_id, n, user, imgs)
 
 
 @router.post("/review/{cid}/sources/remove")
