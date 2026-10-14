@@ -170,3 +170,11 @@ None yet.
     focus. Both dark blocks now set every `--header-*` token.
   - **Panels.** An open `details.mini` panel is `--text` at 90 % with
     `--bg` text and an 8 px blur, built from existing tokens.
+- **Screenshot review.** Decision 5's inverted-translucent panels are
+  dropped. The `details.mini` panels here are inline forms (Upload, Edit
+  source), not dropdown menus, and inverted they became a black slab with
+  an unreadable file input and help text.
+  - **Panels:** open panels use `--subtle` with a 1 px `--border` and the
+    14 px radius.
+  - **Sources:** at 900 px and wider, the badge stays beside the name.
+  - **Tests:** the full suite passed, 1446.

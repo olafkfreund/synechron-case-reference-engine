@@ -29,3 +29,10 @@ def test_coarse_pointer_keeps_44px_targets():
     assert "min-height:44px" in block
     for sel in (".btn", ".btn-sm", "details.mini>summary", ".site-nav a", "select"):
         assert sel in block.split("{")[1].split(","), sel
+
+
+def test_open_mini_panel_is_a_plain_subtle_surface_and_the_badge_stays_by_the_name():
+    css = (STATIC / "portal.css").read_text()
+    panel = re.search(r"details\.mini\[open\]\{([^}]*)\}", css).group(1)
+    assert "var(--subtle)" in panel and "var(--border)" in panel and "blur" not in css
+    assert re.search(r"\n\.src \.who\{display:flex", css)

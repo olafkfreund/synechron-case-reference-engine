@@ -189,9 +189,7 @@ details.mini>summary::after{content:"";width:7px;height:7px;border-right:2px sol
 details.mini[open]>summary::after{transform:rotate(-135deg) translateY(-2px)}
 details.mini>summary.btn-sm::after{position:static;inset:auto}  /* the chevron, not .btn-sm's touch-target overlay */
 /* open: the summary stays put; the rest is a subtle block under it */
-details.mini[open]{flex:1 1 100%;background:color-mix(in srgb,var(--text) 90%,transparent);color:var(--bg);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border-radius:var(--r-card);padding:0 0 12px}
-/* the inverted panel: text on it takes the panel colour; controls keep their own surfaces */
-details.mini[open] a:not(.btn),details.mini[open] .muted{color:inherit}
+details.mini[open]{flex:1 1 100%;background:var(--subtle);border:1px solid var(--border);border-radius:var(--r-card);padding:0 0 12px}
 details.mini[open]>summary{margin:0 0 12px}
 details.mini[open]>:not(summary){margin-left:12px;margin-right:12px}
 details.mini .field{margin-top:0}
@@ -225,6 +223,9 @@ details.mini:not([open])>summary,.client-row .slot{min-width:84px;justify-conten
 .src-add>summary::after{content:"";position:absolute;inset:-4px 0}
 @media (min-width:900px){
 .source-row.src{display:grid;grid-template-columns:24px minmax(160px,1.4fr) auto minmax(0,1fr) auto 88px 88px 88px;gap:6px 12px}
+.src .who{display:flex;align-items:center;gap:0 8px}  /* the kind badge stays beside the name; a long name wraps by itself */
+.src .who b{margin-right:0;min-width:0;overflow-wrap:anywhere}
+.src .who .badge{flex:none}
 .src form.inline{grid-column:6}
 .src details.up{grid-column:7}
 .src details.mini:last-child{grid-column:8}
