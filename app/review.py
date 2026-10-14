@@ -431,17 +431,19 @@ LIVE_DOC = "md.id = i.document_id and md.deleted_at is null and md.acl_groups &&
 def candidates_of(conn, cid, user, case):
     """[(image id, width, height, hint)] found in the case's documents, not yet used or dismissed."""
     gone = {*case.dismissed_images, *(d.image_id for d in case.diagrams if d.image_id is not None)}
-    rows = conn.execute(f"select i.id, i.width, i.height, i.hint from document_images i left join documents md on {LIVE_DOC} "
-                        f"where (md.id is not null and i.document_id in {DOCS_OF}) or i.case_id = %s order by i.document_id, i.id",
+    rows = conn.execute(f"select i.id, i.width, i.height, i.hint, i.document_id from document_images i join documents md on {LIVE_DOC} "
+                        f"where i.document_id in {DOCS_OF} "
+                        f"union all select id, width, height, hint, null from document_images where case_id = %s order by 5, 1",  # a library brief's last
                         (list(user.groups), cid, cid, cid)).fetchall()
-    return [r for r in rows if r[0] not in gone]
+    return [r[:4] for r in rows if r[0] not in gone]
 
 
 def _candidate_png(conn, cid, iid, user, case):
     """(PNG, credit) of an unused, undismissed candidate of this case, else 404 (never says which part failed)."""
-    row = conn.execute(f"select i.png, i.credit from document_images i left join documents md on {LIVE_DOC} "
-                       f"where i.id = %s and ((md.id is not null and i.document_id in {DOCS_OF}) or i.case_id = %s)",
-                       (list(user.groups), iid, cid, cid, cid)).fetchone()
+    row = conn.execute(f"select i.png, i.credit from document_images i join documents md on {LIVE_DOC} "
+                       f"where i.id = %s and i.document_id in {DOCS_OF} "
+                       f"union all select png, credit from document_images where id = %s and case_id = %s",
+                       (list(user.groups), iid, cid, cid, iid, cid)).fetchone()
     if not row or iid in case.dismissed_images or any(d.image_id == iid for d in case.diagrams):
         raise HTTPException(404, "no such image")
     return bytes(row[0]), row[1]
@@ -451,9 +453,10 @@ def _candidate_png(conn, cid, iid, user, case):
 def candidate_png(cid: int, iid: int, user: User = Depends(require("reviewer"))):
     with db.connect() as conn:
         row = conn.execute(
-            f"select i.png, c.data from document_images i left join documents md on {LIVE_DOC} join cases c on c.id = %s and {REVIEWABLE} "
-            f"where i.id = %s and ((md.id is not null and i.document_id in {DOCS_OF.replace('%s', 'c.id')}) or i.case_id = c.id)",
-            (list(user.groups), cid, list(user.groups), iid)).fetchone()
+            f"select i.png, c.data from document_images i join documents md on {LIVE_DOC} join cases c on c.id = %s and {REVIEWABLE} "
+            f"where i.id = %s and i.document_id in {DOCS_OF.replace('%s', 'c.id')} "
+            f"union all select i.png, c.data from document_images i join cases c on c.id = i.case_id and c.id = %s and {REVIEWABLE} where i.id = %s",
+            (list(user.groups), cid, list(user.groups), iid, cid, list(user.groups), iid)).fetchone()
     # a used or dismissed candidate is no longer offered, so its thumbnail is not served either
     if not row or iid in row[1].get("dismissed_images", []) or any(d.get("image_id") == iid for d in row[1].get("diagrams", [])):
         raise HTTPException(404, "no such image")
@@ -832,17 +835,19 @@ def _attach_images(conn, cid, case, research_id, imgs, user):
         _queue_diagram(conn, cid, case, bytes(row[4]), caption, user, credit=credit, research_image_id=im["id"], rights=rights)  # the reviewer is recorded, never credited
 
 
-def _offer_brief_diagram(conn, cid, item, clients):
-    """A library brief's diagram becomes a candidate of this case: it reaches the case only through the reviewer's Use (#231)."""
+def _offer_brief_diagram(conn, cid, item, clients, attached):
+    """A library brief's diagram becomes a candidate of this case, if every source it cites is among the quotes just attached;
+    it reaches the case only through the reviewer's Use (#231). `attached` holds the brief's quote numbers."""
     from app import render  # here: render imports this module
     if not (item.get("brief") or {}).get("diagram"):
         return
     try:
-        arch, credit = (sec := render.brief_section(item["brief"], item["quotes"], clients)).get("arch"), sec.get("credit")
+        sec = render.brief_section(item["brief"], item["quotes"], clients)
     except render.Withheld:
         return
-    if arch is None:
+    if sec["arch"] is None or not set(sec["used"]) <= attached:
         return
+    arch, credit = sec["arch"], "Diagram drawn by Synechron from the attached public sources"  # the brief's numbering means nothing here
     png = archdiagram.to_png(archdiagram.layout(arch))
     w, h = struct.unpack(">II", png[16:24])
     conn.execute("insert into document_images(case_id, png, width, height, hint, credit, src_hash) "
@@ -878,7 +883,7 @@ def _attach(cid, s, research_id, library_id, n, user, imgs=()):
             raise HTTPException(400, f"at most {MAX_SOURCES} public sources per case")
         conn.execute("update cases set public_sources=%s where id=%s", (Jsonb(merged), cid))
         if library_id is not None:
-            _offer_brief_diagram(conn, cid, row[0], anonymise.load_clients(conn))
+            _offer_brief_diagram(conn, cid, row[0], anonymise.load_clients(conn), {c["n"] + 1 for c in kept})
         if imgs:  # the case row is locked by _lock_sources
             _attach_images(conn, cid, ReferenceCase.model_validate(conn.execute("select data from cases where id=%s", (cid,)).fetchone()[0]),
                            research_id, imgs, user)

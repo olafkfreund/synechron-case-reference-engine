@@ -9,7 +9,7 @@
 <p class="muted" style="font-size:13px">Written only from the quotes you picked; [n] is the quote a sentence rests on. Check it before you rely on it.</p>
 {% if body.flags %}<div class="note"><b>{{ body.flags | length }} item(s) to fix before you can download:</b>
 <ul>{% for f in body.flags %}<li>{{ f.where }}: &ldquo;{{ f.sentence }}&rdquo; &mdash; {{ f.reason }}</li>{% endfor %}</ul></div>{% endif %}
-<form method="post" action="/briefs/{{ bid }}" class="section-card stack">
+<form method="post" action="/briefs/{{ bid }}" class="section-card stack"><input type="hidden" name="v" value="{{ v }}">
 <label for="b-title">Title</label><input type="text" id="b-title" name="title" value="{{ body.title }}">
 <label for="b-take">Takeaways (one per line)</label><textarea id="b-take" name="takeaways" rows="6">{{ body.takeaways | join("\n") }}</textarea>
 {% for t in body.themes %}<label for="h{{ loop.index }}">Theme {{ loop.index }}</label><input type="text" id="h{{ loop.index }}" name="heading" value="{{ t.heading }}">

@@ -1,0 +1,123 @@
+{
+ "clean": {
+  "arch": {},
+  "flags": [],
+  "pruned": [
+   "a",
+   "k"
+  ]
+ },
+ "bad": {
+  "arch": {
+   "components": [
+    {
+     "id": "a",
+     "name": "Snowflake store",
+     "role": "Handles 99 claims",
+     "zone": "core",
+     "kind": "app",
+     "cite": "solution 9"
+    },
+    {
+     "id": "k",
+     "name": "Kafka events",
+     "role": "Costs EUR 50,000 per year",
+     "zone": "data",
+     "kind": "queue",
+     "cite": "configuration 1"
+    },
+    {
+     "id": "m",
+     "name": "Mystery box",
+     "role": "x",
+     "zone": "core",
+     "kind": "app",
+     "cite": ""
+    }
+   ],
+   "flows": [
+    {
+     "src": "a",
+     "dst": "k",
+     "label": "Publish",
+     "mode": "event",
+     "cite": ""
+    },
+    {
+     "src": "k",
+     "dst": "m",
+     "label": "x",
+     "mode": "api",
+     "cite": "reference 3"
+    }
+   ],
+   "callouts": [
+    {
+     "text": "Handling from 11 days to 3",
+     "outcome": 0
+    },
+    {
+     "text": "Fewer days",
+     "outcome": 4
+    }
+   ]
+  },
+  "flags": [
+   "component 'Snowflake store' cites 'solution 9', which is no sourced point",
+   "component 'Snowflake store' matches neither its cited point nor the technology",
+   "component 'Snowflake store' names 'Snowflake', which neither its cited point nor the technology uses",
+   "component 'Snowflake store': number 99 is in no quote",
+   "component 'Kafka events': number 50000 is in no quote",
+   "component 'Kafka events': names 'EUR', which no quote supports",
+   "component 'Kafka events': contains a price or payment term",
+   "component 'Mystery box' has no cite and matches no technology",
+   "component 'Mystery box' names 'Mystery', which neither its cited point nor the technology uses",
+   "component 'Mystery box' names 'box', which neither its cited point nor the technology uses",
+   "flow 'Snowflake store' to 'Kafka events' cites no sourced point",
+   "flow 'Kafka events' to 'Mystery box' cites 'reference 3', which is no sourced point",
+   "callout 'Handling from 11 days to 3': number 3 is in no quote",
+   "callout 'Fewer days' points at outcome 4, which is no sourced outcome"
+  ],
+  "pruned": [
+   "a",
+   "k"
+  ]
+ },
+ "mixed": {
+  "arch": {
+   "components": [
+    {
+     "id": "a",
+     "name": "Intake API",
+     "role": "Accepts claims",
+     "zone": "integration",
+     "kind": "service",
+     "cite": "Solution 01"
+    },
+    {
+     "id": "k",
+     "name": "Kafka cluster",
+     "role": "Carries",
+     "zone": "data",
+     "kind": "queue",
+     "cite": ""
+    }
+   ],
+   "flows": [
+    {
+     "src": "a",
+     "dst": "k",
+     "label": "Publish claim",
+     "mode": "event",
+     "cite": "configuration 1"
+    }
+   ],
+   "callouts": []
+  },
+  "flags": [],
+  "pruned": [
+   "a",
+   "k"
+  ]
+ }
+}

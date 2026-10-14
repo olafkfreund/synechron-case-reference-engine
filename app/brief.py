@@ -95,7 +95,7 @@ def check(body: dict, texts: list[str], clients=()) -> list[dict]:
             flag("diagram", f, "no picked quote supports this")
         for t in dict.fromkeys([a.title, *(x for c in a.components for x in (c.name, c.role)), *(f.label for f in a.flows),
                                 *(k.text for k in a.callouts)]):
-            if anonymise.blocked(t, clients):
+            if anonymise.blocked(t, clients) or anonymise.apply(t, clients) != t:  # what the output would change or withhold
                 flag("diagram", t, "names a protected client")
     return flags
 
@@ -204,20 +204,28 @@ def diagram_png(bid: int, user: User = Depends(require("user"))):
     return Response(archdiagram.to_png(archdiagram.layout(Architecture.model_validate(d))), media_type="image/png", headers=PNG_HEADERS)
 
 
+def locked(conn, bid, user, v):
+    """(quotes, body) of the caller's finished brief, row locked; 404 if not theirs, 409 if not ready or changed since the page (v)."""
+    row = conn.execute("select status, quotes, body, md5(body::text) = %s from briefs where id=%s and created_by=%s for update",
+                       (v, bid, user.sub)).fetchone()
+    if not row:
+        raise HTTPException(404, "no such brief")
+    if row[0] != "done":
+        raise HTTPException(409, "the brief is not ready")
+    if not row[3]:
+        raise HTTPException(409, "the brief changed; reload the page")
+    return row[1], row[2]
+
+
 @router.post("/brief/{bid}/diagram")
 def save_diagram(bid: int, request: Request, text: str = Form(""), v: str = Form(), user: User = Depends(require("user"))):
+    if len(text) > 20000:
+        raise HTTPException(400, "the diagram text is too long (at most 20,000 characters)")
     with db.connect() as conn:
-        row = conn.execute("select status, quotes, body, md5(body::text) = %s from briefs where id=%s and created_by=%s for update",
-                           (v, bid, user.sub)).fetchone()
-        if not row:
-            raise HTTPException(404, "no such brief")
-        if row[0] != "done":
-            raise HTTPException(409, "the brief is not ready")
-        if not row[3]:
-            raise HTTPException(409, "the brief changed; reload the page")
-        body, clients = row[2], anonymise.load_clients(conn)
-        texts = quote_texts(row[1][:MAX_QUOTES], clients)
-        arch, errs = parse_architecture(text[:20000], evidence_of_quotes(texts)) if text.strip() else (None, [])
+        quotes, body = locked(conn, bid, user, v)
+        clients = anonymise.load_clients(conn)
+        texts = quote_texts(quotes[:MAX_QUOTES], clients)
+        arch, errs = parse_architecture(text, evidence_of_quotes(texts)) if text.strip() else (None, [])
         if not errs:  # an empty box removes the diagram
             body.pop("diagram_note", None)
             body.pop("diagram", None) if arch is None else body.update(diagram=arch.model_dump())
@@ -232,13 +240,11 @@ def save_diagram(bid: int, request: Request, text: str = Form(""), v: str = Form
 
 @router.post("/briefs/{bid}")
 def save(bid: int, title: str = Form(), takeaways: str = Form(""), heading: list[str] = Form([]), text: list[str] = Form([]),
-         user: User = Depends(require("user"))):
+         v: str = Form(""), user: User = Depends(require("user"))):
     if len(heading) != len(text) or len(heading) > MAX_THEMES:
         raise HTTPException(400, f"at most {MAX_THEMES} themes")
     with db.connect() as conn:
-        status, _, _, quotes, old = owned(conn, bid, user)
-        if status != "done":
-            raise HTTPException(409, "the brief is not ready")
+        quotes, old = locked(conn, bid, user, v)
         body = {"title": " ".join(title.split()), "takeaways": [" ".join(t.split()) for t in takeaways.splitlines() if t.strip()],
                 "themes": [{"heading": " ".join(h.split()), "text": " ".join(t.split())} for h, t in zip(heading, text) if h.strip() or t.strip()]}
         if (len(body["title"]) > 200 or len(body["takeaways"]) > MAX_TAKEAWAYS or any(len(t) > 500 for t in body["takeaways"])

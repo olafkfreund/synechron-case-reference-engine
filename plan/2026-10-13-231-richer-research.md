@@ -542,6 +542,28 @@ with a diagram, in light and dark. Opus, Codex and agy reviews. Run
     dropped source, and counts that in the note.
   - **Credit numbers.** "[n…]" refers to the brief's sources, as the
     plan worded it.
+- **Phase (d) revised, review fixes** (Opus, Codex and agy; full suite
+  1582 passed, 4 skipped):
+  - **Case offer.** A case is offered the diagram only if every source it
+    cites was attached, and the case credit has no brief numbers.
+  - **Index and constraint.** `document_images_case_idx`, a check that a
+    row has a document or a case, and the candidate queries back as the
+    indexed document query `union all` a `case_id` query.
+  - **Strict pruning for briefs only** (`Evidence.strict`): unresolvable
+    cites and their flows are dropped.
+  - **Visible problems.** `check()` flags diagram text that
+    anonymisation would change, and the output note gives the real
+    reason.
+  - **Locking.** `save` and `save_diagram` share a locked version check,
+    the edit form carries `v`, and oversize diagram text gets a 400.
+  - **`tech_match`** accepts a case.
+  - **Real "unchanged" test.** The unchanged-behaviour test compares
+    against flags recorded from main at 494cc8b
+    (`tests/arch_flags_main.json`).
+  - **Negative controls run:** strict pruning, the version check, the
+    cited-source check and `tech_match`.
+  - **Not negative-controlled:** the index split, the withholding check
+    and the oversize check.
 
 ## Tests
 

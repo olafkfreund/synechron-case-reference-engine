@@ -941,7 +941,7 @@ def test_a_library_briefs_diagram_is_a_candidate_for_the_case_and_reaches_it_onl
         with db.connect() as c:
             iid, doc, case_id, credit = c.execute("select id, document_id, case_id, credit from document_images where case_id=%s", (cid,)).fetchone()
             assert c.execute("select data->'diagrams' from cases where id=%s", (cid,)).fetchone()[0] == []  # a candidate, not a diagram
-        assert doc is None and case_id == cid and credit == "Diagram drawn by Synechron from sources [1]"
+        assert doc is None and case_id == cid and credit == "Diagram drawn by Synechron from the attached public sources"
         assert u.get(f"/review/{cid}/images/{iid}.png").content.startswith(b"\x89PNG")
         assert u.get(f"/review/{other}/images/{iid}.png").status_code == 404  # only the case it was offered to
         assert f"/review/{cid}/images/{iid}.png" in u.get(f"/review/{cid}").text
@@ -952,6 +952,9 @@ def test_a_library_briefs_diagram_is_a_candidate_for_the_case_and_reaches_it_onl
         with db.connect() as c:
             (dg,) = c.execute("select data->'diagrams' from cases where id=%s", (cid,)).fetchone()[0]
         assert dg["credit"] == credit and dg["image_id"] == iid
+        u.post(f"/review/{other}/sources", data={"library_id": lid, "n": [1], "s": token(other)})  # only source 2: the diagram cites source 1
+        with db.connect() as c:
+            assert c.execute("select count(*) from document_images where case_id=%s", (other,)).fetchone()[0] == 0
     finally:
         with db.connect() as c:
             c.execute("delete from library_items where id=%s", (lid,))

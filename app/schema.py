@@ -382,6 +382,7 @@ class Evidence:
     quotes: list[str] = field(default_factory=list)
     outcomes: list[str | None] = field(default_factory=list)
     delivered: bool = False  # callouts are allowed
+    strict: bool = False  # prune_architecture drops a row whose cite is no actual source (a brief has no technology to fall back on)
 
     def quote(self, cite: str) -> str | None:
         """The sourced quote a cite such as "solution 2" or "source 3" names, else None."""
@@ -402,7 +403,7 @@ def evidence_of_case(case: "ReferenceCase") -> Evidence:
 
 def evidence_of_quotes(quotes: list[str]) -> Evidence:
     """A brief's numbered quotes, cited as "source 1", "source 2"..."""
-    return Evidence({f"source {i}": (q, q) for i, q in enumerate(quotes, 1) if q}, "", [q for q in quotes if q])
+    return Evidence({f"source {i}": (q, q) for i, q in enumerate(quotes, 1) if q}, "", [q for q in quotes if q], strict=True)
 
 
 def _ev(src) -> Evidence:
@@ -483,8 +484,8 @@ def unsupported_terms(name: str, vocab: set[str]) -> list[str]:
     return out
 
 
-def tech_match(ev: Evidence, name: str) -> bool:
-    return bool(_words(name) & _words(ev.tech))
+def tech_match(ev, name: str) -> bool:
+    return bool(_words(name) & _words(_ev(ev).tech))
 
 
 def prune_architecture(case, arch: "Architecture | None" = None) -> None:
@@ -492,9 +493,9 @@ def prune_architecture(case, arch: "Architecture | None" = None) -> None:
     `case` is a ReferenceCase (its own architecture) or an Evidence (then `arch`)."""
     ev, a = _ev(case), arch or getattr(case, "architecture", None)
     if a:
-        a.components = [c for c in a.components if c.cite.strip() or tech_match(ev, c.name)]
+        a.components = [c for c in a.components if (ev.quote(c.cite) is not None if ev.strict else c.cite.strip() or tech_match(ev, c.name))]
         ids = {c.id for c in a.components}
-        a.flows = [f for f in a.flows if f.src in ids and f.dst in ids]
+        a.flows = [f for f in a.flows if f.src in ids and f.dst in ids and (not ev.strict or ev.quote(f.cite) is not None)]
 
 
 def check_architecture(case, arch: "Architecture | None" = None) -> list[str]:

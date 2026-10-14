@@ -7,6 +7,11 @@ from tests.test_research import reg  # noqa: F401
 Q = ["Entra supports passwordless sign in out of the box for 3 tenants", "Conditional access needs a policy configured first"]
 
 
+def vv(bid):  # the page's version of a brief, posted back with an edit
+    with db.connect() as c:
+        return {"v": c.execute("select md5(body::text) from briefs where id=%s", (bid,)).fetchone()[0]}
+
+
 def body(**kw):
     return {"title": "Passwordless sign in", "takeaways": ["Entra supports passwordless sign in [1]."],
             "themes": [{"heading": "Setup", "text": "A policy is needed first [2]."}], **kw}
@@ -137,12 +142,12 @@ def test_an_edit_reruns_the_checks_and_a_flag_blocks_the_download(made):
     bid = made()
     c = as_user("u1")
     bad = {"title": "Passwordless sign in", "takeaways": "Entra supports passwordless sign in.", "heading": ["Setup"], "text": ["A policy is needed first [2]."]}
-    assert c.post(f"/briefs/{bid}", data=bad, follow_redirects=False).status_code == 303
+    assert c.post(f"/briefs/{bid}", data={**bad, **vv(bid)}, follow_redirects=False).status_code == 303
     with db.connect() as conn:
         flags = conn.execute("select body->'flags' from briefs where id=%s", (bid,)).fetchone()[0]
     assert [f["reason"] for f in flags] == ["has no citation"] and "has no citation" in c.get(f"/briefs/{bid}").text
     assert c.post(f"/briefs/{bid}/download", data={"format": "md"}).status_code == 409
-    c.post(f"/briefs/{bid}", data={**bad, "takeaways": "Entra supports passwordless sign in [1]."})
+    c.post(f"/briefs/{bid}", data={**bad, "takeaways": "Entra supports passwordless sign in [1].", **vv(bid)})
     with db.connect() as conn:
         assert conn.execute("select body->'flags' from briefs where id=%s", (bid,)).fetchone()[0] == []
     r = c.post(f"/briefs/{bid}/download", data={"format": "md"})
@@ -266,10 +271,10 @@ def test_save_refuses_input_over_the_caps(made):
     bid = made()
     c = as_user("u1")
     ok = {"title": "t", "takeaways": "one line", "heading": ["H"], "text": ["T"]}
-    assert c.post(f"/briefs/{bid}", data=ok, follow_redirects=False).status_code == 303
+    assert c.post(f"/briefs/{bid}", data={**ok, **vv(bid)}, follow_redirects=False).status_code == 303
     for bad in ({"title": "x" * 201}, {"takeaways": "x" * 501}, {"takeaways": "\n".join(["x"] * 21)},
                 {"heading": ["x" * 201], "text": ["T"]}, {"heading": ["H"], "text": ["x" * 2001]}):
-        assert c.post(f"/briefs/{bid}", data={**ok, **bad}).status_code == 400, bad
+        assert c.post(f"/briefs/{bid}", data={**ok, **bad, **vv(bid)}).status_code == 400, bad
 
 
 def test_run_strips_our_tags_and_one_lines_each_quote(env, monkeypatch):
@@ -292,7 +297,7 @@ def test_save_checks_against_the_anonymised_quotes(reg, made):
     with db.connect() as conn:
         conn.execute("update briefs set quotes=%s where id=%s", (json.dumps([{**QUOTES[0], "quote": f"{reg} runs passwordless sign in out of the box"}]), bid))
     data = {"title": "Passwordless sign in", "takeaways": f"{reg} runs passwordless sign in [1].", "heading": [], "text": []}
-    as_user("u1").post(f"/briefs/{bid}", data=data)
+    as_user("u1").post(f"/briefs/{bid}", data={**data, **vv(bid)})
     with db.connect() as conn:
         flags = conn.execute("select body->'flags' from briefs where id=%s", (bid,)).fetchone()[0]
     assert flags and any("no quote supports" in f["reason"] for f in flags)  # the quote the model saw says "a retailer"
@@ -354,13 +359,25 @@ def test_a_clean_diagram_is_stored_and_sent_public_with_the_quotes(env):
     assert (alias, dc) == ("DRAFT_MODEL", "public") and "source 2" in system and "<quotes>" in user and f"source 1: {Q[0]}" in user
 
 
-def test_an_unknown_cite_is_dropped_an_invented_name_is_flagged(env):
+def test_an_unresolved_cite_is_pruned_an_invented_name_is_flagged(env):
     db.init()
-    b, _ = run_with({"components": [comp("Entra", "source 1"), comp("Okta gateway", "source 1"), comp("Entra again", "source 9"), comp("Entra third", "")]})
-    names = [c["name"] for c in b["diagram"]["components"]]
-    assert "Entra third" not in names  # no cite, no technology: pruned
-    assert any("Okta" in f["sentence"] for f in b["flags"] if f["where"] == "diagram")
-    assert any("source 9" in f["sentence"] for f in b["flags"])
+    flow = lambda s, d, cite: {"src": s, "dst": d, "label": "Needs policy", "mode": "api", "cite": cite}
+    b, _ = run_with({"components": [comp("Entra", "source 1"), comp("Okta gateway", "source 1"), comp("Entra again", "source 9"),
+                                    comp("Entra third", ""), comp("Entra multi", "source 1, source 2"), comp("Conditional access policy", "source 2")],
+                     "flows": [flow(1, 6, "source 2"), flow(1, 6, "source 9"), flow(1, 3, "source 1")]})
+    d = b["diagram"]
+    assert [c["name"] for c in d["components"]] == ["Entra", "Okta gateway", "Conditional access policy"]  # no source 9, no cite, no multi-cite
+    assert [(f["src"], f["dst"]) for f in d["flows"]] == [("c1", "c6")]  # the unresolved cite and the pruned end are gone
+    assert [f["sentence"] for f in b["flags"] if f["where"] == "diagram" and "Okta" in f["sentence"]] and not any("source 9" in f["sentence"] for f in b["flags"])
+
+
+def test_the_case_prune_keeps_a_technology_match_without_a_cite():
+    from app.schema import Architecture, Evidence, prune_architecture
+    a = Architecture.model_validate({"components": [{"id": "k", "name": "Kafka bus", "role": "x", "zone": "data", "kind": "queue", "cite": ""}]})
+    prune_architecture(Evidence({}, "Kafka"), a)
+    assert [c.id for c in a.components] == ["k"]
+    prune_architecture(Evidence({}, "Kafka", strict=True), a)  # a brief has no technology to fall back on
+    assert a.components == []
 
 
 def test_a_protected_name_in_the_diagram_blocks(env):
@@ -453,3 +470,35 @@ def test_a_protected_name_or_a_dropped_source_leaves_the_diagram_out_of_the_outp
     assert render.brief_section(b, quotes, clients)["arch"] is None  # the name would change: nothing is drawn
     clients = [{"id": 1, "name": "v.example", "aliases": [], "anonymised_label": "a site", "referenceable": False}]
     assert render.brief_section(b, [{**QUOTES[0]}, QUOTES[1]], clients)["arch"] is None  # its source is dropped
+
+
+def test_check_flags_a_diagram_word_the_output_would_change(monkeypatch):
+    d = {"components": [{"id": "c1", "name": "Entra", "role": "x", "zone": "core", "kind": "service", "cite": "source 1"}]}
+    monkeypatch.setattr(brief.anonymise, "apply", lambda t, c: t.replace("Entra", "a vendor"))
+    assert any(f["where"] == "diagram" and f["reason"] == "names a protected client" for f in brief.check({**body(), "diagram": d}, Q))
+    monkeypatch.undo()
+    assert not any(f["where"] == "diagram" and f["reason"] == "names a protected client" for f in brief.check({**body(), "diagram": d}, Q))
+
+
+def test_the_output_note_says_why_the_diagram_was_left_out():
+    quotes = [{"quote": Q[0]}, {"quote": Q[1]}]
+    d = {"components": [{"id": "c1", "name": "Entra", "role": "x", "zone": "core", "kind": "service", "cite": "source 1"}]}
+    named = [{"id": 1, "name": "Entra", "aliases": [], "anonymised_label": "a vendor", "referenceable": False}]
+    assert "The diagram was left out: it named a protected client." in render.brief_section({**body(), "diagram": d}, quotes, named)["note"]
+    gone = [{"id": 1, "name": "Conditional", "aliases": [], "anonymised_label": "a vendor", "referenceable": False}]
+    sec = render.brief_section({**body(), "diagram": d}, [{"quote": "Conditional first"}, quotes[1]], gone)
+    assert "The diagram was left out" not in sec["note"] or "withheld" in sec["note"]
+    gone = [{"id": 1, "name": "v.example", "aliases": [], "anonymised_label": "a site", "referenceable": False}]
+    assert "The diagram was left out: it cited a source that was withheld." in render.brief_section({**body(), "diagram": d}, QUOTES, gone)["note"]
+
+
+def test_a_stale_edit_form_is_409_and_an_oversize_diagram_text_is_400(made):
+    bid, v = with_diagram(made)
+    c = as_user("u1")
+    form = {"title": "t", "takeaways": "Entra supports passwordless sign in [1].", "heading": [], "text": []}
+    assert c.post(f"/briefs/{bid}", data=form).status_code == 409  # no version
+    assert c.post(f"/briefs/{bid}", data={**form, "v": "stale"}).status_code == 409
+    assert c.post(f"/briefs/{bid}", data={**form, **vv(bid)}, follow_redirects=False).status_code == 303
+    assert "diagram" in stored(bid)  # an edit of the text keeps the diagram
+    assert c.post(f"/brief/{bid}/diagram", data={"text": "x" * 20001, **vv(bid)}).status_code == 400
+    assert 'name="v"' in c.get(f"/briefs/{bid}").text

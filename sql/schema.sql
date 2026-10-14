@@ -306,6 +306,9 @@ alter table document_images add column if not exists src_hash text;
 alter table document_images alter column document_id drop not null;
 alter table document_images add column if not exists case_id bigint references cases(id) on delete cascade;
 alter table document_images add column if not exists credit text not null default '';
+alter table document_images drop constraint if exists document_images_owner_check;
+alter table document_images add constraint document_images_owner_check check (document_id is not null or case_id is not null);
+create index if not exists document_images_case_idx on document_images (case_id) where case_id is not null;
 
 alter table documents add column if not exists updated_at timestamptz;
 update documents set updated_at = created_at where updated_at is null;  -- keep the real age of existing documents

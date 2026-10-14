@@ -143,12 +143,15 @@ def brief_section(body: dict, quotes: list[dict], clients, images=()) -> dict:
                 "url": CTRL.sub("", str(i.get("url") or ""))}
         if not anonymise.blocked("\n".join(link.values()), clients):
             links.append(link)
-    arch = credit = None
+    arch = credit = why = None
+    used = []
     if body.get("diagram"):  # drawn from the picked quotes; left out whole if any of its words or sources would change or go
         a = Architecture.model_validate(body["diagram"])
         used = sorted({int(n) for x in (*a.components, *a.flows) for n in re.findall(r"source (\d+)", x.cite.lower())})
-        if dead & set(used) or any(clean(t) != t or anonymise.blocked(t, clients) for t in _strings(a.model_dump(exclude={"flags"}))):
-            omitted += 1
+        if dead & set(used):
+            why = "it cited a source that was withheld"
+        elif any(clean(t) != t or anonymise.blocked(t, clients) for t in _strings(a.model_dump(exclude={"flags"}))):
+            why = "it named a protected client"
         else:
             arch = a
             credit = "Diagram drawn by Synechron" + (f" from sources [{', '.join(map(str, used))}]" if used else "")
@@ -164,9 +167,10 @@ def brief_section(body: dict, quotes: list[dict], clients, images=()) -> dict:
             themes.append({"heading": heading, "text": text})
     out = {"title": title, "disclaimer": INDUSTRY_DISCLAIMER, "takeaways": [x for x in map(prose, body.get("takeaways", [])) if x],
            "themes": themes, "sources": sources, "images": links, "appendix": appendix,
-           "arch": arch, "credit": credit, "mermaid": to_mermaid(arch) if arch else "",
-           "note": (f"{omitted} statement{'s' if omitted != 1 else ''} omitted: "
-                    f"{'they' if omitted != 1 else 'it'} named a protected client") if omitted else ""}
+           "arch": arch, "credit": credit, "used": used, "mermaid": to_mermaid(arch) if arch else "",
+           "note": " ".join(filter(None, [
+               f"{omitted} statement{'s' if omitted != 1 else ''} omitted: {'they' if omitted != 1 else 'it'} named a protected client" if omitted else "",
+               f"The diagram was left out: {why}." if why else ""]))}
     if anonymise.blocked("\n".join(_strings(out)), clients):
         raise Withheld(WITHHELD)
     return out
