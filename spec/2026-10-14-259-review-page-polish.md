@@ -4,7 +4,7 @@ issue: 259
 intent: intent/2026-10-14-259-review-page-polish.md
 ---
 
-# Spec: Review page that reads well (field rows, text, architecture, notices)
+# Spec: Review and Sources pages that read well (field rows, text editing, architecture, notices, sources)
 
 This is a presentation-only change to `/review/{cid}`. Form names, form
 ids, routes, `aria-label`s and the POST bodies stay byte-identical, so the
@@ -56,6 +56,33 @@ label beside it, and Save to the right.
   flag text stays in a `title` attribute.
 - **Sourced points** stay as a `<details>` under the text.
 
+### 2b. Easier text editing (the user's request, 2026-10-14: "more modern looking with easier edits to the text and formatting")
+
+The editor is restyled as a writing surface, not a form box:
+- **Layout.** It spans the full card width, uses a readable line length
+  (`max-width: 75ch`, 1.6 line height) and a calm border that is strong
+  only on focus.
+- **A footer line under the editor:**
+  - a **live word count against the minimum**, for example "69 words ·
+    minimum 80", which turns to the ok colour when met
+  - an **"Unsaved changes"** marker
+  - Save and Revert
+- **Shortcuts.** **Ctrl/Cmd+S** saves the focused section. **Revert**
+  restores the saved text, client-side. The POST stays the plain form, so
+  everything works without JavaScript.
+- **Preview.** A toggle shows the text as the case study will show it
+  (paragraphs, with the same escaping as the outputs).
+- **One small static script.** `app/static/review.js` is loaded only on
+  this page, follows the `theme.js` pattern, and loads no libraries. It
+  adds no inline script, so the CSP is unchanged.
+- **No bold, bullet or heading toolbar.** The outputs render prose as plain
+  paragraphs and escape Markdown so that "a paragraph or bullet cannot
+  become a heading, list, table or strike-through" (`app/render.py:469`).
+  Formatting buttons would promise what the Word, PowerPoint and PDF
+  outputs drop. Paragraphs (a blank line) are the formatting that
+  survives, and the preview shows them. Rich formatting in the outputs
+  needs its own issue, offered separately.
+
 ### 3. Architecture empty state (`review_detail.html:61-82`, `review.py` `_arch_panel`)
 
 - **When `arch.a` is empty and the reviewer may edit**, the card shows:
@@ -103,6 +130,41 @@ label beside it, and Save to the right.
   `_icons.html`, then the label and detail. Failed items keep their anchor
   links.
 
+### 6. Admin Sources page (`app/templates/sources.html:40-70`; the user's screenshot, 2026-10-14)
+
+Today:
+- The `<details>` summaries styled as buttons show the browser's
+  disclosure marker over the button.
+- Upload and Edit are taller than Crawl now and wrap onto a second line.
+- "Last run" prints a raw timestamp with microseconds.
+- "Re-extract older cases" floats outside the card, misaligned.
+
+The fix:
+- **Summaries.** `summary.btn-sm` (all `details.mini` summaries) gets
+  `list-style: none` and `::-webkit-details-marker{display:none}`, and is
+  sized exactly like `.btn-sm`. "+ Add source" loses its chevron the same
+  way.
+- **Each source row** is one grid:
+
+  | Column | Contents |
+  |---|---|
+  | 1 | icon |
+  | 2 | name, then the kind badge |
+  | 3 | status chips |
+  | 4 | last run |
+  | 5 | counts |
+  | 6 | the actions, never wrapping (`nowrap`) |
+
+  - The last run uses the existing `age` macro ("2 days ago"), with the
+    full time in `title`.
+  - An opened Upload or Edit panel spans the full row width beneath it,
+    not inside the button column.
+- **"Re-extract older cases"** moves into the card header as a secondary
+  action, with its count.
+- **Phones.** Below 900 px the row stacks: name and chips, then run and
+  counts, then the actions.
+- Form names and actions are unchanged.
+
 ## Alternatives rejected
 
 - **Making the field editor read-only text with an Edit toggle.** It needs
@@ -139,9 +201,13 @@ label beside it, and Save to the right.
     before architecture diagrams were added." and a "Generate diagram"
     button posting to `/architecture/regenerate`
   - the completeness detail reads "115 words (minimum 80)"
+- the text forms post the same fields with `review.js` absent; the script
+  is referenced only from the review page
+- the Sources page: `details.mini` summaries hide the disclosure marker
+  (CSS assertion), and the last run renders through `age`
 - the text forms post exactly the same fields with `review.js` absent; the
   script is referenced only from the review page
-- **Screenshots** of demo case 11 (the architecture empty state) and a case
+- **Screenshots** of `/admin/sources`, demo case 11 (the architecture empty state) and a case
   with flags and notes: light and dark, 1280 and 390 px, sent to the user
   before merge.
 - **Reviews:** Opus and Codex, read-only.
