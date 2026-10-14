@@ -372,6 +372,61 @@ class LibraryItemOut(BaseModel):
     note: str = ""
 
 
+class FieldOut(BaseModel):
+    label: str
+    path: str  # what edit_case takes as `field`
+    values: dict[str, str]
+    quote: str
+    state: str  # sourced, unsourced or written
+
+
+class ProseOut(BaseModel):
+    text: str
+    flags: list[str]
+    by_reviewer: bool
+
+
+class CheckOut(BaseModel):
+    key: str
+    label: str
+    ok: bool
+    detail: str
+
+
+class ReviewCaseOut(BaseModel):
+    notice: str = PREFACE
+    id: int
+    status: str
+    basis: str
+    document: str
+    v: str  # edit_case needs it; a 409 means reload
+    fields: list[FieldOut]
+    prose: dict[str, ProseOut]
+    notes: list[str]
+    completeness: list[CheckOut]
+
+
+class QueueRow(BaseModel):
+    id: int
+    title: str
+    status: str
+    notes: int
+    unsourced: int
+    due: str | None = None
+
+
+class QueueOut(BaseModel):
+    notice: str = PREFACE
+    rows: list[QueueRow]
+
+
+class EditOut(BaseModel):
+    notice: str = PREFACE
+    v: str
+    state: str | None = None  # the edited field's state; none once removed
+    flags: list[str] = []  # for a prose edit
+
+
 def _claim(c: dict) -> Claim:
     quote = str(c.get("quote") or "")
     if c.get("type") == "technical_note":
@@ -426,14 +481,18 @@ def require_review(user, claims: dict, conn) -> None:
         raise Refused(403, "this AI client is not approved to handle confidential data; an admin approves it under Model approvals")
 
 
+def review_fields(case) -> list[dict]:
+    from app.review import rows
+    return [dict(label=r["label"], path=r["path"], values={n: str(x) for n, x in r["inputs"]}, quote=r["quote"],
+                 state="written" if r.get("written") or r.get("no_quote") else "unsourced" if r["unsourced"] else "sourced")
+            for r in rows(case) if not r.get("new")]
+
+
 def review_view(case, cid: int, status: str, title: str, v: str) -> dict:
     """The allow-listed reviewer view. Built field by field: no document text, external id, URL, uploader or public source can get in."""
     from app.completeness import checklist
-    from app.review import rows, split_notes
-    fields = [dict(label=r["label"], path=r["path"], values={n: str(x) for n, x in r["inputs"]}, quote=r["quote"],
-                   state="written" if r.get("written") or r.get("no_quote") else "unsourced" if r["unsourced"] else "sourced")
-              for r in rows(case) if not r.get("new")]
-    return dict(id=cid, status=status, basis=case.basis, document=title, v=v, fields=fields,
+    from app.review import split_notes
+    return dict(id=cid, status=status, basis=case.basis, document=title, v=v, fields=review_fields(case),
                 prose={f: dict(text=p.text, flags=p.flags, by_reviewer=p.by_reviewer) for f, p in case.prose.items()},
                 notes=split_notes(case.needs_attention)[0], completeness=checklist(case))
 
@@ -769,6 +828,57 @@ def register(server, origin: str) -> None:
 
 
 # --- signed download links: the token is the only secret in the URL, so it never reaches a log or tool_calls -----
+
+    @server.tool(annotations=READ_ONLY)
+    async def list_review_queue(page: Annotated[int, Field(ge=1, le=1000)] = 1) -> Annotated[CallToolResult, QueueOut]:
+        """Reviewer: the cases waiting for review that you may open, 20 to a page. Needs the refs.review scope."""
+        def work(user):
+            from app import db, review
+            with db.connect() as conn:
+                found = conn.execute(
+                    f"select c.id, c.status, c.data, d.title, c.review_due from cases c left join documents d on d.id = c.document_id "
+                    f"where {review.REVIEWABLE} and {review.QUEUE} order by c.id limit 20 offset %s",
+                    (list(user.groups), 20 * (page - 1))).fetchall()
+            out = QueueOut(rows=[QueueRow(id=i, title=d["title"]["value"] or "", status=st, notes=len(review.split_notes(d.get("needs_attention", []))[0]),
+                                          unsourced=review.count_unsourced(d), due=due.strftime("%Y-%m-%d") if due else None)
+                                 for i, st, d, _, due in found])
+            return out, [r.id for r in out.rows]
+        return await _run(work, "list_review_queue", review=True)
+
+    @server.tool(annotations=READ_ONLY)
+    async def get_review_case(case_id: int) -> Annotated[CallToolResult, ReviewCaseOut]:
+        """Reviewer: one case as extracted, with each field's quote and whether it is sourced, plus the version `v` edit_case needs."""
+        def work(user):
+            from app import db, review
+            with db.connect() as conn:
+                r = conn.execute(f"select c.data, c.status, d.title, md5(c.data::text) from cases c left join documents d on d.id = c.document_id "
+                                 f"where c.id = %s and {review.REVIEWABLE}", (case_id, list(user.groups))).fetchone()
+            if not r:
+                raise HTTPException(404, "no such case")
+            return ReviewCaseOut(**review_view(review.ReferenceCase.model_validate(r[0]), case_id, r[1], r[2] or "", r[3])), [case_id]
+        return await _run(work, "get_review_case", review=True)
+
+    @server.tool(annotations=WRITES)
+    async def edit_case(
+            case_id: int, v: Annotated[str, Field(max_length=64, description="the case version from get_review_case")],
+            field: Annotated[str, Field(max_length=64, description="a field path from get_review_case, or NAME.new to add to a list")],
+            value: Annotated[str | None, Field(max_length=4000)] = None, metric: Annotated[str | None, Field(max_length=500)] = None,
+            start: Annotated[str | None, Field(max_length=50)] = None, end: Annotated[str | None, Field(max_length=50)] = None,
+            quote: Annotated[str | None, Field(max_length=4000, description="the passage in the document that backs the value")] = None,
+            written: bool = False, action: Annotated[str, Field(description="save or remove")] = "save",
+    ) -> Annotated[CallToolResult, EditOut]:
+        """Reviewer: edit one field of a case, as the portal's edit form does. A 409 means the case changed: call get_review_case again. Approving stays in the portal."""
+        def work(user):
+            from app import db, review
+            with db.connect() as conn:
+                new_v = review.apply_edit(conn, user, case_id, v, field, value, metric, start, end, quote, written, action)
+                case, _ = review.load(conn, case_id, user, new_v)
+            name, _, idx = field.partition(".")
+            paths = [f for f in review_fields(case) if f["path"] == field or (idx == "new" and f["path"].startswith(f"{name}."))]
+            p = case.prose.get(idx) if name == "prose" else None
+            return EditOut(v=new_v, state=paths[-1]["state"] if paths and action == "save" else None, flags=p.flags if p else []), [case_id]
+        return await _run(work, "edit_case", review=True)
+
 
 def _signer(salt: str = "mcp-download"):
     from itsdangerous import URLSafeTimedSerializer
