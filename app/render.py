@@ -306,11 +306,12 @@ def _mono(q: dict) -> RichText:
     return rt
 
 
-def _fit(png: bytes, box_w: int, box_h: int) -> tuple[int, int]:
-    """(width, height) in mm of our own re-encoded PNG, scaled down to fit the box; the IHDR size is trusted (the worker wrote it)."""
-    w, h = struct.unpack(">II", png[16:24])
-    k = min(box_w / w, box_h / h)
-    return round(w * k), round(h * k)
+def _fit(png: bytes, box_w: float, box_h: float) -> tuple[float, float]:
+    """(width, height) in mm of our own re-encoded PNG: fitted into the box, never above its natural size at 96 dpi.
+    The IHDR size is trusted (the worker wrote it)."""
+    w, h = (px * 25.4 / 96 for px in struct.unpack(">II", png[16:24]))
+    k = min(box_w / w, box_h / h, 1)
+    return w * k, h * k
 
 
 def to_docx(sections: list[dict], industry: dict | None = None, images: dict[int, bytes] = {}, template=None, logo_box=(25, 25)) -> bytes:
@@ -442,9 +443,9 @@ def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int
             w, h = (Mm(x) for x in _fit(c["logo"], 50, 25))
             slide, logo_left = prs.slides[-1], prs.slide_width - w - Mm(8)
             slide.shapes.add_picture(BytesIO(c["logo"]), logo_left, Mm(6), width=w, height=h)
-            idx = next(i for i, n in case_layout[1].items() if n == "Title")
-            title = next(ph for ph in slide.placeholders if ph.placeholder_format.idx == idx)
-            if title.top < Mm(6) + h and title.left + title.width > logo_left - Mm(4):  # a long title must not run under the logo
+            idx = next((i for i, n in case_layout[1].items() if n == "Title"), None)  # a custom master may not name it so
+            title = next((ph for ph in slide.placeholders if ph.placeholder_format.idx == idx), None)
+            if title is not None and title.top < Mm(6) + h and title.left + title.width > logo_left - Mm(4):  # a long title must not run under the logo
                 left, top, height = title.left, title.top, title.height  # read first: setting one value writes the inherited others
                 title.left, title.top, title.height, title.width = left, top, height, logo_left - Mm(4) - left
         if a := architecture_of(c):
@@ -761,10 +762,9 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
         _, data, name, label, referenceable, linked, public_sources, members, approved, client_id = by_id[i]
         attached += public_sources
         shown = anonymise.shown(name, label, referenceable, linked)
-        masked = not (linked and referenceable) or anonymise.masks(shown, clients)
-        anonymised |= masked
+        anonymised |= not (linked and referenceable) or anonymise.apply(shown, clients) != shown
         sec = section(ReferenceCase.model_validate(data), shown)
-        logos.append((client_id, None if masked else logo_for(conn, client_id)))  # a masked name never gets its logo
+        logos.append((client_id, logo_for(conn, client_id)))  # logo_for withholds a masked name's logo
         if study:  # a role and a date, never a person; goes through protect() with the rest
             n = members or 1
             sec["footer"] = f"Based on {n} source document{'s' if n != 1 else ''} reviewed{f' on {approved:%Y-%m-%d}' if approved else ''}"

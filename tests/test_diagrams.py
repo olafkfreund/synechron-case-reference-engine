@@ -514,6 +514,7 @@ def logo():
     with db.connect() as c:
         for i in ids:
             c.execute("delete from clients where id=%s", (i,))
+            c.execute("delete from client_logo_changes where client_id=%s", (i,))
 
 
 @pytest.mark.parametrize("fmt", ["PNG", "JPEG"])
@@ -536,3 +537,13 @@ def test_logo_bomb_is_refused(logo, monkeypatch):
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1)  # _decode sets it globally; this restores it afterwards
     monkeypatch.setattr(diagrams, "MAX_PIXELS", 1000)
     assert logo(encode("PNG", (200, 100)))[3] == diagrams.TOO_LARGE
+
+
+def test_worker_outcome_is_logged(logo):
+    cid_png = logo(encode("PNG", (200, 100)))
+    assert cid_png[0]
+    with db.connect() as c:
+        assert c.execute("select action, changed_by from client_logo_changes order by id desc limit 1").fetchone() == ("ready", "worker")
+    logo(encode("PNG", (63, 200)))
+    with db.connect() as c:
+        assert c.execute("select action from client_logo_changes order by id desc limit 1").fetchone() == ("rejected: " + diagrams.LOGO_TOO_SMALL,)

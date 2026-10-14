@@ -184,8 +184,8 @@ def test_a_name_protect_rewrites_gets_no_logo(approved, reg):
     assert pictures(gen([cid], "pptx").content) == 0
     assert f"/logos/{client_id}.png" not in prev([cid]).text
     assert f"/logos/{client_id}.png" not in client(R).post("/search", data={"bid_text": "onboarding"}).text
-    with db.connect() as c:  # the display rule alone allows it: only the masked checks keep it out
-        assert clients.logo_for(c, client_id)
+    with db.connect() as c:
+        assert clients.logo_for(c, client_id) is None  # the shared rule withholds it for every surface
         c.execute("delete from client_logos where client_id=%s", (client_id,))
 
 
@@ -199,3 +199,80 @@ def test_a_long_title_stops_before_the_logo_on_the_slide(case_with):
     idx = next(p.placeholder_format.idx for p in slide.slide_layout.placeholders if p.name == "Title")
     title = next(p for p in slide.placeholders if p.placeholder_format.idx == idx)
     assert title.left + title.width <= logo.left
+
+
+def test_masked_names_get_no_logo_on_the_public_route_either(approved, reg):
+    reg("Zorp", "a retailer")
+    _, client_id = reg("Zorp", "a logistics firm", referenceable=True, suffix=" Logistics")
+    with db.connect() as c:
+        c.execute("update clients set logo_allowed=true where id=%s", (client_id,))
+        c.execute("insert into client_logos(client_id,png,width,height) values (%s,%s,200,100)", (client_id, img()))
+        try:
+            assert client_id not in clients.logo_cids(c, [client_id])
+            assert clients.logo_for(c, client_id) is None
+            assert client([USER]).get(f"/logos/{client_id}.png").status_code == 404
+        finally:
+            c.execute("delete from client_logos where client_id=%s", (client_id,))
+
+
+def test_a_name_apply_leaves_but_blocked_finds_gets_no_logo(approved, reg):
+    protected, _ = reg("Zorpale", "a retailer")
+    name, client_id = reg("A\u20ddZorpale", "a bank", referenceable=True)
+    from app import anonymise
+    known = anonymise.load_clients()
+    assert anonymise.apply(name, known) == name and anonymise.blocked(name, known)  # the case Codex found
+    with db.connect() as c:
+        c.execute("update clients set logo_allowed=true where id=%s", (client_id,))
+        c.execute("insert into client_logos(client_id,png,width,height) values (%s,%s,200,100)", (client_id, img()))
+    try:
+        cid = approved(full())
+        link(cid, client_id)
+        assert client([USER]).get(f"/logos/{client_id}.png").status_code == 404
+        assert f"/logos/{client_id}.png" not in client(R).post("/search", data={"bid_text": "onboarding"}).text
+        r = gen([cid], "docx")  # protect() may withhold the whole output (409); if a file is made it has no logo
+        assert r.status_code != 200 or drawings(r.content) == 0
+    finally:
+        with db.connect() as c:
+            c.execute("delete from client_logos where client_id=%s", (client_id,))
+
+
+def test_deleting_a_client_logs_the_logo_removal(cl):
+    cid = cl()
+    with db.connect() as c:
+        v = c.execute(f"select {clients.VERSION} from clients where id=%s", (cid,)).fetchone()[0]
+    assert client([ADMIN]).post(f"/admin/clients/{cid}/delete", data={"v": v}, follow_redirects=False).status_code == 303
+    with db.connect() as c:
+        assert c.execute("select action from client_logo_changes where client_id=%s", (cid,)).fetchall() == [("remove (client deleted)",)]
+
+
+
+def test_cards_preview_and_registry_constrain_both_dimensions(case_with):
+    cid, client_id = case_with(True, True)
+    assert f'<img src="/logos/{client_id}.png" alt="" class="logo-sm">' in client(R).post("/search", data={"bid_text": "onboarding"}).text
+    assert 'class="logo-sm"' in prev([cid]).text
+    assert 'class="logo-md"' in client([ADMIN]).get("/admin/clients").text
+    css = open("app/static/portal.css").read()
+    assert ".logo-sm{max-height:24px;max-width:96px" in css and ".logo-md{max-height:48px;max-width:160px" in css
+
+
+def png_of(w, h):
+    return img("PNG", (w, h))
+
+
+def test_fit_keeps_the_ratio_and_never_upscales():
+    from app import render
+    w, h = render._fit(png_of(1600, 200), 25, 25)  # 8:1
+    assert w == pytest.approx(25) and abs(w / h - 8) < 0.08
+    w, h = render._fit(png_of(64, 64), 40, 40)  # natural size at 96 dpi is 16.9 mm
+    assert (w, h) == pytest.approx((64 * 25.4 / 96,) * 2) and w < 40
+
+
+def test_bid_pack_logo_has_its_own_paragraph_and_no_gap_without_one(case_with):
+    from docx import Document
+    cid, _ = case_with(True, True)
+    paras = Document(BytesIO(gen([cid], "docx").content)).paragraphs
+    i = next(n for n, p in enumerate(paras) if p.style.name == "Heading 1" and p.text.startswith("Faster onboarding"))
+    assert "<w:drawing>" in paras[i - 1]._p.xml and paras[i - 1].alignment == 2 and "w:drawing" not in paras[i]._p.xml
+    cid2, _ = case_with(True, False)
+    paras = Document(BytesIO(gen([cid2], "docx").content)).paragraphs
+    assert paras[0].style.name == "Heading 1" and paras[0].paragraph_format.page_break_before  # no empty paragraph before the title

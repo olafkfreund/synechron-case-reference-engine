@@ -59,6 +59,8 @@ code,.mono{font-family:"IBM Plex Mono",monospace;font-size:13px}
 .site-nav a[aria-current=page]{background:var(--accent);color:var(--on-accent);font-weight:600}
 .site-user{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--header-text)}
 .site-user form{margin:0}
+.logo-sm{max-height:24px;max-width:96px;object-fit:contain;vertical-align:middle}
+.logo-md{max-height:48px;max-width:160px;object-fit:contain}
 .avatar{width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--on-accent);display:inline-flex;align-items:center;justify-content:center;font-weight:600;font-size:12px}
 .site-user .btn{background:none;border:1px solid var(--header-border);color:var(--header-strong);font-size:13px;padding:0 12px}
 .theme-toggle{background:none;border:1px solid var(--header-border);color:var(--header-strong);padding:0 10px;margin-left:auto}

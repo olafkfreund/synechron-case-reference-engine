@@ -103,6 +103,8 @@ def process_logo(client_id: int) -> None:
             w = h = 0
         conn.execute("update client_logos set png=%s, width=%s, height=%s, reason=%s, raw=null where client_id=%s",
                      (png, w, h, reason, client_id))
+        conn.execute("insert into client_logo_changes(client_id, action, changed_by) values (%s,%s,'worker')",
+                     (client_id, "ready" if png else f"rejected: {reason}"))
 
 
 # --- images inside a document (#212). The zip is untrusted: sizes are checked before anything is read,

@@ -154,8 +154,8 @@ def resolve(mention: str | None, clients) -> int | None:
 
 
 def masks(text: str, clients) -> bool:
-    """True when apply() rewrites this client text: the name is hidden, so nothing may identify the client (its logo)."""
-    return apply(text, clients) != text
+    """True when the client text is not safe to show as it is: apply() rewrites it, or blocked() still finds a protected name (fails closed)."""
+    return apply(text, clients) != text or bool(blocked(text, clients))
 
 
 def shown(name: str | None, label: str | None, referenceable: bool | None, linked: bool) -> str:

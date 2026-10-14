@@ -125,7 +125,13 @@ run = d.sections[0].header.paragraphs[0].add_run("DRAFT TEMPLATE – replace wit
 run.bold, run.font.size, run.font.color.rgb = True, Pt(20), RGBColor(0xC0, 0, 0)
 
 d.add_paragraph("{%p for c in cases %}")
-d.add_heading("{{ c.title }}{% if c.logo %}  {{ c.logo }}{% endif %}", 1).paragraph_format.page_break_before = True  # one case per page; the logo sits beside the title
+d.add_paragraph("{%p if c.logo %}")  # its own paragraph above the title, so the heading and Word's TOC stay as they were
+logo = d.add_paragraph("{{ c.logo }}")
+logo.alignment, logo.paragraph_format.page_break_before = WD_ALIGN_PARAGRAPH.RIGHT, True  # one case per page: the break moves up with it
+d.add_heading("{{ c.title }}", 1)
+d.add_paragraph("{%p else %}")
+d.add_heading("{{ c.title }}", 1).paragraph_format.page_break_before = True  # one case per page
+d.add_paragraph("{%p endif %}")
 d.add_paragraph().add_run("{{ c.client }}").italic = True
 d.add_paragraph("{%p if c.note %}")
 d.add_paragraph("{{ c.note }}")
