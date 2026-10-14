@@ -151,3 +151,16 @@ None yet.
   - Amber is a fill only: the primary button, the active nav item, the
     avatar and the claim edge. Text and icons use `--link`.
   - Ghost and link buttons hover in `--text`.
+- **Step 3.**
+  - **Sizes on mouse pointers:**
+    - controls, `details.mini` summaries and nav links: 32 px at 13 px
+      text
+    - `.btn-sm` and the Sources summaries: 28 px
+    - badges: 20 px pills
+
+    Every target stays at least 24 px, which meets WCAG 2.2 AA.
+  - **Touch screens.** `@media (pointer:coarse)` restores 44 px on
+    buttons, summaries, nav links and inputs.
+  - **Changed #259 test.** `test_sources_css_keeps_44px_targets…` now
+    looks for the 44 px rule inside the coarse-pointer block. Its intent,
+    44 px on touch, is kept.

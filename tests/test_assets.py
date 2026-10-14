@@ -21,3 +21,11 @@ def test_every_icon_renders_an_svg():
         out = t.render(n=n)
         assert out.count("<svg") == 1 and 'stroke-width="1.5"' in out, n
         assert re.search(r"<(path|circle|ellipse)", out), n
+
+
+def test_coarse_pointer_keeps_44px_targets():
+    css = (STATIC / "portal.css").read_text()
+    block = css[css.index("@media (pointer:coarse)"):]
+    assert "min-height:44px" in block
+    for sel in (".btn", ".btn-sm", "details.mini>summary", ".site-nav a", "select"):
+        assert sel in block.split("{")[1].split(","), sel
