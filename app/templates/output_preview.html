@@ -6,6 +6,7 @@
 <div class="page-head"><div><h1>Preview</h1></div></div>
 <div class="note">This is the content of the download; the layout comes from the Word and PowerPoint templates.</div>
 {% for c in cases %}
+{% if c.group %}<h2>{{ c.group }}</h2>{% endif %}
 <article class="section-card">
 <h2>{% if c.logo_cid %}<img src="/logos/{{ c.logo_cid }}.png" alt="" class="logo-md"> {% endif %}{{ c.title }} <span class="muted">{{ c.client }}</span></h2>
 {% if c.note %}<div class="note">{{ c.note }}</div>{% endif %}

@@ -33,6 +33,7 @@ CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")  # invalid in XML; also used 
 SLIDE_TEXT = 300  # challenge/solution excerpt on a slide; the Word version has the full text
 SLIDE_OUTCOMES = 5
 ENGAGEMENT_NOTE = "Engagement reference: contracted scope; no outcomes are claimed."
+CAPABILITY_HEADING = "Our capability"
 NOTES = {"engagement": ENGAGEMENT_NOTE, "capability": CAPABILITY_NOTE}
 
 
@@ -512,6 +513,10 @@ _env.filters["link"] = link
 _env.filters["fence"] = fence
 MD = _env.from_string("""\
 {% for c in cases %}
+{% if c.group %}
+# {{ c.group | md }}
+
+{% endif %}
 # {{ c.title | md }}
 
 *{{ c.client | md }}*
@@ -735,6 +740,7 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
     if fmt is not None and fmt not in OUTPUTS:  # after the input checks, as on main
         raise HTTPException(400, f"format must be one of {', '.join(OUTPUTS)}")
     study = bool(fmt) and fmt.startswith("case_study")
+    one_per_case = study or fmt in ("pptx", "pdf_pptx")  # case studies and reference slides: an offering is neither
     if study and len(ids) != 1:
         raise HTTPException(400, "a case study is one case")
     claims, pages = [], []
@@ -756,6 +762,10 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
     by_id = {r[0]: r for r in rows}
     if len(by_id) != len(ids):
         raise HTTPException(404, "no such case")
+    capability = [i for i in ids if by_id[i][1].get("basis") == "capability"]
+    if capability and one_per_case:
+        raise HTTPException(400, "capability documents can't be case studies")
+    ids = [i for i in ids if i not in capability] + capability  # "Our capability" comes after the reference cases
     clients = anonymise.load_clients(conn)
     sections, anonymised, attached, logos = [], False, [], []
     for i in ids:
@@ -775,6 +785,8 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
             except Withheld:
                 sec["architecture"], sec["arch_withheld"] = None, True
         sections.append(sec)
+    if capability:
+        sections[-len(capability)]["group"] = CAPABILITY_HEADING
     try:
         sections = protect(sections, clients)
     except Withheld as e:
@@ -840,7 +852,7 @@ def preview(request: Request, case_ids: list[int] = Form([]), research_id: int |
                 raise
             return friendly(request, user, e.status_code, e.detail, "/search")
         footer, retitled = "", False  # what a case-study download adds; the same code path as /generate, so the text cannot drift
-        if len(ids) == 1:
+        if len(ids) == 1 and sections[0]["basis"] != "capability":
             _, study, study_industry, _, _, _ = build(conn, case_ids, research_id, industry_context_ack, user, "case_study_docx", library_ids)
             footer, retitled = study[0]["footer"], bool(study_industry) and study_industry["heading"] != (industry or {}).get("heading")
     for c in sections:  # a structure protect() could not keep intact is left out, and the page says so

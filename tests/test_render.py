@@ -922,3 +922,31 @@ def test_section_of_a_capability_case_has_the_note_and_no_results_or_lessons(): 
     s = render.section(case, "a client")
     assert s["note"] == render.CAPABILITY_NOTE
     assert "Outcomes" not in [x["heading"] for x in s["lists"]] and "Lessons learned" not in [b["heading"] for b in s["blocks"]]
+
+
+def capability():
+    return full().model_copy(update={"basis": "capability"})
+
+
+def test_capability_goes_in_its_own_section_after_the_cases(approved):  # #213
+    cap, dlv = approved(capability()), approved(full())
+    note = render.CAPABILITY_NOTE
+    t = doc_text(gen([cap, dlv], "docx").content)
+    assert t.count("Our capability") == 1 and t.count(note) == 1
+    assert t.index("Our capability") > t.rindex("Outcomes") and "Outcomes" in t  # the delivered case keeps its results, before the heading
+    assert t.index(note) > t.index("Our capability")
+    m = gen([cap, dlv], "md").text
+    assert m.count("# Our capability") == 1 and m.count(note) == 1 and m.index("Our capability") > m.index("Outcomes")
+    assert "Our capability" not in gen([dlv], "md").text
+    only = gen([cap], "md").text
+    assert "Our capability" in only and "Outcomes" not in only and "12 to 3" not in only
+    p = prev([cap, dlv]).text
+    assert "Our capability" in p and note in p
+    assert "Our capability" in prev([cap]).text  # a lone capability previews: no case-study build for it
+
+
+@pytest.mark.parametrize("fmt", ["case_study_docx", "case_study_pdf", "pptx", "pdf_pptx"])
+def test_capability_refuses_case_study_and_slide_formats(approved, fmt):
+    r = gen([approved(capability())], fmt)
+    assert r.status_code == 400 and r.json()["detail"] == "capability documents can't be case studies"
+    assert gen([approved(full())], "md").status_code == 200

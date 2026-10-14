@@ -140,3 +140,14 @@ exist, which would stop the app starting. This goes in the PR.
     lands in a URL.
   - **Preview.** It shows the note through `section()` with no template
     change.
+- **Step 4.**
+  - **Ordering.** Capability cases are sorted after the delivered ones by
+    reordering `ids`, which keeps the diagram pairing in `produce`
+    aligned.
+  - **Heading.** The "Our capability" group heading comes from
+    `scripts/make_reference_template.py`, and `brand/reference.docx` was
+    regenerated from it (no hand edit). `brief.docx` and `case_study.docx`
+    are unchanged.
+  - **Merge note.** #231 phase (c) also edits that script (the brief image
+    section). Whichever merges second regenerates both templates from the
+    merged script.
