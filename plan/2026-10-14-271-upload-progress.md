@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 271
 spec: spec/2026-10-14-271-upload-progress.md
 ---
