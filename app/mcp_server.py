@@ -536,7 +536,8 @@ async def _run(work, name: str, daily: int = 0, review: bool = False):
         except Refused as e:
             return "denied", e.detail, []
         except HTTPException as e:
-            return OUTCOMES.get(e.status_code, "error"), str(e.detail), []
+            detail = str(e.detail).replace("reload the page", "fetch it again with get_review_case and retry with the new v") if review else str(e.detail)
+            return OUTCOMES.get(e.status_code, "error"), detail, []
         except Exception as e:  # noqa: BLE001 - the client gets no detail; the type is enough to find it in the log
             log.error("tool %s failed: %s", name, type(e).__name__)
             return "error", "the tool failed", []

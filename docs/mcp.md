@@ -151,8 +151,23 @@ A 409 means the case changed since you read it (someone else edited it, or it wa
 `get_review_case` again for the new `v`, check the field, and retry the edit. Editing an approved case that
 is due soon takes it back to *extracted*, as in the portal.
 
-Locally: `scripts/mcp_token.sh --review alice refs-reviewers` asks the mock IdP for the `local-dev-review`
-client with both scopes; `scripts/seed_demo.py` approves that client for 30 days.
+Locally: `scripts/mcp_token.sh --review <user> <group>` asks the mock IdP for the `local-dev-review` client
+with both scopes, and `scripts/seed_demo.py` approves that client for 30 days. A reviewer only sees cases whose
+documents are open to one of their groups, and the mock puts one group in a token. The demo documents are in
+the groups `delivery` and `sales`, so give that group the reviewer role for the test:
+
+```sh
+cat > /tmp/reviewer.yml <<'EOF'
+services:
+  web:
+    environment:
+      ROLE_USER_GROUPS: delivery
+      ROLE_REVIEWER_GROUPS: delivery
+EOF
+MCP_ENABLED=1 docker compose -f docker-compose.yml -f /tmp/reviewer.yml up -d --build web
+docker compose run --rm worker python scripts/seed_demo.py     # the cases and the client's approval
+scripts/mcp_token.sh --review alice delivery                   # then call the three tools with this token
+```
 
 ## Revoking access
 

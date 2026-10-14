@@ -185,7 +185,7 @@ def test_edits(rev, make):  # noqa: F811
     # a stale version is a 409, and the case is untouched
     before = ver(cid)
     res = r.call("edit_case", case_id=cid, v="stale", field="summary", value="X.")
-    assert res["isError"] and "changed" in res["content"][0]["text"] and ver(cid) == before
+    assert res["isError"] and res["content"][0]["text"] == "case changed; fetch it again with get_review_case and retry with the new v" and ver(cid) == before
     # a case this reviewer cannot see is a 404
     hidden = make(acl=("g-elsewhere",))
     res = r.call("get_review_case", case_id=hidden)
