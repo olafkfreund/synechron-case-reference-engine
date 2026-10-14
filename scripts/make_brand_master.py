@@ -78,7 +78,7 @@ def keyline(id_, x, y):
 def placeholder(i, spec):
     pname, x, y, w, h, size, bold, colour, bullets = spec
     ph = '<p:ph type="title"/>' if pname == "Title" else f'<p:ph type="body" sz="quarter" idx="{20 + i}"/>'
-    marks = "" if bullets else "<a:buNone/>"
+    marks = '<a:buFont typeface="Aptos"/><a:buChar char="•"/>' if bullets else "<a:buNone/>"  # the master's bullet font is Arial
     indent = 'marL="228600" indent="-228600"' if bullets else 'marL="0" indent="0"'
     lvl1 = f'<a:lvl1pPr {indent} algn="l">{marks}<a:defRPr {rpr(size, bold, colour)}</a:defRPr></a:lvl1pPr>'
     return shape(100 + i, pname, x, y, w, h, ph, lvl1, f'<a:p><a:r><a:rPr lang="en-US"/><a:t>{pname}</a:t></a:r></a:p>')
