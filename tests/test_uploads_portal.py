@@ -115,15 +115,15 @@ def test_page_shows_labels_and_loads_the_script_only_while_pending(staff):
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="needs node")
-def test_upload_js_does_not_reload_while_a_file_is_chosen(tmp_path):
+@pytest.mark.parametrize("files,active,reloads", [([], None, 1), ([{}], None, 0), ([], "button", 0), ([], "body", 1)])
+def test_upload_js_reloads_without_the_query_unless_busy(files, active, reloads):
     js = Path(__file__).parent.parent / "app/static/upload.js"
-    stub = (f"var files=[], n=0, tick;"
-            "global.document={getElementById:function(){return {files:files}}};"
-            "global.location={reload:function(){n++}};"
-            "global.setInterval=function(f,ms){tick=f; if(ms!==15000) throw 1};"
-            f"require({str(js)!r});"
-            "tick(); if(n!==1) throw new Error('should reload with no file');"
-            "files.push({}); tick(); if(n!==1) throw new Error('reloaded with a file chosen');")
+    stub = f"""var body = {{}}, tick, urls = [], files = {files!r}, active = {active!r};
+global.document = {{body: body, activeElement: active === 'button' ? {{}} : body, getElementById: function () {{ return {{files: files}}; }}}};
+global.location = {{pathname: '/upload', replace: function (u) {{ urls.push(u); }}}};
+global.setInterval = function (f, ms) {{ tick = f; if (ms !== 15000) throw 1; }};
+require({str(js)!r}); tick();
+if (urls.length !== {reloads} || (urls.length && urls[0] !== '/upload')) throw new Error('got ' + urls);"""
     subprocess.run(["node", "-e", stub], check=True)
 
 
@@ -140,8 +140,15 @@ def test_review_queue_counts_processing_documents_it_can_see(make, staff):  # no
         c.execute("update sources set acl_groups=%s where id=%s", ([DOCS], staff))
         j = c.execute("insert into jobs(kind, status) values ('ingest_upload','queued') returning id").fetchone()[0]
         c.execute("insert into uploads(user_key, user_name, source_id, s3_key, bytes, job_id) values ('x-1','Secret Name',%s,'up/k/Secret.docx',1,%s)", (staff, j))
+        j3 = c.execute("insert into jobs(kind, status) values ('ingest_upload','running') returning id").fetchone()[0]
+        c.execute("insert into uploads(user_key, source_id, s3_key, bytes, job_id) values ('x-3',%s,'up/k3/c.docx',1,%s)", (staff, j3))
+        # an upload whose document already has a queued extract is counted once, as that document
+        j2 = c.execute("insert into jobs(kind, status) values ('ingest_upload','running') returning id").fetchone()[0]
+        c.execute("insert into uploads(user_key, source_id, s3_key, bytes, job_id) values ('x-2',%s,'up/k2/b.docx',1,%s)", (staff, j2))
+        d2 = c.execute("insert into documents(source_id, external_id, checksum, acl_groups) values (%s,'up/k2/b.docx','x',%s) returning id", (staff, [DOCS])).fetchone()[0]
+        c.execute("insert into jobs(kind, status, payload) values ('extract','queued', jsonb_build_object('document_id', %s::bigint))", (d2,))
     page = rev.get("/review").text
-    assert "2 documents are still being processed and will appear here when ready." in page  # one extract + one upload; the other ACL is not counted
+    assert "4 documents are still being processed and will appear here when ready." in page  # one extract + two uploads + the handed-off one, once; the other ACL is not counted
     assert "Secret" not in page and "Source doc" not in page.split("still being processed")[0].split("</h1>")[-1]
     with db.connect() as c:
         c.execute("delete from jobs where kind in ('extract','ingest_upload')")

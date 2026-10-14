@@ -109,6 +109,7 @@ create table if not exists jobs (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table jobs add column if not exists started_at timestamptz;  -- first claim; the upload page's estimate excludes the queue wait
 create index if not exists jobs_queued_idx on jobs (id) where status = 'queued';
 
 create table if not exists research (

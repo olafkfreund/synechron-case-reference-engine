@@ -187,7 +187,9 @@ def review_list(request: Request, user: User = Depends(require("reviewer"))):
             "select (select count(distinct d.id) from jobs j join documents d on d.id = (j.payload->>'document_id')::bigint "
             "where j.kind = 'extract' and j.status in ('queued','running') and d.deleted_at is null and d.acl_groups && %s::text[]) "
             "+ (select count(*) from uploads u join jobs j on j.id = u.job_id join sources s on s.id = u.source_id "
-            "where j.kind = 'ingest_upload' and j.status in ('queued','running') and s.acl_groups && %s::text[])",
+            "where j.kind = 'ingest_upload' and j.status in ('queued','running') and s.acl_groups && %s::text[] "
+            "and not exists (select 1 from documents d join jobs x on x.kind = 'extract' and x.status in ('queued','running') "
+            "and (x.payload->>'document_id')::bigint = d.id where d.source_id = u.source_id and d.external_id = u.s3_key))",
             (list(user.groups), list(user.groups))).fetchone()[0]
     cases = [dict(id=i, status=s, title=d["title"]["value"], document=t,
                   attention=len(split_notes(d.get("needs_attention", []))[0]), unsourced=count_unsourced(d), members=n)

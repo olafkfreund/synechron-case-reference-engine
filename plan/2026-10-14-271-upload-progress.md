@@ -111,3 +111,18 @@ None yet.
   the MCP tests cover the queued and reading details. The pending-only
   script check was negative-controlled. Full suite: 1501 passed, 1
   skipped (the node stub test, run on the host).
+- **Review fixes** (Opus, Codex and agy; full suite 1503 passed, 4
+  skipped as node stubs run on the host):
+  - **Stage order.** `doc is None` is checked first, so a vanished
+    ingest job can't hide an existing document.
+  - **Estimate.** `jobs.started_at` is set by the worker claim with
+    `coalesce`, so retries keep the first start. The estimate uses
+    `updated_at - started_at`.
+  - **One query.** Queue positions come from a single sorted list with
+    `bisect`, and that and the estimate are cached per render.
+  - **No double count.** An upload is not counted twice in the review
+    queue during the handoff to extraction.
+  - **Reload.** It goes to `location.pathname`, so an old notice doesn't
+    repeat, and it is skipped while focus is in a control.
+  - **Wording.** A failed extraction reads "Upload it again or ask an
+    admin." A stale reading job reads "This is taking longer than usual."

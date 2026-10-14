@@ -288,9 +288,11 @@ def test_stages_position_and_estimate(staff):
             c.execute("delete from jobs where kind='extract' and status='done'")  # a clean history for the estimate
         assert st() == ("writing", "Writing the case", "The model is drafting the case: usually a few minutes.")  # < 5 finished
         with db.connect() as c:
-            for i in range(20):  # 2 and 6 minutes, alternating: the quartiles are 2 and 6
-                c.execute("insert into jobs(kind, status, created_at, updated_at) values ('extract','done', now(), now() + %s * interval '1 minute')",
+            for i in range(20):  # run 2 and 6 minutes, alternating, after a 30-minute wait in the queue: the quartiles are 2 and 6
+                c.execute("insert into jobs(kind, status, created_at, started_at, updated_at) values ('extract','done', "
+                          "now() - interval '40 minutes', now() - interval '10 minutes', now() - interval '10 minutes' + %s * interval '1 minute')",
                           (2 if i % 2 else 6,))
+            c.execute("insert into jobs(kind, status, created_at, updated_at) values ('extract','done', now() - interval '90 minutes', now())")  # no start: ignored
         assert st()[2] == "The model is drafting the case: about 2\u20136 minutes."
         with db.connect() as c:
             c.execute("update jobs set status='queued' where id=%s", (ext,))
@@ -298,3 +300,43 @@ def test_stages_position_and_estimate(staff):
     finally:
         with db.connect() as c:
             c.execute("delete from jobs where kind in ('x','extract')")
+
+
+def test_reading_goes_stale_and_a_vanished_job_does_not_hide_the_document(staff):
+    sid, who = staff
+    uid = accept(who)
+    with db.connect() as c:
+        key, job = c.execute("select s3_key, job_id from uploads where id=%s", (uid,)).fetchone()
+        c.execute("update jobs set status='running', started_at=now() where id=%s", (job,))
+
+    def st():
+        with db.connect() as c:
+            return ing.upload_status(c, who, uid)
+    assert st()[2] == "Converting the file. Usually under a minute."
+    with db.connect() as c:
+        c.execute("update jobs set started_at=now() - interval '10 minutes' where id=%s", (job,))
+    assert st()[2] == "Converting the file. This is taking longer than usual."
+    with db.connect() as c:  # the document exists but the ingest job row is gone: the case decides
+        doc = c.execute("insert into documents(source_id, external_id, checksum) values (%s,%s,'x') returning id", (sid, key)).fetchone()[0]
+        c.execute("insert into cases(document_id, status) values (%s,'extracted')", (doc,))
+        c.execute("delete from jobs where id=%s", (job,))
+    assert st()[0] == "in_review"
+
+
+def test_started_at_is_set_on_the_first_claim_only(staff):
+    from app import worker
+    accept(staff[1])
+    with db.connect() as c:
+        c.execute("update jobs set status='done' where status in ('queued','running')")
+        j = c.execute("insert into jobs(kind) values ('x') returning id").fetchone()[0]
+    with db.connect() as c:  # separate transactions: now() is fixed inside one
+        assert worker.claim(c)[0] == j
+    with db.connect() as c:
+        first = c.execute("select started_at from jobs where id=%s", (j,)).fetchone()[0]
+        assert first is not None
+        c.execute("update jobs set status='queued' where id=%s", (j,))
+    with db.connect() as c:
+        assert worker.claim(c)[0] == j
+    with db.connect() as c:
+        assert c.execute("select started_at from jobs where id=%s", (j,)).fetchone()[0] == first
+        c.execute("delete from jobs where id=%s", (j,))

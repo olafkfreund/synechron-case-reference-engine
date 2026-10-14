@@ -1,6 +1,7 @@
 import hashlib
 import os
 import uuid
+from bisect import bisect_left
 from functools import lru_cache
 from io import BytesIO
 from pathlib import PurePosixPath
@@ -141,7 +142,7 @@ def accept_upload(conn, user, name: str | None, data: bytes) -> int:
         raise
 
 
-STATUS_COLS = ("j.id, j.status, d.id, coalesce(p.status, c.status), x.id, x.status")  # a merged case reads its parent
+STATUS_COLS = ("j.id, j.status, d.id, coalesce(p.status, c.status), x.id, x.status, extract(epoch from now() - j.started_at)")  # a merged case reads its parent
 STATUS_FROM = ("from uploads u left join jobs j on j.id = u.job_id "
                "left join documents d on d.source_id = u.source_id and d.external_id = u.s3_key "
                "left join cases c on c.document_id = d.id left join cases p on p.id = c.merged_into "
@@ -150,7 +151,6 @@ STATUS_FROM = ("from uploads u left join jobs j on j.id = u.job_id "
 
 FAILED = ("failed", "Couldn't process", "The file could not be read or converted. Try again, or ask an admin.")
 STAGES = {
-    "reading": ("Reading the document", "Converting the file. Usually under a minute."),
     "in_review": ("In review", "A reviewer will check it before it appears in search."),
     "approved": ("Approved", "Visible to staff in search."),
     "rejected": ("Not used", "A reviewer decided not to use it."),
@@ -158,38 +158,45 @@ STAGES = {
 }
 
 
-def queue_ahead(conn, job_id: int) -> int:
-    """Queued jobs the worker takes first (it works in id order); a count, never names."""
-    return conn.execute("select count(*) from jobs where status='queued' and id < %s", (job_id,)).fetchone()[0]
+def queue_ahead(conn, job_id: int, cache: dict) -> int:
+    """Queued jobs the worker takes first (it works in id order); a count, never names. One query per render."""
+    if "queued" not in cache:
+        cache["queued"] = [r[0] for r in conn.execute("select id from jobs where status='queued' order by id")]
+    return bisect_left(cache["queued"], job_id)
 
 
-def extract_estimate(conn) -> str:
-    """'about A-B minutes' from the 25th/75th percentile of the last 20 finished extractions."""
-    n, q = conn.execute("select count(*), percentile_cont(array[0.25, 0.75]) within group (order by s) from "
-                        "(select extract(epoch from updated_at - created_at) s from jobs "
-                        "where kind='extract' and status='done' order by id desc limit 20) t").fetchone()
-    if n < 5:
-        return "usually a few minutes"
-    lo, hi = (max(1, round(v / 60)) for v in q)
-    return f"about {lo}\u2013{hi} minutes" if hi > lo else f"about {lo} minutes"
+def extract_estimate(conn, cache: dict) -> str:
+    """'about A-B minutes' from the 25th/75th percentile of the last 20 finished extractions' run time (not their wait)."""
+    if "estimate" not in cache:
+        n, q = conn.execute("select count(*), percentile_cont(array[0.25, 0.75]) within group (order by s) from "
+                            "(select extract(epoch from updated_at - started_at) s from jobs "
+                            "where kind='extract' and status='done' and started_at is not null order by id desc limit 20) t").fetchone()
+        if n < 5:
+            cache["estimate"] = "usually a few minutes"
+        else:
+            lo, hi = (max(1, round(v / 60)) for v in q)
+            cache["estimate"] = f"about {lo}\u2013{hi} minutes" if hi > lo else f"about {lo} minutes"
+    return cache["estimate"]
 
 
-def stage(conn, job_id, job, doc, case, ext_id, extract, estimate=None) -> tuple[str, str, str]:
-    """(code, label, detail) from the upload's jobs, document and case; estimate is cached by the caller."""
+def stage(conn, job_id, job, doc, case, ext_id, extract, age=None, cache=None) -> tuple[str, str, str]:
+    """(code, label, detail) from the upload's jobs, document and case; cache holds the queue and estimate for one render."""
+    cache = {} if cache is None else cache
+
     def wait(i):
-        return "queued", "Waiting", f"Waiting in line: {queue_ahead(conn, i)} ahead of yours."
-    if job == "failed" or (job == "done" and doc is None):
-        return FAILED
-    if job in ("queued", None):  # None: the job row was deleted
-        return wait(job_id or 0)
-    if doc is None:  # running
-        return ("reading", *STAGES["reading"])
+        return "queued", "Waiting", f"Waiting in line: {queue_ahead(conn, i, cache)} ahead of yours."
+    if doc is None:  # the document decides first: a vanished job row must not hide it
+        if job == "failed" or job == "done":
+            return FAILED
+        if job == "running":
+            return "reading", "Reading the document", "Converting the file." + (" Usually under a minute." if (age or 0) < 300 else " This is taking longer than usual.")
+        return wait(job_id or 0)  # queued, or the job row was deleted
     if case is None and extract == "queued":  # triage has not decided yet: not "not a case" yet
         return wait(ext_id)
     if case is None and extract == "running":
-        return "writing", "Writing the case", f"The model is drafting the case: {estimate or extract_estimate(conn)}."
+        return "writing", "Writing the case", f"The model is drafting the case: {extract_estimate(conn, cache)}."
     if case is None and extract == "failed":
-        return "failed", "Couldn't process", "Writing the case failed. A reviewer can retry it."
+        return "failed", "Couldn't process", "Writing the case failed. Upload it again or ask an admin."
     code = {"extracted": "in_review", "approved": "approved", "rejected": "rejected"}.get(case, "indexed")
     return code, *STAGES[code]
 
@@ -206,10 +213,8 @@ def my_uploads(conn, user, limit: int = 50) -> list[tuple[int, str, object, tupl
     """(id, file name, when, (code, label, detail)) of the user's newest uploads."""
     rows = conn.execute(f"select u.id, u.s3_key, u.created_at, {STATUS_COLS} {STATUS_FROM} "
                         "where u.user_key=%s order by u.id desc limit %s", (user.sub, limit)).fetchall()
-    est = None
-    if any(r[8] == "running" and r[6] is None for r in rows):  # one estimate query per render, only if a row needs it
-        est = extract_estimate(conn)
-    return [(r[0], r[1].rsplit("/", 1)[-1], r[2], stage(conn, *r[3:], estimate=est)) for r in rows]
+    cache = {}  # the queue and the estimate are read at most once per render
+    return [(r[0], r[1].rsplit("/", 1)[-1], r[2], stage(conn, *r[3:], cache=cache)) for r in rows]
 
 
 def reopen_merged(conn, doc_ids: list[int]) -> None:
