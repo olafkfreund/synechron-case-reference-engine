@@ -198,3 +198,18 @@ def test_at_the_cap_the_weakest_components_are_dropped_first(monkeypatch):
 
 def test_the_prompt_asks_for_quote_words_and_few_components():
     assert "copied exactly" in wu.ARCH_SYSTEM and "6 to 8" in wu.ARCH_SYSTEM and "Fewer, sourced" in wu.ARCH_SYSTEM
+
+
+def test_an_engagement_proposal_has_no_callouts_and_a_delivered_one_keeps_them(monkeypatch):
+    from app.schema import Outcome
+    reply = wu.ArchProposal(components=[wu.ArchItem(name="Kafka event bus", zone="integration", kind="queue", cite="solution 1")],
+                            callouts=[wu.ArchNote(text="Ledger in 7 weeks", outcome=1)])
+    seen = arch_stub(monkeypatch, reply)
+    out = Outcome(metric="ledger", value="7 weeks", source_quote=QA)
+    d, e = arch_case(), arch_case()
+    d.outcomes, e.outcomes, e.basis = [out], [out], "engagement"
+    wu.propose(d, "internal")
+    wu.propose(e, "internal")
+    assert len(d.architecture.callouts) == 1 and "outcome 1:" in seen[0][1]
+    assert e.architecture.callouts == [] and "outcome 1:" not in seen[1][1]
+    assert not any(f.startswith("callout") for f in e.architecture.flags)

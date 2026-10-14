@@ -403,3 +403,6 @@ code ignores it. The demo can be re-seeded.
   - `_build_arch` keeps the strongest components and cited flows before the
     caps.
   - The eval prints `flag_kinds` counts, never flag text.
+- Second real eval (after the prompt changes): 6 components, 6 flows, 14 and
+  7 flags. Every callout flag came from engagement cases, so engagement
+  proposals now get no callouts (message, prompt and build).
