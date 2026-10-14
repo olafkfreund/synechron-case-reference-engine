@@ -97,3 +97,36 @@ Revert the commit to get the old prompt back. No data or schema changes.
 The old prompt dropped Snowflake, Amazon S3 and Unity Catalog every time,
 for example "data lineage automatic capture data catalog". The new prompt
 leaks no more clients.
+
+**Step 3, before the deviation below.** All 10 questions were re-run
+through the demo. The Snowflake and S3 claims are now about Snowflake
+replication and S3 Object Lock. All 130 quotes are on their stored and live
+pages. S/4HANA still returns 0 pages, because SAP's sites disallow crawlers
+in robots.txt.
+
+## Deviations
+
+- **A tighter prompt (Opus and agy review).** Both found that the 5 probes
+  only tested role-cued clients. Eight harder fictional probes were added:
+  - no role cue
+  - the client's own product
+  - lower case
+  - two organisations
+  - an incumbent partner
+  - a client that is a SaaS company
+  - a project name
+  - a possessive with no cue
+
+  Measured, 3 runs each, 13 probes:
+
+  | Prompt | Vendor kept | Probe vendor kept | Client leaked |
+  |---|---|---|---|
+  | approved spec text | 30/30 | 39/39 | 3/39 ("payhub apache kafka…" every time) |
+  | tighter (adopted) | 30/30 | 39/39 | **0/39** |
+
+  The tighter prompt keeps a vendor or product name only when the question
+  asks about that vendor's technology. It removes every other organisation:
+  clients, customers, prospects, partners and incumbents, plus person,
+  project, programme and deal names. The genuine old prompt was not re-run
+  on the hard probes: the script's "old" read the branch prompt, because the
+  demo ran this branch. Its step 1 numbers stand.
