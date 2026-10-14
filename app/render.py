@@ -761,7 +761,7 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
         _, data, name, label, referenceable, linked, public_sources, members, approved, client_id = by_id[i]
         attached += public_sources
         shown = anonymise.shown(name, label, referenceable, linked)
-        masked = not (linked and referenceable) or anonymise.apply(shown, clients) != shown
+        masked = not (linked and referenceable) or anonymise.masks(shown, clients)
         anonymised |= masked
         sec = section(ReferenceCase.model_validate(data), shown)
         logos.append((client_id, None if masked else logo_for(conn, client_id)))  # a masked name never gets its logo

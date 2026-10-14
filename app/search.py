@@ -151,7 +151,7 @@ def pick(bid_text: str, candidates: list[dict], clients) -> tuple[list[dict], li
 
 def view(c, clients, **extra):
     case = c["case"]
-    return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label=clean(c["label"], clients, "a client"), basis=c["basis"], score=score(checklist(case)), logo=c.get("logo"), **extra)
+    return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label=clean(c["label"], clients, "a client"), basis=c["basis"], score=score(checklist(case)), logo=None if anonymise.masks(c["label"], clients) else c.get("logo"), **extra)
 
 
 def source_docs(case_ids: list[int], user: User, clients) -> dict[int, list[dict]]:

@@ -183,7 +183,8 @@ def test_a_name_protect_rewrites_gets_no_logo(approved, reg):
         assert drawings(gen([cid], fmt).content) == 0
     assert pictures(gen([cid], "pptx").content) == 0
     assert f"/logos/{client_id}.png" not in prev([cid]).text
-    with db.connect() as c:  # the card rule alone allows it: only the masked check in build() keeps it out of outputs
+    assert f"/logos/{client_id}.png" not in client(R).post("/search", data={"bid_text": "onboarding"}).text
+    with db.connect() as c:  # the display rule alone allows it: only the masked checks keep it out
         assert clients.logo_for(c, client_id)
         c.execute("delete from client_logos where client_id=%s", (client_id,))
 
