@@ -92,3 +92,8 @@ Revert the merge commit. Nothing is stored; the stages are computed.
 ## Deviations
 
 None yet.
+- **Step 1.**
+  - **MCP code first.** The `UploadStatusOut.detail` field and the new
+    codes landed here, not in step 4, because the tools call
+    `upload_status`. Step 4 keeps the docs and the MCP tests.
+  - **Deleted job row.** It reads "Waiting, 0 ahead".

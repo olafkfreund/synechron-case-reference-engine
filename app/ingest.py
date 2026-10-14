@@ -141,38 +141,75 @@ def accept_upload(conn, user, name: str | None, data: bytes) -> int:
         raise
 
 
-STATUS_COLS = ("j.status, d.id, coalesce(p.status, c.status), (select x.status from jobs x where x.kind='extract' "  # a merged case reads its parent
-               "and (x.payload->>'document_id')::bigint = d.id order by x.id desc limit 1)")
+STATUS_COLS = ("j.id, j.status, d.id, coalesce(p.status, c.status), x.id, x.status")  # a merged case reads its parent
 STATUS_FROM = ("from uploads u left join jobs j on j.id = u.job_id "
                "left join documents d on d.source_id = u.source_id and d.external_id = u.s3_key "
-               "left join cases c on c.document_id = d.id left join cases p on p.id = c.merged_into")
+               "left join cases c on c.document_id = d.id left join cases p on p.id = c.merged_into "
+               "left join lateral (select id, status from jobs where kind='extract' "
+               "and (payload->>'document_id')::bigint = d.id order by id desc limit 1) x on true")
+
+FAILED = ("failed", "Couldn't process", "The file could not be read or converted. Try again, or ask an admin.")
+STAGES = {
+    "reading": ("Reading the document", "Converting the file. Usually under a minute."),
+    "in_review": ("In review", "A reviewer will check it before it appears in search."),
+    "approved": ("Approved", "Visible to staff in search."),
+    "rejected": ("Not used", "A reviewer decided not to use it."),
+    "indexed": ("Stored, not a case study", "Stored, but it doesn't describe a delivered project."),
+}
 
 
-def status_code(job, doc, case, extract) -> str:
+def queue_ahead(conn, job_id: int) -> int:
+    """Queued jobs the worker takes first (it works in id order); a count, never names."""
+    return conn.execute("select count(*) from jobs where status='queued' and id < %s", (job_id,)).fetchone()[0]
+
+
+def extract_estimate(conn) -> str:
+    """'about A-B minutes' from the 25th/75th percentile of the last 20 finished extractions."""
+    n, q = conn.execute("select count(*), percentile_cont(array[0.25, 0.75]) within group (order by s) from "
+                        "(select extract(epoch from updated_at - created_at) s from jobs "
+                        "where kind='extract' and status='done' order by id desc limit 20) t").fetchone()
+    if n < 5:
+        return "usually a few minutes"
+    lo, hi = (max(1, round(v / 60)) for v in q)
+    return f"about {lo}\u2013{hi} minutes" if hi > lo else f"about {lo} minutes"
+
+
+def stage(conn, job_id, job, doc, case, ext_id, extract, estimate=None) -> tuple[str, str, str]:
+    """(code, label, detail) from the upload's jobs, document and case; estimate is cached by the caller."""
+    def wait(i):
+        return "queued", "Waiting", f"Waiting in line: {queue_ahead(conn, i)} ahead of yours."
     if job == "failed" or (job == "done" and doc is None):
-        return "failed"
-    if doc is None:
-        return "queued"
-    if case is None and extract in ("queued", "running"):  # triage has not decided yet: not "not a case" yet
-        return "queued"
+        return FAILED
+    if job in ("queued", None):  # None: the job row was deleted
+        return wait(job_id or 0)
+    if doc is None:  # running
+        return ("reading", *STAGES["reading"])
+    if case is None and extract == "queued":  # triage has not decided yet: not "not a case" yet
+        return wait(ext_id)
+    if case is None and extract == "running":
+        return "writing", "Writing the case", f"The model is drafting the case: {estimate or extract_estimate(conn)}."
     if case is None and extract == "failed":
-        return "failed"
-    return {"extracted": "in_review", "approved": "approved", "rejected": "rejected"}.get(case, "indexed")
+        return "failed", "Couldn't process", "Writing the case failed. A reviewer can retry it."
+    code = {"extracted": "in_review", "approved": "approved", "rejected": "rejected"}.get(case, "indexed")
+    return code, *STAGES[code]
 
 
-def upload_status(conn, user, upload_id: int) -> str:
-    """queued | failed | indexed | in_review | approved | rejected; owner only, nothing but the code."""
+def upload_status(conn, user, upload_id: int) -> tuple[str, str, str]:
+    """(code, label, detail): code is queued | reading | writing | failed | indexed | in_review | approved | rejected; owner only."""
     row = conn.execute(f"select {STATUS_COLS} {STATUS_FROM} where u.id=%s and u.user_key=%s", (upload_id, user.sub)).fetchone()
     if not row:
         raise HTTPException(404, "no such upload")
-    return status_code(*row)
+    return stage(conn, *row)
 
 
-def my_uploads(conn, user, limit: int = 50) -> list[tuple[int, str, object, str]]:
-    """(id, file name, when, status) of the user's newest uploads, one query."""
+def my_uploads(conn, user, limit: int = 50) -> list[tuple[int, str, object, tuple[str, str, str]]]:
+    """(id, file name, when, (code, label, detail)) of the user's newest uploads."""
     rows = conn.execute(f"select u.id, u.s3_key, u.created_at, {STATUS_COLS} {STATUS_FROM} "
                         "where u.user_key=%s order by u.id desc limit %s", (user.sub, limit)).fetchall()
-    return [(r[0], r[1].rsplit("/", 1)[-1], r[2], status_code(*r[3:])) for r in rows]
+    est = None
+    if any(r[8] == "running" and r[6] is None for r in rows):  # one estimate query per render, only if a row needs it
+        est = extract_estimate(conn)
+    return [(r[0], r[1].rsplit("/", 1)[-1], r[2], stage(conn, *r[3:], estimate=est)) for r in rows]
 
 
 def reopen_merged(conn, doc_ids: list[int]) -> None:
