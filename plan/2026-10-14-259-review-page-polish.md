@@ -188,3 +188,9 @@ Revert the merge commit. There is no data or schema change.
     appears once an architecture exists.
   - The edit form got `id="arch-form"`, so the row's Save can use
     `form="arch-form"`. Nothing was removed or renamed.
+- Step 4:
+  - The "malformed or unknown item(s) skipped" note is matched by its
+    suffix, since it starts with a count.
+  - The registry help text moved below its form. The form itself is
+    unchanged.
+  - "Extraction notes" is muted through `p.muted` on its items.

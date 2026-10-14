@@ -47,6 +47,17 @@ def staff_uploads() -> bool:
 
 templates.env.globals["staff_uploads"] = staff_uploads
 
+# extraction notes that need no action, with what they mean; anything else is shown as needing attention (#259)
+INFO_NOTES = (("read in ", "The document was long, so it was read in parts. Nothing to do."),
+              (" malformed or unknown item(s) skipped", "The model returned an item that failed validation; it was dropped. Check nothing important is missing."))
+
+
+def split_notes(notes):
+    """(action notes, [(info note, explanation)])"""
+    info = lambda n: next((e for k, e in INFO_NOTES if n.startswith(k) or (k.startswith(" ") and n.endswith(k))), None)
+    return [n for n in notes if not info(n)], [(n, info(n)) for n in notes if info(n)]
+
+
 PROSE_LABELS = {"challenge": "Challenge", "solution": "Solution", "implementation": "Implementation approach",
                 "configuration": "Configuration and integration"}
 SCALARS = ("title", "client_mention", "industry", "region", "engagement_type", "challenge",
@@ -249,7 +260,7 @@ def _detail(cid, request, user, arch_form=None):
     if not r:
         raise HTTPException(404, "no such case")
     case = ReferenceCase.model_validate(r[0])  # the document text is deliberately not shown
-    notes = list(case.needs_attention)
+    notes, infos = split_notes(case.needs_attention)
     # organisations come from extraction; no LLM call on page view
     from app.research import visible_claims  # here: research imports this module
     shown = {c["n"]: c for c in visible_claims([{**c, "n": i} for i, c in enumerate(r[10])], registry)[0]}
@@ -262,7 +273,7 @@ def _detail(cid, request, user, arch_form=None):
     sections = [dict(f=f, label=PROSE_LABELS[f], prose=case.prose.get(f), points=case.points.get(f, []), min=CHECKS.get(f"{f}_words"))
                 for f in POINT_FIELDS if case.points.get(f) or f in case.prose]
     checks = checklist(case)
-    return page(request, "review_detail.html", user, arch=_arch_panel(case, arch_form), id=cid, checks=checks, minimum=meets_minimum(checks), rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
+    return page(request, "review_detail.html", user, arch=_arch_panel(case, arch_form), id=cid, checks=checks, minimum=meets_minimum(checks), rows=rows(case, {m[7]: m[1] for m in members}), notes=notes, infos=infos,
                 sections=sections, found=found, max_diagrams=diagrams.MAX_PER_CASE,
                 unlisted=unlisted, diagrams=case.diagrams, members=members, cands=cands, remerge=remerge,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],

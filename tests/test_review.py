@@ -1705,3 +1705,12 @@ def test_architecture_empty_state_gives_a_reason_and_a_generate_button(make):  #
     assert "Generate diagram" not in html and "Write it by hand" not in html and 'form="arch-form"' in html
     ap = make("approved", "10 days", data=case_data(extraction_version=4, **SOURCED))
     assert "Generating takes this case out of search until you approve it again." in client(R).get(f"/review/{ap}").text
+
+
+def test_info_notes_fold_away_and_unknown_notes_need_attention(make):  # plan #259 step 4
+    cid = make(data=case_data(needs_attention=["read in 3 parts", "2 malformed or unknown item(s) skipped", "check the summary"]))
+    html = client(R).get(f"/review/{cid}").text
+    att, rest = html.split("Needs your attention")[1].split("Extraction notes")
+    assert "check the summary" in att and "read in 3 parts" not in att and "malformed" not in att
+    assert "Nothing to do." in rest and "it was dropped" in rest and "check the summary" not in rest
+    assert '<span class="badge warn">1 notes</span>' in html

@@ -35,13 +35,15 @@
 {% set tx = "text" if sections else "fields" %}{% set anchors = {"challenge": tx, "solution": tx, "implementation": tx, "configuration": tx, "capabilities": "fields", "technologies": "fields", "results": "fields", "period": "fields", "diagram": "diagrams"} %}
 <div class="section-card"><div class="card-head"><h2>Completeness: {{ checks | selectattr("ok") | list | length }} of {{ checks | length }}</h2></div>
 <ul class="checks">{% for c in checks %}<li>{% if c.ok %}{{ icon("check") }}{% else %}{{ icon("alert") }}{% endif %} {% if not c.ok and c.key in anchors %}<a href="#{{ anchors[c.key] }}">{{ c.label }}</a>{% else %}{{ c.label }}{% endif %}: {{ c.detail }}</li>{% endfor %}</ul></div>
+{% if notes or unlisted %}<div class="section-card"><div class="card-head"><h2>Needs your attention</h2></div>
 {% for n in notes %}<div class="note">{{ n }}</div>{% endfor %}
 {% for o in unlisted %}<div class="note">organisation not in client registry: {{ o }}
 {% if "admin" in user.roles %}<form method="post" action="/admin/clients" class="row">
 <input type="hidden" name="name" value="{{ o }}"><input type="hidden" name="next" value="/review/{{ id }}">
 <label for="unl-{{ loop.index }}" class="sr">label for {{ o }}</label><input type="text" id="unl-{{ loop.index }}" name="anonymised_label" placeholder="label, e.g. a retail bank" required>
-<button class="btn">Add as client</button> <small>Only for clients. A partner or vendor added here is anonymised in every output.</small>
-</form>{% endif %}</div>{% endfor %}
+<button class="btn">Add as client</button></form>
+<small>Only for clients. A partner or vendor added here is anonymised in every output.</small>{% endif %}</div>{% endfor %}</div>{% endif %}
+{% if infos %}<details class="mini"><summary>Extraction notes ({{ infos | length }})</summary>{% for n, e in infos %}<p class="muted"><b>{{ n }}</b><br>{{ e }}</p>{% endfor %}</details>{% endif %}
 
 {% if attn.n %}<div class="section-card"><div class="card-head"><h2>Needs attention ({{ attn.n }})</h2></div>
 {% for r in rows %}{% if r.unsourced and not r.new %}{{ field_row(r, loop.index) }}{% endif %}{% endfor %}</div>{% endif %}
