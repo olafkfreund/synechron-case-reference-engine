@@ -415,13 +415,39 @@ def over_limit(user_key: str) -> int:
     return n if n >= RATE_LIMIT else 0
 
 
-async def _run(work, name: str, daily: int = 0):
+def require_review(user, claims: dict, conn) -> None:
+    """The reviewer gate, in order (#249 phase 4): reviewer role, `refs.review` in the token, a live approval for this client."""
+    if "reviewer" not in user.roles:
+        raise Refused(403, "reviewer role required")
+    if "refs.review" not in str(claims.get("scp", "")).split():
+        raise Refused(403, "this token has no refs.review scope; get a new token with it")
+    if not conn.execute("select 1 from model_approvals where model = %s and data_class = 'confidential' and expires_at > now()",
+                        (f"mcp-client:{client_of(claims)}",)).fetchone():
+        raise Refused(403, "this AI client is not approved to handle confidential data; an admin approves it under Model approvals")
+
+
+def review_view(case, cid: int, status: str, title: str, v: str) -> dict:
+    """The allow-listed reviewer view. Built field by field: no document text, external id, URL, uploader or public source can get in."""
+    from app.completeness import checklist
+    from app.review import rows, split_notes
+    fields = [dict(label=r["label"], path=r["path"], values={n: str(x) for n, x in r["inputs"]}, quote=r["quote"],
+                   state="written" if r.get("written") or r.get("no_quote") else "unsourced" if r["unsourced"] else "sourced")
+              for r in rows(case) if not r.get("new")]
+    return dict(id=cid, status=status, basis=case.basis, document=title, v=v, fields=fields,
+                prose={f: dict(text=p.text, flags=p.flags, by_reviewer=p.by_reviewer) for f, p in case.prose.items()},
+                notes=split_notes(case.needs_attention)[0], completeness=checklist(case))
+
+
+async def _run(work, name: str, daily: int = 0, review: bool = False):
     """One tool call: rate limit, the portal function, the audit row. `work(user)` returns (output model, case ids).
-    Failures are isError results carrying the portal's own message; arguments and results are never stored."""
+    Failures are isError results carrying the portal's own message; arguments and results are never stored.
+    `review`: a reviewer tool, which passes the reviewer gate first and gets the user's real roles."""
     from app import db
     token = get_access_token()
-    # phase 1 gives everyone the plain-user view (no reviewer source titles); reviewer extras come with phase 4
-    user, client_id, t0 = replace(token.claims["_user"], roles=frozenset({"user"})), token.client_id, time.monotonic()
+    # everyone else gets the plain-user view (no reviewer source titles)
+    user, client_id, t0 = token.claims["_user"], token.client_id, time.monotonic()
+    if not review:
+        user = replace(user, roles=frozenset({"user"}))
 
     def go():
         # a capped tool holds a per-user, per-tool lock from the count to the audit row, so a parallel burst cannot pass the cap
@@ -443,8 +469,13 @@ async def _run(work, name: str, daily: int = 0):
             if today >= daily:
                 return "rate_limited", f"daily limit reached for {name}", []
         try:
+            if review:
+                with db.connect() as conn:
+                    require_review(user, token.claims, conn)
             out, ids = work(user)
             return "ok", out, ids
+        except Refused as e:
+            return "denied", e.detail, []
         except HTTPException as e:
             return OUTCOMES.get(e.status_code, "error"), str(e.detail), []
         except Exception as e:  # noqa: BLE001 - the client gets no detail; the type is enough to find it in the log
