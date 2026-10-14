@@ -68,8 +68,10 @@ reviewer approves it; only then do other staff see it.
   Send the file with the same bearer token the agent uses (a browser session does not work here):
   `curl -T file.docx -H "Authorization: Bearer $TOKEN" <upload_url>`. The answer is `{"upload_id": ...}`.
 - **Status:** `get_upload_status(upload_id)` or `list_my_uploads()`; only your own uploads are visible.
-  `queued` (waiting or being processed), `failed`, `indexed` (stored; not recognised as a case),
-  `in_review` (a draft case waiting for a reviewer), `approved`, `rejected`.
+  Each answer has a `status` and a `detail` sentence: `queued` (waiting in line; the detail counts the jobs ahead),
+  `reading` (converting the file), `writing` (the model is drafting the case; the detail gives a rough time),
+  `failed`, `indexed` (stored; not recognised as a case), `in_review` (a draft case waiting for a reviewer),
+  `approved`, `rejected`.
 - **Quota:** 20 files and 200 MiB per user over a rolling 24 hours. Past it: 429, "daily upload limit reached".
 - Two uploads of one file make two drafts; reviewers merge them. The review page shows who uploaded a case.
 - **Turning it on:** an admin sets `"staff": true` in the config of one enabled `upload` source (the lowest id

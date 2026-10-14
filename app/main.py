@@ -340,7 +340,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"job_id": job_id}, status_code=202)
 
     UPLOAD_NOTICES = {  # allow-list: the query string picks a message, never supplies one
-        "uploaded": ("ok", "File received. It is queued for processing."),
+        "uploaded": ("ok", "File received. It is waiting to be processed; this page updates by itself."),
         "quota": ("bad", "Upload refused: daily upload limit reached (20 files or 200 MiB)"),
         "busy": ("bad", "Another upload of yours is in progress; try again in a moment"),
         "off": ("bad", "Uploads are not configured"),
@@ -356,7 +356,8 @@ def create_app() -> FastAPI:
         with db.connect() as conn:
             on = ingest.staff_source(conn) is not None
             mine = ingest.my_uploads(conn, user) if on else []
-        return page(request, "upload.html", user, on=on, mine=mine, notice=UPLOAD_NOTICES.get(notice),
+        pending = any(m[3][0] in ("queued", "reading", "writing") for m in mine)
+        return page(request, "upload.html", user, on=on, mine=mine, pending=pending, notice=UPLOAD_NOTICES.get(notice),
                     upload_cap=upload_cap(), upload_types=sorted(UPLOAD_MAGIC))
 
     @app.post("/upload")

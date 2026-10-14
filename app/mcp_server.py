@@ -259,7 +259,8 @@ class UploadOut(BaseModel):
 class UploadStatusOut(BaseModel):
     notice: str = PREFACE
     id: int
-    status: str  # queued, failed, indexed, in_review, approved or rejected
+    status: str  # queued, reading, writing, failed, indexed, in_review, approved or rejected
+    detail: str  # one sentence saying what is happening now
 
 
 class MyUploadsOut(BaseModel):
@@ -813,11 +814,12 @@ def register(server, origin: str) -> None:
 
     @server.tool(annotations=READ_ONLY)
     async def get_upload_status(upload_id: int) -> Annotated[CallToolResult, UploadStatusOut]:
-        """Where your upload is: queued, failed, indexed, in_review, approved or rejected."""
+        """Where your upload is: queued, reading, writing, failed, indexed, in_review, approved or rejected, with a sentence on what is happening."""
         def work(user):
             from app import db, ingest
             with db.connect() as conn:
-                return UploadStatusOut(id=upload_id, status=ingest.upload_status(conn, user, upload_id)), [upload_id]
+                code, _, detail = ingest.upload_status(conn, user, upload_id)
+            return UploadStatusOut(id=upload_id, status=code, detail=detail), [upload_id]
         return await _run(work, "get_upload_status")
 
     @server.tool(annotations=READ_ONLY)
@@ -827,7 +829,7 @@ def register(server, origin: str) -> None:
             from app import db, ingest
             with db.connect() as conn:
                 rows = ingest.my_uploads(conn, user)
-            return MyUploadsOut(uploads=[UploadStatusOut(id=r[0], status=r[3]) for r in rows]), [r[0] for r in rows]
+            return MyUploadsOut(uploads=[UploadStatusOut(id=r[0], status=r[3][0], detail=r[3][2]) for r in rows]), [r[0] for r in rows]
         return await _run(work, "list_my_uploads")
 
 

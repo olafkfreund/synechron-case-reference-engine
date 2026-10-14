@@ -22,7 +22,7 @@ HANDLERS = {
 # a running job this old belongs to a dead worker; first crawls can run for hours, and the
 # daily schedule re-runs a crawl whose worker died, so crawls get a long window
 CLAIM = """
-update jobs set status='running', attempts=attempts+1, updated_at=now()
+update jobs set status='running', attempts=attempts+1, updated_at=now(), started_at=coalesce(started_at, now())
 where id = (select id from jobs
             where status='queued' or (status='running' and updated_at < now() -
                   case when kind like 'crawl%%' then interval '6 hours' else interval '15 min' end)

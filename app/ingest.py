@@ -1,6 +1,7 @@
 import hashlib
 import os
 import uuid
+from bisect import bisect_left
 from functools import lru_cache
 from io import BytesIO
 from pathlib import PurePosixPath
@@ -141,38 +142,85 @@ def accept_upload(conn, user, name: str | None, data: bytes) -> int:
         raise
 
 
-STATUS_COLS = ("j.status, d.id, coalesce(p.status, c.status), (select x.status from jobs x where x.kind='extract' "  # a merged case reads its parent
-               "and (x.payload->>'document_id')::bigint = d.id order by x.id desc limit 1)")
+STATUS_COLS = ("j.id, j.status, d.id, coalesce(p.status, c.status), x.id, x.status, extract(epoch from now() - j.started_at), coalesce(p.basis, c.basis)")  # a merged case reads its parent
 STATUS_FROM = ("from uploads u left join jobs j on j.id = u.job_id "
                "left join documents d on d.source_id = u.source_id and d.external_id = u.s3_key "
-               "left join cases c on c.document_id = d.id left join cases p on p.id = c.merged_into")
+               "left join cases c on c.document_id = d.id left join cases p on p.id = c.merged_into "
+               "left join lateral (select id, status from jobs where kind='extract' "
+               "and (payload->>'document_id')::bigint = d.id order by id desc limit 1) x on true")
+
+FAILED = ("failed", "Couldn't process", "The file could not be read or converted. Try again, or ask an admin.")
+STAGES = {
+    "in_review": ("In review", "A reviewer will check it before it appears in search."),
+    "approved": ("Approved", "Visible to staff in search."),
+    "rejected": ("Not used", "A reviewer decided not to use it."),
+    "indexed": ("Stored, not a case study", "Stored, but not a case study or capability document."),
+}
+CAPABILITY = {  # #213: an offering document is shown apart from delivery evidence
+    "in_review": "A reviewer will check it; it will be shown as a capability document (not delivery evidence).",
+    "approved": "Approved as a capability document: listed under Capability in search.",
+}
 
 
-def status_code(job, doc, case, extract) -> str:
-    if job == "failed" or (job == "done" and doc is None):
-        return "failed"
-    if doc is None:
-        return "queued"
-    if case is None and extract in ("queued", "running"):  # triage has not decided yet: not "not a case" yet
-        return "queued"
+def queue_ahead(conn, job_id: int, cache: dict) -> int:
+    """Queued jobs the worker takes first (it works in id order); a count, never names. One query per render."""
+    if "queued" not in cache:
+        cache["queued"] = [r[0] for r in conn.execute("select id from jobs where status='queued' order by id")]
+    return bisect_left(cache["queued"], job_id)
+
+
+def extract_estimate(conn, cache: dict) -> str:
+    """'about A-B minutes' from the 25th/75th percentile of the last 20 finished extractions' run time (not their wait)."""
+    if "estimate" not in cache:
+        n, q = conn.execute("select count(*), percentile_cont(array[0.25, 0.75]) within group (order by s) from "
+                            "(select extract(epoch from updated_at - started_at) s from jobs "
+                            "where kind='extract' and status='done' and started_at is not null order by id desc limit 20) t").fetchone()
+        if n < 5:
+            cache["estimate"] = "usually a few minutes"
+        else:
+            lo, hi = (max(1, round(v / 60)) for v in q)
+            cache["estimate"] = f"about {lo}\u2013{hi} minutes" if hi > lo else f"about {lo} minutes"
+    return cache["estimate"]
+
+
+def stage(conn, job_id, job, doc, case, ext_id, extract, age=None, basis=None, cache=None) -> tuple[str, str, str]:
+    """(code, label, detail) from the upload's jobs, document and case; cache holds the queue and estimate for one render."""
+    cache = {} if cache is None else cache
+
+    def wait(i):
+        return "queued", "Waiting", f"Waiting in line: {queue_ahead(conn, i, cache)} ahead of yours."
+    if doc is None:  # the document decides first: a vanished job row must not hide it
+        if job == "failed" or job == "done":
+            return FAILED
+        if job == "running":
+            return "reading", "Reading the document", "Converting the file." + (" Usually under a minute." if (age or 0) < 300 else " This is taking longer than usual.")
+        return wait(job_id or 0)  # queued, or the job row was deleted
+    if case is None and extract == "queued":  # triage has not decided yet: not "not a case" yet
+        return wait(ext_id)
+    if case is None and extract == "running":
+        return "writing", "Writing the case", f"The model is drafting the case: {extract_estimate(conn, cache)}."
     if case is None and extract == "failed":
-        return "failed"
-    return {"extracted": "in_review", "approved": "approved", "rejected": "rejected"}.get(case, "indexed")
+        return "failed", "Couldn't process", "Writing the case failed. Upload it again or ask an admin."
+    code = {"extracted": "in_review", "approved": "approved", "rejected": "rejected"}.get(case, "indexed")
+    if basis == "capability" and code in CAPABILITY:
+        return code, STAGES[code][0], CAPABILITY[code]
+    return code, *STAGES[code]
 
 
-def upload_status(conn, user, upload_id: int) -> str:
-    """queued | failed | indexed | in_review | approved | rejected; owner only, nothing but the code."""
+def upload_status(conn, user, upload_id: int) -> tuple[str, str, str]:
+    """(code, label, detail): code is queued | reading | writing | failed | indexed | in_review | approved | rejected; owner only."""
     row = conn.execute(f"select {STATUS_COLS} {STATUS_FROM} where u.id=%s and u.user_key=%s", (upload_id, user.sub)).fetchone()
     if not row:
         raise HTTPException(404, "no such upload")
-    return status_code(*row)
+    return stage(conn, *row)
 
 
-def my_uploads(conn, user, limit: int = 50) -> list[tuple[int, str, object, str]]:
-    """(id, file name, when, status) of the user's newest uploads, one query."""
+def my_uploads(conn, user, limit: int = 50) -> list[tuple[int, str, object, tuple[str, str, str]]]:
+    """(id, file name, when, (code, label, detail)) of the user's newest uploads."""
     rows = conn.execute(f"select u.id, u.s3_key, u.created_at, {STATUS_COLS} {STATUS_FROM} "
                         "where u.user_key=%s order by u.id desc limit %s", (user.sub, limit)).fetchall()
-    return [(r[0], r[1].rsplit("/", 1)[-1], r[2], status_code(*r[3:])) for r in rows]
+    cache = {}  # the queue and the estimate are read at most once per render
+    return [(r[0], r[1].rsplit("/", 1)[-1], r[2], stage(conn, *r[3:], cache=cache)) for r in rows]
 
 
 def reopen_merged(conn, doc_ids: list[int]) -> None:
