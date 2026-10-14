@@ -84,3 +84,16 @@ docker compose build app && docker compose run --rm app pytest -q   # full suite
 ## Rollback
 
 Revert the commit to get the old prompt back. No data or schema changes.
+
+## Results
+
+**Step 1.** qwen3:14b, 3 runs per question, `build_query` only:
+
+| Prompt | Vendor kept (10 questions × 3) | Client leaked (5 probes × 3) | Probe vendor kept |
+|---|---|---|---|
+| old | 21/30 | 0/15 | 15/15 |
+| new | 30/30 | 0/15 | 15/15 |
+
+The old prompt dropped Snowflake, Amazon S3 and Unity Catalog every time,
+for example "data lineage automatic capture data catalog". The new prompt
+leaks no more clients.
