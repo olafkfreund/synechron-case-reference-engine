@@ -808,30 +808,37 @@ def preview(request: Request, case_ids: list[int] = Form([]), research_id: int |
                 research_id=research_id, library_ids=list(dict.fromkeys(library_ids)), ack=industry_context_ack, footer=footer, retitled=APPROACH_HEADING if retitled else "")
 
 
+def produce(conn, user: User, fmt: str, case_ids: list[int], research_id: int | None, ack: bool,
+            library_ids: list[int]) -> tuple[bytes, str, str]:
+    """Build, render and audit one output; raises HTTPException (400/404 from build, 503 from the PDF converter)."""
+    ids, sections, industry, anonymised, claims, library_used = build(conn, case_ids, research_id, ack, user, fmt, library_ids)
+    make, mime = OUTPUTS[fmt]
+    pairs = [(ids[n], d["id"]) for n, sec in enumerate(sections) for d in sec["diagrams"]]  # (case, diagram)
+    images = {i: bytes(png) for i, png in conn.execute(
+        "select id, png from diagrams where (case_id, id) in (select * from unnest(%s::bigint[], %s::bigint[])) "
+        "and png is not null", ([c for c, _ in pairs], [d for _, d in pairs])).fetchall()} if pairs else {}
+    try:
+        body = make(sections, industry, images=images)  # before the audit row: a broken template must not log a generation
+    except PdfError as e:
+        raise HTTPException(503, str(e)) from None
+    conn.execute("insert into generations(user_id, format, case_ids, anonymised, industry_context_ack, research_id, library_ids) "
+                 "values (%s,%s,%s,%s,%s,%s,%s)", (user.sub, fmt, ids, anonymised, ack and not ids,
+                                                   research_id if (industry and claims) else None, library_used or None))
+    name = f"{'case-study' if fmt.startswith('case_study') else 'reference-cases'}.{'pdf' if 'pdf' in fmt else fmt.rsplit('_', 1)[-1]}"
+    return body, mime, name
+
+
 @router.post("/generate")
 def generate(request: Request, format: str = Form(), case_ids: list[int] = Form([]), research_id: int | None = Form(None),
              industry_context_ack: bool = Form(False), library_ids: list[int] = Form([]), user: User = Depends(require("user"))):
     with db.connect() as conn:
         try:
-            ids, sections, industry, anonymised, claims, library_used = build(conn, case_ids, research_id, industry_context_ack, user, format, library_ids)
+            body, mime, name = produce(conn, user, format, case_ids, research_id, industry_context_ack, library_ids)
         except HTTPException as e:
             if e.status_code not in (400, 404):
                 raise
             return friendly(request, user, e.status_code, e.detail, "/search")
-        make, mime = OUTPUTS[format]
-        pairs = [(ids[n], d["id"]) for n, sec in enumerate(sections) for d in sec["diagrams"]]  # (case, diagram)
-        images = {i: bytes(png) for i, png in conn.execute(
-            "select id, png from diagrams where (case_id, id) in (select * from unnest(%s::bigint[], %s::bigint[])) "
-            "and png is not null", ([c for c, _ in pairs], [d for _, d in pairs])).fetchall()} if pairs else {}
-        try:
-            body = make(sections, industry, images=images)  # before the audit row: a broken template must not log a generation
-        except PdfError as e:
-            raise HTTPException(503, str(e)) from None
-        conn.execute("insert into generations(user_id, format, case_ids, anonymised, industry_context_ack, research_id, library_ids) "
-                     "values (%s,%s,%s,%s,%s,%s,%s)", (user.sub, format, ids, anonymised, industry_context_ack and not ids,
-                                                       research_id if (industry and claims) else None, library_used or None))
-    return Response(body, media_type=mime, headers={
-        "Content-Disposition": f'attachment; filename="{'case-study' if format.startswith('case_study') else 'reference-cases'}.{'pdf' if 'pdf' in format else format.rsplit('_', 1)[-1]}"', "X-Content-Type-Options": "nosniff"})
+    return Response(body, media_type=mime, headers={"Content-Disposition": f'attachment; filename="{name}"', "X-Content-Type-Options": "nosniff"})
 
 
 @router.get("/cases/{cid}/diagrams/{did}.png")

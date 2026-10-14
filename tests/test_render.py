@@ -897,3 +897,14 @@ def test_callouts_follow_the_shown_outcomes_and_a_contract_has_none(approved):
     assert eng["callouts"] == [] and eng["components"]
     cid = approved(case.model_copy(update={"basis": "engagement"}))
     assert "Onboarding in 3 days" not in prev([cid]).text.split("<figure")[1].split("</figure>")[0] and "Hidden claim" not in gen([cid], "md").text
+
+
+@pytest.mark.parametrize("fmt", ["md", "docx", "pptx", "case_study_docx"])
+def test_produce_matches_generate_bytes(approved, fmt):
+    from app.main import User, roles_for
+    cid = approved()
+    r = gen([cid], fmt)
+    with db.connect() as c:
+        body, mime, name = render.produce(c, User("u1", "U", frozenset(R), roles_for(R)), fmt, [cid], None, False, [])
+    assert r.status_code == 200 and body == r.content and mime == r.headers["content-type"]
+    assert r.headers["content-disposition"] == f'attachment; filename="{name}"'
