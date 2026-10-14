@@ -45,7 +45,7 @@ DIAGRAM = [("Title", .4, .4, 10.3, .7, 28, True, BLUE, False),
            ("Picture", .4, 1.25, 12.5, 5.0, 11, False, BLACK, False),
            ("Caption", .4, 6.35, 12.5, .45, 12, False, GREY, False)]
 COVER_SUBTITLE = ("Subtitle", .41, 4.85, 5.0, .5, 16, False, WHITE, False)  # under the two-line title
-CLOSING_KEEP = ("Graphic 8", "TextBox 2", "Picture 1", "© Copyright")  # wordmark, "Thank you", device, legal line
+CLOSING_KEEP = ("Graphic 8", "TextBox 2", "Picture 1", "© Copyright 2022. Synechron. All rights reserved.  No part of this presentation, concepts or designs may be used without permission.")  # wordmark, "Thank you", device, legal line
 
 
 def e(v):
@@ -109,19 +109,24 @@ def on_blue(layout, white_svg, device_png):
     bg = layout._element.cSld.find("{http://schemas.openxmlformats.org/presentationml/2006/main}bg")
     bg.getparent().replace(bg, parse_xml(
         f'<p:bg {NS}><p:bgPr><a:solidFill><a:srgbClr val="{BLUE}"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>'))
+    replaced = []  # the blue wordmark and the EMF: their relationships go, so the parts are not saved
     for blip in layout._element.iter("{http://schemas.microsoft.com/office/drawing/2016/SVG/main}svgBlip"):
         if layout.part.rels[blip.get(EMBED)].target_part.partname.endswith("image3.svg"):  # the blue wordmark
+            replaced.append(blip.get(EMBED))
             blip.set(EMBED, layout.part.relate_to(white_svg, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"))
     _, rid = layout.part.get_or_add_image_part(device_png)
     for blip in layout._element.iter(A + "blip"):
         if blip.get(EMBED) and layout.part.rels[blip.get(EMBED)].target_part.partname.endswith(".emf"):  # an SVG blip has none
+            replaced.append(blip.get(EMBED))
             blip.set(EMBED, rid)
             src = blip.getparent().find(A + "srcRect")
             if src is not None:
                 src.getparent().remove(src)
+    for old_rid in replaced:
+        layout.part.drop_rel(old_rid)  # dropped only once nothing in the layout refers to it
     for tag in ("rPr", "endParaRPr", "defRPr"):
         for r in layout._element.iter(A + tag):
-            for old in r.findall(A + "solidFill") + r.findall(A + "schemeClr"):
+            for old in r.findall(A + "solidFill") + r.findall(A + "gradFill") + r.findall(A + "noFill"):
                 r.remove(old)
             ln = r.find(A + "ln")
             r.insert(0 if ln is None else list(r).index(ln) + 1, parse_xml(f'<a:solidFill {NS}><a:srgbClr val="{WHITE}"/></a:solidFill>'))
@@ -158,7 +163,7 @@ def main(src, dst):
     closing = by_name["Thank You "]
     closing.name = "Closing"
     for sh in list(closing.shapes):  # the contact block and CTA pills: the engine has no contact to give
-        if not sh.name.startswith(CLOSING_KEEP):
+        if sh.name not in CLOSING_KEEP:
             sh._element.getparent().remove(sh._element)
     on_blue(closing, white_svg, str(DEVICE))
 

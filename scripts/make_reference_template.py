@@ -138,7 +138,7 @@ def style_doc(d):
 def footer(fp):
     """The confidential line and the page number, grey 8 pt."""
     fp.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    r = fp.add_run("Synechron \u00b7 Confidential\t")
+    r = fp.add_run("Synechron \u00b7 Confidential\t\t")  # the Footer style: centre tab, then the right one
     r.font.name, r.font.size, r.font.color.rgb = "Aptos", Pt(8), GREY
     for part in (
         '<w:fldChar w:fldCharType="begin"/>',

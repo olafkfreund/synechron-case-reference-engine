@@ -427,7 +427,7 @@ def _architecture_slide(prs, diagram_layout, title: str, scene) -> None:
         left, top, w, h = box.left, box.top, box.width, box.height
         box._element.getparent().remove(box._element)
     else:
-        slide = prs.slides.add_slide(min(prs.slide_layouts, key=lambda l: len(l.placeholders)))
+        slide = prs.slides.add_slide(min((l for l in prs.slide_layouts if l.name not in (COVER, CLOSING)), key=lambda l: len(l.placeholders)))
         for ph in list(slide.placeholders):
             ph._element.getparent().remove(ph._element)
         tb = slide.shapes.add_textbox(Inches(.5), Inches(.3), prs.slide_width - Inches(1), Inches(.7))
@@ -449,7 +449,7 @@ def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int
         raise ValueError(f"{MASTER.name} needs slide layouts named {COVER!r} and {CLOSING!r}")
     names = {ph.placeholder_format.idx: ph.name for ph in cover.placeholders}
     _fill(prs, cover, names, {"Title": ["Reference cases"], "Subtitle": [f"{datetime.now(timezone.utc):%B %Y}"]},
-          tuple(n for n in ("Title", "Subtitle") if n in names.values()))
+          ("Title",) + (("Subtitle",) if "Subtitle" in names.values() else ()))  # no Title: fail, never a blank cover
     diagram_layout = None
     if any(d["id"] in images for c in sections for d in c["diagrams"]):  # a master without it fails only now
         diagram_layout = _layout(prs, DIAGRAM_LAYOUT, DIAGRAM_PLACEHOLDERS)

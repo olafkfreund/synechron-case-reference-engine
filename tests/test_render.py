@@ -292,6 +292,8 @@ def body(prs):
     """The slides between the brand cover and the closing slide (#282)."""
     s = list(prs.slides)
     assert s[0].slide_layout.name == render.COVER and s[-1].slide_layout.name == render.CLOSING
+    cover = [p.text_frame.text for p in s[0].placeholders]
+    assert cover[0] == "Reference cases" and all(not p.has_text_frame or not p.text_frame.text for p in s[-1].placeholders)
     return s[1:-1]
 
 
@@ -1005,5 +1007,5 @@ def test_docx_templates_use_aptos_and_brand_palette():
 def test_pdfs_embed_only_aptos(fmt):  # #282: a font the container lacks falls back silently (DejaVu)
     sec = render.section(full(), "a UK retailer")
     office = render.to_pptx([sec]) if fmt == "pptx" else render.to_docx([sec])
-    fonts = set(re.findall(rb"/BaseFont\s*/[A-Z]{6}\+([A-Za-z0-9-]+)", render.to_pdf(office, "." + fmt)))
+    fonts = set(re.findall(rb"/BaseFont\s*/(?:[A-Z]{6}\+)?([A-Za-z0-9-]+)", render.to_pdf(office, "." + fmt)))
     assert fonts and all(f.startswith(b"Aptos") for f in fonts), fonts

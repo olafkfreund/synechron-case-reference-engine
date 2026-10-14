@@ -635,7 +635,7 @@ def _build(arch: Architecture, footer: str, reserve: list) -> tuple[Scene, list]
 INK, GROUND, ACCENT, BORDER, MUTED, WHITE = "#002535", "#F4F4F4", "#0A5A78", "#808285", "#808285", "#FFFFFF"
 KIND = {"user": "#002535", "app": "#0A5A78", "service": "#000000", "queue": "#808285", "store": "#002535",
         "external": "#808285", "platform": "#0A5A78"}
-MODE = {"api": "#0A5A78", "event": "#002535", "batch": "#000000", "file": "#808285", "ui": "#0A5A78", "data": "#002535"}
+MODE = {"api": "#0A5A78", "event": "#002535", "batch": "#000000", "file": "#808285", "ui": "#000000", "data": "#002535"}  # ui: black solid, apart from api (blue) and batch (black dashed)
 DASH = {"event": (3, 4), "batch": (9, 5), "file": (9, 5)}
 TEXT_COLOUR = {"role": MUTED, "role-sm": MUTED, "zone": MUTED, "legend": MUTED, "footer": MUTED, "note": MUTED, "badge": INK, "marker": WHITE}
 LINE_W = 1.5
@@ -740,7 +740,7 @@ def to_svg(sc: Scene, title: str = "Solution architecture", crop: bool = True) -
     f = lambda v: f"{v:.1f}".rstrip("0").rstrip(".")
     pp = lambda pts: " ".join(f"{f(x)},{f(y)}" for x, y in pts)
     o = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {sc.width} {sc.height}" role="img" '
-         f'font-family="Aptos"><title>{escape(title)}</title>'
+         f'font-family="Aptos, sans-serif"><title>{escape(title)}</title>'
          f'<rect width="{sc.width}" height="{sc.height}" fill="{WHITE}"/>']
 
     def box(b: Box):
