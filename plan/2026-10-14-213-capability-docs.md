@@ -207,3 +207,13 @@ exist, which would stop the app starting. This goes in the PR.
   - **Admin action.** It never re-queues documents that have any extract
     job.
   - **Formats.** Capability cards offer only Word, PDF and Markdown.
+- **Rebase onto #267 (logos).** The search card shows both the logo and
+  the capability note. In the template script, the case opener has three
+  branches:
+  1. a capability group heading takes the page break, with an optional
+     logo paragraph after it
+  2. otherwise the logo paragraph takes the break
+  3. otherwise the title does
+
+  `brand/reference.docx` was regenerated from the merged script. Full
+  suite 1561 passed.
