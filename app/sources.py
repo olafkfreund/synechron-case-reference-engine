@@ -44,7 +44,7 @@ SKIPPED = """from documents d where d.kind in ('proposal','deck','contract') and
     and not exists (select 1 from jobs j where j.kind='extract' and j.status in ('queued','running')
                     and (j.payload->>'document_id')::bigint = d.id)"""
 CAPABILITY_DRAFTS = ("insert into jobs(kind, payload) select 'extract', jsonb_build_object('document_id', d.id, 'basis', 'capability', "
-                     "'basis_reason', '', 'checksum', d.checksum) " + SKIPPED)
+                     "'basis_reason', '', 'checksum', d.checksum) " + SKIPPED + " order by d.id limit %s")
 DATA_CLASSES = ("confidential", "sanitised", "public")
 REQUIRED = {"s3": ("bucket",), "upload": ("bucket",), "sharepoint": ("tenant_id", "drive_id"),
             "confluence": ("base_url", "spaces")}
@@ -110,7 +110,7 @@ def capability_drafts(user: User = Depends(require("admin"))):
     with db.connect() as conn:
         conn.execute("select pg_advisory_xact_lock(%s)", (REEXTRACT_LOCK,))  # two clicks must not queue twice
         total = conn.execute("select count(*) " + SKIPPED).fetchone()[0]
-        queued = conn.execute(CAPABILITY_DRAFTS).rowcount
+        queued = conn.execute(CAPABILITY_DRAFTS, (REEXTRACT_BATCH,)).rowcount
     return RedirectResponse(f"/admin/sources?notice=capability&queued={queued}&total={total}", status_code=303)
 
 

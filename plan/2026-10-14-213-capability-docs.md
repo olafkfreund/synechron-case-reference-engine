@@ -158,3 +158,6 @@ exist, which would stop the app starting. This goes in the PR.
   - **MCP.** `kind="capability"`, and every row carries a `note`.
     `generate_output` refuses through the shared `build()`.
   - **Test fix.** A step 1 test now filters jobs by its own source.
+- **Batch limit.** The capability-drafts action queues at most
+  `REEXTRACT_BATCH` (25) per click, lowest ids first, and the next click
+  continues. Full suite 1455 passed.

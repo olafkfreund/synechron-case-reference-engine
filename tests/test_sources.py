@@ -402,3 +402,25 @@ def test_capability_drafts_queue_only_skipped_proposals_decks_and_contracts(env)
         assert "queued=0" in again.headers["location"]  # the jobs just queued block a duplicate
     finally:
         _clean(sid)
+
+
+def test_capability_drafts_are_capped_per_click_and_the_next_click_continues(env):  # noqa: F811  #213
+    from app.sources import REEXTRACT_BATCH, SKIPPED
+    db.init()
+    with db.connect() as c:
+        n0 = c.execute("select count(*) " + SKIPPED).fetchone()[0]
+        sid = _src(c, False)
+        for _ in range(REEXTRACT_BATCH + 2):
+            _doc(c, sid, "deck")
+    try:
+        r = client([ADMIN]).post("/admin/capability-drafts", follow_redirects=False)
+        assert f"queued={REEXTRACT_BATCH}&total={n0 + REEXTRACT_BATCH + 2}" in r.headers["location"]
+        if n0 == 0:  # with leftovers from elsewhere ahead of ours (by id), the split between clicks is not ours to assert
+            with db.connect() as c:
+                assert len(_jobs(c, sid)) == REEXTRACT_BATCH
+            r = client([ADMIN]).post("/admin/capability-drafts", follow_redirects=False)
+            assert "queued=2&total=2" in r.headers["location"]
+            with db.connect() as c:
+                assert len(_jobs(c, sid)) == REEXTRACT_BATCH + 2
+    finally:
+        _clean(sid)
