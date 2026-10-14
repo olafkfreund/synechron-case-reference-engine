@@ -170,7 +170,7 @@ import zipfile  # noqa: E402
 from docx import Document  # noqa: E402
 
 from app import render  # noqa: E402
-from tests.test_render import pdf_text  # noqa: E402
+from tests.test_render import doc_text, pdf_text  # noqa: E402
 
 DISCLAIMER = "public statements by third parties, not Synechron delivery evidence"
 
@@ -186,7 +186,7 @@ def test_every_format_has_the_brief_the_disclaimer_the_sources_and_the_quotes(ma
         assert want in t, want
     d = c.post(f"/briefs/{bid}/download", data={"format": "docx"})
     doc = Document(io.BytesIO(d.content))
-    text = "\n".join(p.text for p in doc.paragraphs)
+    text = doc_text(d.content)
     for want in ("Passwordless sign in", DISCLAIMER, "Entra supports passwordless sign in [1]", "Setup", "Sources",
                  "[1] v.example, v.example, https://v.example/0", f"“{Q[1]}” [2]"):
         assert want in text, want
@@ -450,7 +450,7 @@ def test_every_format_carries_the_diagram_and_its_credit_and_none_leaves_no_gap(
     assert "## Diagram\n\n```mermaid\nflowchart LR" in md and credit in md
     d = c.post(f"/briefs/{bid}/download", data={"format": "docx"}).content
     assert credit in "\n".join(p.text for p in Document(io.BytesIO(d)).paragraphs)
-    assert any(n.startswith("word/media/") for n in zipfile.ZipFile(io.BytesIO(d)).namelist())
+    assert "<w:drawing>" in zipfile.ZipFile(io.BytesIO(d)).read("word/document.xml").decode()
     pdf = c.post(f"/briefs/{bid}/download", data={"format": "pdf_docx"}).content
     assert credit in " ".join(pdf_text(pdf)[0].split())
     plain = made()  # no diagram: no heading, no credit, no image
@@ -458,7 +458,7 @@ def test_every_format_carries_the_diagram_and_its_credit_and_none_leaves_no_gap(
     d = c.post(f"/briefs/{plain}/download", data={"format": "docx"}).content
     assert "Diagram" not in md and "mermaid" not in md
     text = "\n".join(p.text for p in Document(io.BytesIO(d)).paragraphs)
-    assert "Diagram" not in text and not any(n.startswith("word/media/") for n in zipfile.ZipFile(io.BytesIO(d)).namelist())
+    assert "Diagram" not in text and "<w:drawing>" not in zipfile.ZipFile(io.BytesIO(d)).read("word/document.xml").decode()
 
 
 def test_a_protected_name_or_a_dropped_source_leaves_the_diagram_out_of_the_output(made):

@@ -1,5 +1,7 @@
+import re
 import uuid
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -138,8 +140,15 @@ def case_with(approved, reg):
         c.execute("delete from client_logos where client_id in (select id from clients where name like 'Zorp%')")
 
 
+BRAND = {(Path(__file__).resolve().parent.parent / "brand" / f"wordmark-{c}.png").read_bytes() for c in ("white", "black")}
+
+
 def drawings(content):
-    return zipfile.ZipFile(BytesIO(content)).read("word/document.xml").decode().count("<w:drawing>")
+    """Pictures in the body that are not the Synechron wordmark the templates carry (#282)."""
+    z = zipfile.ZipFile(BytesIO(content))
+    rels = dict(re.findall(r'Id="(rId\d+)"[^>]*Target="([^"]+)"', z.read("word/_rels/document.xml.rels").decode()))
+    embeds = re.findall(r'r:embed="(rId\d+)"', z.read("word/document.xml").decode())
+    return sum(z.read("word/" + rels[r]) not in BRAND for r in embeds)
 
 
 def pictures(content):
