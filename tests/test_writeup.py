@@ -213,3 +213,14 @@ def test_an_engagement_proposal_has_no_callouts_and_a_delivered_one_keeps_them(m
     assert len(d.architecture.callouts) == 1 and "outcome 1:" in seen[0][1]
     assert e.architecture.callouts == [] and "outcome 1:" not in seen[1][1]
     assert not any(f.startswith("callout") for f in e.architecture.flags)
+
+
+def test_check_prose_ordinary_sentence_openers_are_not_names():  # #260
+    q = ["we need to update the timeline and define new dates"]
+    assert wu.check_prose("Need to update the timeline.", q, q) == []  # "need" is used in lowercase
+    assert wu.check_prose("Deploying it came first.", [Q1], [Q1]) == []  # an opener verb (OPENERS), by stemming
+    assert wu.check_prose("Need to update the timeline.", [Q1], [Q1]) == ["names 'Need', which no quote supports"]  # no self-vouching
+    assert wu.check_prose("Kafka streams the events.", q, q) == ["names 'Kafka', which no quote supports"]
+    assert wu.check_prose("SAP runs it.", q, q) == ["names 'SAP', which no quote supports"]
+    assert wu.check_prose("Define Azure Data Factory pipelines.", q, q) == ["names 'Azure Data Factory', which no quote supports"]
+    assert wu.check_prose("Need2 is new.", q, q) == ["number 2 is in no quote", "names 'Need2', which no quote supports"]
