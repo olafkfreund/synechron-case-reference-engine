@@ -14,6 +14,7 @@ from tests.test_auth import client as portal_client
 from tests.test_mcp_http import rpc, token  # noqa: F401
 from tests.test_mcp_tools import GROUPS, PREFACE_START, mcp, parse  # noqa: F401
 from tests.test_mcp_http import env  # noqa: F401
+from tests.test_review import make  # noqa: F401
 
 DOCX = b"PK\x03\x04body"
 
@@ -157,3 +158,20 @@ def test_guard_caps_the_body_at_the_upload_cap(mcp, staff, monkeypatch):
     u = url_of(s)
     monkeypatch.setenv("UPLOAD_MAX_BYTES", "10")
     assert put(s, u, data=b"x" * (70 * 1024)).status_code == 413  # refused before the route reads it
+
+
+def test_an_uploaded_draft_is_invisible_to_other_users(mcp, make):
+    from tests.test_mcp_tools import doc_id
+    cid = make(status="extracted")
+    did = doc_id(cid)
+    with db.connect() as c:
+        c.execute("update documents set web_url='https://example.test/x' where id=%s", (did,))
+    other = mcp()
+    assert other.call("get_case", case_id=cid)["isError"]
+    assert str(cid) not in repr(other.out("list_latest")) and str(cid) not in repr(other.out("search_references", bid_text="onboarding"))
+    web = portal_client(GROUPS, sub=other.who)
+    assert web.get(f"/go/{did}", follow_redirects=False).status_code == 404
+    with db.connect() as c:  # once a reviewer approves it, the same user sees it
+        c.execute("update cases set status='approved', review_due=now() + interval '30 days', search_text='onboarding', summary='onboarding' where id=%s", (cid,))
+    assert not other.call("get_case", case_id=cid).get("isError")
+    assert web.get(f"/go/{did}", follow_redirects=False).status_code == 303

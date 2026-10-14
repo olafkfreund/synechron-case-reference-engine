@@ -57,6 +57,25 @@ What comes back:
 What is logged for each call: who, which client app, which tool, which case ids, the outcome and the time.
 Not the question, not the answer, not the token. Admins see it under **Audit activity > Tool calls**.
 
+## Uploading files
+
+Any signed-in user can add a document (docx, pptx or pdf) for the reference library. It is a draft until a
+reviewer approves it; only then do other staff see it.
+
+- **In the portal:** the **Upload** tab shows the form and your 50 newest uploads with their status.
+- **From an agent:** `upload_document(filename, size)` returns `upload_url` (valid 10 minutes) and `portal_url`.
+  Send the file with the same bearer token the agent uses (a browser session does not work here):
+  `curl -T file.docx -H "Authorization: Bearer $TOKEN" <upload_url>`. The answer is `{"upload_id": ...}`.
+- **Status:** `get_upload_status(upload_id)` or `list_my_uploads()`; only your own uploads are visible.
+  `queued` (waiting or being processed), `failed`, `indexed` (stored; not recognised as a case),
+  `in_review` (a draft case waiting for a reviewer), `approved`, `rejected`.
+- **Quota:** 20 files and 200 MiB per user over a rolling 24 hours. Past it: 429, "daily upload limit reached".
+- Two uploads of one file make two drafts; reviewers merge them. The review page shows who uploaded a case.
+- **Turning it on:** an admin sets `"staff": true` in the config of one enabled `upload` source (the lowest id
+  wins). Its access groups decide who sees approved cases. With no such source the Upload tab is hidden and
+  the tool says "uploads are not configured". Remove the flag to turn uploads off without a deploy.
+  The demo seed marks its first upload source.
+
 ## Turning it on
 
 Set `MCP_ENABLED=1`. Without it `/mcp` does not exist (404). See `.env.example` for the other variables

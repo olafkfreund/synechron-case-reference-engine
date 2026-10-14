@@ -146,11 +146,14 @@ def main() -> int:
     new = updated = refreshed = 0
     with db.connect() as conn:
         src = {}
-        for s in demo["sources"]:
+        for i, s in enumerate(demo["sources"]):
+            staff = {"staff": True} if i == 0 else {}  # the first one takes plain users' uploads (#249)
             conn.execute(
                 "insert into sources(kind, name, config, acl_groups) values ('upload', %s, %s, %s) "
                 "on conflict (name) do nothing",
-                (s["name"], Jsonb({"bucket": bucket, "prefix": s["prefix"]}), s["groups"]))
+                (s["name"], Jsonb({"bucket": bucket, "prefix": s["prefix"], **staff}), s["groups"]))
+            if staff:  # an existing demo database gets it too
+                conn.execute("update sources set config = config || %s where name=%s", (Jsonb(staff), s["name"]))
             src[s["name"]] = conn.execute("select id, acl_groups from sources where name=%s", (s["name"],)).fetchone()
         for c in demo["clients"]:
             conn.execute(
