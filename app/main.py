@@ -197,7 +197,7 @@ def create_app() -> FastAPI:
                 response = JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
             else:
                 # size before parsing: FastAPI spools a multipart body before auth runs
-                cap = (upload_cap() if path in ("/admin/upload", "/upload")
+                cap = (upload_cap() if path in ("/admin/upload", "/upload") or path.startswith("/mcp/upload/")
                        else diagrams.MAX_BYTES if re.fullmatch(r"/review/\d+/diagrams", path) else BODY_CAP)
                 length = request.headers.get("content-length")
                 if length is None or not length.isdigit() or int(length) > cap + 64 * 1024:
