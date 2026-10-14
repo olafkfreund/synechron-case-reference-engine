@@ -861,6 +861,10 @@ def upload_route(verifier: EntraVerifier, client_ids: frozenset[str]) -> Route:
         record(user.sub, client, "upload", [uid], "ok", int((time.monotonic() - t0) * 1000))
         return JSONResponse({"upload_id": uid}, headers={"Cache-Control": "no-store"})
 
+    def precheck(sub, size):  # the unlocked quota check; accept_upload repeats it under the lock
+        with db.connect() as conn:
+            ingest.check_quota(conn, sub, size)
+
     async def handler(request: Request):
         auth = request.headers.get("authorization", "")
         try:
@@ -883,8 +887,12 @@ def upload_route(verifier: EntraVerifier, client_ids: frozenset[str]) -> Route:
                 raise Refused(403, "this link was made for another user")
             if request.headers.get("content-length") != str(p["s"]):
                 raise Refused(400, "the body size does not match the size the link was made for")
+            await run_in_threadpool(precheck, user.sub, p["s"])  # before the body is read: a refused burst costs no memory
             return await run_in_threadpool(work, user, client, p, await request.body())
-        except (Refused, HTTPException) as e:
+        except Exception as e:
+            if not isinstance(e, (Refused, HTTPException)):
+                logging.getLogger(__name__).exception("upload failed")
+                e = Refused(500, "upload failed")
             status, detail = (e.status, e.detail) if isinstance(e, Refused) else (e.status_code, e.detail)
             outcome = "rate_limited" if status == 429 else "denied" if status in (403, 409, 410) else OUTCOMES.get(status, "error")
             await run_in_threadpool(record, user.sub, client, "upload", [], outcome, 0, once=True)

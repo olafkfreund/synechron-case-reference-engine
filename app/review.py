@@ -1,3 +1,4 @@
+import time
 import hashlib
 import re
 import copy
@@ -29,11 +30,19 @@ templates.env.globals["css_version"] = hashlib.sha256(
     b"".join((Path(__file__).parent / "static" / f).read_bytes() for f in ("portal.css", "theme.js"))).hexdigest()[:12]
 
 
+_staff_seen = (0.0, False)
+
+
 def staff_uploads() -> bool:
-    """Whether the Upload tab shows: a staff upload source exists (#249)."""
+    """Whether the Upload tab shows: a staff upload source exists (#249). Cached, so a page render opens no connection."""
+    global _staff_seen
+    # shortcut: up to 60 s stale after an admin toggles staff, and per process; a TTL is enough for a nav tab
+    if time.monotonic() - _staff_seen[0] < 60 and _staff_seen[0]:
+        return _staff_seen[1]
     from app import ingest
     with db.connect() as conn:
-        return ingest.staff_source(conn) is not None
+        _staff_seen = (time.monotonic(), ingest.staff_source(conn) is not None)
+    return _staff_seen[1]
 
 
 templates.env.globals["staff_uploads"] = staff_uploads

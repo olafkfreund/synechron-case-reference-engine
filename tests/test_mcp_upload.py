@@ -175,3 +175,26 @@ def test_an_uploaded_draft_is_invisible_to_other_users(mcp, make):
         c.execute("update cases set status='approved', review_due=now() + interval '30 days', search_text='onboarding', summary='onboarding' where id=%s", (cid,))
     assert not other.call("get_case", case_id=cid).get("isError")
     assert web.get(f"/go/{did}", follow_redirects=False).status_code == 303
+
+
+def test_quota_is_refused_before_the_body_is_read_or_accepted(mcp, staff, monkeypatch):
+    s = mcp()
+    url = url_of(s)
+    with db.connect() as c:
+        c.execute("insert into uploads(user_key, source_id, s3_key, bytes, job_id) select %s, %s, 'k', 1, 1 from generate_series(1, 20)", (s.who, staff))
+    monkeypatch.setattr(__import__("app.ingest", fromlist=["x"]), "accept_upload",
+                        lambda *a: pytest.fail("accept_upload ran"))
+    assert put(s, url).status_code == 429
+
+
+def test_unexpected_error_is_a_generic_500_audited_once(mcp, staff, monkeypatch):
+    from app import ingest
+    s = mcp()
+    url = url_of(s)
+
+    def boom(*a):
+        raise RuntimeError("secret detail")
+    monkeypatch.setattr(ingest, "accept_upload", boom)
+    r = put(s, url)
+    assert r.status_code == 500 and "secret" not in r.text
+    assert [r_[1] for r_ in s.rows() if r_[0] == "upload"] == ["error"]

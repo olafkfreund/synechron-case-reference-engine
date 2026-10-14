@@ -341,6 +341,8 @@ def create_app() -> FastAPI:
     UPLOAD_NOTICES = {  # allow-list: the query string picks a message, never supplies one
         "uploaded": ("ok", "File received. It is queued for processing."),
         "quota": ("bad", "Upload refused: daily upload limit reached (20 files or 200 MiB)"),
+        "busy": ("bad", "Another upload of yours is in progress; try again in a moment"),
+        "off": ("bad", "Uploads are not configured"),
         "type": ("bad", f"Upload refused: allowed types are {', '.join(sorted(UPLOAD_MAGIC))}"),
         "size": ("bad", "Upload refused: the file is larger than the limit"),
         "content": ("bad", "Upload refused: the file content does not match its extension"),
@@ -364,9 +366,10 @@ def create_app() -> FastAPI:
             with db.connect() as conn:
                 ingest.accept_upload(conn, user, file.filename, data)
         except HTTPException as e:
-            if not wants_html(request) or e.status_code not in (400, 413, 429):
+            if not wants_html(request) or e.status_code not in (400, 413, 429, 503):
                 raise
-            code = e.code if isinstance(e, UploadRefused) else "quota"
+            code = e.code if isinstance(e, UploadRefused) else (
+                "off" if e.status_code == 503 else "quota" if e.detail == ingest.QUOTA_MSG else "busy")
             return RedirectResponse(f"/upload?notice={code}", status_code=303)
         if wants_html(request):
             return RedirectResponse("/upload?notice=uploaded", status_code=303)

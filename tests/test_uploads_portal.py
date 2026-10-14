@@ -54,6 +54,14 @@ def test_refusals_are_notices(staff):
     assert "daily upload limit" in me.get("/upload?notice=quota").text
 
 
+def test_post_without_a_staff_source_redirects_to_a_notice(staff):
+    with db.connect() as c:
+        c.execute("update sources set config = config - 'staff' where id=%s", (staff,))
+    r = post(client([USER]))
+    assert r.headers["location"] == "/upload?notice=off"
+    assert "Uploads are not configured" in client([USER]).get("/upload?notice=off").text
+
+
 def test_cross_origin_post_is_refused(staff):
     c = client([USER], origin="http://evil.example")
     assert post(c).status_code == 403
@@ -77,3 +85,13 @@ def test_review_page_shows_who_uploaded(make, staff):  # noqa: F811
     with db.connect() as c:
         c.execute("delete from uploads where user_key='x-1'")
     assert "Uploaded by" not in client(R).get(f"/review/{cid}").text
+
+
+def test_the_tab_lookup_is_cached(staff, monkeypatch):
+    from app import review
+    assert review.staff_uploads() is True
+    with db.connect() as c:
+        c.execute("update sources set config = config - 'staff' where id=%s", (staff,))
+    assert review.staff_uploads() is True  # still cached: no query
+    review._staff_seen = (0.0, False)
+    assert review.staff_uploads() is False

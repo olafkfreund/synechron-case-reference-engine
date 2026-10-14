@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app import anonymise, db
 from app.diagrams import document_images_from
-from app.llm import complete_json
+from app.llm import PolicyError, complete_json
 
 TRIAGE_HEAD, TRIAGE_TAIL = 8000, 4000  # plain cuts, no tokenizer; signatures sit at the end
 
@@ -74,7 +74,15 @@ def ingest_upload(source_id: int, key: str) -> str:
     with db.connect() as conn:
         bucket = conn.execute("select config->>'bucket' from sources where id=%s", (source_id,)).fetchone()[0]
     body = boto3.client("s3").get_object(Bucket=bucket, Key=key)["Body"].read()
-    return ingest(source_id, key, key.rsplit("/", 1)[-1], body)
+    from app import research  # lazily: research imports this module
+
+    def bounded(data, name):  # a plain user's file must not hold the worker: page cap, and a killable timeout
+        try:
+            return research.convert(data, name, int(os.environ.get("UPLOAD_MAX_PAGES", 300)),
+                                    int(os.environ.get("UPLOAD_CONVERT_TIMEOUT", 300)), None)
+        except research.ConvertTimeout as e:
+            raise PolicyError("conversion took too long") from e  # the worker does not retry these
+    return ingest(source_id, key, key.rsplit("/", 1)[-1], body, convert=bounded)
 
 
 UPLOAD_QUOTA = (20, 200 * 1024 * 1024)  # files and bytes per user over a rolling 24 h
@@ -92,6 +100,12 @@ def upload_used(conn, sub: str) -> tuple[int, int]:
                         "where user_key=%s and created_at > now() - interval '24 hours'", (sub,)).fetchone()
 
 
+def check_quota(conn, sub: str, size: int) -> None:
+    files, used = upload_used(conn, sub)
+    if files >= UPLOAD_QUOTA[0] or used + size > UPLOAD_QUOTA[1]:
+        raise HTTPException(429, QUOTA_MSG)
+
+
 def accept_upload(conn, user, name: str | None, data: bytes) -> int:
     """Checks, counts against the quota, stores the file and queues one ingest job. Returns the upload id."""
     from app.main import check_file  # lazily: app.main imports this module's neighbours
@@ -103,33 +117,44 @@ def accept_upload(conn, user, name: str | None, data: bytes) -> int:
     if prefix and not prefix.endswith("/"):
         prefix += "/"
     key = f"{prefix}{uuid.uuid4().hex}/{name}"
-    # the lock holds until the caller's transaction ends, so a burst cannot pass the count together
-    conn.execute("select pg_advisory_xact_lock(hashtext('upload:'||%s))", (user.sub,))
-    files, used = upload_used(conn, user.sub)
-    if files >= UPLOAD_QUOTA[0] or used + len(data) > UPLOAD_QUOTA[1]:
-        raise HTTPException(429, QUOTA_MSG)
-    boto3.client("s3").put_object(Bucket=src[1]["bucket"], Key=key, Body=data)
-    job = conn.execute("insert into jobs(kind, payload) values ('ingest_upload', "
-                       "jsonb_build_object('source_id', %s::bigint, 'key', %s::text)) returning id", (src[0], key)).fetchone()[0]
-    return conn.execute("insert into uploads(user_key, user_name, source_id, s3_key, bytes, job_id) "
-                        "values (%s, %s, %s, %s, %s, %s) returning id",
-                        (user.sub, user.name, src[0], key, len(data), job)).fetchone()[0]
+    # the lock holds until the transaction ends; a user's parallel requests never wait on it (a burst must not pin the pool)
+    if not conn.execute("select pg_try_advisory_xact_lock(hashtext('upload:'||%s))", (user.sub,)).fetchone()[0]:
+        raise HTTPException(429, "another upload of yours is in progress; try again")
+    check_quota(conn, user.sub, len(data))
+    bucket = src[1]["bucket"]
+    boto3.client("s3").put_object(Bucket=bucket, Key=key, Body=data)
+    try:  # crawl_s3 reads this prefix: an object without its uploads row would be ingested uncounted
+        job = conn.execute("insert into jobs(kind, payload) values ('ingest_upload', "
+                           "jsonb_build_object('source_id', %s::bigint, 'key', %s::text)) returning id", (src[0], key)).fetchone()[0]
+        uid = conn.execute("insert into uploads(user_key, user_name, source_id, s3_key, bytes, job_id) "
+                           "values (%s, %s, %s, %s, %s, %s) returning id",
+                           (user.sub, user.name, src[0], key, len(data), job)).fetchone()[0]
+        conn.commit()
+        return uid
+    except BaseException:
+        try:
+            boto3.client("s3").delete_object(Bucket=bucket, Key=key)
+        except Exception:  # noqa: BLE001 - best effort; the original error is the one to raise
+            pass
+        raise
 
 
-STATUS_COLS = ("j.status, d.id, c.status, exists(select 1 from jobs x where x.kind='extract' and x.status in ('queued','running') "
-               "and (x.payload->>'document_id')::bigint = d.id)")
+STATUS_COLS = ("j.status, d.id, coalesce(p.status, c.status), (select x.status from jobs x where x.kind='extract' "  # a merged case reads its parent
+               "and (x.payload->>'document_id')::bigint = d.id order by x.id desc limit 1)")
 STATUS_FROM = ("from uploads u left join jobs j on j.id = u.job_id "
                "left join documents d on d.source_id = u.source_id and d.external_id = u.s3_key "
-               "left join cases c on c.document_id = d.id")
+               "left join cases c on c.document_id = d.id left join cases p on p.id = c.merged_into")
 
 
-def status_code(job, doc, case, extracting) -> str:
+def status_code(job, doc, case, extract) -> str:
     if job == "failed" or (job == "done" and doc is None):
         return "failed"
     if doc is None:
         return "queued"
-    if case is None and extracting:  # triage has not decided yet: not "not a case" yet
+    if case is None and extract in ("queued", "running"):  # triage has not decided yet: not "not a case" yet
         return "queued"
+    if case is None and extract == "failed":
+        return "failed"
     return {"extracted": "in_review", "approved": "approved", "rejected": "rejected"}.get(case, "indexed")
 
 
@@ -156,7 +181,7 @@ def reopen_merged(conn, doc_ids: list[int]) -> None:
 
 
 def ingest(source_id: int, external_id: str, title: str, data: bytes, source_version: str | None = None,
-           links: tuple[str | None, str | None] = (None, None)) -> str:
+           links: tuple[str | None, str | None] = (None, None), convert=None) -> str:
     """Returns 'skipped' (same bytes), 'updated' (new version) or 'new'."""
     checksum = hashlib.sha256(data).hexdigest()
     missing = None  # set when the bytes are unchanged: does the document still need its image candidates?
@@ -187,7 +212,7 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
 
     key = f"originals/{checksum}"
     boto3.client("s3").put_object(Bucket=os.environ["S3_BUCKET"], Key=key, Body=data)
-    text = to_markdown(data, title or PurePosixPath(external_id).name)  # title carries the extension; SharePoint/Confluence ids do not
+    text = (convert or to_markdown)(data, title or PurePosixPath(external_id).name)  # title carries the extension; SharePoint/Confluence ids do not
     with db.connect() as conn:  # conversion can take minutes; an admin may have raised the class (#158)
         src = conn.execute("select data_class from sources where id=%s", (source_id,)).fetchone()
     if not src:
