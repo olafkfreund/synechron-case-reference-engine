@@ -505,6 +505,17 @@ with a diagram, in light and dark. Opus, Codex and agy reviews. Run
     checked, never rewritten.
   - **Rights per attach.** Rights are recorded on the case diagram itself.
     The `research_images.rights_*` columns from c1 are left unused.
+- **Phase (d) revised, d1.**
+  - **`Evidence` fields.** It carries `quotes`, `tech`, `outcomes` and
+    `delivered`, not `(cites, vocab)`. Tech matching needs the raw text,
+    and the unchanged flags and callouts need the others.
+    `evidence_of_quotes` leaves `tech` empty, so every brief component
+    must cite a source.
+  - **Callers unchanged.** `check_architecture` and `prune_architecture`
+    still accept a plain case, so existing callers and tests are
+    untouched.
+  - **Parser untouched.** `parse_architecture` never used its case
+    argument.
 
 ## Tests
 

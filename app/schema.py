@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass, field
 from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -373,14 +374,39 @@ DEFAULT_TITLE = "Solution architecture"
 CITE_POINTS = ("solution", "implementation", "configuration")
 
 
-def _cite_quote(case: "ReferenceCase", cite: str) -> str | None:
-    """The sourced quote a cite such as "solution 2" or "reference 3" names, else None."""
-    kind, _, n = cite.strip().lower().partition(" ")
-    if not n.isdigit() or int(n) < 1:
-        return None
-    items = case.tech_references if kind == "reference" else case.points.get(kind, []) if kind in CITE_POINTS else []
-    i = int(n) - 1
-    return items[i].source_quote if i < len(items) and items[i].source_quote and not items[i].unsourced else None
+@dataclass
+class Evidence:
+    """What an architecture may cite: label -> (value, quote), the technology text, every quote, and the outcome quotes (None = unsourced)."""
+    cites: dict[str, tuple[str, str]]
+    tech: str = ""
+    quotes: list[str] = field(default_factory=list)
+    outcomes: list[str | None] = field(default_factory=list)
+    delivered: bool = False  # callouts are allowed
+
+    def quote(self, cite: str) -> str | None:
+        """The sourced quote a cite such as "solution 2" or "source 3" names, else None."""
+        kind, _, n = cite.strip().lower().partition(" ")
+        if not n.isdigit() or int(n) < 1:
+            return None
+        hit = self.cites.get(f"{kind} {int(n)}")
+        return hit[1] if hit else None
+
+
+def evidence_of_case(case: "ReferenceCase") -> Evidence:
+    cites = {f"{f} {i}": (p.value, p.source_quote) for f in CITE_POINTS for i, p in enumerate(case.points.get(f, []), 1)
+             if p.source_quote and not p.unsourced}
+    cites |= {f"reference {i}": (r.value, r.source_quote) for i, r in enumerate(case.tech_references, 1) if r.source_quote and not r.unsourced}
+    return Evidence(cites, " ".join(_tech_values(case)), case.quotes(), [None if o.unsourced else o.source_quote for o in case.outcomes],
+                    case.basis == "delivered")
+
+
+def evidence_of_quotes(quotes: list[str]) -> Evidence:
+    """A brief's numbered quotes, cited as "source 1", "source 2"..."""
+    return Evidence({f"source {i}": (q, q) for i, q in enumerate(quotes, 1) if q}, "", [q for q in quotes if q])
+
+
+def _ev(src) -> Evidence:
+    return src if isinstance(src, Evidence) else evidence_of_case(src)
 
 
 def _words(s: str) -> set[str]:
@@ -457,33 +483,33 @@ def unsupported_terms(name: str, vocab: set[str]) -> list[str]:
     return out
 
 
-def tech_match(case: "ReferenceCase", name: str) -> bool:
-    return bool(_words(name) & _words(" ".join(_tech_values(case))))
+def tech_match(ev: Evidence, name: str) -> bool:
+    return bool(_words(name) & _words(ev.tech))
 
 
-def prune_architecture(case: "ReferenceCase") -> None:
-    """Drop a component with neither a cite nor a technology match, and the flows that lose an end (decision 2)."""
-    a = case.architecture
+def prune_architecture(case, arch: "Architecture | None" = None) -> None:
+    """Drop a component with neither a cite nor a technology match, and the flows that lose an end (decision 2).
+    `case` is a ReferenceCase (its own architecture) or an Evidence (then `arch`)."""
+    ev, a = _ev(case), arch or getattr(case, "architecture", None)
     if a:
-        a.components = [c for c in a.components if c.cite.strip() or tech_match(case, c.name)]
+        a.components = [c for c in a.components if c.cite.strip() or tech_match(ev, c.name)]
         ids = {c.id for c in a.components}
         a.flows = [f for f in a.flows if f.src in ids and f.dst in ids]
 
 
-def check_architecture(case: "ReferenceCase") -> list[str]:
-    """What in the architecture no sourced point supports; empty means clean. The case is not changed."""
-    from app.writeup import check_prose  # writeup imports this module
-    a = case.architecture
+def check_architecture(case, arch: "Architecture | None" = None) -> list[str]:
+    """What in the architecture no sourced point supports; empty means clean. The case is not changed.
+    `case` is a ReferenceCase (its own architecture) or an Evidence (then `arch`)."""
+    ev, a = _ev(case), arch or getattr(case, "architecture", None)
     if not a:
         return []
-    allq, flags = case.quotes(), []
-    tech = " ".join(_tech_values(case))
+    allq, flags, tech = ev.quotes, [], ev.tech
     for c in a.components:
-        q = _cite_quote(case, c.cite) if c.cite.strip() else None
+        q = ev.quote(c.cite) if c.cite.strip() else None
         who = f"component '{c.name}'"
         if c.cite.strip() and q is None:
             flags.append(f"{who} cites '{c.cite}', which is no sourced point")
-        if not c.cite.strip() and not tech_match(case, c.name):
+        if not c.cite.strip() and not tech_match(ev, c.name):
             flags.append(f"{who} has no cite and matches no technology")
         if c.cite.strip() and not _words(c.name) & (_words(q or "") | _words(tech)):
             flags.append(f"{who} matches neither its cited point nor the technology")  # one flag when there is no cite either: above
@@ -492,17 +518,17 @@ def check_architecture(case: "ReferenceCase") -> list[str]:
         flags += [f"{who}: {f}" for t in (c.name, c.role) for f in _prose(t, [q] if q else [], allq)]
     names = {c.id: c.name for c in a.components}
     for f in a.flows:
-        q = _cite_quote(case, f.cite) if f.cite.strip() else None
+        q = ev.quote(f.cite) if f.cite.strip() else None
         who = f"flow '{names.get(f.src, f.src)}' to '{names.get(f.dst, f.dst)}'"
         if not f.cite.strip() or q is None:
             flags.append(f"{who} cites no sourced point" if not f.cite.strip() else f"{who} cites '{f.cite}', which is no sourced point")
         flags += [f"{who}: {m}" for m in _prose(f.label, [q] if q else [], allq)]
     for co in a.callouts:
-        o = case.outcomes[co.outcome] if 0 <= co.outcome < len(case.outcomes) else None
-        if o is None or o.unsourced:
+        o = ev.outcomes[co.outcome] if 0 <= co.outcome < len(ev.outcomes) else None
+        if o is None:
             flags.append(f"callout '{co.text}' points at outcome {co.outcome}, which is no sourced outcome")
             continue
-        flags += [f"callout '{co.text}': {m}" for m in _prose(co.text, [o.source_quote], allq)]
+        flags += [f"callout '{co.text}': {m}" for m in _prose(co.text, [o], allq)]
     if a.title != DEFAULT_TITLE:
         flags += [f"title: {m}" for m in _prose(a.title, allq, allq)]
     return list(dict.fromkeys(flags))

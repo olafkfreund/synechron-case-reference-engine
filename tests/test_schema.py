@@ -419,3 +419,16 @@ def test_a_capitalised_first_word_in_a_role_label_callout_or_title_is_checked():
     assert any("'Workday'" in f for f in check(c))
     c, check = _checked(components=[comp("The events carrier")], flows=[], callouts=[], title="Solution architecture")
     assert check(c) == []  # an ordinary opener and the default title pass
+
+
+def test_architecture_through_evidence_gives_the_same_flags_as_through_the_case():
+    from app.schema import check_architecture, evidence_of_case, prune_architecture
+    bad = dict(components=[{"id": "a", "name": "Snowflake store", "role": "Handles 99 claims", "zone": "core", "kind": "app", "cite": "solution 9"},
+                           {"id": "k", "name": "Kafka events", "role": "Carries", "zone": "data", "kind": "queue", "cite": "configuration 1"}],
+               flows=[{"src": "a", "dst": "k", "label": "x", "mode": "event", "cite": ""}],
+               callouts=[{"text": "Handling from 11 days to 3", "outcome": 0}])
+    c, _ = _checked(**bad)
+    flags = check_architecture(c)
+    assert flags and flags == check_architecture(evidence_of_case(c), c.architecture)
+    prune_architecture(evidence_of_case(c), c.architecture)
+    assert [x.id for x in c.architecture.components] == ["a", "k"]  # both cite something
