@@ -302,6 +302,10 @@ create table if not exists document_images (
 create index if not exists document_images_document_idx on document_images (document_id);
 -- sha256 of the original entry: the re-encoded PNG can change with a library upgrade, the source does not (null for older rows)
 alter table document_images add column if not exists src_hash text;
+-- a candidate that is not from a document: a library brief's diagram offered to one case (#231), with the credit it carries
+alter table document_images alter column document_id drop not null;
+alter table document_images add column if not exists case_id bigint references cases(id) on delete cascade;
+alter table document_images add column if not exists credit text not null default '';
 
 alter table documents add column if not exists updated_at timestamptz;
 update documents set updated_at = created_at where updated_at is null;  -- keep the real age of existing documents

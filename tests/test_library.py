@@ -390,3 +390,14 @@ def test_a_topic_chip_link_can_be_followed(reg, lib):
     chip = next(h for h in hrefs if "Cloud" in h)
     r = c.get(chip)
     assert r.status_code == 200 and f"/library/{a}" in r.text and f"/library/{other}" not in r.text
+
+
+def test_a_library_brief_keeps_its_diagram(lib):
+    from tests.test_brief import QUOTES, body
+    d = {"components": [{"id": "c1", "name": "Entra", "role": "x", "zone": "core", "kind": "service", "cite": "source 1"}]}
+    with db.connect() as c:
+        bid = c.execute("insert into briefs(created_by, title, quotes, body, status) values ('u1','t',%s,%s,'done') returning id",
+                        (json.dumps(QUOTES), json.dumps({**body(), "flags": [], "diagram": d}))).fetchone()[0]
+    assert as_user("u1").post("/library/save", data={"brief_id": bid}, follow_redirects=False).status_code == 303
+    with db.connect() as c:
+        assert c.execute("select body->'brief'->'diagram'->'components'->0->>'name' from library_items where created_by='u1'").fetchone()[0] == "Entra"

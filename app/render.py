@@ -143,6 +143,15 @@ def brief_section(body: dict, quotes: list[dict], clients, images=()) -> dict:
                 "url": CTRL.sub("", str(i.get("url") or ""))}
         if not anonymise.blocked("\n".join(link.values()), clients):
             links.append(link)
+    arch = credit = None
+    if body.get("diagram"):  # drawn from the picked quotes; left out whole if any of its words or sources would change or go
+        a = Architecture.model_validate(body["diagram"])
+        used = sorted({int(n) for x in (*a.components, *a.flows) for n in re.findall(r"source (\d+)", x.cite.lower())})
+        if dead & set(used) or any(clean(t) != t or anonymise.blocked(t, clients) for t in _strings(a.model_dump(exclude={"flags"}))):
+            omitted += 1
+        else:
+            arch = a
+            credit = "Diagram drawn by Synechron" + (f" from sources [{', '.join(map(str, used))}]" if used else "")
     title = clean(body.get("title"))
     if not title or anonymise.blocked(title, clients):
         title = "Best practice brief"
@@ -155,6 +164,7 @@ def brief_section(body: dict, quotes: list[dict], clients, images=()) -> dict:
             themes.append({"heading": heading, "text": text})
     out = {"title": title, "disclaimer": INDUSTRY_DISCLAIMER, "takeaways": [x for x in map(prose, body.get("takeaways", [])) if x],
            "themes": themes, "sources": sources, "images": links, "appendix": appendix,
+           "arch": arch, "credit": credit, "mermaid": to_mermaid(arch) if arch else "",
            "note": (f"{omitted} statement{'s' if omitted != 1 else ''} omitted: "
                     f"{'they' if omitted != 1 else 'it'} named a protected client") if omitted else ""}
     if anonymise.blocked("\n".join(_strings(out)), clients):
@@ -168,6 +178,7 @@ BRIEF_TEMPLATE = TEMPLATE.with_name("brief.docx")
 def to_brief_docx(sec: dict) -> bytes:
     tpl = DocxTemplate(BRIEF_TEMPLATE)
     sec = {**sec, "appendix": [{**q, "rich": _mono(q)} if q.get("mono") else q for q in sec["appendix"]]}
+    sec["diagram"] = InlineImage(tpl, BytesIO(to_png(layout(sec["arch"]))), width=Mm(160)) if sec["arch"] else None
     tpl.render({"brief": sec}, autoescape=True)
     props = tpl.docx.core_properties  # never ship the template's own metadata
     props.title, props.author, props.last_modified_by = "Best practice brief", "Reference Engine", "Reference Engine"
@@ -659,6 +670,15 @@ BRIEF_MD = _env.from_string("""\
 {{ t.text | md }}
 
 {% endfor %}
+{% if b.arch %}
+## Diagram
+
+```mermaid
+{{ b.mermaid }}```
+
+*{{ b.credit | md }}*
+
+{% endif %}
 {% if b.sources %}
 ## Sources
 

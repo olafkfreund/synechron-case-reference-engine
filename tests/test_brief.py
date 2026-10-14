@@ -422,3 +422,34 @@ def test_saving_a_diagram_checks_it_a_stale_version_is_409_and_errors_keep_the_o
         v3 = conn.execute("select md5(body::text) from briefs where id=%s", (bid,)).fetchone()[0]
     assert c.post(f"/brief/{bid}/diagram", data={"text": " ", "v": v3}, follow_redirects=False).status_code == 303
     assert "diagram" not in stored(bid) and stored(bid)["flags"] == []
+
+
+# ---- the diagram in the outputs (#231 d4) ----
+def test_every_format_carries_the_diagram_and_its_credit_and_none_leaves_no_gap(made):
+    bid, _ = with_diagram(made)
+    c = as_user("u1")
+    credit = "Diagram drawn by Synechron from sources [1]"
+    md = c.post(f"/briefs/{bid}/download", data={"format": "md"}).text.replace("\\", "")
+    assert "## Diagram\n\n```mermaid\nflowchart LR" in md and credit in md
+    d = c.post(f"/briefs/{bid}/download", data={"format": "docx"}).content
+    assert credit in "\n".join(p.text for p in Document(io.BytesIO(d)).paragraphs)
+    assert any(n.startswith("word/media/") for n in zipfile.ZipFile(io.BytesIO(d)).namelist())
+    pdf = c.post(f"/briefs/{bid}/download", data={"format": "pdf_docx"}).content
+    assert credit in " ".join(pdf_text(pdf)[0].split())
+    plain = made()  # no diagram: no heading, no credit, no image
+    md = c.post(f"/briefs/{plain}/download", data={"format": "md"}).text
+    d = c.post(f"/briefs/{plain}/download", data={"format": "docx"}).content
+    assert "Diagram" not in md and "mermaid" not in md
+    text = "\n".join(p.text for p in Document(io.BytesIO(d)).paragraphs)
+    assert "Diagram" not in text and not any(n.startswith("word/media/") for n in zipfile.ZipFile(io.BytesIO(d)).namelist())
+
+
+def test_a_protected_name_or_a_dropped_source_leaves_the_diagram_out_of_the_output(made):
+    bid, _ = with_diagram(made)
+    quotes = [{"quote": Q[0]}, {"quote": Q[1]}]
+    b = {**body(), "diagram": stored(bid)["diagram"]}
+    clients = [{"id": 1, "name": "Entra", "aliases": [], "anonymised_label": "a retailer", "referenceable": False}]
+    assert render.brief_section(b, quotes, [])["arch"] is not None
+    assert render.brief_section(b, quotes, clients)["arch"] is None  # the name would change: nothing is drawn
+    clients = [{"id": 1, "name": "v.example", "aliases": [], "anonymised_label": "a site", "referenceable": False}]
+    assert render.brief_section(b, [{**QUOTES[0]}, QUOTES[1]], clients)["arch"] is None  # its source is dropped

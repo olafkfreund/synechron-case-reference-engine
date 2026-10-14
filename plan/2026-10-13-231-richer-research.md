@@ -531,6 +531,17 @@ with a diagram, in light and dark. Opus, Codex and agy reviews. Run
     editor does.
   - **Errors.** A parse error re-renders the page with status 400 and
     keeps the stored diagram.
+- **Phase (d) revised, d4** (full suite 1578 passed, 4 skipped):
+  - **Two extra columns.** `document_images` also gets `case_id`
+    (cascade) and `credit` beside the nullable `document_id`; otherwise a
+    case candidate has no case link and nowhere to keep the credit. The
+    candidate queries and the image route are scoped by `case_id`, and
+    repeat attaches are deduped by sha256.
+  - **Withholding.** `brief_section` leaves the diagram out if
+    anonymisation would change it, if it is blocked, or if it cites a
+    dropped source, and counts that in the note.
+  - **Credit numbers.** "[n…]" refers to the brief's sources, as the
+    plan worded it.
 
 ## Tests
 
