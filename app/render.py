@@ -319,7 +319,7 @@ def protect(sections: list[dict], clients) -> list[dict]:
 
 def _mono(q: dict) -> RichText:
     rt = RichText()
-    rt.add(q["quote"], font="Consolas")
+    rt.add(q["quote"], font="Aptos Mono")
     rt.add(f" [{q['n']}]")
     return rt
 
@@ -340,7 +340,7 @@ def to_docx(sections: list[dict], industry: dict | None = None, images: dict[int
                  "arch_image": InlineImage(tpl, BytesIO(to_png(a[1])), width=Mm(160)) if (a := architecture_of(s)) else None,
                  "logo": InlineImage(tpl, BytesIO(s["logo"]), *(Mm(x) for x in _fit(s["logo"], *logo_box))) if s.get("logo") else None}
                 for s in sections]
-    if industry:  # a note is Consolas, line by line, in a run of its own (the template checks q.mono)
+    if industry:  # a note is Aptos Mono, line by line, in a run of its own (the template checks q.mono)
         industry = {**industry, "groups": [{**g, "quotes": [{**q, "rich": _mono(q)} if q.get("mono") else q for q in g["quotes"]]}
                                            for g in industry["groups"]]}
     tpl.render({"cases": sections, "industry": industry}, autoescape=True)  # autoescape: & and < must not break the XML
