@@ -107,3 +107,7 @@ None yet.
     ACLs (`documents.acl_groups && groups`, not deleted) for `extract`
     jobs, and the upload source's `acl_groups` for `ingest_upload` jobs.
     It is a count only, with no names.
+- **Step 4.** `docs/mcp.md` lists every stage and the `detail` field, and
+  the MCP tests cover the queued and reading details. The pending-only
+  script check was negative-controlled. Full suite: 1501 passed, 1
+  skipped (the node stub test, run on the host).

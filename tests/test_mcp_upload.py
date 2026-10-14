@@ -50,7 +50,13 @@ def test_tool_put_then_status_queued(mcp, staff):
     r = put(s, out["upload_url"].removeprefix("http://testserver"))
     assert r.status_code == 200
     uid = r.json()["upload_id"]
-    assert s.out("get_upload_status", upload_id=uid)["status"] == "queued"
+    got = s.out("get_upload_status", upload_id=uid)
+    assert got["status"] == "queued" and got["detail"].startswith("Waiting in line: ")
+    with db.connect() as c:
+        c.execute("update jobs set status='running' where id=(select job_id from uploads where id=%s)", (uid,))
+    got = s.out("get_upload_status", upload_id=uid)
+    assert got["status"] == "reading" and "Converting" in got["detail"]
+    assert s.out("list_my_uploads")["uploads"][0]["detail"] == got["detail"]
     assert [u["id"] for u in s.out("list_my_uploads")["uploads"]] == [uid]
     assert mcp().call("get_upload_status", upload_id=uid)["isError"]  # another user: not found
     assert ("upload", "ok", [uid]) in [r[:3] for r in s.rows()]
