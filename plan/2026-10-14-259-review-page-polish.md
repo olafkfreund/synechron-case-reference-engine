@@ -212,3 +212,6 @@ Revert the merge commit. There is no data or schema change.
   - **Not screenshotted:** the architecture empty state. Every demo case
     without a diagram is approved and read-only (not due), so there is no
     editable empty case to shoot. The new test covers the state.
+- Review fix (Codex gpt-6-sol): Revert while previewing returns to the
+  editor, so the preview never shows text that Save would not send.
+  Checked with a DOM stub under node.

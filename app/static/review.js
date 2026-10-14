@@ -16,7 +16,7 @@
     }
     t.addEventListener("input", sync);
     t.addEventListener("keydown", function (e) { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); f.requestSubmit(save); } });
-    rev.addEventListener("click", function () { t.value = t.defaultValue; sync(); });
+    rev.addEventListener("click", function () { t.value = t.defaultValue; if (!box.hidden) pv.click(); sync(); });  // back to the editor: a preview must never show unsaved text
     pv.addEventListener("click", function () {  // textContent only: the text is never parsed as HTML
       var show = box.hidden;
       box.textContent = "";
