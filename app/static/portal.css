@@ -184,6 +184,7 @@ details.mini>summary{list-style:none;cursor:pointer;display:inline-flex;align-it
 details.mini>summary:hover{border-color:var(--text)}
 details.mini>summary::after{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .15s}
 details.mini[open]>summary::after{transform:rotate(-135deg) translateY(-2px)}
+details.mini>summary.btn-sm::after{position:static;inset:auto}  /* the chevron, not .btn-sm's touch-target overlay */
 /* open: the summary stays put; the rest is a subtle block under it */
 details.mini[open]{flex:1 1 100%;background:var(--subtle);border-radius:var(--r-card);padding:0 0 12px}
 details.mini[open]>summary{margin:0 0 12px}
@@ -209,6 +210,23 @@ details.mini:not([open])>summary,.client-row .slot{min-width:84px;justify-conten
 .source-row .counts{font-size:13px;display:flex;gap:10px}
 .source-row form.inline{margin:0}
 .source-row .status-list{margin:0 0 12px}
+.source-row.src .run{white-space:nowrap}
+.source-row.src .btn-sm,.source-row.src summary{white-space:nowrap}
+/* Sources only: 36px buttons, with a 44px touch target from a pseudo-element the chevron does not use */
+.source-row.src details.mini>summary{min-height:36px;padding:0 12px;font-size:13px;position:relative}
+.source-row.src details.mini>summary::before{content:"";position:absolute;inset:-4px 0}
+.src-add>summary{min-height:36px;padding:0 12px;font-size:13px;position:relative}
+.src-add>summary::before{content:none}  /* "+ Add source" says it already */
+.src-add>summary::after{content:"";position:absolute;inset:-4px 0}
+@media (min-width:900px){
+.source-row.src{display:grid;grid-template-columns:24px minmax(160px,1.4fr) auto minmax(0,1fr) auto 88px 88px 88px;gap:6px 12px}
+.src form.inline{grid-column:6}
+.src details.up{grid-column:7}
+.src details.mini:last-child{grid-column:8}
+.src>*{grid-row:1}
+.src details.mini[open]{grid-column:1 / -1;grid-row:2}  /* the cells stay on row 1; an opened panel goes beneath */
+.src .counts{display:flex;gap:10px}
+}
 .source-row input[type=text],.source-row select{width:100%}
 .help-links{display:flex;flex-wrap:wrap;gap:0 20px}
 .help-links details.help-link[open]{flex:1 1 100%}
@@ -285,13 +303,31 @@ h2.sub{font-size:15px;color:var(--muted);margin:20px 0 8px}
 /* review */
 .field-row{display:grid;grid-template-columns:minmax(0,1fr);gap:8px 16px;padding:14px 0;border-top:1px solid var(--line)}
 .card-head + .field-row{border-top:0}
-@media (min-width:900px){.field-row{grid-template-columns:200px minmax(0,1fr) minmax(0,1fr) auto}}
-.field-row .fname{font-weight:600;text-transform:capitalize}
-.field-row .fname small{display:block;font-weight:400;text-transform:none;color:var(--muted)}
+@media (min-width:900px){.field-row{grid-template-columns:200px minmax(0,1fr) minmax(0,1.4fr) 136px}}
+.field-row.add{border-top:1px dashed var(--border)}
+.field-row .fname,.writer-sec .fname{display:flex;flex-direction:column;align-items:flex-start;gap:4px;font-weight:600}
+.field-row .fname small,.writer-sec .fname small{display:block;font-weight:400;color:var(--muted)}
 .field-row .vals{display:flex;flex-direction:column;gap:6px}
-.field-row .quote{background:var(--subtle);border-left:3px solid var(--accent);border-radius:6px;padding:8px 10px}
+.field-row .quote{background:var(--subtle);border:1px solid var(--input-border);border-radius:6px;padding:8px 10px}
+.field-row .quote:focus-within{outline:3px solid var(--focus);outline-offset:1px}
 .field-row .quote label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
-.field-row .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start}
+.field-row .quote textarea{field-sizing:content;min-height:3lh;max-height:14lh;width:100%;border:0;background:transparent;padding:0;box-sizing:border-box}
+.field-row .acts{display:flex;flex-wrap:wrap;gap:6px}
+@media (min-width:900px){
+.field-row .acts{flex-direction:column;flex-wrap:nowrap}
+.field-row .acts .btn{width:100%;justify-content:center;text-align:center}
+.field-row>:nth-child(3):last-child{grid-column:3 / -1}  /* a row of three: no empty fourth column */
+}
+.checks{list-style:none;padding:0;margin:0}.checks li{display:flex;gap:8px;align-items:center;padding:2px 0}.checks .icon{flex:none;width:18px;height:18px}
+.writer-sec{padding:14px 0;border-top:1px solid var(--line)}
+.writer-sec .warn-line{margin:8px 0 0;font-size:14px}
+.writer{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.writer textarea{max-width:75ch;line-height:1.6;field-sizing:content;min-height:8lh;max-height:30lh}
+.writer-foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:13px;color:var(--muted)}
+.writer-foot .ok{color:var(--ok-fg)}
+.writer-foot .btn{font-size:13px}
+.preview{max-width:75ch;line-height:1.6;background:var(--subtle);border-radius:6px;padding:8px 12px}
+.preview p{margin:0 0 .8em}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .warn-line{display:flex;gap:10px;align-items:flex-start}
 .warn-line .icon{flex:none;color:var(--warn-fg)}
@@ -332,7 +368,7 @@ fieldset.pick legend{font-weight:600;padding:0 6px;text-transform:capitalize}
 .client-row details.del[open]{grid-column:1 / -1;grid-row:4}
 .client-row .slot{display:block}
 }
-.mini-label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:2px;text-transform:capitalize}
+.mini-label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:2px}
 
 .detail-panel>summary::-webkit-details-marker,details.mini>summary::-webkit-details-marker,details.help-link>summary::-webkit-details-marker{display:none}
 

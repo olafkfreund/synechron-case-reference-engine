@@ -1,3 +1,4 @@
+import re
 import uuid
 
 from psycopg.types.json import Jsonb
@@ -319,3 +320,59 @@ def test_reextract_is_capped_per_click(env):  # noqa: F811
         assert "queued=25&total=26" in r.headers["location"]
     finally:
         _clean(sid)
+
+
+def test_age_is_elapsed_whole_days_not_calendar_days(env):  # noqa: F811  plan #259 review
+    db.init()
+    names = {}
+    with db.connect() as c:
+        for h in (23, 25):
+            n = f"el{h}-{uuid.uuid4().hex[:6]}"
+            names[h] = n
+            c.execute("insert into sources (kind, name, config, acl_groups, last_run_at) values ('upload', %s, '{}', %s, now() - make_interval(hours => %s))", (n, ["g"], h))
+    try:
+        html = client([ADMIN]).get("/admin/sources").text
+        run = lambda h: html.split(names[h])[1].split("Last run:")[1][:160]
+        assert "today" in run(23) and "1 day ago" in run(25)
+    finally:
+        with db.connect() as c:
+            c.execute("delete from sources where name = any(%s)", (list(names.values()),))
+
+
+def test_sources_css_keeps_44px_targets_and_the_opened_panel_on_row_two():
+    from pathlib import Path
+    css = (Path(__file__).parent.parent / "app" / "static" / "portal.css").read_text()
+    assert re.search(r"details\.mini>summary\{[^}]*min-height:44px", css)
+    assert re.search(r"\.source-row\.src details\.mini>summary::before\{content:\"\";position:absolute;inset:-4px 0\}", css)
+    assert ".src>*{grid-row:1}" in css and "grid-column:1 / -1;grid-row:2}" in css
+    assert not re.search(r"\.head-panel>summary\{", css) and ".src-add>summary" in css
+
+
+def test_last_run_shows_as_an_age_and_summaries_hide_the_marker(env):  # noqa: F811  plan #259 step 5
+    from pathlib import Path
+    db.init()
+    name = f"age-{uuid.uuid4().hex[:8]}"
+    with db.connect() as c:
+        c.execute("insert into sources (kind, name, config, acl_groups, last_run_at) values ('upload', %s, '{}', %s, now() - interval '3 days')",
+                  (name, ["g"]))
+    try:
+        html = client([ADMIN]).get("/admin/sources").text
+        assert 'title="' in html.split(name)[1].split("Last run:")[1][:120] and "3 days ago" in html
+    finally:
+        with db.connect() as c:
+            c.execute("delete from sources where name=%s", (name,))
+    css = (Path(__file__).parent.parent / "app" / "static" / "portal.css").read_text()
+    assert re.search(r"details\.mini>summary::-webkit-details-marker[^{]*\{display:none\}", css) and "details.mini>summary{list-style:none" in css
+
+
+def test_source_grid_is_scoped_to_the_sources_rows_and_review_rows_keep_their_layout():  # plan #259 review
+    from pathlib import Path
+    root = Path(__file__).parent.parent / "app"
+    css = (root / "static" / "portal.css").read_text()
+    assert not re.search(r"\.source-row\{display:grid", css) and ".source-row.src{display:grid" in css
+    assert 'class="source-row src"' in (root / "templates" / "sources.html").read_text()
+    for page in ("review_list.html", "documents.html"):
+        assert 'source-row src' not in (root / "templates" / page).read_text()
+    block = css.split("@media (min-width:900px){\n.source-row.src")[1].split("\n}")[0]
+    assert not re.search(r"^\.source-row[ >:{.]", block.split("\n", 1)[1], re.M) and ".field-row>:nth-child(3):last-child{grid-column:3 / -1}" in css
+    assert re.search(r"\.field-row \.acts\{display:flex;flex-wrap:wrap;gap:6px\}\n@media \(min-width:900px\)\{\n\.field-row \.acts\{flex-direction:column", css)

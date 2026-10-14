@@ -581,7 +581,7 @@ def test_candidate_form_lists_only_same_client_engagements(make, acme):
     page = client(R).get(f"/review/{a}").text
     assert f'value="{a}:{ver(a)}"' in page and f'value="{b}:{ver(b)}"' in page
     assert f'value="{other}:' not in page and f'value="{delivered}:' not in page
-    assert page.count("<script") == 1 and "onclick" not in page
+    assert page.count("<script") == 2 and "onclick" not in page
     assert "/review/merge/preview" not in client(R).get(f"/review/{other}").text  # unregistered client
 
 
@@ -619,7 +619,7 @@ def test_merged_detail_and_list_show_members(make, acme):
     new = int(merge(client(R), [a, b]).headers["location"].rsplit("/", 1)[1])
     page = client(R).get(f"/review/{new}").text
     assert "Merged from 2 contracts" in page and page.count("Source doc") >= 2
-    assert "<small>(Source doc)</small>" in page and page.count("<script") == 1
+    assert "<small>(Source doc)</small>" in page and page.count("<script") == 2
     assert "/review/merge/preview" not in page
     assert "2 contracts" in client(R).get("/review").text
 
@@ -1676,3 +1676,62 @@ def test_regenerate_uses_the_strictest_class_among_the_members(make, monkeypatch
     seen = []
     monkeypatch.setattr(writeup, "complete_json", lambda a, s, u, model, **k: seen.append(k["data_class"]) or model())
     assert post_arch(parent, "/regenerate").status_code == 303 and seen == ["sanitised"]
+
+
+def test_text_form_posts_the_same_fields_and_review_js_loads_only_here(make):  # plan #259 step 2
+    cid = prosed(make, prose={"solution": {"text": "Some text.", "by_reviewer": False, "flags": ["number 99 is in no quote", "names 'X', which no quote supports"]}})
+    c = client(R)
+    html = c.get(f"/review/{cid}").text
+    assert 'action="/review/%d/edit"' % cid in html and 'name="field" value="prose.solution"' in html
+    assert 'name="value"' in html and 'name="v"' in html and 'aria-label="Save Solution text"' in html
+    assert 'data-min="80"' in html and 'data-min="80"' in html.split('id="pr-solution"')[1].split(">")[0]
+    assert "number 99 is in no quote; names" in html and html.count('class="warn-line" title=') == 1
+    assert "/static/review.js?v=" in html
+    assert "review.js" not in c.get("/review").text
+    js = c.get("/static/review.js").text
+    assert "innerHTML" not in js and "textContent" in js
+
+
+def test_architecture_empty_state_gives_a_reason_and_a_generate_button(make):  # plan #259 step 3
+    for kw, reason in (({"extraction_version": 3}, "Extracted before architecture diagrams were added."),
+                       ({"extraction_version": 4, "needs_attention": ["architecture proposal failed"]}, "architecture proposal failed"), ({"extraction_version": 4}, "No architecture yet.")):
+        cid = make(data=case_data(**kw))
+        html = client(R).get(f"/review/{cid}").text
+        assert reason in html and "Generate diagram" in html and "Write it by hand" in html
+        assert f'action="/review/{cid}/architecture/regenerate"' in html and "Generating takes this case out of search" not in html
+    cid = arch_case(make)
+    post_arch(cid, text=ARCH_TEXT)
+    html = client(R).get(f"/review/{cid}").text
+    assert "Generate diagram" not in html and "Write it by hand" not in html and 'form="arch-form"' in html
+    ap = make("approved", "10 days", data=case_data(extraction_version=4, **SOURCED))
+    assert "Generating takes this case out of search until you approve it again." in client(R).get(f"/review/{ap}").text
+
+
+def test_info_notes_fold_away_and_unknown_notes_need_attention(make):  # plan #259 step 4
+    cid = make(data=case_data(needs_attention=["read in 3 parts", "2 malformed or unknown item(s) skipped", "check the summary"]))
+    html = client(R).get(f"/review/{cid}").text
+    att, rest = html.split("Needs your attention")[1].split("Extraction notes")
+    assert "check the summary" in att and "read in 3 parts" not in att and "malformed" not in att
+    assert "Nothing to do." in rest and "it was dropped" in rest and "check the summary" not in rest
+    assert '<span class="badge warn">1 notes</span>' in html
+
+
+def test_failed_hand_save_keeps_the_editor_open_and_review_js_is_accessible(make):  # plan #259 review
+    cid = make(data=case_data(extraction_version=4))
+    r = post_arch(cid, text="nonsense")
+    assert r.status_code == 400 and '<details class="mini" open><summary>Write it by hand' in r.text
+    assert '<details class="mini"><summary>Write it by hand' in client(R).get(f"/review/{cid}").text
+    js = client(R).get("/static/review.js").text
+    assert 'aria-live' in js and 'aria-pressed' in js and 'f.addEventListener("keydown"' in js
+
+
+def test_list_counts_action_notes_only_and_a_failed_generate_note_wins_the_reason(make):  # plan #259 review
+    quiet = make(data=case_data(extraction_version=4, needs_attention=["read in 3 parts"]))
+    loud = make(data=case_data(extraction_version=3, needs_attention=["read in 3 parts", "architecture: no new proposal; the current one is kept", "check it"]))
+    c = client(R)
+    page = c.get("/review").text
+    assert page.count('badge warn">') == 1 and "2 notes" in page
+    assert "architecture: no new proposal; the current one is kept" in c.get(f"/review/{loud}").text.split("Architecture</h2>")[1]
+    assert "Extracted before architecture" not in c.get(f"/review/{loud}").text.split("Architecture</h2>")[1]
+    js = c.get("/static/review.js").text
+    assert '" word"' in js and "Nothing to preview yet." in js and 'split("\\n\\n")' in js and 'pv.textContent' not in js

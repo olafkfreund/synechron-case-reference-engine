@@ -2,17 +2,18 @@
 {% from "_icons.html" import icon %}
 {% from "_macros.html" import zoom, zoom_hint %}
 {% macro field_row(r, idx) %}{% set f = "f" ~ idx %}
-<div class="field-row">
-<div class="fname">{{ r.label }}{% if r.doc %} <small>({{ r.doc }})</small>{% endif %}
+<div class="field-row{% if r.new %} add{% endif %}">
+<div class="fname"><span class="cap-first">{{ r.label }}</span>{% if r.doc %}<small>({{ r.doc }})</small>{% endif %}
 {% if r.new %}{% elif r.no_quote %}<span class="badge empty">no quote (generated)</span>
 {% elif r.written %}<span class="badge ok">written by reviewer</span>
 {% elif r.unsourced %}<span class="badge bad">unsourced</span>
 {% elif r.quote %}<span class="badge ok">sourced</span>
 {% else %}<span class="badge empty">empty</span>{% endif %}</div>
-<div class="vals">{% for name, val in r.inputs %}<div><label for="{{ f }}-{{ name }}" class="mini-label">{{ name }}</label><input type="text" id="{{ f }}-{{ name }}" form="{{ f }}" name="{{ name }}"{% if r.new %} required{% endif %} value="{{ val }}"></div>{% endfor %}</div>
-<div>{% if not r.no_quote %}<div class="quote"><label for="{{ f }}-quote">Source quote</label><textarea id="{{ f }}-quote" form="{{ f }}" name="quote" rows="2"{% if r.new %} required{% endif %}>{{ r.quote }}</textarea></div>{% endif %}{% if r.writable %}<label class="check"><input type="checkbox" form="{{ f }}" name="written" value="true"{% if r.written %} checked{% endif %}> I wrote this: no document quote</label>{% endif %}</div>
-<div class="acts">{% if reviewable %}{% if r.new %}<button class="btn primary" form="{{ f }}" aria-label="{{ r.label }}">Add</button>{% else %}<button class="btn" form="{{ f }}" aria-label="Save {{ r.label }}">Save</button>{% if r.item %} <button class="btn" form="{{ f }}" name="action" value="remove" formnovalidate aria-label="Remove {{ r.label }}">Remove</button>{% endif %}{% endif %}{% endif %}</div>
+<div class="vals">{% for name, val in r.inputs %}<div><label for="{{ f }}-{{ name }}" class="mini-label cap-first">{{ name }}</label><input type="text" id="{{ f }}-{{ name }}" form="{{ f }}" name="{{ name }}"{% if r.new %} required{% endif %} value="{{ val }}"></div>{% endfor %}</div>
+<div>{% if not r.no_quote %}<div class="quote"><label for="{{ f }}-quote">Source quote</label><textarea id="{{ f }}-quote" form="{{ f }}" name="quote" rows="4"{% if r.new %} required{% endif %}>{{ r.quote }}</textarea></div>{% endif %}{% if r.writable %}<label class="check"><input type="checkbox" form="{{ f }}" name="written" value="true"{% if r.written %} checked{% endif %}> I wrote this: no document quote</label>{% endif %}</div>
+<div class="acts">{% if reviewable %}{% if r.new %}<button class="btn primary" form="{{ f }}" aria-label="{{ r.label }}">Add</button>{% else %}<button class="btn" form="{{ f }}" aria-label="Save {{ r.label }}">Save</button>{% if r.item %} <button class="btn danger-ghost" form="{{ f }}" name="action" value="remove" formnovalidate aria-label="Remove {{ r.label }}">Remove</button>{% endif %}{% endif %}{% endif %}</div>
 </div>{% endmacro %}
+{% block head %}<script src="/static/review.js?v={{ css_version }}" defer></script>{% endblock %}
 {% block body %}
 {% set title = ((rows | selectattr("path", "equalto", "title") | first | default({"inputs": [("value", "")]})).inputs[0][1]) %}
 {% set attn = namespace(n=0) %}
@@ -33,30 +34,32 @@
 </div>
 {% set tx = "text" if sections else "fields" %}{% set anchors = {"challenge": tx, "solution": tx, "implementation": tx, "configuration": tx, "capabilities": "fields", "technologies": "fields", "results": "fields", "period": "fields", "diagram": "diagrams"} %}
 <div class="section-card"><div class="card-head"><h2>Completeness: {{ checks | selectattr("ok") | list | length }} of {{ checks | length }}</h2></div>
-<ul>{% for c in checks %}<li>{% if c.ok %}✓{% else %}✗{% endif %} {% if not c.ok and c.key in anchors %}<a href="#{{ anchors[c.key] }}">{{ c.label }}</a>{% else %}{{ c.label }}{% endif %}: {{ c.detail }}</li>{% endfor %}</ul></div>
+<ul class="checks">{% for c in checks %}<li>{% if c.ok %}{{ icon("check") }}{% else %}{{ icon("alert") }}{% endif %} <span>{% if not c.ok and c.key in anchors %}<a href="#{{ anchors[c.key] }}">{{ c.label }}</a>{% else %}{{ c.label }}{% endif %}: {{ c.detail }}</span></li>{% endfor %}</ul></div>
+{% if notes or unlisted %}<div class="section-card"><div class="card-head"><h2>Needs your attention</h2></div>
 {% for n in notes %}<div class="note">{{ n }}</div>{% endfor %}
 {% for o in unlisted %}<div class="note">organisation not in client registry: {{ o }}
 {% if "admin" in user.roles %}<form method="post" action="/admin/clients" class="row">
 <input type="hidden" name="name" value="{{ o }}"><input type="hidden" name="next" value="/review/{{ id }}">
 <label for="unl-{{ loop.index }}" class="sr">label for {{ o }}</label><input type="text" id="unl-{{ loop.index }}" name="anonymised_label" placeholder="label, e.g. a retail bank" required>
-<button class="btn">Add as client</button> <small>Only for clients. A partner or vendor added here is anonymised in every output.</small>
-</form>{% endif %}</div>{% endfor %}
+<button class="btn">Add as client</button></form>
+<small>Only for clients. A partner or vendor added here is anonymised in every output.</small>{% endif %}</div>{% endfor %}</div>{% endif %}
+{% if infos %}<details class="mini"><summary>Extraction notes ({{ infos | length }})</summary>{% for n, e in infos %}<p class="muted"><b>{{ n }}</b><br>{{ e }}</p>{% endfor %}</details>{% endif %}
 
 {% if attn.n %}<div class="section-card"><div class="card-head"><h2>Needs attention ({{ attn.n }})</h2></div>
 {% for r in rows %}{% if r.unsourced and not r.new %}{{ field_row(r, loop.index) }}{% endif %}{% endfor %}</div>{% endif %}
 <div class="section-card" id="fields"><div class="card-head"><h2>Fields</h2></div>
 {% for r in rows %}{% if not (r.unsourced and not r.new) %}{{ field_row(r, loop.index) }}{% endif %}{% endfor %}</div>
 {% if sections %}<div class="section-card" id="text"><div class="card-head"><h2>Case-study text</h2></div>
-{% for sec in sections %}<div class="field-row">
-<div class="fname">{{ sec.label }}
+{% for sec in sections %}<div class="writer-sec">
+<div class="fname"><span class="cap-first">{{ sec.label }}</span>
 {% if sec.prose and sec.prose.by_reviewer %}<span class="badge ok">written by reviewer</span>{% elif sec.prose and sec.prose.flags %}<span class="badge bad">flagged</span>{% elif sec.prose %}<span class="badge neutral">generated</span>{% else %}<span class="badge empty">not written</span>{% endif %}</div>
-<div>{% if sec.prose %}{% for fl in sec.prose.flags %}<div class="note">{{ fl }}</div>{% endfor %}{% endif %}
-{% if reviewable %}<form method="post" action="/review/{{ id }}/edit" class="row"><input type="hidden" name="field" value="prose.{{ sec.f }}"><input type="hidden" name="v" value="{{ v }}">
-<label for="pr-{{ sec.f }}" class="mini-label">{{ sec.label }} text</label><textarea id="pr-{{ sec.f }}" name="value" rows="8">{{ sec.prose.text if sec.prose else "" }}</textarea>
-<button class="btn" aria-label="Save {{ sec.label }} text">Save</button></form>
+{% if sec.prose and sec.prose.flags %}<p class="warn-line" title="{{ sec.prose.flags | join("\n") }}">{{ icon("alert") }}<span>{{ sec.prose.flags | join("; ") }}</span></p>{% endif %}
+{% if reviewable %}<form method="post" action="/review/{{ id }}/edit" class="writer"><input type="hidden" name="field" value="prose.{{ sec.f }}"><input type="hidden" name="v" value="{{ v }}">
+<label for="pr-{{ sec.f }}" class="mini-label">{{ sec.label }} text</label><textarea id="pr-{{ sec.f }}" name="value" rows="8"{% if sec.min %} data-min="{{ sec.min }}"{% endif %}>{{ sec.prose.text if sec.prose else "" }}</textarea>
+<div class="writer-foot"><button class="btn" aria-label="Save {{ sec.label }} text">Save</button></div></form>
 {% elif sec.prose %}<p style="white-space:pre-wrap">{{ sec.prose.text }}</p>{% endif %}
 {% if sec.points %}<details><summary>Sourced points ({{ sec.points | length }})</summary>
-{% for p in sec.points %}<div class="claim"><p>{{ p.value }}</p>{% if p.source_quote %}<q>{{ p.source_quote }}</q>{% endif %}{% if p.unsourced %} <span class="badge bad">unsourced</span>{% endif %}</div>{% endfor %}</details>{% endif %}</div>
+{% for p in sec.points %}<div class="claim"><p>{{ p.value }}</p>{% if p.source_quote %}<q>{{ p.source_quote }}</q>{% endif %}{% if p.unsourced %} <span class="badge bad">unsourced</span>{% endif %}</div>{% endfor %}</details>{% endif %}
 </div>{% endfor %}</div>{% endif %}
 {% if sources %}<div class="section-card"><div class="card-head"><h2>Public sources (not delivery evidence)</h2></div>
 {% for s in sources %}<div class="claim">{% if s.hidden %}<p class="muted">Withheld: names a protected client</p>{% else %}{% if s.type == "technical_note" %}<pre>{{ s.quote }}</pre>{% else %}<q>{{ s.quote }}</q>{% endif %}
@@ -67,21 +70,24 @@
 
 {% if arch.a or reviewable %}<div class="section-card" id="architecture"><div class="card-head"><h2>Architecture</h2>{% if arch.a %}<span class="badge {{ "bad" if arch.a.flags else "ok" if arch.a.by_reviewer else "neutral" }}">{{ "flagged" if arch.a.flags else "written by reviewer" if arch.a.by_reviewer else "proposed" }}</span>{% endif %}</div>
 {% if arch.svg %}{% set u = "/review/" ~ id ~ "/architecture.png" %}<figure class="paper"><a href="{{ u }}" target="_blank" rel="noopener" class="zoom" aria-label="Open {{ arch.a.title }} full size">{{ arch.svg }}</a></figure>{{ zoom_hint(u, arch.a.title) }}
-{% elif not arch.a %}<p class="muted">This case has no architecture diagram.</p>{% endif %}
+{% elif not arch.a %}<p class="muted">{% if reviewable %}{{ arch.reason }}{% else %}This case has no architecture diagram.{% endif %}</p>{% endif %}
 {% if arch.a and arch.a.flags %}<p class="warn-line">{{ icon("alert") }}<span>Fix or confirm these before approval (saving your edit confirms them):</span></p><ul>{% for f in arch.a.flags %}<li>{{ f }}</li>{% endfor %}</ul>{% endif %}
 {% if arch.cites %}<details class="mini"><summary>Cited points ({{ arch.cites | length }})</summary>{% for c in arch.cites %}<p><b>{{ c[0] }}</b>: {{ c[1] }}<br><q>{{ c[2] }}</q></p>{% endfor %}</details>{% endif %}
 {% if reviewable %}{% if arch.errors %}<div role="alert" class="warn-line">{{ icon("alert") }}<span>Not saved. The earlier version is kept:</span></div><ul>{% for e in arch.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
-<form method="post" action="/review/{{ id }}/architecture"><input type="hidden" name="v" value="{{ v }}">
-<label for="arch-text" class="mini-label">One line each: title: ... / component: name | role | zone | kind | cite / flow: A -&gt; B | label | mode | cite / callout: text | outcome number</label>
+{% if not arch.a %}<form method="post" action="/review/{{ id }}/architecture/regenerate" class="action-row"><input type="hidden" name="v" value="{{ v }}"><button class="btn primary">Generate diagram</button></form>
+{% if status == "approved" %}<p class="muted small">Generating takes this case out of search until you approve it again.</p>{% endif %}<details class="mini"{% if arch.errors %} open{% endif %}><summary>Write it by hand</summary>{% endif %}
+<form method="post" action="/review/{{ id }}/architecture" id="arch-form"><input type="hidden" name="v" value="{{ v }}">
+<label for="arch-text" class="field-help" style="display:block">One line each: title: ... / component: name | role | zone | kind | cite / flow: A -&gt; B | label | mode | cite / callout: text | outcome number</label>
 <textarea id="arch-text" name="text" rows="14" maxlength="20000">{{ arch.text }}</textarea>
 {% if arch.outcomes %}<p class="muted small">Outcomes: {{ arch.outcomes | join("; ") }}</p>{% endif %}
-<button class="btn primary">Save architecture</button></form>
-<div class="action-row">
+{% if not arch.a %}<button class="btn primary">Save architecture</button>{% endif %}</form>
+{% if not arch.a %}</details>{% else %}<div class="action-row">
+<button class="btn primary" form="arch-form">Save architecture</button>
 <form method="post" action="/review/{{ id }}/architecture/regenerate" class="row"><input type="hidden" name="v" value="{{ v }}">
-{% if arch.a and arch.a.by_reviewer %}<label class="check"><input type="checkbox" name="confirm" value="true" required> Replace my edited version</label>{% endif %}
+{% if arch.a.by_reviewer %}<label class="check"><input type="checkbox" name="confirm" value="true" required> Replace my edited version</label>{% endif %}
 <button class="btn">Regenerate</button></form>
-{% if arch.a %}<form method="post" action="/review/{{ id }}/architecture/remove"><input type="hidden" name="v" value="{{ v }}"><button class="btn danger-ghost">Remove</button></form>{% endif %}
-</div>{% endif %}
+<form method="post" action="/review/{{ id }}/architecture/remove"><input type="hidden" name="v" value="{{ v }}"><button class="btn danger-ghost">Remove</button></form>
+</div>{% endif %}{% endif %}
 </div>{% endif %}
 
 {% if diagrams or (reviewable and diagrams | length < max_diagrams) %}<div class="section-card" id="diagrams"><div class="card-head"><h2>Diagrams</h2></div>

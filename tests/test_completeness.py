@@ -62,3 +62,8 @@ def test_minimum_boundary():
     assert not meets_minimum(checklist(case(**base, implementation=S("x"))))
     assert meets_minimum(checklist(case(**base, implementation=S("x"), configuration=S("y"))))
     assert not meets_minimum(checklist(case(solution=S(W(80)), implementation=S("x"), configuration=S("y"))))
+
+
+def test_detail_wording_states_the_minimum():
+    d = {i["key"]: i["detail"] for i in checklist(case(challenge=S(W(69))))}
+    assert d["challenge"] == "69 words (minimum 80)" and d["capabilities"] == "0 (minimum 3)"

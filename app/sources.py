@@ -76,8 +76,8 @@ def groups(raw: str) -> list[str]:
 def sources_page(request: Request, notice: str = "", source: int | None = None,
                  job: int | None = None, queued: int | None = None, total: int | None = None, user: User = Depends(require("admin"))):
     with db.connect() as conn:
-        rows = conn.execute("select id, kind, name, config, acl_groups, enabled, last_run_at, last_counts, data_class "
-                            "from sources order by name").fetchall()
+        rows = conn.execute("select id, kind, name, config, acl_groups, enabled, last_run_at, last_counts, data_class, "
+                            "greatest(0, floor(extract(epoch from now() - last_run_at) / 86400))::int from sources order by name").fetchall()
         older = conn.execute("select count(*) " + OLDER, (EXTRACTION_VERSION,)).fetchone()[0]
     done = notice == "uploaded"
     return page(request, "sources.html", user, sources=rows, kinds=sorted(JOB), classes=DATA_CLASSES,

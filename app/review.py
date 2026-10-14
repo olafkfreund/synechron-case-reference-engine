@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from app import anonymise, db, diagrams
 from app.extract import MAX_CHARS, check
 from app.main import User, require
-from app.completeness import checklist, meets_minimum, score
+from app.completeness import CHECKS, checklist, meets_minimum, score
 from app import archdiagram, writeup
 from app.schema import (CITE_POINTS, POINT_FIELDS, ArchCallout, ArchComponent, ArchFlow, Architecture, Diagram, Outcome, Period, Prose,
                         ReferenceCase, Sourced, _norm, check_architecture)
@@ -27,7 +27,7 @@ router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")  # autoescape on
 # the stylesheet URL changes with its content, so a browser never pairs new pages with an old cached CSS (#90)
 templates.env.globals["css_version"] = hashlib.sha256(
-    b"".join((Path(__file__).parent / "static" / f).read_bytes() for f in ("portal.css", "theme.js"))).hexdigest()[:12]
+    b"".join((Path(__file__).parent / "static" / f).read_bytes() for f in ("portal.css", "theme.js", "review.js"))).hexdigest()[:12]
 
 
 _staff_seen = (0.0, False)
@@ -46,6 +46,17 @@ def staff_uploads() -> bool:
 
 
 templates.env.globals["staff_uploads"] = staff_uploads
+
+# extraction notes that need no action, with what they mean; anything else is shown as needing attention (#259)
+INFO_NOTES = (("read in ", "The document was long, so it was read in parts. Nothing to do."),
+              (" malformed or unknown item(s) skipped", "The model returned an item that failed validation; it was dropped. Check nothing important is missing."))
+
+
+def split_notes(notes):
+    """(action notes, [(info note, explanation)])"""
+    info = lambda n: next((e for k, e in INFO_NOTES if n.startswith(k) or (k.startswith(" ") and n.endswith(k))), None)
+    return [n for n in notes if not info(n)], [(n, info(n)) for n in notes if info(n)]
+
 
 PROSE_LABELS = {"challenge": "Challenge", "solution": "Solution", "implementation": "Implementation approach",
                 "configuration": "Configuration and integration"}
@@ -169,7 +180,7 @@ def review_list(request: Request, user: User = Depends(require("reviewer"))):
             f"where {REVIEWABLE} and c.status = 'approved' and c.review_due > now() "
             "and c.review_due <= now() + interval '30 days' order by c.review_due", (list(user.groups),)).fetchall()
     cases = [dict(id=i, status=s, title=d["title"]["value"], document=t,
-                  attention=len(d.get("needs_attention", [])), unsourced=count_unsourced(d), members=n)
+                  attention=len(split_notes(d.get("needs_attention", []))[0]), unsourced=count_unsourced(d), members=n)
              for i, s, d, t, n in found]
     due_soon = [dict(id=i, title=d["title"]["value"], document=t, due=due.strftime("%Y-%m-%d"), members=n) for i, d, t, due, n in soon]
     return page(request, "review_list.html", user, cases=cases, due_soon=due_soon)
@@ -249,7 +260,7 @@ def _detail(cid, request, user, arch_form=None):
     if not r:
         raise HTTPException(404, "no such case")
     case = ReferenceCase.model_validate(r[0])  # the document text is deliberately not shown
-    notes = list(case.needs_attention)
+    notes, infos = split_notes(case.needs_attention)
     # organisations come from extraction; no LLM call on page view
     from app.research import visible_claims  # here: research imports this module
     shown = {c["n"]: c for c in visible_claims([{**c, "n": i} for i, c in enumerate(r[10])], registry)[0]}
@@ -259,10 +270,10 @@ def _detail(cid, request, user, arch_form=None):
     if r[5]:  # reviewable: candidates from the documents are offered, never shown elsewhere
         with db.connect() as conn:
             found = candidates_of(conn, cid, user, case)
-    sections = [dict(f=f, label=PROSE_LABELS[f], prose=case.prose.get(f), points=case.points.get(f, []))
+    sections = [dict(f=f, label=PROSE_LABELS[f], prose=case.prose.get(f), points=case.points.get(f, []), min=CHECKS.get(f"{f}_words"))
                 for f in POINT_FIELDS if case.points.get(f) or f in case.prose]
     checks = checklist(case)
-    return page(request, "review_detail.html", user, arch=_arch_panel(case, arch_form), id=cid, checks=checks, minimum=meets_minimum(checks), rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,
+    return page(request, "review_detail.html", user, arch=_arch_panel(case, arch_form), id=cid, checks=checks, minimum=meets_minimum(checks), rows=rows(case, {m[7]: m[1] for m in members}), notes=notes, infos=infos,
                 sections=sections, found=found, max_diagrams=diagrams.MAX_PER_CASE,
                 unlisted=unlisted, diagrams=case.diagrams, members=members, cands=cands, remerge=remerge,
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
@@ -557,7 +568,9 @@ def _arch_panel(case, form):
              if p.value and p.source_quote and not p.unsourced]
     cites += [(f"reference {i}", r.value, r.source_quote) for i, r in enumerate(case.tech_references, 1) if r.value and r.source_quote and not r.unsourced]
     text, errors = form if form else (arch_lines(a) if a else "", [])
-    return dict(a=a, svg=svg, cites=cites, text=text, errors=errors, outcomes=[f"{i}. {o.metric} {o.value}" for i, o in enumerate(case.outcomes, 1) if not o.unsourced])
+    note = next((n for n in case.needs_attention if n.lower().startswith("architecture")), None)
+    reason = note or ("Extracted before architecture diagrams were added." if case.extraction_version < 4 else "No architecture yet.")
+    return dict(a=a, svg=svg, cites=cites, text=text, reason=reason, errors=errors, outcomes=[f"{i}. {o.metric} {o.value}" for i, o in enumerate(case.outcomes, 1) if not o.unsourced])
 
 
 @router.post("/review/{cid}/architecture")
