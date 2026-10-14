@@ -1,6 +1,6 @@
 """Write the placeholder Word template. Marketing's real template replaces brand/reference.docx
 and must use the same context: cases[] with title, client, note (empty unless an engagement), summary, details[{label,value}],
-blocks[{heading,text,paragraphs[str]}], lists[{heading,bullets[]}], diagrams[{image,caption}], arch_image (an InlineImage of the solution architecture; absent when there is none), footer (the case-study document only; empty elsewhere); and industry (or None): heading, disclaimer,
+blocks[{heading,text,paragraphs[str]}], lists[{heading,bullets[]}], diagrams[{image,caption}], arch_image (an InlineImage of the solution architecture; absent when there is none), footer (the case-study document only; empty elsewhere), logo (an InlineImage of the client's logo; absent unless the client is referenceable and logo-allowed); and industry (or None): heading, disclaimer,
 groups[{title, lead, quotes[{quote, n, mono, rich}]}] (rich: a RichText of the note, only when mono), sources[{n, title, publisher, url, date}], note, show_head (false when only library briefs follow: skip the heading, disclaimer, groups and sources),
 briefs[{title, disclaimer, takeaways[str], themes[{heading, text}], sources[{n, title, publisher, url, date}], note}] (library briefs, each with its own sources)
 (statements[{text}] is the flat fallback). The optional second path gets the brief template (brand/brief.docx): brief with title, disclaimer,
@@ -10,6 +10,7 @@ Usage: make_reference_template.py <out.docx> [<brief.docx>]
 import sys
 
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, RGBColor
 
 
@@ -67,6 +68,9 @@ if sys.argv[1] == "--case-study":
     run = d.sections[0].header.paragraphs[0].add_run("DRAFT TEMPLATE – replace with the marketing template")
     run.bold, run.font.size, run.font.color.rgb = True, Pt(20), RGBColor(0xC0, 0, 0)
     d.add_paragraph("{%p for c in cases %}")
+    d.add_paragraph("{%p if c.logo %}")
+    d.add_paragraph("{{ c.logo }}").alignment = WD_ALIGN_PARAGRAPH.RIGHT  # cover, top right
+    d.add_paragraph("{%p endif %}")
     d.add_heading("{{ c.title }}", 0)
     d.add_paragraph().add_run("{{ c.client }}").italic = True
     d.add_paragraph("{%p for x in c.details %}")
@@ -121,7 +125,13 @@ run = d.sections[0].header.paragraphs[0].add_run("DRAFT TEMPLATE – replace wit
 run.bold, run.font.size, run.font.color.rgb = True, Pt(20), RGBColor(0xC0, 0, 0)
 
 d.add_paragraph("{%p for c in cases %}")
+d.add_paragraph("{%p if c.logo %}")  # its own paragraph above the title, so the heading and Word's TOC stay as they were
+logo = d.add_paragraph("{{ c.logo }}")
+logo.alignment, logo.paragraph_format.page_break_before = WD_ALIGN_PARAGRAPH.RIGHT, True  # one case per page: the break moves up with it
+d.add_heading("{{ c.title }}", 1)
+d.add_paragraph("{%p else %}")
 d.add_heading("{{ c.title }}", 1).paragraph_format.page_break_before = True  # one case per page
+d.add_paragraph("{%p endif %}")
 d.add_paragraph().add_run("{{ c.client }}").italic = True
 d.add_paragraph("{%p if c.note %}")
 d.add_paragraph("{{ c.note }}")

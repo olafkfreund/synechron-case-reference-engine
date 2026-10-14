@@ -494,3 +494,56 @@ def test_one_corrupt_media_entry_does_not_block_the_other_vectors(monkeypatch):
     meta = {}
     got = diagrams.document_images_from(z, "x.docx", meta=meta)
     assert len(got) == 1 and list(calls[0][0]) == ["v0.emf"] and meta["vector_failed"] is False
+
+
+# --- client logos (#267)
+@pytest.fixture
+def logo():
+    db.init()
+    ids = []
+
+    def make(raw):
+        with db.connect() as c:
+            cid = c.execute("insert into clients(name,anonymised_label) values (%s,'L') returning id", (uuid.uuid4().hex,)).fetchone()[0]
+            ids.append(cid)
+            c.execute("insert into client_logos(client_id,raw) values (%s,%s)", (cid, raw))
+        diagrams.process_logo(cid)
+        with db.connect() as c:
+            return c.execute("select png, width, height, reason, raw from client_logos where client_id=%s", (cid,)).fetchone()
+    yield make
+    with db.connect() as c:
+        for i in ids:
+            c.execute("delete from clients where id=%s", (i,))
+            c.execute("delete from client_logo_changes where client_id=%s", (i,))
+
+
+@pytest.mark.parametrize("fmt", ["PNG", "JPEG"])
+def test_logo_png_and_jpeg_are_decoded_and_raw_cleared(logo, fmt):
+    png, w, h, reason, raw = logo(encode(fmt, (200, 100)))
+    assert png and png.startswith(b"\x89PNG") and (w, h, reason, raw) == (200, 100, "", None)
+
+
+@pytest.mark.parametrize("raw,reason", [
+    (encode("PNG", (63, 200)), diagrams.LOGO_TOO_SMALL),
+    (encode("PNG", (801, 100)), diagrams.LOGO_ASPECT),
+    (b"garbage", diagrams.UNREADABLE),
+])
+def test_logo_refusals_have_a_fixed_reason(logo, raw, reason):
+    png, w, h, got, rawleft = logo(raw)
+    assert (png, w, h, got, rawleft) == (None, 0, 0, reason, None)
+
+
+def test_logo_bomb_is_refused(logo, monkeypatch):
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1)  # _decode sets it globally; this restores it afterwards
+    monkeypatch.setattr(diagrams, "MAX_PIXELS", 1000)
+    assert logo(encode("PNG", (200, 100)))[3] == diagrams.TOO_LARGE
+
+
+def test_worker_outcome_is_logged(logo):
+    cid_png = logo(encode("PNG", (200, 100)))
+    assert cid_png[0]
+    with db.connect() as c:
+        assert c.execute("select action, changed_by from client_logo_changes order by id desc limit 1").fetchone() == ("ready", "worker")
+    logo(encode("PNG", (63, 200)))
+    with db.connect() as c:
+        assert c.execute("select action from client_logo_changes order by id desc limit 1").fetchone() == ("rejected: " + diagrams.LOGO_TOO_SMALL,)

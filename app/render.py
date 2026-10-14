@@ -1,4 +1,5 @@
 import re
+import struct
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -16,6 +17,7 @@ from pptx import Presentation
 from app import anonymise, db, office
 from app.archdiagram import layout, to_mermaid, to_pptx_shapes, to_png, to_svg
 from app.main import User, require, wants_html
+from app.clients import logo_for
 from app.review import PNG_HEADERS, VISIBLE, page
 from app.writeup import PRICE_FLAG
 from app.schema import ArchCallout, ArchComponent, ArchFlow, Architecture, ReferenceCase, fence, plain, vague_metric
@@ -304,12 +306,22 @@ def _mono(q: dict) -> RichText:
     return rt
 
 
-def to_docx(sections: list[dict], industry: dict | None = None, images: dict[int, bytes] = {}, template=None) -> bytes:
+def _fit(png: bytes, box_w: float, box_h: float) -> tuple[float, float]:
+    """(width, height) in mm of our own re-encoded PNG: fitted into the box, never above its natural size at 96 dpi.
+    The IHDR size is trusted (the worker wrote it)."""
+    w, h = (px * 25.4 / 96 for px in struct.unpack(">II", png[16:24]))
+    k = min(box_w / w, box_h / h, 1)
+    return w * k, h * k
+
+
+def to_docx(sections: list[dict], industry: dict | None = None, images: dict[int, bytes] = {}, template=None, logo_box=(25, 25)) -> bytes:
     tpl = DocxTemplate(template or TEMPLATE)
     # images are added after protect(): an InlineImage is not a string; one missing from `images` is skipped
     sections = [{**s, "diagrams": [{**d, "image": InlineImage(tpl, BytesIO(images[d["id"]]), width=Mm(min(160, d["width"] * 25.4 / 96)))}
                                    for d in s["diagrams"] if d["id"] in images],
-                 "arch_image": InlineImage(tpl, BytesIO(to_png(a[1])), width=Mm(160)) if (a := architecture_of(s)) else None} for s in sections]
+                 "arch_image": InlineImage(tpl, BytesIO(to_png(a[1])), width=Mm(160)) if (a := architecture_of(s)) else None,
+                 "logo": InlineImage(tpl, BytesIO(s["logo"]), *(Mm(x) for x in _fit(s["logo"], *logo_box))) if s.get("logo") else None}
+                for s in sections]
     if industry:  # a note is Consolas, line by line, in a run of its own (the template checks q.mono)
         industry = {**industry, "groups": [{**g, "quotes": [{**q, "rich": _mono(q)} if q.get("mono") else q for q in g["quotes"]]}
                                            for g in industry["groups"]]}
@@ -324,7 +336,7 @@ def to_docx(sections: list[dict], industry: dict | None = None, images: dict[int
 
 
 def to_case_study_docx(sections: list[dict], industry: dict | None = None, images: dict[int, bytes] = {}) -> bytes:
-    return to_docx(sections, industry, images, TEMPLATE_CASE_STUDY)
+    return to_docx(sections, industry, images, TEMPLATE_CASE_STUDY, logo_box=(40, 40))
 
 
 def excerpt(s: str, limit: int = SLIDE_TEXT) -> str:
@@ -427,6 +439,15 @@ def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int
             "Challenge": [excerpt(block("Challenge"))], "Solution": [excerpt(block("Solution"))],
             "Outcomes": [c["note"]] if c["note"] else bullets("Outcomes")[:SLIDE_OUTCOMES], "Technology": [", ".join(bullets("Technology"))]},
             PLACEHOLDERS)
+        if c.get("logo"):  # top-right of the case slide, 25 mm high at most
+            w, h = (Mm(x) for x in _fit(c["logo"], 50, 25))
+            slide, logo_left = prs.slides[-1], prs.slide_width - w - Mm(8)
+            slide.shapes.add_picture(BytesIO(c["logo"]), logo_left, Mm(6), width=w, height=h)
+            idx = next((i for i, n in case_layout[1].items() if n == "Title"), None)  # a custom master may not name it so
+            title = next((ph for ph in slide.placeholders if ph.placeholder_format.idx == idx), None)
+            if title is not None and title.top < Mm(6) + h and title.left + title.width > logo_left - Mm(4):  # a long title must not run under the logo
+                left, top, height = title.left, title.top, title.height  # read first: setting one value writes the inherited others
+                title.left, title.top, title.height, title.width = left, top, height, logo_left - Mm(4) - left
         if a := architecture_of(c):
             _architecture_slide(prs, _layout(prs, DIAGRAM_LAYOUT, DIAGRAM_PLACEHOLDERS), c["title"], a[1])
         for d in c["diagrams"]:
@@ -728,7 +749,7 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
         raise HTTPException(404, "no such library item")  # every user may read every item, so an unknown id is the only miss
     # same restrictions as search: approved, in date, and the user can open the source document
     rows = conn.execute(
-        "select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null, c.public_sources, c.member_count, c.approved_at "
+        "select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null, c.public_sources, c.member_count, c.approved_at, cl.id "
         "from cases c left join clients cl on cl.id = c.client_id "
         f"where c.id = any(%s) and c.status = 'approved' and c.review_due > now() and {VISIBLE}",
         (ids, list(user.groups))).fetchall()
@@ -736,13 +757,14 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
     if len(by_id) != len(ids):
         raise HTTPException(404, "no such case")
     clients = anonymise.load_clients(conn)
-    sections, anonymised, attached = [], False, []
+    sections, anonymised, attached, logos = [], False, [], []
     for i in ids:
-        _, data, name, label, referenceable, linked, public_sources, members, approved = by_id[i]
+        _, data, name, label, referenceable, linked, public_sources, members, approved, client_id = by_id[i]
         attached += public_sources
         shown = anonymise.shown(name, label, referenceable, linked)
         anonymised |= not (linked and referenceable) or anonymise.apply(shown, clients) != shown
         sec = section(ReferenceCase.model_validate(data), shown)
+        logos.append((client_id, logo_for(conn, client_id)))  # logo_for withholds a masked name's logo
         if study:  # a role and a date, never a person; goes through protect() with the rest
             n = members or 1
             sec["footer"] = f"Based on {n} source document{'s' if n != 1 else ''} reviewed{f' on {approved:%Y-%m-%d}' if approved else ''}"
@@ -757,6 +779,8 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
         sections = protect(sections, clients)
     except Withheld as e:
         raise HTTPException(409, str(e)) from None
+    for sec, (client_id, png) in zip(sections, logos):  # after protect(): bytes are not text
+        sec["logo"], sec["logo_cid"] = png, client_id if png else None
     from app import research  # here: research imports render's neighbours
     def key(c):  # one normal form for every claim, so the same quote from two places is one
         q = str(c.get("quote") or "")

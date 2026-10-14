@@ -3,6 +3,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict
 
 from app import anonymise, db
+from app.clients import logo_cids
 from app.completeness import checklist, score
 from app.llm import complete_json
 from app.main import User, require
@@ -89,11 +90,13 @@ def search(user: User, bid_text: str, filters: dict, kind: str = "", sort: str =
         offset = f" offset {(min(max(page, 1), 1000) - 1) * TOP}"
     with db.connect() as conn:
         rows = conn.execute(
-            f"select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null, c.basis, {rank} as rank, c.approved_at from cases c "
+            f"select c.id, c.data, cl.name, cl.anonymised_label, cl.referenceable, cl.id is not null, c.basis, {rank} as rank, c.approved_at, cl.id from cases c "
             f"left join clients cl on cl.id = c.client_id {join} "
             f"where {' and '.join(where)} order by {order} limit {TOP}{offset}", params).fetchall()
-    cands = [dict(id=i, case=ReferenceCase.model_validate(d), label=anonymise.shown(name, label, ref, linked), basis=b, rank=r, approved_at=at)
-             for i, d, name, label, ref, linked, b, r, at in rows]
+        with_logo = logo_cids(conn, [r[-1] for r in rows if r[-1]])
+    cands = [dict(id=i, case=ReferenceCase.model_validate(d), label=anonymise.shown(name, label, ref, linked), basis=b, rank=r, approved_at=at,
+                  logo=cid if cid in with_logo else None)
+             for i, d, name, label, ref, linked, b, r, at, cid in rows]
     for c in cands:
         if c["basis"] == "engagement":
             c["case"].outcomes = []  # contracted scope claims no results, whatever the record holds (#139)
@@ -148,7 +151,7 @@ def pick(bid_text: str, candidates: list[dict], clients) -> tuple[list[dict], li
 
 def view(c, clients, **extra):
     case = c["case"]
-    return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label=clean(c["label"], clients, "a client"), basis=c["basis"], score=score(checklist(case)), **extra)
+    return dict(id=c["id"], title=clean(case.title.value, clients, "[withheld]"), label=clean(c["label"], clients, "a client"), basis=c["basis"], score=score(checklist(case)), logo=c.get("logo"), **extra)
 
 
 def source_docs(case_ids: list[int], user: User, clients) -> dict[int, list[dict]]:

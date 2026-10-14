@@ -153,6 +153,11 @@ def resolve(mention: str | None, clients) -> int | None:
     return next((c["id"] for c in clients if k and k in {_key(n) for n in _names(c)}), None)
 
 
+def masks(text: str, clients) -> bool:
+    """True when the client text is not safe to show as it is: apply() rewrites it, or blocked() still finds a protected name (fails closed)."""
+    return apply(text, clients) != text or bool(blocked(text, clients))
+
+
 def shown(name: str | None, label: str | None, referenceable: bool | None, linked: bool) -> str:
     """How a case's client is shown: its name only if linked and referenceable, its label if linked, else "a client"."""
     return name if linked and referenceable else (label if linked else "a client")

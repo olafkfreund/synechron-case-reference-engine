@@ -316,3 +316,8 @@ create table if not exists case_approval_overrides (id bigserial primary key, ca
 
 -- who changed a case's architecture, and how (#246); no foreign key, so it survives case deletion
 create table if not exists architecture_changes (id bigserial primary key, case_id bigint not null, action text not null, changed_by text not null, changed_at timestamptz not null default now());
+
+-- a client's logo (#267): raw is the upload until the worker decodes it, png the clean copy; one row per client
+create table if not exists client_logos (client_id bigint primary key references clients(id) on delete cascade, raw bytea, png bytea, width int not null default 0, height int not null default 0, reason text not null default '', updated_at timestamptz not null default now());
+-- who changed a client's logo; no foreign key, so it survives client deletion
+create table if not exists client_logo_changes (id bigserial primary key, client_id bigint not null, action text not null, changed_by text not null, changed_at timestamptz not null default now());
