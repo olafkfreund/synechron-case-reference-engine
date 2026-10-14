@@ -142,7 +142,7 @@ def accept_upload(conn, user, name: str | None, data: bytes) -> int:
         raise
 
 
-STATUS_COLS = ("j.id, j.status, d.id, coalesce(p.status, c.status), x.id, x.status, extract(epoch from now() - j.started_at)")  # a merged case reads its parent
+STATUS_COLS = ("j.id, j.status, d.id, coalesce(p.status, c.status), x.id, x.status, extract(epoch from now() - j.started_at), coalesce(p.basis, c.basis)")  # a merged case reads its parent
 STATUS_FROM = ("from uploads u left join jobs j on j.id = u.job_id "
                "left join documents d on d.source_id = u.source_id and d.external_id = u.s3_key "
                "left join cases c on c.document_id = d.id left join cases p on p.id = c.merged_into "
@@ -154,7 +154,11 @@ STAGES = {
     "in_review": ("In review", "A reviewer will check it before it appears in search."),
     "approved": ("Approved", "Visible to staff in search."),
     "rejected": ("Not used", "A reviewer decided not to use it."),
-    "indexed": ("Stored, not a case study", "Stored, but it doesn't describe a delivered project."),
+    "indexed": ("Stored, not a case study", "Stored, but not a case study or capability document."),
+}
+CAPABILITY = {  # #213: an offering document is shown apart from delivery evidence
+    "in_review": "A reviewer will check it; it will be shown as a capability document (not delivery evidence).",
+    "approved": "Approved as a capability document: listed under Capability in search.",
 }
 
 
@@ -179,7 +183,7 @@ def extract_estimate(conn, cache: dict) -> str:
     return cache["estimate"]
 
 
-def stage(conn, job_id, job, doc, case, ext_id, extract, age=None, cache=None) -> tuple[str, str, str]:
+def stage(conn, job_id, job, doc, case, ext_id, extract, age=None, basis=None, cache=None) -> tuple[str, str, str]:
     """(code, label, detail) from the upload's jobs, document and case; cache holds the queue and estimate for one render."""
     cache = {} if cache is None else cache
 
@@ -198,6 +202,8 @@ def stage(conn, job_id, job, doc, case, ext_id, extract, age=None, cache=None) -
     if case is None and extract == "failed":
         return "failed", "Couldn't process", "Writing the case failed. Upload it again or ask an admin."
     code = {"extracted": "in_review", "approved": "approved", "rejected": "rejected"}.get(case, "indexed")
+    if basis == "capability" and code in CAPABILITY:
+        return code, STAGES[code][0], CAPABILITY[code]
     return code, *STAGES[code]
 
 

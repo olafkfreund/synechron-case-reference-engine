@@ -340,3 +340,27 @@ def test_started_at_is_set_on_the_first_claim_only(staff):
     with db.connect() as c:
         assert c.execute("select started_at from jobs where id=%s", (j,)).fetchone()[0] == first
         c.execute("delete from jobs where id=%s", (j,))
+
+
+def test_capability_cases_say_so(staff):
+    sid, who = staff
+    uid = accept(who)
+    with db.connect() as c:
+        key, job = c.execute("select s3_key, job_id from uploads where id=%s", (uid,)).fetchone()
+        c.execute("update jobs set status='done' where id=%s", (job,))
+        doc = c.execute("insert into documents(source_id, external_id, checksum) values (%s,%s,'x') returning id", (sid, key)).fetchone()[0]
+        case = c.execute("insert into cases(document_id, status, basis) values (%s,'extracted','capability') returning id", (doc,)).fetchone()[0]
+
+    def st():
+        with db.connect() as c:
+            return ing.upload_status(c, who, uid)
+    assert st() == ("in_review", "In review", "A reviewer will check it; it will be shown as a capability document (not delivery evidence).")
+    with db.connect() as c:
+        c.execute("update cases set status='approved' where id=%s", (case,))
+    assert st()[2] == "Approved as a capability document: listed under Capability in search."
+    with db.connect() as c:
+        c.execute("update cases set basis='delivered' where id=%s", (case,))
+    assert st()[2] == "Visible to staff in search."
+    with db.connect() as c:
+        c.execute("delete from cases where id=%s", (case,))
+    assert st()[2] == "Stored, but not a case study or capability document."

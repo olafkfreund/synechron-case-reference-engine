@@ -126,3 +126,9 @@ None yet.
     repeat, and it is skipped while focus is in a control.
   - **Wording.** A failed extraction reads "Upload it again or ask an
     admin." A stale reading job reads "This is taking longer than usual."
+- **After #213 merged.** The status query returns the case basis, reading
+  the parent's for a merged case. A capability case says it will be
+  shown as a capability document (in review) or that it is listed under
+  Capability (approved). `indexed` reads "Stored, but not a case study or
+  capability document." The badge sits after the file name. Full suite:
+  1567 passed, 4 skipped (node stubs).
