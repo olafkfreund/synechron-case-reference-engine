@@ -397,3 +397,9 @@ code ignores it. The demo can be re-seeded.
   - The parser takes ASCII digits only and caps its errors at 20.
   - Known: `approve()` dropping unsourced points can shift stored cite
     numbers. This predates phase B and doesn't affect exports.
+- After the first real eval (12 components, 11–14 flows, 10–27 flags):
+  - `ARCH_SYSTEM` asks for 6–8 components, named with words copied from the
+    cited quote.
+  - `_build_arch` keeps the strongest components and cited flows before the
+    caps.
+  - The eval prints `flag_kinds` counts, never flag text.

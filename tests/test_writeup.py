@@ -183,3 +183,18 @@ def test_propose_keeps_a_reviewers_architecture_and_skips_without_points(monkeyp
     wu.propose(c, "internal")
     wu.propose(case(), "internal")
     assert c.architecture.by_reviewer and seen == []
+
+
+def test_at_the_cap_the_weakest_components_are_dropped_first(monkeypatch):
+    weak = [wu.ArchItem(name=f"Thing {i}", zone="core", kind="service", cite="solution 1") for i in range(12)]  # a cite, but no name match and no flows
+    strong = [wu.ArchItem(name="Kafka event bus", zone="integration", kind="queue", cite="solution 1"),
+              wu.ArchItem(name="Snowflake ledger", zone="data", kind="store", cite="solution 1")]
+    arch_stub(monkeypatch, wu.ArchProposal(components=weak + strong, flows=[wu.ArchLink(src=13, dst=14, mode="event", cite="solution 1")]))
+    c = arch_case()
+    wu.propose(c, "internal")
+    assert [x.name for x in c.architecture.components] == [f"Thing {i}" for i in range(10)] + ["Kafka event bus", "Snowflake ledger"]
+    assert [(f.src, f.dst) for f in c.architecture.flows] == [("c11", "c12")]
+
+
+def test_the_prompt_asks_for_quote_words_and_few_components():
+    assert "copied exactly" in wu.ARCH_SYSTEM and "6 to 8" in wu.ARCH_SYSTEM and "Fewer, sourced" in wu.ARCH_SYSTEM

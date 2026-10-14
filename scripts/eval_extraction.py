@@ -9,6 +9,7 @@ check approvals for a third-party model on confidential documents. EXTRACT_MODEL
 `destination` here (it would override the policy for every model in --models); in Docker use --network host.
 """
 import argparse
+from collections import Counter
 import json
 import os
 import sys
@@ -27,6 +28,16 @@ SUFFIXES = {".docx", ".pptx", ".pdf"}
 SCALARS = ("title", "client_mention", "industry", "region", "engagement_type", "challenge", "solution",
            "duration_months", "team_size")
 OLLAMA = "http://localhost:11434"
+
+
+def flag_kind(flag: str) -> str:
+    """The category of a check_architecture flag, from its fixed wording: the flag text itself holds document terms."""
+    for kind, hit in (("price", "price or payment term"), ("callout", "callout '"), ("cite", "no sourced point"),
+                      ("no_match", "matches no technology"), ("no_match", "matches neither"),
+                      ("number", " is in no quote"), ("term", ", which ")):
+        if hit in flag:
+            return kind
+    return "other"
 
 
 def ollama_ps(base: str) -> list[dict]:
@@ -110,7 +121,8 @@ def main(argv: list[str] | None = None) -> int:
             flagged = sum(bool(p.flags) for p in case.prose.values())
             arch = case.architecture  # counts only
             arch_counts = {"components": len(arch.components), "flows": len(arch.flows), "flags": len(arch.flags),
-                           "cited": sum(bool(c.cite.strip()) for c in arch.components)} if arch else {}
+                           "cited": sum(bool(c.cite.strip()) for c in arch.components),
+                           "flag_kinds": dict(Counter(map(flag_kind, arch.flags)))} if arch else {}
             images = len(document_images_from(p.read_bytes(), p.name))  # a count only; the images are not kept
             rows.append((sourced, len(items), secs, vram, bad))
             print(f"{model} {p.name[:30]} kind={tri.kind} executed={tri.executed} basis={basis} sourced={sourced}/{len(items)} caps={len(case.capabilities)} "
