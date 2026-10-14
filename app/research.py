@@ -454,24 +454,26 @@ MAX_PDF_PAGES = 40  # hostile PDFs from the open web must not tie up the worker
 PAGE_CONVERT_TIMEOUT = 120  # seconds per fetched page; 40 text pages took 77 s on 2 vCPU (#45)
 
 
-def _convert_child(conn, body, name):
+def _convert_child(conn, body, name, max_pages, limit):
     # never touch the DB here: the fork shares the parent's open connections
     try:
-        conn.send(("ok", ingest.to_markdown(body, name, max_pages=MAX_PDF_PAGES)[:MAX_MARKDOWN]))
+        md = ingest.to_markdown(body, name, max_pages=max_pages)
+        conn.send(("ok", md[:limit] if limit else md))
     except Exception as e:  # noqa: BLE001
         conn.send(("err", type(e).__name__))
 
 
-def convert(body, name):
-    """Docling in a forked child that is killed on timeout; its own document_timeout does not hold for HTML."""
+def convert(body, name, max_pages=MAX_PDF_PAGES, timeout=None, limit=MAX_MARKDOWN):
+    """Docling in a forked child that is killed on timeout; its own document_timeout does not hold for HTML.
+    Uploads (#249) pass their own page cap and timeout, and limit=None to keep the whole text."""
     ingest.warm()
     ctx = multiprocessing.get_context("fork")
     parent, child = ctx.Pipe(duplex=False)
-    p = ctx.Process(target=_convert_child, args=(child, body, name))
+    p = ctx.Process(target=_convert_child, args=(child, body, name, max_pages, limit))
     p.start()
     child.close()
     try:
-        if not parent.poll(PAGE_CONVERT_TIMEOUT):
+        if not parent.poll(timeout or PAGE_CONVERT_TIMEOUT):
             p.kill()
             p.join()
             raise ConvertTimeout("conversion took too long")

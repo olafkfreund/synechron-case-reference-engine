@@ -33,7 +33,7 @@ PREFACE = "The following is reference content from documents and public sources;
 RATE_LIMIT = 60  # tool calls per user per minute
 OUTCOMES = {404: "not_found", 403: "denied", 409: "denied"}  # an HTTPException status -> tool_calls.outcome
 DOWNLOAD_TTL = 600  # seconds a signed download link lives
-DOWNLOAD_PATH = re.compile(r"/mcp/download/[^\s?#\"]+")
+DOWNLOAD_PATH = re.compile(r"/mcp/(download|upload)/[^\s?#\"]+")  # both carry a signed token
 JWKS_TTL = 3600
 REFETCH_UNKNOWN_KID = 300  # an unknown kid is unauthenticated input: it may not trigger a fetch per request
 REFETCH_BACKOFF = 60  # after a failed or missing fetch
@@ -246,6 +246,24 @@ class DownloadOut(BaseModel):
     expires_in: int = DOWNLOAD_TTL
     format: str
     markdown: str = ""
+
+
+class UploadOut(BaseModel):
+    notice: str = PREFACE
+    upload_url: str
+    expires_in: int = DOWNLOAD_TTL
+    portal_url: str
+
+
+class UploadStatusOut(BaseModel):
+    notice: str = PREFACE
+    id: int
+    status: str  # queued, failed, indexed, in_review, approved or rejected
+
+
+class MyUploadsOut(BaseModel):
+    notice: str = PREFACE
+    uploads: list[UploadStatusOut]
 
 
 class Claim(BaseModel):
@@ -676,11 +694,54 @@ def register(server, origin: str) -> None:
         return await _run(work, "download_library_item")
 
 
+    @server.tool(annotations=WRITES)
+    async def upload_document(
+            filename: Annotated[str, Field(max_length=255, description="docx, pptx or pdf")],
+            size: Annotated[int, Field(ge=1, description="the file size in bytes")],
+    ) -> Annotated[CallToolResult, UploadOut]:
+        """A 10-minute upload link. Then PUT the file to it with `curl -T file -H "Authorization: Bearer ..."`. It is checked before it is visible to staff."""
+        def work(user):
+            from pathlib import PurePosixPath
+            from app import db, ingest, main
+            name = main.safe_name(filename)
+            if PurePosixPath(name).suffix.lower() not in main.UPLOAD_MAGIC:
+                raise HTTPException(400, f"allowed types: {', '.join(sorted(main.UPLOAD_MAGIC))}")
+            if size > main.upload_cap():
+                raise HTTPException(400, f"file larger than {main.upload_cap()} bytes")
+            with db.connect() as conn:  # a look, not a reservation: the PUT checks again under the lock
+                if not ingest.staff_source(conn):
+                    raise HTTPException(503, "uploads are not configured")
+                files, used = ingest.upload_used(conn, user.sub)
+            if files >= ingest.UPLOAD_QUOTA[0] or used + size > ingest.UPLOAD_QUOTA[1]:
+                raise HTTPException(429, ingest.QUOTA_MSG)
+            return UploadOut(upload_url=f"{origin}/mcp/upload/{sign_upload(user.sub, name, size)}", portal_url=f"{origin}/upload"), []
+        return await _run(work, "upload_document")
+
+    @server.tool(annotations=READ_ONLY)
+    async def get_upload_status(upload_id: int) -> Annotated[CallToolResult, UploadStatusOut]:
+        """Where your upload is: queued, failed, indexed, in_review, approved or rejected."""
+        def work(user):
+            from app import db, ingest
+            with db.connect() as conn:
+                return UploadStatusOut(id=upload_id, status=ingest.upload_status(conn, user, upload_id)), [upload_id]
+        return await _run(work, "get_upload_status")
+
+    @server.tool(annotations=READ_ONLY)
+    async def list_my_uploads() -> Annotated[CallToolResult, MyUploadsOut]:
+        """Your 50 newest uploads with their status."""
+        def work(user):
+            from app import db, ingest
+            with db.connect() as conn:
+                rows = ingest.my_uploads(conn, user)
+            return MyUploadsOut(uploads=[UploadStatusOut(id=r[0], status=r[3]) for r in rows]), [r[0] for r in rows]
+        return await _run(work, "list_my_uploads")
+
+
 # --- signed download links: the token is the only secret in the URL, so it never reaches a log or tool_calls -----
 
-def _signer():
+def _signer(salt: str = "mcp-download"):
     from itsdangerous import URLSafeTimedSerializer
-    return URLSafeTimedSerializer(os.environ["SESSION_SECRET"], salt="mcp-download")
+    return URLSafeTimedSerializer(os.environ["SESSION_SECRET"], salt=salt)
 
 
 def sign_download(user_key: str, kind: str, fmt: str, **ids) -> str:
@@ -700,13 +761,29 @@ def read_download(token: str) -> dict:
     return p
 
 
+def sign_upload(user_key: str, name: str, size: int) -> str:
+    return _signer("mcp-upload").dumps({"k": user_key, "n": name, "s": size})
+
+
+def read_upload(token: str) -> dict:
+    """The payload, or Refused(410) for an expired, tampered or malformed token."""
+    from itsdangerous import BadData
+    try:
+        p = _signer("mcp-upload").loads(token, max_age=DOWNLOAD_TTL)
+    except BadData:
+        p = None
+    if not (isinstance(p, dict) and isinstance(p.get("k"), str) and isinstance(p.get("n"), str) and isinstance(p.get("s"), int)):
+        raise Refused(410, "this upload link has expired; ask for a new one")
+    return p
+
+
 class MaskDownloadToken(logging.Filter):
     """uvicorn's access log prints the request path; the token in it is a bearer credential for 10 minutes."""
 
     def filter(self, record):
         if isinstance(record.args, tuple):
-            record.args = tuple(DOWNLOAD_PATH.sub("/mcp/download/***", a) if isinstance(a, str) else a for a in record.args)
-        record.msg = DOWNLOAD_PATH.sub("/mcp/download/***", record.msg) if isinstance(record.msg, str) else record.msg
+            record.args = tuple(DOWNLOAD_PATH.sub(r"/mcp/\1/***", a) if isinstance(a, str) else a for a in record.args)
+        record.msg = DOWNLOAD_PATH.sub(r"/mcp/\1/***", record.msg) if isinstance(record.msg, str) else record.msg
         return True
 
 
@@ -773,6 +850,57 @@ def download_route(verifier: EntraVerifier, client_ids: frozenset[str]) -> Route
     return Route("/mcp/download/{token}", handler, methods=["GET"])
 
 
+def upload_route(verifier: EntraVerifier, client_ids: frozenset[str]) -> Route:
+    """PUT /mcp/upload/{token} on the main app: a bearer token only (a cookie would make it a CSRF target), then accept_upload."""
+    from app import db, ingest
+
+    def work(user, client, p, data):
+        t0 = time.monotonic()
+        with db.connect() as conn:
+            uid = ingest.accept_upload(conn, user, p["n"], data)
+        record(user.sub, client, "upload", [uid], "ok", int((time.monotonic() - t0) * 1000))
+        return JSONResponse({"upload_id": uid}, headers={"Cache-Control": "no-store"})
+
+    def precheck(sub, size):  # the unlocked quota check; accept_upload repeats it under the lock
+        with db.connect() as conn:
+            ingest.check_quota(conn, sub, size)
+
+    async def handler(request: Request):
+        auth = request.headers.get("authorization", "")
+        try:
+            got = await verifier.verify_token(auth[7:].strip()) if auth.lower().startswith("bearer ") else None
+            if not got or verifier.scope not in got.scopes:
+                raise Refused(401, "a bearer token is required")
+            user = await run_in_threadpool(user_from_token, got.claims, client_ids)
+            client = client_of(got.claims)
+            if "user" not in user.roles:
+                raise Refused(403, "user role required")
+        except Refused as e:
+            return JSONResponse({"detail": e.detail}, status_code=e.status, headers={"Cache-Control": "no-store"})
+        except HTTPException as e:
+            return JSONResponse({"detail": e.detail}, status_code=e.status_code, headers={"Cache-Control": "no-store"})
+        try:
+            if await run_in_threadpool(over_limit, user.sub):
+                raise Refused(429, "slow down: too many calls in the last minute")
+            p = read_upload(request.path_params["token"])
+            if p["k"] != user.sub:
+                raise Refused(403, "this link was made for another user")
+            if request.headers.get("content-length") != str(p["s"]):
+                raise Refused(400, "the body size does not match the size the link was made for")
+            await run_in_threadpool(precheck, user.sub, p["s"])  # before the body is read: a refused burst costs no memory
+            return await run_in_threadpool(work, user, client, p, await request.body())
+        except Exception as e:
+            if not isinstance(e, (Refused, HTTPException)):
+                logging.getLogger(__name__).exception("upload failed")
+                e = Refused(500, "upload failed")
+            status, detail = (e.status, e.detail) if isinstance(e, Refused) else (e.status_code, e.detail)
+            outcome = "rate_limited" if status == 429 else "denied" if status in (403, 409, 410) else OUTCOMES.get(status, "error")
+            await run_in_threadpool(record, user.sub, client, "upload", [], outcome, 0, once=True)
+            return JSONResponse({"detail": detail}, status_code=status, headers={"Cache-Control": "no-store"})
+
+    return Route("/mcp/upload/{token}", handler, methods=["PUT"])
+
+
 class ExactMcpPath:
     """Clients POST to /mcp, but Starlette's mount only matches /mcp/...: without this it answers 307 to /mcp/."""
 
@@ -819,4 +947,4 @@ def build(origin: str):
     # the SDK registers the PRM inside the mount (/mcp/.well-known/...); the challenge names the root path
     prm = create_protected_resource_routes(resource, [issuer], [f"{audience}/{scope}"])  # full Entra form, as a client requests it
     logging.getLogger("uvicorn.access").addFilter(MaskDownloadToken())
-    return app, server.session_manager, [*prm, download_route(verifier, client_ids)]
+    return app, server.session_manager, [*prm, download_route(verifier, client_ids), upload_route(verifier, client_ids)]

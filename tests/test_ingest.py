@@ -20,7 +20,7 @@ def env(monkeypatch):
         monkeypatch.setenv(k, "x")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
     monkeypatch.setenv("S3_BUCKET", "orig")
-    monkeypatch.setattr(ing, "to_markdown", lambda data, name: data.decode())
+    monkeypatch.setattr(ing, "to_markdown", lambda data, name, **kw: data.decode())
     monkeypatch.setattr(ing, "complete_json", lambda *a, **k: TRIAGE["v"])
     TRIAGE["v"] = CASE
     db.init()

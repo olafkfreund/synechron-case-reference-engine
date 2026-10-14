@@ -1,3 +1,4 @@
+import time
 import hashlib
 import re
 import copy
@@ -27,6 +28,24 @@ templates = Jinja2Templates(directory=Path(__file__).parent / "templates")  # au
 # the stylesheet URL changes with its content, so a browser never pairs new pages with an old cached CSS (#90)
 templates.env.globals["css_version"] = hashlib.sha256(
     b"".join((Path(__file__).parent / "static" / f).read_bytes() for f in ("portal.css", "theme.js"))).hexdigest()[:12]
+
+
+_staff_seen = (0.0, False)
+
+
+def staff_uploads() -> bool:
+    """Whether the Upload tab shows: a staff upload source exists (#249). Cached, so a page render opens no connection."""
+    global _staff_seen
+    # shortcut: up to 60 s stale after an admin toggles staff, and per process; a TTL is enough for a nav tab
+    if time.monotonic() - _staff_seen[0] < 60 and _staff_seen[0]:
+        return _staff_seen[1]
+    from app import ingest
+    with db.connect() as conn:
+        _staff_seen = (time.monotonic(), ingest.staff_source(conn) is not None)
+    return _staff_seen[1]
+
+
+templates.env.globals["staff_uploads"] = staff_uploads
 
 PROSE_LABELS = {"challenge": "Challenge", "solution": "Solution", "implementation": "Implementation approach",
                 "configuration": "Configuration and integration"}
@@ -214,7 +233,8 @@ def _detail(cid, request, user, arch_form=None):
     with db.connect() as conn:
         r = conn.execute(
             f"select c.data, c.status, d.title, d.external_id, s.name, {OPEN}, {VERSION}, c.member_count, c.basis, "
-            f"case when c.review_due > now() then c.review_due end, c.public_sources, md5(c.public_sources::text) "
+            f"case when c.review_due > now() then c.review_due end, c.public_sources, md5(c.public_sources::text), "
+            f"(select u.user_name from uploads u where u.source_id = d.source_id and u.s3_key = d.external_id limit 1) "
             f"from cases c left join documents d on d.id = c.document_id left join sources s on s.id = d.source_id "
             f"where c.id = %s and {REVIEWABLE}", (cid, list(user.groups))).fetchone()
         registry = anonymise.load_clients(conn)
@@ -248,7 +268,7 @@ def _detail(cid, request, user, arch_form=None):
                 basis=case.basis, basis_reason=case.basis_reason, status=r[1], document=r[2],
                 external_id=r[3], source=r[4], merged=bool(members),
                 reviewable=r[5] and not any(m[6] for m in members), v=r[6], sources=sources, sources_v=r[11],
-                due=r[9].strftime("%Y-%m-%d") if r[9] else None)  # in date by the database clock, as search judges it
+                uploaded_by=r[12], due=r[9].strftime("%Y-%m-%d") if r[9] else None)  # in date by the database clock, as search judges it
 
 
 @router.post("/review/{cid}/edit")

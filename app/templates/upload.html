@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block body %}
+<div class="page-head"><div><h1>Upload a document</h1><p>Visible to all staff after a reviewer approves it.</p></div></div>
+{% if notice %}<p class="badge {{ notice[0] }}" role="status">{{ notice[1] }}</p>{% endif %}
+{% if not on %}<div class="empty-state">{{ icon("database") }}<p><b>Uploads are not configured</b></p><p>Ask an administrator to mark an upload source as the staff source.</p></div>
+{% else %}
+<form method="post" action="/upload" enctype="multipart/form-data" class="section-card">
+<div class="field"><label for="up-file">File</label>
+<input type="file" id="up-file" name="file" required accept="{{ upload_types | join(',') }}">
+<span class="field-help">{{ upload_types | join(', ') }}, up to {{ upload_cap | filesizeformat }}. Up to 20 files or 200 MiB a day.</span></div>
+<div class="action-row"><button class="btn primary">Upload</button></div>
+</form>
+<div class="section-card"><div class="card-head"><h2>Your uploads</h2><span class="muted">{{ mine | length }}</span></div>
+{% for id, name, when, status in mine %}<div class="other-row"><b>{{ name }}</b>
+<span class="badge {{ 'ok' if status == 'approved' else 'bad' if status in ('failed', 'rejected') else 'neutral' }}">{{ status | replace("_", " ") }}</span>
+<span class="muted push">{{ when.strftime("%Y-%m-%d %H:%M") }}</span></div>
+{% else %}<p class="muted">Nothing uploaded yet.</p>{% endfor %}</div>
+{% endif %}
+{% endblock %}

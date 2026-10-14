@@ -118,6 +118,25 @@ def safe_name(filename: str | None) -> str:
     return (stem[:100] + suffix[:10]) or "file"  # S3 keys cap at 1,024 bytes
 
 
+class UploadRefused(HTTPException):
+    def __init__(self, code: str, status: int, detail: str):
+        super().__init__(status, detail)
+        self.code = code  # the /admin/sources notice
+
+
+def check_file(filename: str | None, data: bytes) -> str:
+    """The safe name, or UploadRefused: the type, the cap and the magic bytes (/admin/upload and accept_upload)."""
+    name = safe_name(filename)
+    magic = UPLOAD_MAGIC.get(PurePosixPath(name).suffix.lower())
+    if magic is None:
+        raise UploadRefused("type", 400, f"allowed types: {', '.join(sorted(UPLOAD_MAGIC))}")
+    if len(data) > upload_cap():
+        raise UploadRefused("size", 413, f"file larger than {upload_cap()} bytes")
+    if not data.startswith(magic):
+        raise UploadRefused("content", 400, "file content does not match its extension")
+    return name
+
+
 def upload_cap() -> int:
     return int(os.environ.get("UPLOAD_MAX_BYTES", 50 * 1024 * 1024))
 
@@ -178,7 +197,7 @@ def create_app() -> FastAPI:
                 response = JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
             else:
                 # size before parsing: FastAPI spools a multipart body before auth runs
-                cap = (upload_cap() if path == "/admin/upload"
+                cap = (upload_cap() if path in ("/admin/upload", "/upload") or path.startswith("/mcp/upload/")
                        else diagrams.MAX_BYTES if re.fullmatch(r"/review/\d+/diagrams", path) else BODY_CAP)
                 length = request.headers.get("content-length")
                 if length is None or not length.isdigit() or int(length) > cap + 64 * 1024:
@@ -292,16 +311,12 @@ def create_app() -> FastAPI:
                 return RedirectResponse(f"/admin/sources?notice={code}", status_code=303)
             raise HTTPException(status, detail)
 
-        cap = upload_cap()  # the guard middleware already refused oversize bodies before parsing
-        name = safe_name(file.filename)
-        magic = UPLOAD_MAGIC.get(PurePosixPath(name).suffix.lower())
-        if magic is None:
-            return refuse("type", 400, f"allowed types: {', '.join(sorted(UPLOAD_MAGIC))}")
-        data = file.file.read(cap + 1)
-        if len(data) > cap:
-            return refuse("size", 413, f"file larger than {cap} bytes")
-        if not data.startswith(magic):
-            return refuse("content", 400, "file content does not match its extension")
+        # the guard middleware already refused oversize bodies before parsing
+        data = file.file.read(upload_cap() + 1)
+        try:
+            name = check_file(file.filename, data)
+        except UploadRefused as e:
+            return refuse(e.code, e.status_code, e.detail)
         with db.connect() as conn:
             src = conn.execute("select id, config, name from sources where kind='upload' and enabled "
                                "and (%s::bigint is null or id = %s) order by id limit 1",
@@ -322,5 +337,42 @@ def create_app() -> FastAPI:
             return RedirectResponse(
                 f"/admin/sources?notice=uploaded&source={src[0]}&job={job_id}", status_code=303)
         return JSONResponse({"job_id": job_id}, status_code=202)
+
+    UPLOAD_NOTICES = {  # allow-list: the query string picks a message, never supplies one
+        "uploaded": ("ok", "File received. It is queued for processing."),
+        "quota": ("bad", "Upload refused: daily upload limit reached (20 files or 200 MiB)"),
+        "busy": ("bad", "Another upload of yours is in progress; try again in a moment"),
+        "off": ("bad", "Uploads are not configured"),
+        "type": ("bad", f"Upload refused: allowed types are {', '.join(sorted(UPLOAD_MAGIC))}"),
+        "size": ("bad", "Upload refused: the file is larger than the limit"),
+        "content": ("bad", "Upload refused: the file content does not match its extension"),
+    }
+
+    @app.get("/upload")
+    def upload_page(request: Request, notice: str = "", user: User = Depends(require("user"))):
+        from app import ingest
+        from app.review import page
+        with db.connect() as conn:
+            on = ingest.staff_source(conn) is not None
+            mine = ingest.my_uploads(conn, user) if on else []
+        return page(request, "upload.html", user, on=on, mine=mine, notice=UPLOAD_NOTICES.get(notice),
+                    upload_cap=upload_cap(), upload_types=sorted(UPLOAD_MAGIC))
+
+    @app.post("/upload")
+    def upload_post(request: Request, file: UploadFile, user: User = Depends(require("user"))):
+        from app import ingest
+        data = file.file.read(upload_cap() + 1)
+        try:
+            with db.connect() as conn:
+                ingest.accept_upload(conn, user, file.filename, data)
+        except HTTPException as e:
+            if not wants_html(request) or e.status_code not in (400, 413, 429, 503):
+                raise
+            code = e.code if isinstance(e, UploadRefused) else (
+                "off" if e.status_code == 503 else "quota" if e.detail == ingest.QUOTA_MSG else "busy")
+            return RedirectResponse(f"/upload?notice={code}", status_code=303)
+        if wants_html(request):
+            return RedirectResponse("/upload?notice=uploaded", status_code=303)
+        return JSONResponse({"ok": True}, status_code=202)
 
     return app

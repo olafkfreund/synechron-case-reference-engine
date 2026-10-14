@@ -236,6 +236,19 @@ create table if not exists tool_calls (
   created_at timestamptz not null default now()
 );
 create index if not exists tool_calls_user_idx on tool_calls (user_key, created_at);
+
+-- one row per accepted upload (#249), append-only for the app: the quota and the owner-only status read it
+create table if not exists uploads (
+  id bigserial primary key,
+  user_key text not null,
+  user_name text not null default '',
+  source_id bigint not null,
+  s3_key text not null,
+  bytes bigint not null,
+  job_id bigint not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists uploads_user_idx on uploads (user_key, created_at);
 -- the oid backfill and ownership checks look rows up by user (#249)
 create index if not exists research_created_by_idx on research (created_by);
 create index if not exists library_items_created_by_idx on library_items (created_by);

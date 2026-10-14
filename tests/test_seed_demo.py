@@ -309,3 +309,14 @@ def test_seed_refreshes_only_the_architecture_of_an_unchanged_document(env, tmp_
         assert "refreshed" in c.execute("select search_text from cases where id=%s", (first[1],)).fetchone()[0]
         assert c.execute(q, (demo["cases"][1]["file"],)).fetchone() == other
     assert seed.main() == 0 and "refreshed" not in capsys.readouterr().out  # nothing left to refresh
+
+
+def test_first_demo_source_is_the_staff_source_even_on_an_old_database(env):
+    first = DEMO["sources"][0]["name"]
+    assert seed.main() == 0
+    with db.connect() as c:
+        c.execute("update sources set config = config - 'staff' where name=%s", (first,))  # a database seeded before #249
+    assert seed.main() == 0
+    with db.connect() as c:
+        got = dict(c.execute("select name, coalesce(config->>'staff', '') from sources where name like 'Demo: %'").fetchall())
+    assert got[first] == "true" and [n for n, v in got.items() if v] == [first]

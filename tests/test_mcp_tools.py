@@ -61,7 +61,7 @@ def test_outputs_match_their_schemas(mcp, approved):
     tools = {t["name"]: t for t in parse(rpc(s.c, "tools/list", "2025-06-18", tok=s.tok))["tools"]}
     assert set(tools) == {"search_references", "get_case", "list_latest", "preview_output", "generate_output", "start_research", "get_research",
                           "save_library_item", "list_library", "get_library_item", "create_brief", "get_brief", "download_brief",
-                          "download_library_item"}
+                          "download_library_item", "upload_document", "get_upload_status", "list_my_uploads"}
     for t in (tools[n] for n in ("search_references", "get_case", "list_latest", "preview_output")):
         assert t["annotations"]["readOnlyHint"] and t["annotations"]["idempotentHint"] and t["outputSchema"]
     calls = dict(search_references=dict(bid_text="onboarding"), get_case=dict(case_id=cid), list_latest={},
