@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 275
 intent: intent/2026-10-14-275-brief-heading-flags.md
 ---
