@@ -215,3 +215,23 @@ Revert the merge commit. There is no data or schema change.
 - Review fix (Codex gpt-6-sol): Revert while previewing returns to the
   editor, so the preview never shows text that Save would not send.
   Checked with a DOM stub under node.
+- Review fixes (Opus; full suite 1437 passed; with the old behaviour put
+  back, the 3 new tests fail):
+  - **Tap targets.** `details.mini > summary` is back to 44 px site-wide.
+    The 36 px look applies only in `.source-row`, with a `::before`
+    overlay keeping the target at 44 px. "+ Add source" uses its own
+    `.src-add` class, so "+ Add client" is unchanged.
+  - **Sources grid.** The row's own cells stay on row 1, and an opened
+    panel goes on row 2. Its own toggle moves with it, because a
+    `<details>` holds its summary.
+  - **Failed saves.** "Write it by hand" is open when the architecture
+    save failed.
+  - **`review.js`:**
+    - no count when the text is empty
+    - `aria-live` on the count
+    - `aria-pressed` on Preview
+    - Ctrl/Cmd+S bound on the form
+  - **Styling.** `.writer-sec .fname` gets the field-row name style. The
+    quote panel has a 1 px `--input-border` edge and a `:focus-within`
+    outline.
+  - **Sources age** is elapsed whole days, clamped at 0.

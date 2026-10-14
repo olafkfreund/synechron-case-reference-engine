@@ -4,24 +4,24 @@
   document.querySelectorAll("form.writer").forEach(function (f) {
     var t = f.querySelector("textarea"), foot = f.querySelector(".writer-foot"), save = foot.querySelector("button");
     var min = parseInt(t.dataset.min, 10) || 0;
-    var count = el("span", "", ""), dirty = el("span", "", "Unsaved changes"), rev = el("button", "btn ghost", "Revert");
+    var count = el("span", "", ""); count.setAttribute("aria-live", "polite"); var dirty = el("span", "", "Unsaved changes"), rev = el("button", "btn ghost", "Revert");
     var pv = el("button", "btn ghost", "Preview"), box = el("div", "preview");
-    rev.type = pv.type = "button"; box.hidden = true; dirty.hidden = true;
+    rev.type = pv.type = "button"; pv.setAttribute("aria-pressed", "false"); box.hidden = true; dirty.hidden = true;
     foot.insertBefore(count, save); foot.insertBefore(dirty, save); foot.appendChild(rev); foot.appendChild(pv); f.insertBefore(box, foot);
     function sync() {
       var n = t.value.trim().split(/\s+/).filter(Boolean).length;
-      count.textContent = n + " words" + (min ? " · minimum " + min : "");
+      count.textContent = n ? n + " words" + (min ? " · minimum " + min : "") : "";  // empty: the checker counts the sourced points instead
       count.className = min && n >= min ? "ok" : "";
       dirty.hidden = t.value === t.defaultValue; rev.disabled = dirty.hidden;
     }
     t.addEventListener("input", sync);
-    t.addEventListener("keydown", function (e) { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); f.requestSubmit(save); } });
+    f.addEventListener("keydown", function (e) { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); f.requestSubmit(save); } });
     rev.addEventListener("click", function () { t.value = t.defaultValue; if (!box.hidden) pv.click(); sync(); });  // back to the editor: a preview must never show unsaved text
     pv.addEventListener("click", function () {  // textContent only: the text is never parsed as HTML
       var show = box.hidden;
       box.textContent = "";
       if (show) t.value.split(/\n\s*\n/).forEach(function (p) { if (p.trim()) box.appendChild(el("p", "", p.trim())); });
-      box.hidden = !show; t.hidden = show; pv.textContent = show ? "Edit" : "Preview";
+      box.hidden = !show; t.hidden = show; pv.textContent = show ? "Edit" : "Preview"; pv.setAttribute("aria-pressed", show ? "true" : "false");
     });
     sync();
   });

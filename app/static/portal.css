@@ -180,12 +180,11 @@ label.check{display:inline-flex;align-items:center;gap:10px;min-height:44px;min-
 .client-row .chips{display:flex;gap:6px;flex-wrap:wrap}
 /* a closed mini panel is just a small button; open, it takes its own full-width line */
 details.mini{margin:0}
-details.mini>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 12px;border:1px solid var(--input-border);border-radius:var(--r-control);background:var(--surface);color:var(--text);font-weight:500;font-size:13px}
+details.mini>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border:1px solid var(--input-border);border-radius:var(--r-control);background:var(--surface);color:var(--text);font-weight:500;font-size:14px}
 details.mini>summary:hover{border-color:var(--text)}
 details.mini>summary::after{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .15s}
 details.mini[open]>summary::after{transform:rotate(-135deg) translateY(-2px)}
 details.mini>summary.btn-sm::after{position:static;inset:auto}  /* the chevron, not .btn-sm's touch-target overlay */
-.head-panel>summary::before{content:none}  /* "+ Add source" says it already */
 /* open: the summary stays put; the rest is a subtle block under it */
 details.mini[open]{flex:1 1 100%;background:var(--subtle);border-radius:var(--r-card);padding:0 0 12px}
 details.mini[open]>summary{margin:0 0 12px}
@@ -194,7 +193,6 @@ details.mini .field{margin-top:0}
 .head-panel{width:min(100%,460px)}
 .head-panel[open]{flex:1 1 100%}
 .head-panel>form{padding:0 14px}
-.head-panel>summary{min-height:36px;padding:0 12px;font-size:13px}
 details.help-link>summary{list-style:none;cursor:pointer;color:var(--accent);text-decoration:underline;min-height:44px;display:inline-flex;align-items:center;font-size:14px}
 details.help-link[open]{max-width:70ch}
 
@@ -214,12 +212,19 @@ details.mini:not([open])>summary,.client-row .slot{min-width:84px;justify-conten
 .source-row .status-list{margin:0 0 12px}
 .source-row .run{white-space:nowrap}
 .source-row .btn-sm,.source-row summary{white-space:nowrap}
+/* Sources only: 36px buttons, with a 44px touch target from a pseudo-element the chevron does not use */
+.source-row details.mini>summary{min-height:36px;padding:0 12px;font-size:13px;position:relative}
+.source-row details.mini>summary::before{content:"";position:absolute;inset:-4px 0}
+.src-add>summary{min-height:36px;padding:0 12px;font-size:13px;position:relative}
+.src-add>summary::before{content:none}  /* "+ Add source" says it already */
+.src-add>summary::after{content:"";position:absolute;inset:-4px 0}
 @media (min-width:900px){
 .source-row{display:grid;grid-template-columns:24px minmax(160px,1.4fr) auto minmax(0,1fr) auto 88px 88px 88px;gap:6px 12px}
 .source-row form.inline{grid-column:6}
 .source-row details.up{grid-column:7}
 .source-row details.mini:last-child{grid-column:8}
-.source-row details.mini[open]{grid-column:1 / -1}
+.source-row>*{grid-row:1}
+.source-row details.mini[open]{grid-column:1 / -1;grid-row:2}  /* the cells stay on row 1; an opened panel goes beneath */
 .source-row .counts{display:flex;gap:10px}
 }
 .source-row input[type=text],.source-row select{width:100%}
@@ -300,10 +305,11 @@ h2.sub{font-size:15px;color:var(--muted);margin:20px 0 8px}
 .card-head + .field-row{border-top:0}
 @media (min-width:900px){.field-row{grid-template-columns:200px minmax(0,1fr) minmax(0,1.4fr) 136px}}
 .field-row.add{border-top:1px dashed var(--border)}
-.field-row .fname{display:flex;flex-direction:column;align-items:flex-start;gap:4px;font-weight:600}
-.field-row .fname small{display:block;font-weight:400;color:var(--muted)}
+.field-row .fname,.writer-sec .fname{display:flex;flex-direction:column;align-items:flex-start;gap:4px;font-weight:600}
+.field-row .fname small,.writer-sec .fname small{display:block;font-weight:400;color:var(--muted)}
 .field-row .vals{display:flex;flex-direction:column;gap:6px}
-.field-row .quote{background:var(--subtle);border-radius:6px;padding:8px 10px}
+.field-row .quote{background:var(--subtle);border:1px solid var(--input-border);border-radius:6px;padding:8px 10px}
+.field-row .quote:focus-within{outline:3px solid var(--focus);outline-offset:1px}
 .field-row .quote label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 .field-row .quote textarea{field-sizing:content;min-height:3lh;max-height:14lh;width:100%;border:0;background:transparent;padding:0;box-sizing:border-box}
 .field-row .acts{display:flex;flex-direction:column;gap:6px}

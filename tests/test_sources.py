@@ -322,6 +322,32 @@ def test_reextract_is_capped_per_click(env):  # noqa: F811
         _clean(sid)
 
 
+def test_age_is_elapsed_whole_days_not_calendar_days(env):  # noqa: F811  plan #259 review
+    db.init()
+    names = {}
+    with db.connect() as c:
+        for h in (23, 25):
+            n = f"el{h}-{uuid.uuid4().hex[:6]}"
+            names[h] = n
+            c.execute("insert into sources (kind, name, config, acl_groups, last_run_at) values ('upload', %s, '{}', %s, now() - make_interval(hours => %s))", (n, ["g"], h))
+    try:
+        html = client([ADMIN]).get("/admin/sources").text
+        run = lambda h: html.split(names[h])[1].split("Last run:")[1][:160]
+        assert "today" in run(23) and "1 day ago" in run(25)
+    finally:
+        with db.connect() as c:
+            c.execute("delete from sources where name = any(%s)", (list(names.values()),))
+
+
+def test_sources_css_keeps_44px_targets_and_the_opened_panel_on_row_two():
+    from pathlib import Path
+    css = (Path(__file__).parent.parent / "app" / "static" / "portal.css").read_text()
+    assert re.search(r"details\.mini>summary\{[^}]*min-height:44px", css)
+    assert re.search(r"\.source-row details\.mini>summary::before\{content:\"\";position:absolute;inset:-4px 0\}", css)
+    assert ".source-row>*{grid-row:1}" in css and "grid-column:1 / -1;grid-row:2}" in css
+    assert not re.search(r"\.head-panel>summary\{", css) and ".src-add>summary" in css
+
+
 def test_last_run_shows_as_an_age_and_summaries_hide_the_marker(env):  # noqa: F811  plan #259 step 5
     from pathlib import Path
     db.init()

@@ -75,7 +75,7 @@
 {% if arch.cites %}<details class="mini"><summary>Cited points ({{ arch.cites | length }})</summary>{% for c in arch.cites %}<p><b>{{ c[0] }}</b>: {{ c[1] }}<br><q>{{ c[2] }}</q></p>{% endfor %}</details>{% endif %}
 {% if reviewable %}{% if arch.errors %}<div role="alert" class="warn-line">{{ icon("alert") }}<span>Not saved. The earlier version is kept:</span></div><ul>{% for e in arch.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
 {% if not arch.a %}<form method="post" action="/review/{{ id }}/architecture/regenerate" class="action-row"><input type="hidden" name="v" value="{{ v }}"><button class="btn primary">Generate diagram</button></form>
-{% if status == "approved" %}<p class="muted small">Generating takes this case out of search until you approve it again.</p>{% endif %}<details class="mini"><summary>Write it by hand</summary>{% endif %}
+{% if status == "approved" %}<p class="muted small">Generating takes this case out of search until you approve it again.</p>{% endif %}<details class="mini"{% if arch.errors %} open{% endif %}><summary>Write it by hand</summary>{% endif %}
 <form method="post" action="/review/{{ id }}/architecture" id="arch-form"><input type="hidden" name="v" value="{{ v }}">
 <label for="arch-text" class="field-help" style="display:block">One line each: title: ... / component: name | role | zone | kind | cite / flow: A -&gt; B | label | mode | cite / callout: text | outcome number</label>
 <textarea id="arch-text" name="text" rows="14" maxlength="20000">{{ arch.text }}</textarea>

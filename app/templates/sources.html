@@ -15,7 +15,7 @@ SharePoint files whose permissions differ from the site root, and Confluence pag
 The crawler cannot see who may read a whole site or space: enter only groups whose members can read all of it.
 The Confluence crawler account must be a dedicated non-admin account that no restriction names.</p></details>
 </div></div>
-<div class="page-head-actions"><details class="detail-panel head-panel"><summary>+ Add source</summary>
+<div class="page-head-actions"><details class="detail-panel head-panel src-add"><summary>+ Add source</summary>
 <form method="post" action="/admin/sources">
 <div class="field"><label for="new-kind">Kind</label><select name="kind" id="new-kind">{% for k in kinds %}<option>{{ k }}</option>{% endfor %}</select></div>
 <div class="field"><label for="new-name">Name</label><input type="text" id="new-name" name="name" required></div>

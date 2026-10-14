@@ -1714,3 +1714,12 @@ def test_info_notes_fold_away_and_unknown_notes_need_attention(make):  # plan #2
     assert "check the summary" in att and "read in 3 parts" not in att and "malformed" not in att
     assert "Nothing to do." in rest and "it was dropped" in rest and "check the summary" not in rest
     assert '<span class="badge warn">1 notes</span>' in html
+
+
+def test_failed_hand_save_keeps_the_editor_open_and_review_js_is_accessible(make):  # plan #259 review
+    cid = make(data=case_data(extraction_version=4))
+    r = post_arch(cid, text="nonsense")
+    assert r.status_code == 400 and '<details class="mini" open><summary>Write it by hand' in r.text
+    assert '<details class="mini"><summary>Write it by hand' in client(R).get(f"/review/{cid}").text
+    js = client(R).get("/static/review.js").text
+    assert 'aria-live' in js and 'aria-pressed' in js and 'f.addEventListener("keydown"' in js
