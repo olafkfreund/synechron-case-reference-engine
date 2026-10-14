@@ -587,7 +587,7 @@ def test_capability_is_an_offering_without_results_or_prices(monkeypatch):
     assert [p.value for p in c.points["solution"]] == ["Migrate system 1"]  # the commercial strip ran
     assert c.architecture.callouts == []
     assert ex.CAPABILITY_SYSTEM in [s for s, _ in seen]
-    assert any("basis: capability" in u for _, u in seen) and "never as delivered" in writeup.WRITEUP_SYSTEM
+    assert any("basis: capability" in u for _, u in seen) and "Never use past-tense or result language" in writeup.WRITEUP_SYSTEM
 
 
 def test_chunks_ignore_a_blank_line_near_the_start():

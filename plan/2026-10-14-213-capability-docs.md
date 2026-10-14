@@ -161,3 +161,17 @@ exist, which would stop the app starting. This goes in the PR.
 - **Batch limit.** The capability-drafts action queues at most
   `REEXTRACT_BATCH` (25) per click, lowest ids first, and the next click
   continues. Full suite 1455 passed.
+- **Step 7 eval, first run** (counts only, local `qwen3:14b`):
+  - 9 of 11 documents became capability drafts.
+  - 0 outcomes, lessons and callouts.
+  - Commercial terms: 0 real. The two hits were the app's own "…payment
+    terms removed" note.
+  - Result language: 3 hits ("outcome" ×2, "resulted in" ×1).
+- **Follow-up for the result language.**
+  - The capability write-up prompt forbids result words.
+  - A deterministic guard (`RESULT_WORDS`, `check_prose(offering=True)`)
+    flags "claims a result: capability documents describe an offering" on
+    capability prose, including a reviewer's own edits. Flagged prose
+    already blocks approval.
+  - The flag is per section, not per sentence.
+  - Full suite 1456 passed.

@@ -306,7 +306,7 @@ def apply_edit(conn, user, cid, v, field, value=None, metric=None, start=None, e
             if idx not in POINT_FIELDS:
                 raise HTTPException(400, "unknown field")
             if value:
-                case.prose[idx] = Prose(text=value, by_reviewer=True, flags=check_prose(value, quotes_of(case, idx), case.quotes()))
+                case.prose[idx] = Prose(text=value, by_reviewer=True, flags=check_prose(value, quotes_of(case, idx), case.quotes(), offering=case.basis == "capability"))
             else:
                 case.prose.pop(idx, None)  # empty removes it
             obj = None

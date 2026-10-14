@@ -295,7 +295,7 @@ def extract(document_id: int, basis: str = "delivered", basis_reason: str = "", 
                          ("configuration", "Configuration and integration")):
             prev = Prose.model_validate((old[0].get("prose") or {}).get(f) or {}) if old else Prose()
             if prev.by_reviewer and prev.text:  # the reviewer's write-up wins over a new model one
-                prev.flags = writeup.check_prose(prev.text, writeup.quotes_of(case, f), case.quotes())  # against the new quotes
+                prev.flags = writeup.check_prose(prev.text, writeup.quotes_of(case, f), case.quotes(), offering=case.basis == "capability")  # against the new quotes
                 case.prose[f] = prev
                 case.needs_attention.append(f"{label}: your write-up from before the document changed was kept; check it still holds")
         if old and (old[0].get("architecture") or {}).get("by_reviewer"):  # the reviewer's diagram wins over a new proposal
