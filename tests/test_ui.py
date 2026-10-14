@@ -252,14 +252,15 @@ def test_theme_contrast():
     media = {**light, **theme(":root:not([data-theme=\"light\"])", region)}
     assert media == dark  # the OS-dark block and the toggle block hold the same values
     for name, t in (("light", light), ("dark", dark)):
-        for fg in ("text", "muted", "accent"):
+        for fg in ("text", "muted", "link"):
             for bg in ("bg", "surface", "subtle"):
                 assert ratio(t[fg], t[bg]) >= 4.5, (name, fg, bg, ratio(t[fg], t[bg]))
         assert ratio(t["on-accent"], t["accent"]) >= 4.5, name
         assert ratio(t["on-accent"], t["accent-hover"]) >= 4.5, name
         for k in ("ok", "warn", "bad"):
             assert ratio(t[f"{k}-fg"], t[f"{k}-bg"]) >= 4.5, (name, k)
-        assert ratio(t["focus"], t["surface"]) >= 3, name
+        assert ratio(t["focus"], t["surface"]) >= 3 and ratio(t["focus"], t["bg"]) >= 3, name
+        assert ratio(t["muted"], t["subtle"]) >= 4.5, name
         assert ratio(t["input-border"], t["surface"]) >= 3, name  # a field's edge is a UI component
         assert ratio(t["header-text"], t["header"]) >= 4.5 and ratio(t["header-tag"], t["header"]) >= 4.5, name
         assert ratio(t["header-text"], t["header-hover"]) >= 4.5, name

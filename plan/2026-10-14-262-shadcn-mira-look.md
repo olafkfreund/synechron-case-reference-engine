@@ -136,3 +136,18 @@ None yet.
     `brand/fonts`.
   - **Tests.** `tests/test_assets.py` checks the font files and the 13
     icons.
+- **Step 1, contrast adjustments.** These differ from the spec table and
+  are the nearest values that pass the contrast test:
+
+  | Token | Theme | Spec | Used | Reason |
+  |---|---|---|---|---|
+  | `--border` | dark | white at 10 % | `#2E2E2E` | the 10 % mix onto the surface, as hex |
+  | `--input-border` | dark | white at 15 % | `#6B6B6B` | 15 % fails 3:1 |
+  | `--input-border` | light | `#D4D4D4` | `#8A8A8A` | meets 3:1 |
+  | `--muted` | light | `#737373` | `#6B6B6B` | passes 4.5:1 on `--subtle` |
+  | `--accent-hover` | dark | 80 % mix (`#C59205`) | `#F5C842` | the mix gave 3.1:1 with `--on-accent` |
+  | `--bad-fg` | light | `#E7000B` | `#C10007` | `#E7000B` gave about 3.9:1 on the tint |
+
+  - Amber is a fill only: the primary button, the active nav item, the
+    avatar and the claim edge. Text and icons use `--link`.
+  - Ghost and link buttons hover in `--text`.
