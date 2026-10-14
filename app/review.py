@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from app import anonymise, db, diagrams
 from app.extract import MAX_CHARS, check
 from app.main import User, require
-from app.completeness import checklist, meets_minimum, score
+from app.completeness import CHECKS, checklist, meets_minimum, score
 from app import archdiagram, writeup
 from app.schema import (CITE_POINTS, POINT_FIELDS, ArchCallout, ArchComponent, ArchFlow, Architecture, Diagram, Outcome, Period, Prose,
                         ReferenceCase, Sourced, _norm, check_architecture)
@@ -27,7 +27,7 @@ router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")  # autoescape on
 # the stylesheet URL changes with its content, so a browser never pairs new pages with an old cached CSS (#90)
 templates.env.globals["css_version"] = hashlib.sha256(
-    b"".join((Path(__file__).parent / "static" / f).read_bytes() for f in ("portal.css", "theme.js"))).hexdigest()[:12]
+    b"".join((Path(__file__).parent / "static" / f).read_bytes() for f in ("portal.css", "theme.js", "review.js"))).hexdigest()[:12]
 
 
 _staff_seen = (0.0, False)
@@ -259,7 +259,7 @@ def _detail(cid, request, user, arch_form=None):
     if r[5]:  # reviewable: candidates from the documents are offered, never shown elsewhere
         with db.connect() as conn:
             found = candidates_of(conn, cid, user, case)
-    sections = [dict(f=f, label=PROSE_LABELS[f], prose=case.prose.get(f), points=case.points.get(f, []))
+    sections = [dict(f=f, label=PROSE_LABELS[f], prose=case.prose.get(f), points=case.points.get(f, []), min=CHECKS.get(f"{f}_words"))
                 for f in POINT_FIELDS if case.points.get(f) or f in case.prose]
     checks = checklist(case)
     return page(request, "review_detail.html", user, arch=_arch_panel(case, arch_form), id=cid, checks=checks, minimum=meets_minimum(checks), rows=rows(case, {m[7]: m[1] for m in members}), notes=notes,

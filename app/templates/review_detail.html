@@ -13,6 +13,7 @@
 <div>{% if not r.no_quote %}<div class="quote"><label for="{{ f }}-quote">Source quote</label><textarea id="{{ f }}-quote" form="{{ f }}" name="quote" rows="4"{% if r.new %} required{% endif %}>{{ r.quote }}</textarea></div>{% endif %}{% if r.writable %}<label class="check"><input type="checkbox" form="{{ f }}" name="written" value="true"{% if r.written %} checked{% endif %}> I wrote this: no document quote</label>{% endif %}</div>
 <div class="acts">{% if reviewable %}{% if r.new %}<button class="btn primary" form="{{ f }}" aria-label="{{ r.label }}">Add</button>{% else %}<button class="btn" form="{{ f }}" aria-label="Save {{ r.label }}">Save</button>{% if r.item %} <button class="btn danger-ghost" form="{{ f }}" name="action" value="remove" formnovalidate aria-label="Remove {{ r.label }}">Remove</button>{% endif %}{% endif %}{% endif %}</div>
 </div>{% endmacro %}
+{% block head %}<script src="/static/review.js?v={{ css_version }}" defer></script>{% endblock %}
 {% block body %}
 {% set title = ((rows | selectattr("path", "equalto", "title") | first | default({"inputs": [("value", "")]})).inputs[0][1]) %}
 {% set attn = namespace(n=0) %}
@@ -47,16 +48,16 @@
 <div class="section-card" id="fields"><div class="card-head"><h2>Fields</h2></div>
 {% for r in rows %}{% if not (r.unsourced and not r.new) %}{{ field_row(r, loop.index) }}{% endif %}{% endfor %}</div>
 {% if sections %}<div class="section-card" id="text"><div class="card-head"><h2>Case-study text</h2></div>
-{% for sec in sections %}<div class="field-row">
-<div class="fname">{{ sec.label }}
+{% for sec in sections %}<div class="writer-sec">
+<div class="fname"><span class="cap-first">{{ sec.label }}</span>
 {% if sec.prose and sec.prose.by_reviewer %}<span class="badge ok">written by reviewer</span>{% elif sec.prose and sec.prose.flags %}<span class="badge bad">flagged</span>{% elif sec.prose %}<span class="badge neutral">generated</span>{% else %}<span class="badge empty">not written</span>{% endif %}</div>
-<div>{% if sec.prose %}{% for fl in sec.prose.flags %}<div class="note">{{ fl }}</div>{% endfor %}{% endif %}
-{% if reviewable %}<form method="post" action="/review/{{ id }}/edit" class="row"><input type="hidden" name="field" value="prose.{{ sec.f }}"><input type="hidden" name="v" value="{{ v }}">
-<label for="pr-{{ sec.f }}" class="mini-label">{{ sec.label }} text</label><textarea id="pr-{{ sec.f }}" name="value" rows="8">{{ sec.prose.text if sec.prose else "" }}</textarea>
-<button class="btn" aria-label="Save {{ sec.label }} text">Save</button></form>
+{% if sec.prose and sec.prose.flags %}<p class="warn-line" title="{{ sec.prose.flags | join("\n") }}">{{ icon("alert") }}<span>{{ sec.prose.flags | join("; ") }}</span></p>{% endif %}
+{% if reviewable %}<form method="post" action="/review/{{ id }}/edit" class="writer"><input type="hidden" name="field" value="prose.{{ sec.f }}"><input type="hidden" name="v" value="{{ v }}">
+<label for="pr-{{ sec.f }}" class="mini-label">{{ sec.label }} text</label><textarea id="pr-{{ sec.f }}" name="value" rows="8"{% if sec.min %} data-min="{{ sec.min }}"{% endif %}>{{ sec.prose.text if sec.prose else "" }}</textarea>
+<div class="writer-foot"><button class="btn" aria-label="Save {{ sec.label }} text">Save</button></div></form>
 {% elif sec.prose %}<p style="white-space:pre-wrap">{{ sec.prose.text }}</p>{% endif %}
 {% if sec.points %}<details><summary>Sourced points ({{ sec.points | length }})</summary>
-{% for p in sec.points %}<div class="claim"><p>{{ p.value }}</p>{% if p.source_quote %}<q>{{ p.source_quote }}</q>{% endif %}{% if p.unsourced %} <span class="badge bad">unsourced</span>{% endif %}</div>{% endfor %}</details>{% endif %}</div>
+{% for p in sec.points %}<div class="claim"><p>{{ p.value }}</p>{% if p.source_quote %}<q>{{ p.source_quote }}</q>{% endif %}{% if p.unsourced %} <span class="badge bad">unsourced</span>{% endif %}</div>{% endfor %}</details>{% endif %}
 </div>{% endfor %}</div>{% endif %}
 {% if sources %}<div class="section-card"><div class="card-head"><h2>Public sources (not delivery evidence)</h2></div>
 {% for s in sources %}<div class="claim">{% if s.hidden %}<p class="muted">Withheld: names a protected client</p>{% else %}{% if s.type == "technical_note" %}<pre>{{ s.quote }}</pre>{% else %}<q>{{ s.quote }}</q>{% endif %}

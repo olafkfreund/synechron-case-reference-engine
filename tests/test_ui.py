@@ -58,7 +58,7 @@ class Scan(HTMLParser):
         a = dict(a)
         # inline handlers and javascript: links count as scripts
         self.scripts += sum(k.startswith("on") for k in a) + str(a.get("href", "")).strip().lower().startswith("javascript:")
-        if tag == "script" and not str(a.get("src", "")).startswith("/static/theme.js"):  # the theme toggle's own file
+        if tag == "script" and not str(a.get("src", "")).startswith(("/static/theme.js", "/static/review.js")):  # the toggle's and the review page's own files
             self.scripts += 1
         elif tag == "label":
             self.label_depth += 1

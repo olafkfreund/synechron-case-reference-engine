@@ -296,6 +296,15 @@ h2.sub{font-size:15px;color:var(--muted);margin:20px 0 8px}
 .field-row .acts{display:flex;flex-direction:column;gap:6px}
 .field-row .acts .btn{width:100%;justify-content:center;text-align:center}
 .checks{list-style:none;padding:0;margin:0}.checks li{display:flex;gap:8px;align-items:center;padding:2px 0}.checks .icon{flex:none;width:18px;height:18px}
+.writer-sec{padding:14px 0;border-top:1px solid var(--line)}
+.writer-sec .warn-line{margin:8px 0 0;font-size:14px}
+.writer{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.writer textarea{max-width:75ch;line-height:1.6;field-sizing:content;min-height:8lh;max-height:30lh}
+.writer-foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:13px;color:var(--muted)}
+.writer-foot .ok{color:var(--ok-fg)}
+.writer-foot .btn{font-size:13px}
+.preview{max-width:75ch;line-height:1.6;background:var(--subtle);border-radius:6px;padding:8px 12px}
+.preview p{margin:0 0 .8em}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .warn-line{display:flex;gap:10px;align-items:flex-start}
 .warn-line .icon{flex:none;color:var(--warn-fg)}

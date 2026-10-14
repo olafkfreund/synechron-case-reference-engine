@@ -172,3 +172,13 @@ Revert the merge commit. There is no data or schema change.
   - The Remove button's `danger-ghost` class went in with step 1
     (decision 2).
   - No existing test asserted the old "of N words" wording.
+- Step 2:
+  - The footer controls (count, Unsaved, Revert, Preview) are added by
+    `review.js`, so the page without JavaScript shows the textarea and
+    Save only.
+  - The flags line joins the flag texts with "; ". The flags are free-form
+    strings from several checkers, so no "Unsupported:" prefix was
+    invented.
+  - Two existing assertions count `<script` on the detail page as 2
+    (`theme.js` and `review.js`). `css_version` also hashes `review.js`.
+  - `node --check` ran on the host, because the app image has no node.

@@ -581,7 +581,7 @@ def test_candidate_form_lists_only_same_client_engagements(make, acme):
     page = client(R).get(f"/review/{a}").text
     assert f'value="{a}:{ver(a)}"' in page and f'value="{b}:{ver(b)}"' in page
     assert f'value="{other}:' not in page and f'value="{delivered}:' not in page
-    assert page.count("<script") == 1 and "onclick" not in page
+    assert page.count("<script") == 2 and "onclick" not in page
     assert "/review/merge/preview" not in client(R).get(f"/review/{other}").text  # unregistered client
 
 
@@ -619,7 +619,7 @@ def test_merged_detail_and_list_show_members(make, acme):
     new = int(merge(client(R), [a, b]).headers["location"].rsplit("/", 1)[1])
     page = client(R).get(f"/review/{new}").text
     assert "Merged from 2 contracts" in page and page.count("Source doc") >= 2
-    assert "<small>(Source doc)</small>" in page and page.count("<script") == 1
+    assert "<small>(Source doc)</small>" in page and page.count("<script") == 2
     assert "/review/merge/preview" not in page
     assert "2 contracts" in client(R).get("/review").text
 
@@ -1676,3 +1676,17 @@ def test_regenerate_uses_the_strictest_class_among_the_members(make, monkeypatch
     seen = []
     monkeypatch.setattr(writeup, "complete_json", lambda a, s, u, model, **k: seen.append(k["data_class"]) or model())
     assert post_arch(parent, "/regenerate").status_code == 303 and seen == ["sanitised"]
+
+
+def test_text_form_posts_the_same_fields_and_review_js_loads_only_here(make):  # plan #259 step 2
+    cid = prosed(make, prose={"solution": {"text": "Some text.", "by_reviewer": False, "flags": ["number 99 is in no quote", "names 'X', which no quote supports"]}})
+    c = client(R)
+    html = c.get(f"/review/{cid}").text
+    assert 'action="/review/%d/edit"' % cid in html and 'name="field" value="prose.solution"' in html
+    assert 'name="value"' in html and 'name="v"' in html and 'aria-label="Save Solution text"' in html
+    assert 'data-min="80"' in html and 'data-min="80"' in html.split('id="pr-solution"')[1].split(">")[0]
+    assert "number 99 is in no quote; names" in html and html.count('class="warn-line" title=') == 1
+    assert "/static/review.js?v=" in html
+    assert "review.js" not in c.get("/review").text
+    js = c.get("/static/review.js").text
+    assert "innerHTML" not in js and "textContent" in js
