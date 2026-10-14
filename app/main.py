@@ -54,16 +54,49 @@ def current_user(request: Request) -> User:
         request.session.clear()  # the browser drops the dead cookie
         raise HTTPException(401, "session expired; log in again")
     with db.connect() as conn:
-        row = conn.execute("select valid_after from session_cutoffs where sub = %s", (s["sub"],)).fetchone()
-    if row and s.get("iat", 0) <= row[0].timestamp():
+        # a cookie from before the oid change still carries the old sub, whose rows have moved to the oid (#249)
+        moved = conn.execute("select oid from user_keys where old_sub = %s", (s["sub"],)).fetchone()
+        key = moved[0] if moved else s["sub"]
+        row = conn.execute("select max(valid_after) from session_cutoffs where sub = any(%s)", ([s["sub"], key],)).fetchone()
+    if row[0] and s.get("iat", 0) <= row[0].timestamp():
         request.session.clear()  # the browser drops the dead cookie
         raise HTTPException(401, "session ended; log in again")
-    return User(s["sub"], s["name"], frozenset(s["groups"]), roles_for(s["groups"]))
+    return User(key, s["name"], frozenset(s["groups"]), roles_for(s["groups"]))
+
+
+def claim_groups(value) -> set[str]:
+    """The groups claim as a set; anything but a string or a list of strings is refused (ValueError)."""
+    if isinstance(value, str):
+        return {value}
+    if isinstance(value, (list, tuple)) and all(isinstance(g, str) for g in value):
+        return set(value)
+    raise ValueError("groups claim must be a string or a list of strings")
+
+
+# every column that holds the signed-in user's key; audit trails (approved_by, changed_by) keep what was written then
+USER_COLUMNS = (("research", "created_by"), ("library_items", "created_by"), ("briefs", "created_by"),
+                ("generations", "user_id"))
+
+
+def adopt_oid(conn, old_sub: str, oid: str) -> None:
+    """The key moved from the ID token's pairwise `sub` to `oid` (#249): rewrite the user's rows to it. Idempotent,
+    and run on every login so rows a pre-deploy session wrote under the old key are caught too."""
+    if old_sub == oid:
+        return
+    conn.execute("insert into user_keys (old_sub, oid) values (%s, %s) on conflict do nothing", (old_sub, oid))
+    for table, col in USER_COLUMNS:  # UPDATE locks the rows it rewrites
+        conn.execute(f"update {table} set {col} = %s where {col} = %s", (oid, old_sub))
+    # the cutoff is copied, not moved: a session cookie still carrying the old sub is checked against the old row
+    conn.execute("insert into session_cutoffs (sub, valid_after) select %s, valid_after from session_cutoffs "
+                 "where sub = %s on conflict (sub) do update "
+                 "set valid_after = greatest(session_cutoffs.valid_after, excluded.valid_after)", (oid, old_sub))
 
 
 def cut_sessions(conn, *subs: str) -> None:
-    """Refuse every session of these users issued until now (#47); app clock, same as iat."""
+    """Refuse every session of these users issued until now (#47); app clock, same as iat. Either key works."""
     now = datetime.now(timezone.utc)
+    subs = tuple({k for sub in subs for k in (sub, *(x for row in conn.execute(
+        "select old_sub, oid from user_keys where old_sub = %s or oid = %s", (sub, sub)) for x in row))})
     for sub in subs:
         conn.execute("insert into session_cutoffs (sub, valid_after) values (%s, %s) on conflict (sub) "
                      "do update set valid_after = greatest(session_cutoffs.valid_after, excluded.valid_after)",
@@ -189,6 +222,7 @@ def create_app() -> FastAPI:
     if mcp_app:
         app.router.routes.extend(mcp_prm)  # before the mount: the root PRM path
         app.mount("/mcp", mcp_app)
+        app.add_middleware(mcp_server.ExactMcpPath)  # last added, outermost: before the guard and the router
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
     oauth = OAuth()
     app.state.oauth = oauth
@@ -218,18 +252,24 @@ def create_app() -> FastAPI:
         except OAuthError:  # cancelled login, stale state
             raise HTTPException(401, "login failed; start again at /login")
         claims = token["userinfo"]
+        key = claims.get("oid") or claims["sub"]  # Entra's sub differs per application, oid does not; the mock IdP has no oid
         claim = os.environ.get("OIDC_GROUPS_CLAIM", "groups")
         if claim in claims.get("_claim_names", {}):
             # Entra "groups overage" (>200 groups): no groups in the token, so no roles; fail loudly
-            print(f"login refused for {claims['sub']}: groups overage", flush=True)
+            print(f"login refused for {key}: groups overage", flush=True)
             raise HTTPException(403, "too many groups in the token; assign groups to the application in the IdP")
-        groups = claims.get(claim, [])
-        groups = {groups} if isinstance(groups, str) else set(groups)
+        try:
+            groups = claim_groups(claims.get(claim, []))
+        except ValueError:
+            raise HTTPException(403, "the groups claim in the token is malformed") from None
         request.session.clear()  # fresh session on login
+        if key != claims["sub"]:
+            with db.connect() as conn:
+                adopt_oid(conn, claims["sub"], key)
         request.session["user"] = {
-            "sub": claims["sub"], "name": claims.get("name", claims["sub"]),
+            "sub": key, "name": claims.get("name", key),
             "groups": sorted(groups & known_groups()), "iat": time.time()}
-        print(f"login sub={claims['sub']!r} name={request.session['user']['name']!r}", flush=True)
+        print(f"login sub={key!r} name={request.session['user']['name']!r}", flush=True)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/logout")  # POST: a cross-site link must not log people out

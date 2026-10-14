@@ -216,6 +216,32 @@ create table if not exists session_cutoffs (
   valid_after timestamptz not null
 );
 
+-- identity moved from the ID token's per-application `sub` to `oid` (#249): which old key became which
+create table if not exists user_keys (
+  old_sub text primary key,
+  oid text not null,
+  migrated_at timestamptz not null default now()
+);
+create index if not exists user_keys_oid_idx on user_keys (oid);
+
+-- one row per MCP tool call (#249), append-only for the app. Never the arguments, the text or a token.
+create table if not exists tool_calls (
+  id bigserial primary key,
+  user_key text not null,
+  client_id text not null default '',
+  tool text not null,
+  object_ids bigint[] not null default '{}',
+  outcome text not null check (outcome in ('ok','denied','not_found','error','rate_limited')),
+  ms int not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists tool_calls_user_idx on tool_calls (user_key, created_at);
+-- the oid backfill and ownership checks look rows up by user (#249)
+create index if not exists research_created_by_idx on research (created_by);
+create index if not exists library_items_created_by_idx on library_items (created_by);
+create index if not exists briefs_created_by_idx on briefs (created_by);
+create index if not exists generations_user_idx on generations (user_id);
+
 -- documents carry a copy of their source's groups; repair any copy a crawl wrote back before #58
 -- (idempotent; re-run the migration once old worker tasks have stopped after a deploy)
 -- for share, as every other write: an unlocked read could write back groups a concurrent save replaced

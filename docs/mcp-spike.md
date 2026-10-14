@@ -16,8 +16,11 @@ that phase 1 builds on facts.
 ## Mount
 
 - **Path:** `MCPServer.streamable_http_app()` with `streamable_http_path="/"`
-  and `stateless_http=True`, mounted at `/mcp`. A POST to `/mcp` is served
-  directly, with no redirect.
+  and `stateless_http=True`, mounted at `/mcp`. A mount only matches
+  `/mcp/...`, so a POST to `/mcp` got a 307 to `/mcp/`. The test client
+  follows redirects, which hid this until a real curl call. A small ASGI
+  wrapper (`ExactMcpPath`) now rewrites exactly `/mcp` to `/mcp/`, and a test
+  with redirects off covers it.
 - **Lifespan:** the parent app's lifespan enters `session_manager.run()`. A
   mounted app's lifespan doesn't run on its own.
 - **Off by default:** `/mcp` exists only with `MCP_ENABLED=1`. Without it,

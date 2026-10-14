@@ -73,6 +73,13 @@ def test_audit_log_tables_are_append_only_for_the_app(app_role):
             with as_app("pw-1") as a:
                 with pytest.raises(psycopg.errors.InsufficientPrivilege):
                     a.execute(stmt)
+    for stmt in ("update tool_calls set tool='x'", "delete from tool_calls"):  # MCP audit (#249)
+        with as_app("pw-1") as a:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                a.execute(stmt)
+    with as_app("pw-1") as a:  # insert and select are what the app needs
+        a.execute("insert into tool_calls (user_key, tool, outcome, ms) values ('t-hardening', 'x', 'ok', 1)")
+        a.execute("select count(*) from tool_calls")
 
 
 def test_tables_created_later_are_covered_by_default_privileges(app_role):
@@ -263,8 +270,8 @@ def test_document_text_never_reaches_logs_or_stdout(approved, monkeypatch, caplo
 
 def test_print_calls_are_the_known_content_free_ones():
     allowed = {  # file -> the only f-string/status lines that may print
-        "app/main.py": ['print(f"login refused for {claims[\'sub\']}: groups overage", flush=True)',
-                        'print(f"login sub={claims[\'sub\']!r} name={request.session[\'user\'][\'name\']!r}", flush=True)'],  # #47: finds a sub
+        "app/main.py": ['print(f"login refused for {key}: groups overage", flush=True)',
+                        'print(f"login sub={key!r} name={request.session[\'user\'][\'name\']!r}", flush=True)'],  # #47: finds a sub
         "app/enqueue_crawls.py": ['print(f"queued {queued} crawl job(s), {retried} extract retry(ies)", flush=True)'],
         "app/worker.py": ['print(f"job {job_id} {kind} {status}: {type(e).__name__}", flush=True)'],
         "app/revoke_sessions.py": ['print("usage: python -m app.revoke_sessions <sub> [<sub> ...]", file=sys.stderr)',

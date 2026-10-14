@@ -15,7 +15,8 @@ services:
       - "127.0.0.1:8080:8080"
     environment:
       SERVER_PORT: "8080"
-      JSON_CONFIG: '{"interactiveLogin": true}'
+      # refs-mcp: dev tokens for /mcp (scripts/mcp_token.sh). Claims come from the request: $${username} and $${groups}.
+      JSON_CONFIG: '{"interactiveLogin": true, "tokenCallbacks": [{"issuerId": "refs-mcp", "tokenExpiry": 3600, "requestMappings": [{"requestParam": "client_id", "match": "local-dev", "claims": {"sub": "$${username}", "oid": "$${username}", "aud": ["refs-mcp"], "scp": "refs.access", "azp": "local-dev", "groups": "$${groups}"}}]}]}'
     networks:
       default:
         aliases:
@@ -103,6 +104,12 @@ services:
       OIDC_METADATA_URL: http://idp.localhost:8080/refs/.well-known/openid-configuration
       OIDC_CLIENT_ID: refs-local
       OIDC_CLIENT_SECRET: dev-only-not-a-secret
+      # MCP at /mcp: off unless MCP_ENABLED=1 (see docs/mcp.md); the issuer is the mock IdP's refs-mcp
+      MCP_ENABLED: ${MCP_ENABLED:-}
+      MCP_ISSUER: ${MCP_ISSUER:-http://idp.localhost:8080/refs-mcp}
+      MCP_AUDIENCE: refs-mcp
+      MCP_CLIENT_IDS: local-dev  # the mock's azp
+      MCP_JWKS_URL: http://idp:8080/refs-mcp/jwks
       ROLE_USER_GROUPS: refs-users
       ROLE_REVIEWER_GROUPS: refs-reviewers
       ROLE_ADMIN_GROUPS: refs-admins
