@@ -59,6 +59,14 @@
 </div>
 
 <div class="section-card">
+<div class="card-head"><h2>Client logo changes</h2></div>
+{% if not logo_changes %}<p class="muted">No logo changes recorded.</p>{% else %}
+<div class="table-box"><table><thead><tr><th>When</th><th>Client</th><th>Action</th><th>By</th></tr></thead><tbody>
+{% for at, name, action, by in logo_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ action }}</td><td>{{ by }}</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+</div>
+
+<div class="section-card">
 <div class="card-head"><h2>Access group changes</h2></div>
 <p class="muted">Changes to a source's access groups apply to its documents at once.</p>
 {% if not acl_changes %}<p class="muted">No access-group changes recorded.</p>{% else %}

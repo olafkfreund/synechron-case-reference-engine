@@ -78,6 +78,7 @@ def process(diagram_id: int) -> None:
         conn.execute("update diagrams set png=%s, raw=null where id=%s", (png, diagram_id))
 
 
+LOGO_MAX_BYTES = 1024 * 1024
 LOGO_MIN_SIDE = 64
 LOGO_MAX_ASPECT = 8
 LOGO_TOO_SMALL = "too small: at least 64 px on the short side"

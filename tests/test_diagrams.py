@@ -533,5 +533,6 @@ def test_logo_refusals_have_a_fixed_reason(logo, raw, reason):
 
 
 def test_logo_bomb_is_refused(logo, monkeypatch):
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1)  # _decode sets it globally; this restores it afterwards
     monkeypatch.setattr(diagrams, "MAX_PIXELS", 1000)
     assert logo(encode("PNG", (200, 100)))[3] == diagrams.TOO_LARGE
