@@ -131,7 +131,12 @@ def style_doc(d):
     hp.alignment = WD_ALIGN_PARAGRAPH.LEFT
     hp.add_run().add_picture(str(BRAND / "wordmark-black.png"), width=Mm(30))
 
-    fp = d.sections[0].footer.paragraphs[0]
+    footer(d.sections[0].footer.paragraphs[0])
+    return d
+
+
+def footer(fp):
+    """The confidential line and the page number, grey 8 pt."""
     fp.alignment = WD_ALIGN_PARAGRAPH.LEFT
     r = fp.add_run("Synechron \u00b7 Confidential\t")
     r.font.name, r.font.size, r.font.color.rgb = "Aptos", Pt(8), GREY
@@ -145,7 +150,6 @@ def style_doc(d):
         fr.font.name, fr.font.size, fr.font.color.rgb = "Aptos", Pt(8), GREY
         _set_rfonts(fr._r.get_or_add_rPr(), "Aptos")
         fr._r.append(parse_xml(f'<w:r xmlns:w="{W}">{part}</w:r>')[0])
-    return d
 
 
 def yellow_rule(p):
@@ -327,6 +331,8 @@ def industry_section(d, page_break=True):
 
 if sys.argv[1] == "--case-study":
     d = style_doc(Document())
+    d.sections[0].different_first_page_header_footer = True  # page 1: the blue band carries the wordmark, not the header
+    footer(d.sections[0].first_page_footer.paragraphs[0])
     d.add_paragraph("{%p for c in cases %}")
     d.add_paragraph("{%p if c.logo %}")
     d.add_paragraph("{{ c.logo }}").alignment = WD_ALIGN_PARAGRAPH.RIGHT  # cover, top right
