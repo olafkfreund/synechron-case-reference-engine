@@ -381,6 +381,13 @@ check the brief has a diagram, counts only.
     needs several pages, and each bad claim is also run alone. It replaces
     `test_quotes_are_ranked_capped_and_the_drops_apply`.
 
+- **Phase (c), c2.**
+  - `Fetcher._get` and `_hop` gain an `accept` parameter, defaulting to
+    the old header, so the image fetch sends the image `Accept` header.
+  - Image URLs also pass robots.txt through `allowed()`.
+  - SSRF test: an image at the link-local metadata address, and a redirect
+    to a private one, are refused. The research still ends `done`.
+
 ## Tests
 
 ```bash
@@ -396,10 +403,3 @@ Revert each phase's merge. After (c), `drop table research_images`. Briefs
 with `body["diagram"]` keep working once (d) is reverted, because the key is
 ignored. Claims of type `technical_note` stored by (b) are dropped by the
 old `CLAIM_TYPES` filter, so they're harmless after a revert.
-
-- **Phase (c), c2.**
-  - `Fetcher._get` and `_hop` gain an `accept` parameter, defaulting to
-    the old header, so the image fetch sends the image `Accept` header.
-  - Image URLs also pass robots.txt through `allowed()`.
-  - SSRF test: an image at the link-local metadata address, and a redirect
-    to a private one, are refused. The research still ends `done`.
