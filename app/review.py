@@ -606,13 +606,15 @@ def regenerate_architecture(cid: int, v: str = Form(), confirm: bool = Form(Fals
             "where m.id = %s or m.merged_into = %s", (cid, cid))}
     work = case.model_copy(deep=True)
     work.architecture = None
+    writeup.set_arch_note(work)  # work then holds only what this attempt says (#264)
     writeup.propose(work, next((c for c in DATA_CLASSES if c in classes), "confidential"))
     with db.connect() as conn:
         case, _ = load(conn, cid, user, v)  # 409 if the case changed meanwhile
         if work.architecture:
             case.architecture = work.architecture
         elif case.architecture:
-            work.needs_attention.append("architecture: no new proposal; the current one is kept")
+            if not any(n.startswith("architecture proposal failed") for n in work.needs_attention):  # one note per event
+                work.needs_attention.append("architecture: no new proposal; the current one is kept")
         else:
             work.needs_attention.append("architecture: the model proposed nothing the points support")
         writeup.set_arch_note(case)  # drops the earlier notes, counts the current diagram's flags (#264)

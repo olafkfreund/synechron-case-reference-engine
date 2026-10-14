@@ -1775,3 +1775,35 @@ def test_set_arch_note_counts_a_flagged_architecture_once():
     case.architecture = Architecture(title="t", components=[], flows=[], callouts=[], flags=["a", "b"])
     writeup.set_arch_note(case)
     assert case.needs_attention == [STALE[0], "architecture has 2 unsupported item(s); edit it before approval"]
+
+
+def test_failed_regenerate_replaces_the_old_architecture_notes_once(make, monkeypatch):  # #264 review
+    from app import writeup
+    cid = arch_case(make)
+    post_arch(cid, text=ARCH_TEXT)
+    _notes(cid, STALE + ["architecture: the model proposed nothing the points support"])
+    monkeypatch.setattr(writeup, "complete_json", lambda *a, **k: (_ for _ in ()).throw(ValueError("boom")))
+    assert post_arch(cid, "/regenerate", confirm="true").status_code == 303
+    n = _notes(cid)
+    arch = [x for x in n if x.lower().startswith(writeup.ARCH_NOTES)]
+    flags = row(cid)[1]["architecture"]["flags"]  # the kept diagram's own count, then this failure: nothing stale, nothing twice
+    assert arch == [f"architecture has {len(flags)} unsupported item(s); edit it before approval", "architecture proposal failed (ValueError)"]
+    assert n[0] == STALE[0]
+
+
+def test_save_architecture_counts_flags_for_a_flagged_diagram(make):  # #264 review: the flagged branch through the route
+    cid = arch_case(make)
+    _notes(cid, STALE)
+    assert post_arch(cid, text=ARCH_TEXT).status_code == 303  # ARCH_TEXT's callout and terms are flagged on this case
+    flags = row(cid)[1]["architecture"]["flags"]
+    assert flags and _notes(cid) == [STALE[0], f"architecture has {len(flags)} unsupported item(s); edit it before approval"]
+
+
+def test_set_arch_note_adds_nothing_for_a_clean_architecture():
+    from app import writeup
+    from app.schema import Architecture
+    case = ReferenceCase.model_validate_json(case_data())
+    case.needs_attention = list(STALE) + ["Architecture: your diagram from before the document changed was kept; check it still holds"]
+    case.architecture = Architecture(title="t", components=[], flows=[], callouts=[], flags=[])
+    writeup.set_arch_note(case)
+    assert case.needs_attention == [STALE[0]]  # the capitalised kept note is an architecture note too

@@ -208,7 +208,7 @@ ARCH_NOTES = ("architecture has ", "architecture proposal failed", "architecture
 
 def set_arch_note(case: ReferenceCase) -> None:
     """Drop every earlier architecture note; if the current architecture is flagged, add one fresh count (#264)."""
-    case.needs_attention = [n for n in case.needs_attention if not n.startswith(ARCH_NOTES)]
+    case.needs_attention = [n for n in case.needs_attention if not n.lower().startswith(ARCH_NOTES)]  # "Architecture: …kept" too
     if case.architecture and case.architecture.flags:
         case.needs_attention.append(f"architecture has {len(case.architecture.flags)} unsupported item(s); edit it before approval")
 
@@ -222,6 +222,7 @@ def propose(case: ReferenceCase, data_class: str) -> None:
     try:
         arch = _build_arch(complete_json("EXTRACT_MODEL", ARCH_SYSTEM, _arch_message(case), ArchProposal, data_class=data_class), case)
     except Exception as e:  # noqa: BLE001 - the class only: a message could echo document text
+        set_arch_note(case)  # this failure replaces any earlier architecture note
         case.needs_attention.append(f"architecture proposal failed ({type(e).__name__})")
         return
     case.architecture = arch if arch.components else None

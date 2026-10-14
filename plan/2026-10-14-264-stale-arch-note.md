@@ -67,3 +67,20 @@ None in the code.
 - **Negative control:** without the save call, the stale "proposal failed"
   note survives and the test fails.
 - **Full suite:** 1444 passed.
+- **Review fixes** (Opus and agy; Codex found nothing; full suite 1447
+  passed):
+  - **Failed or skipped Generate.** Regenerate resets the working copy's
+    architecture notes before `propose`, and `propose` replaces earlier
+    notes when it fails. A failed or skipped Generate no longer brings old
+    failure notes back; this was the stale `TimeoutError` note in the
+    negative control.
+  - **One note per event.** "no new proposal" is not added when the
+    attempt already reports "proposal failed".
+  - **Capitalised note.** Matching is case-insensitive, so "Architecture:
+    your diagram … was kept" counts as an architecture note.
+  - **Re-extraction.** Keeping a reviewer's diagram also sets its count
+    note when it is now flagged (`extract.py`). This goes past "nothing
+    else changes", but it is the same rule at the remaining write point.
+  - **Tests.** New tests cover the failed regenerate, the flagged save
+    through the route, and the clean architecture.
+
