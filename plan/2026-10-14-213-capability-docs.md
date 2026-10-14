@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 213
 spec: spec/2026-10-14-213-capability-docs.md
 ---
