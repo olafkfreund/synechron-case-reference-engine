@@ -330,7 +330,7 @@ removes the diagram.
 Then the full suite. **Eval:** re-run the MLflow query in the demo and
 check the brief has a diagram, counts only.
 
-### Phase (d), revised 2026-10-14: reuse the architecture renderer (draft, needs approval)
+### Phase (d), revised 2026-10-14: reuse the architecture renderer (approved by the user 2026-10-14)
 
 This replaces steps d1–d5 above. The spec revision of 2026-10-14 is
 approved.
