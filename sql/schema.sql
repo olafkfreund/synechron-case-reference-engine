@@ -128,6 +128,23 @@ alter table research add column if not exists results jsonb not null default '{}
 alter table research add column if not exists case_id bigint references cases(id) on delete set null;
 create index if not exists research_query_idx on research (query, retrieved_at);
 
+-- images found on fetched research pages (#231 c); shown to the owner, used in outputs only after a reviewer confirms rights
+create table if not exists research_images (
+  id bigserial primary key,
+  research_id bigint not null references research(id) on delete cascade,
+  page_url text not null,
+  image_url text not null,
+  alt text not null default '',
+  png bytea not null,
+  width int not null,
+  height int not null,
+  created_at timestamptz not null default now(),
+  rights_by text,
+  rights_at timestamptz,
+  rights_basis text
+);
+create index if not exists research_images_research_idx on research_images (research_id);
+
 -- a cited brief written from picked research quotes (#214): the quotes are copied, so it outlives the research row
 create table if not exists briefs (
   id bigserial primary key,
