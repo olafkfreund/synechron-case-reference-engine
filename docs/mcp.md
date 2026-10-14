@@ -40,32 +40,46 @@ Set `MCP_ENABLED=1`. Without it `/mcp` does not exist (404). See `.env.example` 
 ## Entra admin setup (pending tenant verification)
 
 1. **App registration for the API** ("Reference Engine MCP").
-   - Expose an API: Application ID URI `api://<app id>`; add the delegated scope `refs.access`
-     (admins and users can consent).
+   - Expose an API: Application ID URI `api://<app id>`; add the delegated scope `refs.access` with
+     **admin consent only**, so no user can grant it to an app of their own.
    - Manifest: set `requestedAccessTokenVersion` (`accessTokenAcceptedVersion`) to `2`. Otherwise Entra
      issues v1 tokens (`iss=https://sts.windows.net/...`) and every call is refused with 401.
    - Token configuration: add the `groups` claim (security groups assigned to the application) for access
      tokens, and `preferred_username` if wanted. With more than 200 groups Entra sends an overage marker
      instead; the server refuses those tokens, so assign groups to the application.
-2. **Pre-authorise the client apps** (Expose an API > Authorized client applications) for `refs.access`:
+2. **Enterprise application:** turn on **Assignment required** and assign the groups that may use it.
+   Only assigned users can get a token.
+3. **Pre-authorise the client apps** (Expose an API > Authorized client applications) for `refs.access`:
    the app ids of the clients you allow (Claude Code, VS Code, Cursor each register their own, or use one
    public client with the redirect URIs they need). Users then are not asked for consent.
-3. **Server settings**, from the registration:
+4. **Server settings**, from the registration:
 
    | Variable | Value |
    | --- | --- |
    | `MCP_ENABLED` | `1` |
    | `MCP_ISSUER` | `https://login.microsoftonline.com/<tenant id>/v2.0` |
    | `MCP_AUDIENCE` | the API app's client id (the `aud` of its tokens) |
+   | `MCP_CLIENT_IDS` | comma-separated app ids of the approved AI clients (the token's `azp`). Required: the server will not start without it. Any other client gets 403 "this AI client is not approved", even with a valid token. |
    | `MCP_TENANT_ID` | the tenant id (optional; refuses tokens from other tenants) |
    | `MCP_SCOPE` | `refs.access` (default) |
 
    Roles come from the same group variables as the portal (`ROLE_USER_GROUPS`, ...). A person with no role
    gets 403.
-4. The server advertises `api://<app id>/refs.access` (`{MCP_AUDIENCE}/{MCP_SCOPE}`) in its protected
+5. The server advertises `api://<app id>/refs.access` (`{MCP_AUDIENCE}/{MCP_SCOPE}`) in its protected
    resource metadata, so a client can request that scope as written.
 
 Open question: whether Entra accepts the RFC 8707 `resource` parameter that some clients send.
+
+## Revoking access
+
+Real revocation is done in Entra: revoke the user's sign-in sessions (`revokeSignInSessions`) or disable the
+account. Access tokens already issued stay valid until they expire (about an hour).
+
+`python -m app.revoke_sessions <id>` (and logging out) writes a cutoff: tokens and sessions issued before it
+are refused. A cutoff only stops tokens issued *before* it, so it does not replace the Entra step. People
+who logged in before MCP was enabled have two ids (the old `sub` and the new `oid`; see `user_keys`).
+Either resolves to both, but until every user has logged in again, pass both ids to `revoke_sessions`
+to be sure.
 
 ## Claude Code
 
@@ -121,6 +135,7 @@ The group maps to a role as in the README (`refs-users`, `refs-reviewers`, `refs
 | --- | --- |
 | 401 with `WWW-Authenticate` | No token, or the token failed: bad signature, wrong `iss` or `aud` (check `MCP_ISSUER`, `MCP_AUDIENCE`; a v1 token has `iss=sts.windows.net`), wrong `tid`, expired (60 s grace), no `iat`, no `scp` (an app-only token), or your sessions were ended (logout or revocation: sign in again). |
 | 403 `insufficient_scope` | The token has no `refs.access` scope: the client was not pre-authorised, or asked for another scope. |
+| 403 "not approved" | The token's `azp` (or `appid`) is not in `MCP_CLIENT_IDS`. Add the client's app id, or use an approved client. |
 | 403 (other) | You have no role for this application (not in a role group), or your token carries too many groups (Entra overage). |
 | 421 | The `Host` header is not the server's host. A proxy must forward `Host` unchanged and `APP_ORIGIN` must match. |
 | 403 for a browser tool | A foreign `Origin` header: only `APP_ORIGIN` is accepted. Clients that send no `Origin` are fine. |

@@ -54,11 +54,23 @@ def current_user(request: Request) -> User:
         request.session.clear()  # the browser drops the dead cookie
         raise HTTPException(401, "session expired; log in again")
     with db.connect() as conn:
-        row = conn.execute("select valid_after from session_cutoffs where sub = %s", (s["sub"],)).fetchone()
-    if row and s.get("iat", 0) <= row[0].timestamp():
+        # a cookie from before the oid change still carries the old sub, whose rows have moved to the oid (#249)
+        moved = conn.execute("select oid from user_keys where old_sub = %s", (s["sub"],)).fetchone()
+        key = moved[0] if moved else s["sub"]
+        row = conn.execute("select max(valid_after) from session_cutoffs where sub = any(%s)", ([s["sub"], key],)).fetchone()
+    if row[0] and s.get("iat", 0) <= row[0].timestamp():
         request.session.clear()  # the browser drops the dead cookie
         raise HTTPException(401, "session ended; log in again")
-    return User(s["sub"], s["name"], frozenset(s["groups"]), roles_for(s["groups"]))
+    return User(key, s["name"], frozenset(s["groups"]), roles_for(s["groups"]))
+
+
+def claim_groups(value) -> set[str]:
+    """The groups claim as a set; anything but a string or a list of strings is refused (ValueError)."""
+    if isinstance(value, str):
+        return {value}
+    if isinstance(value, (list, tuple)) and all(isinstance(g, str) for g in value):
+        return set(value)
+    raise ValueError("groups claim must be a string or a list of strings")
 
 
 # every column that holds the signed-in user's key; audit trails (approved_by, changed_by) keep what was written then
@@ -246,8 +258,10 @@ def create_app() -> FastAPI:
             # Entra "groups overage" (>200 groups): no groups in the token, so no roles; fail loudly
             print(f"login refused for {key}: groups overage", flush=True)
             raise HTTPException(403, "too many groups in the token; assign groups to the application in the IdP")
-        groups = claims.get(claim, [])
-        groups = {groups} if isinstance(groups, str) else set(groups)
+        try:
+            groups = claim_groups(claims.get(claim, []))
+        except ValueError:
+            raise HTTPException(403, "the groups claim in the token is malformed") from None
         request.session.clear()  # fresh session on login
         if key != claims["sub"]:
             with db.connect() as conn:

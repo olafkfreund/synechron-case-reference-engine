@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+from dataclasses import replace
 from typing import Annotated
 from urllib.parse import urlsplit
 
@@ -87,7 +88,7 @@ class EntraVerifier:
         if not isinstance(scp, str) or not scp:  # app-only tokens carry roles, not scp: refused
             return None
         return AccessToken(
-            token=token, client_id=str(claims.get("azp") or claims.get("client_id") or ""), scopes=scp.split(),
+            token=token, client_id=client_of(claims), scopes=scp.split(),
             expires_at=int(claims["exp"]) + LEEWAY, resource=self.audience,
             subject=str(claims.get("oid") or claims.get("sub") or ""), claims=claims)
 
@@ -97,17 +98,26 @@ class Refused(Exception):
         self.status, self.detail = status, detail
 
 
-def user_from_token(claims: dict):
-    """The same `User` /auth builds, from a validated access token's claims; Refused carries the HTTP status."""
+def client_of(claims: dict) -> str:
+    return str(claims.get("azp") or claims.get("appid") or claims.get("client_id") or "")
+
+
+def user_from_token(claims: dict, client_ids: frozenset[str]):
+    """The same `User` /auth builds, from a validated access token's claims; Refused carries the HTTP status.
+    Only tokens issued to an approved AI client (`azp`, or `appid` in v1 tokens) are accepted."""
     from app import db, main  # here: main imports this module
     key = claims.get("oid") or claims.get("sub")
     if not isinstance(key, str) or not key:
         raise Refused(401, "token has no subject")
+    if client_of(claims) not in client_ids:
+        raise Refused(403, "this AI client is not approved for the reference engine")
     claim = os.environ.get("OIDC_GROUPS_CLAIM", "groups")
     if claim in (claims.get("_claim_names") or {}) or claims.get("hasgroups"):  # Entra groups overage
         raise Refused(403, "too many groups in the token; assign groups to the application in the IdP")
-    groups = claims.get(claim, [])
-    groups = {groups} if isinstance(groups, str) else set(groups)
+    try:
+        groups = main.claim_groups(claims.get(claim, []))
+    except ValueError:
+        raise Refused(403, "the groups claim in the token is malformed") from None
     with db.connect() as conn:
         row = conn.execute("select valid_after from session_cutoffs where sub = %s", (key,)).fetchone()
     if row and claims["iat"] <= row[0].timestamp():
@@ -120,23 +130,23 @@ def user_from_token(claims: dict):
     return main.User(key, name, frozenset(groups), roles)
 
 
-def mcp_user():
-    """The signed-in user of the current tool call. Never the portal session: /mcp skips the CSRF check."""
-    return get_access_token().claims["_user"]
-
-
 class UserGate:
     """Runs after the bearer check: builds the User once per request, or refuses with its status."""
 
-    def __init__(self, app, resource_metadata: str):
+    def __init__(self, app, resource_metadata: str, client_ids: frozenset[str]):
+        self.client_ids = client_ids
         self.app, self.challenge = app, f'Bearer error="invalid_token", resource_metadata="{resource_metadata}"'
 
     async def __call__(self, scope, receive, send):
         who = scope.get("user")
         if isinstance(who, AuthenticatedUser):  # anyone else goes on to the SDK's 401
+            claims = who.access_token.claims
             try:
-                who.access_token.claims["_user"] = await run_in_threadpool(user_from_token, who.access_token.claims)
+                claims["_user"] = await run_in_threadpool(user_from_token, claims, self.client_ids)
             except Refused as e:
+                key = claims.get("oid") or claims.get("sub")
+                if isinstance(key, str) and key:  # one row per user, outcome and minute: a refused loop cannot flood the table
+                    await run_in_threadpool(record, key, client_of(claims), "-", [], "denied", 0, once=True)
                 hdr = {"WWW-Authenticate": self.challenge} if e.status == 401 else {}
                 return await JSONResponse({"error": "access_denied", "error_description": e.detail},
                                           status_code=e.status, headers=hdr)(scope, receive, send)
@@ -238,14 +248,32 @@ def _row(d: dict, origin: str) -> Row:
                                     "region", "tech") if k in d}, sources=_sources(d["sources"], origin), approved_at=at.isoformat() if at else None)
 
 
+def record(user_key: str, client_id: str, tool: str, ids: list[int], outcome: str, ms: int, once: bool = False) -> None:
+    """The audit row. `once`: skipped if this user already has this outcome from this tool within the minute."""
+    from app import db
+    with db.connect() as conn:
+        conn.execute(
+            "insert into tool_calls (user_key, client_id, tool, object_ids, outcome, ms) "
+            "select %(u)s, %(c)s, %(t)s, %(i)s, %(o)s, %(ms)s where not %(once)s or not exists ("
+            "select 1 from tool_calls where user_key = %(u)s and outcome = %(o)s and tool = %(t)s "
+            "and created_at > now() - interval '1 minute')",
+            dict(u=user_key, c=client_id[:200], t=tool, i=ids, o=outcome, ms=ms, once=once))
+
+
 async def _run(work, name: str):
     """One tool call: rate limit, the portal function, the audit row. `work(user)` returns (output model, case ids).
     Failures are isError results carrying the portal's own message; arguments and results are never stored."""
     from app import db
     token = get_access_token()
-    user, client_id, t0 = token.claims["_user"], token.client_id, time.monotonic()
+    # phase 1 gives everyone the plain-user view (no reviewer source titles); reviewer extras come with phase 4
+    user, client_id, t0 = replace(token.claims["_user"], roles=frozenset({"user"})), token.client_id, time.monotonic()
 
     def go():
+        outcome, out, ids = attempt()
+        record(user.sub, client_id, name, ids, outcome, int((time.monotonic() - t0) * 1000), once=outcome == "rate_limited")
+        return outcome, out
+
+    def attempt():
         with db.connect() as conn:  # shortcut: a concurrent burst can pass the count together; tighten with an advisory lock if it matters
             n = conn.execute("select count(*) from tool_calls where user_key = %s and outcome <> 'rate_limited' "
                              "and created_at > now() - interval '1 minute'", (user.sub,)).fetchone()[0]
@@ -260,10 +288,7 @@ async def _run(work, name: str):
             log.error("tool %s failed: %s", name, type(e).__name__)
             return "error", "the tool failed", []
 
-    outcome, out, ids = await run_in_threadpool(go)
-    with db.connect() as conn:
-        conn.execute("insert into tool_calls (user_key, client_id, tool, object_ids, outcome, ms) values (%s,%s,%s,%s,%s,%s)",
-                     (user.sub, client_id, name, ids, outcome, int((time.monotonic() - t0) * 1000)))
+    outcome, out = await run_in_threadpool(go)
     if outcome != "ok":
         return CallToolResult(is_error=True, content=[TextContent(text=out)])
     return CallToolResult(content=[TextContent(text=f"{PREFACE}\n{out.model_dump_json()}")], structured_content=out.model_dump(mode="json"))
@@ -361,6 +386,9 @@ def build(origin: str):
     scope = env.get("MCP_SCOPE", "refs.access")
     jwks = env.get("MCP_JWKS_URL") or issuer.removesuffix("/v2.0").rstrip("/") + "/discovery/v2.0/keys"
     resource = env.get("MCP_RESOURCE_URL") or origin + "/mcp"
+    client_ids = frozenset(c.strip() for c in env.get("MCP_CLIENT_IDS", "").split(",") if c.strip())
+    if not client_ids:
+        raise RuntimeError("MCP_ENABLED needs MCP_CLIENT_IDS: the comma-separated app ids of the approved AI clients")
     verifier = EntraVerifier(issuer, audience, jwks, env.get("MCP_TENANT_ID", ""), scope)
     auth = AuthSettings(issuer_url=issuer, resource_server_url=resource, required_scopes=[scope],
                         validate_token_resource=False)
@@ -375,7 +403,7 @@ def build(origin: str):
     security = TransportSecuritySettings(allowed_hosts=hosts, allowed_origins=[origin.lower()])
     app = server.streamable_http_app(streamable_http_path="/", stateless_http=True, transport_security=security)
     route = next(r for r in app.routes if getattr(r, "path", None) == "/")
-    route.app = UserGate(route.app, str(build_resource_metadata_url(resource)))
+    route.app = UserGate(route.app, str(build_resource_metadata_url(resource)), client_ids)
     # the SDK registers the PRM inside the mount (/mcp/.well-known/...); the challenge names the root path
     prm = create_protected_resource_routes(resource, [issuer], [f"{audience}/{scope}"])  # full Entra form, as a client requests it
     return app, server.session_manager, prm

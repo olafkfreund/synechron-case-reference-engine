@@ -177,3 +177,36 @@ def test_mcp_doc_names_real_variables_and_files():
         assert (root / path).exists(), path
     for flag in ("--transport http", "--client-id", "--header", "--callback-port"):  # as `claude mcp add --help` lists them
         assert flag in doc
+
+
+def test_rate_limited_calls_are_audited_once_a_minute(mcp):
+    s = mcp()
+    with db.connect() as conn:
+        conn.execute("insert into tool_calls (user_key, tool, outcome, ms) select %s, 'list_latest', 'ok', 1 from generate_series(1, 60)", (s.who,))
+    for _ in range(3):
+        assert s.call("list_latest")["isError"]
+    assert [r[1] for r in s.rows()].count("rate_limited") == 1
+
+
+def test_a_reviewer_gets_the_plain_user_view_of_source_documents(mcp, approved):
+    cid = approved()
+    s = mcp(groups=["g-rev", DOCS])
+    sources = s.out("get_case", case_id=cid)["sources"] + s.out("list_latest")["rows"][0]["sources"]
+    blob = json.dumps(sources)
+    assert "1 document in" in blob and "Source doc" not in blob  # not the document's title
+
+
+def test_a_merged_member_is_not_found(mcp, approved):
+    parent, member = approved(), approved()
+    with db.connect() as conn:
+        conn.execute("update cases set merged_into = %s where id = %s", (parent, member))
+    res = mcp().call("get_case", case_id=member)
+    assert res["isError"] and res["content"][0]["text"] == "no such case"
+
+
+def test_the_audit_page_escapes_client_id_and_tool(mcp):
+    s = mcp()
+    with db.connect() as conn:
+        conn.execute("insert into tool_calls (user_key, client_id, tool, outcome, ms) values (%s, '<script>alert(1)</script>', '<b>x</b>', 'ok', 1)", (s.who,))
+    t = portal_client(["g-admin"]).get("/admin/audit").text
+    assert "<script>alert(1)</script>" not in t and "&lt;script&gt;alert(1)&lt;/script&gt;" in t and "&lt;b&gt;x&lt;/b&gt;" in t

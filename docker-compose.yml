@@ -108,6 +108,7 @@ services:
       MCP_ENABLED: ${MCP_ENABLED:-}
       MCP_ISSUER: ${MCP_ISSUER:-http://idp.localhost:8080/refs-mcp}
       MCP_AUDIENCE: refs-mcp
+      MCP_CLIENT_IDS: local-dev  # the mock's azp
       MCP_JWKS_URL: http://idp:8080/refs-mcp/jwks
       ROLE_USER_GROUPS: refs-users
       ROLE_REVIEWER_GROUPS: refs-reviewers

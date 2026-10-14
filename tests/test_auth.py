@@ -439,3 +439,21 @@ def test_upload_browser_without_source(env):
         c.execute("delete from sources where kind='upload'")
         r = cl.post("/admin/upload", files={"file": ("a.pdf", PDF)}, headers=HTML, follow_redirects=False)
         assert r.status_code == 303 and r.headers["location"] == "/admin/sources?notice=nosource"
+
+
+def test_cookie_with_the_old_sub_resolves_to_the_oid_after_the_backfill(env, monkeypatch):
+    db.init()
+    old, oid = fresh(), fresh()
+    seed_rows(old)
+    stale = client([USER], sub=old)  # a pre-deploy cookie, still carrying the old sub
+    assert stale.get("/me").json()["sub"] == old
+    oid_login(monkeypatch, old, oid)  # the next login moved the rows
+    assert stale.get("/me").json()["sub"] == oid  # so the old cookie reads them under the oid
+    cut(oid)
+    assert stale.get("/me").status_code == 401  # and a cutoff on either id still ends it
+
+
+def test_malformed_groups_claim_is_refused_with_403(env, monkeypatch):
+    db.init()
+    c = oidc_app(monkeypatch, {"sub": "u1", "groups": 5})
+    assert c.get("/auth", follow_redirects=False).status_code == 403

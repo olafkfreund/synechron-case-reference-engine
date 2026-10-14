@@ -236,6 +236,11 @@ create table if not exists tool_calls (
   created_at timestamptz not null default now()
 );
 create index if not exists tool_calls_user_idx on tool_calls (user_key, created_at);
+-- the oid backfill and ownership checks look rows up by user (#249)
+create index if not exists research_created_by_idx on research (created_by);
+create index if not exists library_items_created_by_idx on library_items (created_by);
+create index if not exists briefs_created_by_idx on briefs (created_by);
+create index if not exists generations_user_idx on generations (user_id);
 
 -- documents carry a copy of their source's groups; repair any copy a crawl wrote back before #58
 -- (idempotent; re-run the migration once old worker tasks have stopped after a deploy)
