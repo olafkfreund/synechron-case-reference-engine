@@ -1,3 +1,4 @@
+import functools
 import ipaddress
 import json
 import multiprocessing
@@ -196,23 +197,52 @@ def test_slow_headers_hit_the_wall_clock_limit(web, monkeypatch):
     assert time.monotonic() - t < 1.5
 
 
-def test_header_stall_frees_the_thread_at_the_limit(monkeypatch):  # #207: real sockets, no web fixture
-    server = socket.socket()
-    server.bind(("127.0.0.1", 0))
-    server.listen()
-    port = server.getsockname()[1]
-    monkeypatch.setattr(rs, "public_ip", lambda host, port: "127.0.0.1")
-    monkeypatch.setattr(rs, "vet_url", lambda url: (httpx.URL(url), 443))  # the real one refuses the port
-    fetcher = rs.Fetcher()  # httpx's per-read timeout stays the real 10 s
-    monkeypatch.setattr(rs, "TIMEOUT", 0.3)  # only the wall-clock give-up is short
-    before = threading.active_count()
-    with pytest.raises(rs.ResearchError, match="took too long"):
-        fetcher._get(f"http://stall.example:{port}/p", 1000)  # straight to _get: no robots.txt
-    end = time.monotonic() + 1
-    while threading.active_count() > before and time.monotonic() < end:
-        time.sleep(0.01)
-    assert threading.active_count() == before  # the fetch thread is gone, not blocked for another 10 s
-    server.close()
+def _self_signed(tmp_path, host):
+    """A cert for `host` and a client context that trusts it."""
+    import datetime as dt
+    import ssl
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, host)])
+    now = dt.datetime.now(dt.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+            .serial_number(1).not_valid_before(now - dt.timedelta(days=1)).not_valid_after(now + dt.timedelta(days=1))
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName(host)]), critical=False)
+            .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+            .sign(key, hashes.SHA256()))
+    (tmp_path / "c.pem").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    (tmp_path / "k.pem").write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                                       serialization.NoEncryption()))
+    server = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server.load_cert_chain(tmp_path / "c.pem", tmp_path / "k.pem")
+    return server, ssl.create_default_context(cafile=tmp_path / "c.pem")
+
+
+@pytest.mark.parametrize("scheme", ["http", "https"])
+def test_header_stall_frees_the_thread_at_the_limit(monkeypatch, tmp_path, scheme):  # #207: real sockets, no web fixture
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen()
+        port, held = server.getsockname()[1], []
+        if scheme == "https":  # finish the TLS handshake, then send nothing: the stall is in the headers
+            tls, trust = _self_signed(tmp_path, "stall.example")
+            monkeypatch.setattr(rs.httpx, "HTTPTransport", functools.partial(httpx.HTTPTransport, verify=trust))
+            threading.Thread(target=lambda: held.append(tls.wrap_socket(server.accept()[0], server_side=True)),
+                             daemon=True).start()
+        monkeypatch.setattr(rs, "public_ip", lambda host, port: "127.0.0.1")
+        monkeypatch.setattr(rs, "vet_url", lambda url: (httpx.URL(url), 443))  # the real one refuses the port
+        fetcher = rs.Fetcher()  # httpx's per-read timeout stays the real 10 s
+        monkeypatch.setattr(rs, "TIMEOUT", 0.5)  # only the wall-clock give-up is short
+        before = set(threading.enumerate())
+        with pytest.raises(rs.Stalled):
+            fetcher._get(f"{scheme}://stall.example:{port}/p", 1000)  # straight to _get: no robots.txt
+        assert held or scheme == "http"  # the handshake finished, so the stall was past TLS
+        for t in set(threading.enumerate()) - before:  # the fetch thread is gone, not blocked for another 10 s
+            t.join(1)
+            assert not t.is_alive()
 
 
 def test_fetcher_tracks_sockets_on_the_real_transport():  # a renamed httpx internal must fail here (#207)
@@ -322,7 +352,7 @@ def test_run_skips_a_slow_page_and_keeps_the_others(web, cleanup, monkeypatch):
     status, error, results = row(rid)
     assert status == "done" and error is None
     assert [p["publisher"] for p in results["pages"]] == ["docs.example"]
-    assert results["skipped"] == [{"domain": "slow.example", "error": "ResearchError"}]
+    assert results["skipped"] == [{"domain": "slow.example", "error": "Stalled"}]
 
 
 def test_run_failure_is_recorded_without_the_key(web, cleanup, monkeypatch):

@@ -101,3 +101,26 @@ lingering thread.
   only the give-up limit to 0.3 s, and asserts the live thread count is back
   to its baseline within 1 s. Negative control: with the socket close
   disabled, this fails (`2 == 1`).
+- **Review fixes (Opus, Codex, agy).**
+  - **HTTPS was not covered.** All three reviewers found it. TLS detaches
+    the plain socket, so the recorded one was dead and its shutdown was
+    swallowed. The backend now also records the socket that `start_tls`
+    returns, and forgets closed sockets as it goes.
+  - **Only a stall resets the pool.** `_within` raises a new
+    `Stalled(ResearchError)` subclass, so a 404 or a too-large response no
+    longer drops keep-alive connections. Research's `skipped` entries now
+    say `Stalled` instead of `ResearchError`. Only their count is shown to
+    users.
+  - **The old client is closed** after its sockets are cut.
+  - **`HTTPTransport(trust_env=False)`,** so the TLS context ignores
+    `SSL_CERT_*` from the environment, as before.
+  - **A connect stall** stays a commented shortcut: it is bounded by the
+    connect timeout.
+  - **The test is parametrised over HTTP and HTTPS.** The HTTPS case uses a
+    self-signed cert, finishes the handshake, then stalls. It joins the
+    exact new threads instead of counting all of them, and uses
+    `with socket.socket()`.
+  - **Negative controls:**
+    - without TLS tracking, only the HTTPS case fails
+    - without the socket cut, both cases fail
+  - **Full suite:** 1586 passed, 4 skipped.

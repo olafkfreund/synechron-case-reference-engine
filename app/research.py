@@ -46,6 +46,10 @@ class ResearchError(RuntimeError):
     """Messages here are safe to store and show: no URLs, no content."""
 
 
+class Stalled(ResearchError):
+    """A hop ran past its wall-clock limit (#207)."""
+
+
 class Blocked(ResearchError):
     pass
 
@@ -363,7 +367,7 @@ def _within(seconds, fn):
     t.start()
     t.join(seconds)
     if t.is_alive():
-        raise ResearchError("fetch took too long")
+        raise Stalled("fetch took too long")
     if "e" in out:
         raise out["e"]
     return out["v"]
@@ -377,8 +381,15 @@ class _Sockets(httpcore.SyncBackend):
         self.socks = []
 
     def connect_tcp(self, *a, **kw):
-        stream = super().connect_tcp(*a, **kw)
+        # shortcut: a hop that stalls while connecting is recorded after the give-up, so it lingers until
+        # the connect timeout; bounded like #207 was, upgrade if connect stalls are seen
+        return self.track(super().connect_tcp(*a, **kw))
+
+    def track(self, stream):
+        self.socks = [s for s in self.socks if s.fileno() != -1]  # forget closed ones
         self.socks.append(stream.get_extra_info("socket"))
+        start_tls = stream.start_tls  # TLS detaches the plain socket into a new one: track that too
+        stream.start_tls = lambda *a, **kw: self.track(start_tls(*a, **kw))
         return stream
 
 
@@ -394,7 +405,7 @@ class Fetcher:
     def _client(self):
         transport = TRANSPORT
         if transport is None:
-            transport = httpx.HTTPTransport()
+            transport = httpx.HTTPTransport(trust_env=False)  # as the Client below: no SSL_CERT_* from the environment
             # httpx 0.28 has no public network_backend argument; a test fails if this attribute moves
             transport._pool._network_backend = self.backend = _Sockets()
         # trust_env=False: a proxy from the environment would bypass the pinned address and SNI
@@ -413,17 +424,17 @@ class Fetcher:
             opened = []
             try:
                 body, ctype, location = _within(TIMEOUT, lambda: self._hop(u, target, limit, opened, accept))
-            except ResearchError:
+            except ResearchError as e:
                 for r in opened:
                     r.close()  # the abandoned hop stops at its next read
-                if self.backend:  # a host that stalls before its headers leaves no response to close
+                if isinstance(e, Stalled) and self.backend:  # a host that stalls before its headers leaves no response to close
                     for s in self.backend.socks:
                         try:
                             s.shutdown(socket.SHUT_RDWR)
                         except OSError:
                             pass  # already closed
-                    self.backend.socks.clear()
-                    self.http = self._client()  # the old pool's connections are dead
+                    old, self.http = self.http, self._client()
+                    old.close()  # its connections are dead
                 raise
             if body is None:
                 url = urljoin(str(u), location)
