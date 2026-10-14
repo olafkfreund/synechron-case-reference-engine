@@ -220,6 +220,10 @@ def main() -> int:
                     ok, total = score(items)
                     conn.execute("insert into case_approval_overrides(case_id, reason, score, approved_by) values (%s,%s,%s,'demo-seed')",
                                  (cid, "Demo: approved below the minimum to show the override", f"{ok}/{total}"))
+        # the dev reviewer client may handle confidential data for 30 days; the mock's token still needs --review (#249)
+        conn.execute("insert into model_approvals(model, data_class, approved_by, expires_at, note) select 'mcp-client:local-dev-review', "
+                     "'confidential', 'demo-seed', now() + interval '30 days', 'Demo: dev reviewer client' where not exists "
+                     "(select 1 from model_approvals where model = 'mcp-client:local-dev-review' and expires_at > now())")
     print(f"demo seed: {new} new case(s), {updated} updated, {len(demo['cases']) - new - updated} already there"
           + (f", {refreshed} architecture(s) refreshed" if refreshed else ""))
     return 0

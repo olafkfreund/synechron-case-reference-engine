@@ -28,6 +28,7 @@ def clean():
     with db.connect() as c:
         c.execute("delete from sources where name = any(%s)", ([s["name"] for s in DEMO["sources"]],))
         c.execute("delete from clients where name = any(%s)", ([x["name"] for x in DEMO["clients"]],))
+        c.execute("delete from model_approvals where model = 'mcp-client:local-dev-review'")
 
 
 @pytest.fixture
@@ -61,6 +62,9 @@ def test_seed_twice(env):
     assert first == (len(DEMO["cases"]), len(DEMO["cases"]), len(DEMO["clients"]))
     assert seed.main() == 0
     assert counts() == first  # the second run adds no rows
+    with db.connect() as c:  # one live 30-day approval for the dev reviewer client, not one per run
+        assert c.execute("select count(*) from model_approvals where model = 'mcp-client:local-dev-review' and data_class = 'confidential' "
+                         "and expires_at > now() + interval '29 days'").fetchone()[0] == 1
 
     with db.connect() as c:
         rows = c.execute("select c.status, c.basis, c.client_id, c.data, d.external_id from cases c "
@@ -320,3 +324,13 @@ def test_first_demo_source_is_the_staff_source_even_on_an_old_database(env):
     with db.connect() as c:
         got = dict(c.execute("select name, coalesce(config->>'staff', '') from sources where name like 'Demo: %'").fetchall())
     assert got[first] == "true" and [n for n, v in got.items() if v] == [first]
+
+
+def test_compose_mock_idp_gives_the_review_client_its_scope():
+    import yaml
+    cfg = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    maps = json.loads(cfg["services"]["idp"]["environment"]["JSON_CONFIG"])["tokenCallbacks"][0]["requestMappings"]
+    by = {m["match"]: m["claims"] for m in maps}
+    assert by["local-dev-review"]["scp"] == "refs.access refs.review" and by["local-dev-review"]["azp"] == "local-dev-review"
+    assert by["local-dev"]["scp"] == "refs.access"
+    assert {"local-dev", "local-dev-review"} <= set(cfg["services"]["web"]["environment"]["MCP_CLIENT_IDS"].split(","))

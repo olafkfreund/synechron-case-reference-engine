@@ -16,7 +16,7 @@ services:
     environment:
       SERVER_PORT: "8080"
       # refs-mcp: dev tokens for /mcp (scripts/mcp_token.sh). Claims come from the request: $${username} and $${groups}.
-      JSON_CONFIG: '{"interactiveLogin": true, "tokenCallbacks": [{"issuerId": "refs-mcp", "tokenExpiry": 3600, "requestMappings": [{"requestParam": "client_id", "match": "local-dev", "claims": {"sub": "$${username}", "oid": "$${username}", "aud": ["refs-mcp"], "scp": "refs.access", "azp": "local-dev", "groups": "$${groups}"}}]}]}'
+      JSON_CONFIG: '{"interactiveLogin": true, "tokenCallbacks": [{"issuerId": "refs-mcp", "tokenExpiry": 3600, "requestMappings": [{"requestParam": "client_id", "match": "local-dev", "claims": {"sub": "$${username}", "oid": "$${username}", "aud": ["refs-mcp"], "scp": "refs.access", "azp": "local-dev", "groups": "$${groups}"}}, {"requestParam": "client_id", "match": "local-dev-review", "claims": {"sub": "$${username}", "oid": "$${username}", "aud": ["refs-mcp"], "scp": "refs.access refs.review", "azp": "local-dev-review", "groups": "$${groups}"}}]}]}'
     networks:
       default:
         aliases:
@@ -108,7 +108,7 @@ services:
       MCP_ENABLED: ${MCP_ENABLED:-}
       MCP_ISSUER: ${MCP_ISSUER:-http://idp.localhost:8080/refs-mcp}
       MCP_AUDIENCE: refs-mcp
-      MCP_CLIENT_IDS: local-dev  # the mock's azp
+      MCP_CLIENT_IDS: local-dev,local-dev-review  # the mock's azp values
       MCP_JWKS_URL: http://idp:8080/refs-mcp/jwks
       ROLE_USER_GROUPS: refs-users
       ROLE_REVIEWER_GROUPS: refs-reviewers
