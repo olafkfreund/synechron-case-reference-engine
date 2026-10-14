@@ -342,7 +342,7 @@ def test_age_is_elapsed_whole_days_not_calendar_days(env):  # noqa: F811  plan #
 def test_sources_css_keeps_44px_targets_and_the_opened_panel_on_row_two():
     from pathlib import Path
     css = (Path(__file__).parent.parent / "app" / "static" / "portal.css").read_text()
-    assert re.search(r"details\.mini>summary\{[^}]*min-height:44px", css)
+    assert re.search(r"@media \(any-pointer:coarse\)\{[^{]*details\.mini>summary[^{]*\{min-height:44px", css)  # plan #262 step 3: 44px on touch
     assert re.search(r"\.source-row\.src details\.mini>summary::before\{content:\"\";position:absolute;inset:-4px 0\}", css)
     assert ".src>*{grid-row:1}" in css and "grid-column:1 / -1;grid-row:2}" in css
     assert not re.search(r"\.head-panel>summary\{", css) and ".src-add>summary" in css

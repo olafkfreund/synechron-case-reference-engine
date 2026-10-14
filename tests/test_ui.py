@@ -19,7 +19,7 @@ GROUPS = {"admin": [ADMIN], "reviewer": [REV], "sales": [USER], "nobody": ["othe
 def test_static_is_public(env):
     c = client()
     assert c.get("/static/portal.css").status_code == 200
-    assert c.get("/static/fonts/ibm-plex-sans-400.woff2").status_code == 200
+    assert c.get("/static/fonts/montserrat-400.woff2").status_code == 200
 
 
 @pytest.mark.parametrize("role", TABS)
@@ -252,18 +252,26 @@ def test_theme_contrast():
     media = {**light, **theme(":root:not([data-theme=\"light\"])", region)}
     assert media == dark  # the OS-dark block and the toggle block hold the same values
     for name, t in (("light", light), ("dark", dark)):
-        for fg in ("text", "muted", "accent"):
+        for fg in ("text", "muted", "link"):
             for bg in ("bg", "surface", "subtle"):
                 assert ratio(t[fg], t[bg]) >= 4.5, (name, fg, bg, ratio(t[fg], t[bg]))
         assert ratio(t["on-accent"], t["accent"]) >= 4.5, name
         assert ratio(t["on-accent"], t["accent-hover"]) >= 4.5, name
         for k in ("ok", "warn", "bad"):
             assert ratio(t[f"{k}-fg"], t[f"{k}-bg"]) >= 4.5, (name, k)
-        assert ratio(t["focus"], t["surface"]) >= 3, name
-        assert ratio(t["input-border"], t["surface"]) >= 3, name  # a field's edge is a UI component
+        assert ratio(t["focus"], t["surface"]) >= 3 and ratio(t["focus"], t["bg"]) >= 3, name
+        assert ratio(t["muted"], t["subtle"]) >= 4.5, name
+        assert min(ratio(t["input-border"], t[b]) for b in ("bg", "surface", "subtle")) >= 3, name  # a field's edge is a UI component
         assert ratio(t["header-text"], t["header"]) >= 4.5 and ratio(t["header-tag"], t["header"]) >= 4.5, name
         assert ratio(t["header-text"], t["header-hover"]) >= 4.5, name
+        for base in ("surface", "bg", "subtle"):  # danger-ghost hover: bad-fg 16% over the page
+            c, b = t["bad-fg"], t[base]
+            mix = "#" + "".join(f"{round(int(c[i:i + 2], 16) * .16 + int(b[i:i + 2], 16) * .84):02X}" for i in (1, 3, 5))
+            assert ratio(c, mix) >= 4.5, (name, base)
         assert ratio(t["header-strong"], t["header"]) >= 4.5, name  # the brand link on hover
+        assert ratio(t["header-text"], t["header"]) >= 4.5 and ratio(t["on-accent"], t["accent"]) >= 4.5, name  # nav text and the active tab
+        assert ratio(t["header-focus"], t["header"]) >= 3 and ratio(t["header-border"], t["header"]) >= 3, name
+        assert ratio(t["header-strong"], t["header-hover"]) >= 4.5, name  # nav hover
 
 
 def test_theme_toggle_on_every_page(make, approved, monkeypatch):  # noqa: F811
