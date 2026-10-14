@@ -19,7 +19,7 @@ GROUPS = {"admin": [ADMIN], "reviewer": [REV], "sales": [USER], "nobody": ["othe
 def test_static_is_public(env):
     c = client()
     assert c.get("/static/portal.css").status_code == 200
-    assert c.get("/static/fonts/ibm-plex-sans-400.woff2").status_code == 200
+    assert c.get("/static/fonts/montserrat-400.woff2").status_code == 200
 
 
 @pytest.mark.parametrize("role", TABS)

@@ -112,3 +112,27 @@ Revert the merge commit. The change is CSS, fonts and icons only.
 ## Deviations
 
 None yet.
+- **Steps 4 and 2 done first**, because #259 rewrites `portal.css`.
+  - **Pinned sources:** `@hugeicons/core-free-icons@4.3.5` and
+    `@fontsource/montserrat@5.3.0`, both from jsdelivr.
+  - **Icons, in macro order:**
+    - Search01
+    - Globe02
+    - Inbox
+    - UserMultiple
+    - Database
+    - Shield01
+    - Clock01
+    - File01
+    - Tick02
+    - Building03
+    - Alert02
+    - Sun03
+    - Moon02
+  - **Licence.** The Montserrat licence is appended to the existing
+    `OFL.txt`, which already holds IBM Plex's.
+  - **Removed.** The unused IBM Plex Sans woff2 files are removed from
+    `app/static/fonts`. The architecture renderer keeps its own copy in
+    `brand/fonts`.
+  - **Tests.** `tests/test_assets.py` checks the font files and the 13
+    icons.
