@@ -40,7 +40,7 @@ Enter one alias per line. Saving a non-referenceable client keeps any name you r
 <div class="action-row"><button class="btn primary" aria-label="Save {{ name }}">Save</button></div>
 </form>
 <div class="field"><b>Logo</b>
-{% if logo_state == 'ready' %}<img src="/admin/clients/{{ id }}/logo.png" alt="Logo of {{ name }}" class="logo-md">
+{% if logo_state == 'ready' %}<img src="/admin/clients/{{ id }}/logo.png" alt="Logo of {{ name }}" class="logo-lg">
 <span class="field-help">{{ "Shown in outputs." if ref and logo else "Not shown: the client must be referenceable and logo allowed." }}</span>
 {% elif logo_state == 'pending' %}<span class="field-help">Being processed…</span>
 {% elif logo_state == 'rejected' %}<span class="badge bad">Rejected: {{ logo_reason }}</span>

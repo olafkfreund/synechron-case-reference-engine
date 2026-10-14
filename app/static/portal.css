@@ -59,8 +59,6 @@ code,.mono{font-family:"IBM Plex Mono",monospace;font-size:13px}
 .site-nav a[aria-current=page]{background:var(--accent);color:var(--on-accent);font-weight:600}
 .site-user{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--header-text)}
 .site-user form{margin:0}
-.logo-sm{max-height:24px;max-width:96px;object-fit:contain;vertical-align:middle}
-.logo-md{max-height:48px;max-width:160px;object-fit:contain}
 .avatar{width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--on-accent);display:inline-flex;align-items:center;justify-content:center;font-weight:600;font-size:12px}
 .site-user .btn{background:none;border:1px solid var(--header-border);color:var(--header-strong);font-size:13px;padding:0 12px}
 .theme-toggle{background:none;border:1px solid var(--header-border);color:var(--header-strong);padding:0 10px;margin-left:auto}
@@ -384,6 +382,11 @@ fieldset.pick legend{font-weight:600;padding:0 6px;text-transform:capitalize}
 
 /* diagrams and document images sit on paper in both themes */
 main img{background:var(--paper);padding:8px;border-radius:var(--r-control);max-width:100%;height:auto}
+/* client logos: beat main img (padding, panel, width) by specificity; both dimensions capped */
+main img.logo-sm,main img.logo-md,main img.logo-lg{width:auto;height:auto;padding:0;background:none;border-radius:0;object-fit:contain;vertical-align:middle}
+main img.logo-sm{max-height:24px;max-width:96px}
+main img.logo-md{max-height:32px;max-width:128px}
+main img.logo-lg{max-height:48px;max-width:160px}
 .zoom{display:block;width:fit-content;max-width:100%;cursor:zoom-in;border-radius:var(--r-control)}
 .zoom:hover,.zoom:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 .zoom-hint{display:inline-block;margin-top:4px}

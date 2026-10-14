@@ -249,10 +249,20 @@ def test_deleting_a_client_logs_the_logo_removal(cl):
 def test_cards_preview_and_registry_constrain_both_dimensions(case_with):
     cid, client_id = case_with(True, True)
     assert f'<img src="/logos/{client_id}.png" alt="" class="logo-sm">' in client(R).post("/search", data={"bid_text": "onboarding"}).text
-    assert 'class="logo-sm"' in prev([cid]).text
-    assert 'class="logo-md"' in client([ADMIN]).get("/admin/clients").text
+    assert 'class="logo-md"' in prev([cid]).text
+    assert 'class="logo-lg"' in client([ADMIN]).get("/admin/clients").text
+
+
+def test_logo_css_beats_the_generic_img_rule():
+    import re
     css = open("app/static/portal.css").read()
-    assert ".logo-sm{max-height:24px;max-width:96px" in css and ".logo-md{max-height:48px;max-width:160px" in css
+    spec = lambda sel: (sel.count("."), len(re.findall(r"(?<![.#\w-])[a-z]+\b", sel)))  # (classes, elements)
+    assert spec("main img.logo-sm") > spec("main img")
+    for cls, h, w in (("sm", 24, 96), ("md", 32, 128), ("lg", 48, 160)):
+        assert f"main img.logo-{cls}{{max-height:{h}px;max-width:{w}px}}" in css
+    shared = re.search(r"main img\.logo-sm,main img\.logo-md,main img\.logo-lg\{([^}]*)\}", css).group(1)
+    for decl in ("padding:0", "background:none", "border-radius:0", "height:auto", "width:auto", "object-fit:contain"):
+        assert decl in shared  # undoes the panel and the padding `main img` adds
 
 
 def png_of(w, h):
@@ -273,6 +283,10 @@ def test_bid_pack_logo_has_its_own_paragraph_and_no_gap_without_one(case_with):
     paras = Document(BytesIO(gen([cid], "docx").content)).paragraphs
     i = next(n for n, p in enumerate(paras) if p.style.name == "Heading 1" and p.text.startswith("Faster onboarding"))
     assert "<w:drawing>" in paras[i - 1]._p.xml and paras[i - 1].alignment == 2 and "w:drawing" not in paras[i]._p.xml
-    cid2, _ = case_with(True, False)
-    paras = Document(BytesIO(gen([cid2], "docx").content)).paragraphs
+
+
+def test_bid_pack_without_a_logo_has_no_gap_before_the_title(case_with):
+    from docx import Document
+    cid, _ = case_with(True, False)
+    paras = Document(BytesIO(gen([cid], "docx").content)).paragraphs
     assert paras[0].style.name == "Heading 1" and paras[0].paragraph_format.page_break_before  # no empty paragraph before the title
