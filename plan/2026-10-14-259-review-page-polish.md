@@ -202,3 +202,13 @@ Revert the merge commit. There is no data or schema change.
     "Write it by hand", per the plan's wording.
   - Below 900 px the existing flex wrap stacks the row.
   - Full suite: 1394 passed. The branch predates #261.
+- Step 6, screenshots:
+  - **Chevron fix.** `details.mini > summary.btn-sm::after` is static,
+    because `.btn-sm`'s touch-target `::after` had pulled the chevron out
+    of the button.
+  - **"+ Add source"** has no chevron.
+  - **Completeness.** Each label and its detail sit in one span, which
+    removes the gap before the colon.
+  - **Not screenshotted:** the architecture empty state. Every demo case
+    without a diagram is approved and read-only (not due), so there is no
+    editable empty case to shoot. The new test covers the state.
