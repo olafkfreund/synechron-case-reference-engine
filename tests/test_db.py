@@ -5,7 +5,7 @@ import pytest
 
 from app import db
 
-TABLES = {"sources", "documents", "cases", "clients", "jobs", "research", "generations", "document_images", "research_images"}
+TABLES = {"sources", "documents", "cases", "clients", "jobs", "research", "generations", "document_images", "research_images", "client_logos", "client_logo_changes"}
 
 
 def test_init_idempotent_and_tables():

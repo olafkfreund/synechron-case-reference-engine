@@ -69,7 +69,7 @@ def test_audit_log_tables_are_append_only_for_the_app(app_role):
     with db.connect() as c:
         db.apply_app_role(c, "pw-1")
     for t, col in (("source_class_changes", "changed_by"), ("source_acl_changes", "changed_by"),
-                   ("case_approval_overrides", "approved_by"), ("architecture_changes", "changed_by")):
+                   ("case_approval_overrides", "approved_by"), ("architecture_changes", "changed_by"), ("client_logo_changes", "changed_by")):
         for stmt in (f"update {t} set {col}='x'", f"delete from {t}"):
             with as_app("pw-1") as a:
                 with pytest.raises(psycopg.errors.InsufficientPrivilege):

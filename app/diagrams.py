@@ -78,6 +78,32 @@ def process(diagram_id: int) -> None:
         conn.execute("update diagrams set png=%s, raw=null where id=%s", (png, diagram_id))
 
 
+LOGO_MIN_SIDE = 64
+LOGO_MAX_ASPECT = 8
+LOGO_TOO_SMALL = "too small: at least 64 px on the short side"
+LOGO_ASPECT = "too wide or tall: at most 8:1"
+
+
+def process_logo(client_id: int) -> None:
+    """Decode a client's uploaded logo (#267): same _decode as diagrams, plus a size and an aspect check."""
+    with db.connect() as conn:
+        row = conn.execute("select raw from client_logos where client_id=%s for update", (client_id,)).fetchone()
+        if not row or row[0] is None:  # removed meanwhile, or already decoded
+            return
+        try:
+            png, w, h, reason = _decode(bytes(row[0]))
+        except Exception:  # noqa: BLE001 - reject, never leave the logo pending forever
+            png, w, h, reason = None, 0, 0, UNREADABLE
+        if png and min(w, h) < LOGO_MIN_SIDE:
+            png, reason = None, LOGO_TOO_SMALL
+        elif png and max(w, h) > LOGO_MAX_ASPECT * min(w, h):
+            png, reason = None, LOGO_ASPECT
+        if not png:
+            w = h = 0
+        conn.execute("update client_logos set png=%s, width=%s, height=%s, reason=%s, raw=null where client_id=%s",
+                     (png, w, h, reason, client_id))
+
+
 # --- images inside a document (#212). The zip is untrusted: sizes are checked before anything is read,
 # nothing is extracted to disk, and every image goes through _decode() (a fresh PNG, no metadata, bombs refused).
 MIN_BYTES = 30_000       # a logo or icon is smaller

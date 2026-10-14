@@ -15,6 +15,7 @@ HANDLERS = {
     "ingest_upload": lambda p: ingest.ingest_upload(p["source_id"], p["key"]),
     "research": lambda p: research.run(p["research_id"]),
     "diagram": lambda p: diagrams.process(p["diagram_id"]),
+    "logo": lambda p: diagrams.process_logo(p["client_id"]),
     "brief": lambda p: brief.run(p["brief_id"]),
 }
 
