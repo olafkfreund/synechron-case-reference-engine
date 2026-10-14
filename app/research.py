@@ -14,6 +14,7 @@ from pathlib import PurePosixPath
 from urllib.parse import urljoin
 from urllib.robotparser import RobotFileParser
 
+import httpcore
 import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
@@ -43,6 +44,10 @@ PAGE_FETCHES, RUN_FETCHES = 6, 24  # image fetch attempts, not successes
 
 class ResearchError(RuntimeError):
     """Messages here are safe to store and show: no URLs, no content."""
+
+
+class Stalled(ResearchError):
+    """A hop ran past its wall-clock limit (#207)."""
 
 
 class Blocked(ResearchError):
@@ -362,20 +367,49 @@ def _within(seconds, fn):
     t.start()
     t.join(seconds)
     if t.is_alive():
-        raise ResearchError("fetch took too long")
+        raise Stalled("fetch took too long")
     if "e" in out:
         raise out["e"]
     return out["v"]
+
+
+class _Sockets(httpcore.SyncBackend):
+    """Records each socket opened, so a stalled hop can be cut off: closing a socket from another
+    thread does not wake a blocked recv, shutting it down does (#207)."""
+
+    def __init__(self):
+        self.socks = []
+
+    def connect_tcp(self, *a, **kw):
+        # shortcut: a hop that stalls while connecting is recorded after the give-up, so it lingers until
+        # the connect timeout; bounded like #207 was, upgrade if connect stalls are seen
+        return self.track(super().connect_tcp(*a, **kw))
+
+    def track(self, stream):
+        self.socks = [s for s in self.socks if s.fileno() != -1]  # forget closed ones
+        self.socks.append(stream.get_extra_info("socket"))
+        start_tls = stream.start_tls  # TLS detaches the plain socket into a new one: track that too
+        stream.start_tls = lambda *a, **kw: self.track(start_tls(*a, **kw))
+        return stream
 
 
 class Fetcher:
     """SSRF-safe fetching: we run inside the VPC, so every hop is vetted before a byte is sent."""
 
     def __init__(self):
-        # trust_env=False: a proxy from the environment would bypass the pinned address and SNI
-        self.http = httpx.Client(transport=TRANSPORT, timeout=TIMEOUT, follow_redirects=False, trust_env=False)
+        self.backend = None
+        self.http = self._client()
         # shortcut: per job only; needs a shared (Postgres) limit before worker_desired_count > 1 (#45)
         self.robots, self.last = {}, {}
+
+    def _client(self):
+        transport = TRANSPORT
+        if transport is None:
+            transport = httpx.HTTPTransport(trust_env=False)  # as the Client below: no SSL_CERT_* from the environment
+            # httpx 0.28 has no public network_backend argument; a test fails if this attribute moves
+            transport._pool._network_backend = self.backend = _Sockets()
+        # trust_env=False: a proxy from the environment would bypass the pinned address and SNI
+        return httpx.Client(transport=transport, timeout=TIMEOUT, follow_redirects=False, trust_env=False)
 
     def _get(self, url: str, limit: int, check_robots: bool = False, accept: str = "text/html,application/pdf") -> tuple[bytes, str, str]:
         """One vetted GET with manual redirects. Returns (body, content type, final URL by name, not by IP)."""
@@ -390,11 +424,17 @@ class Fetcher:
             opened = []
             try:
                 body, ctype, location = _within(TIMEOUT, lambda: self._hop(u, target, limit, opened, accept))
-            except ResearchError:
+            except ResearchError as e:
                 for r in opened:
                     r.close()  # the abandoned hop stops at its next read
-                # ponytail: a host that stalls before its headers leaves nothing to close; that daemon thread
-                # lives until httpx's per-read timeout. A custom transport could kill it if threads pile up.
+                if isinstance(e, Stalled) and self.backend:  # a host that stalls before its headers leaves no response to close
+                    for s in self.backend.socks:
+                        try:
+                            s.shutdown(socket.SHUT_RDWR)
+                        except OSError:
+                            pass  # already closed
+                    old, self.http = self.http, self._client()
+                    old.close()  # its connections are dead
                 raise
             if body is None:
                 url = urljoin(str(u), location)
