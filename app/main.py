@@ -118,6 +118,25 @@ def safe_name(filename: str | None) -> str:
     return (stem[:100] + suffix[:10]) or "file"  # S3 keys cap at 1,024 bytes
 
 
+class UploadRefused(HTTPException):
+    def __init__(self, code: str, status: int, detail: str):
+        super().__init__(status, detail)
+        self.code = code  # the /admin/sources notice
+
+
+def check_file(filename: str | None, data: bytes) -> str:
+    """The safe name, or UploadRefused: the type, the cap and the magic bytes (/admin/upload and accept_upload)."""
+    name = safe_name(filename)
+    magic = UPLOAD_MAGIC.get(PurePosixPath(name).suffix.lower())
+    if magic is None:
+        raise UploadRefused("type", 400, f"allowed types: {', '.join(sorted(UPLOAD_MAGIC))}")
+    if len(data) > upload_cap():
+        raise UploadRefused("size", 413, f"file larger than {upload_cap()} bytes")
+    if not data.startswith(magic):
+        raise UploadRefused("content", 400, "file content does not match its extension")
+    return name
+
+
 def upload_cap() -> int:
     return int(os.environ.get("UPLOAD_MAX_BYTES", 50 * 1024 * 1024))
 
@@ -292,16 +311,12 @@ def create_app() -> FastAPI:
                 return RedirectResponse(f"/admin/sources?notice={code}", status_code=303)
             raise HTTPException(status, detail)
 
-        cap = upload_cap()  # the guard middleware already refused oversize bodies before parsing
-        name = safe_name(file.filename)
-        magic = UPLOAD_MAGIC.get(PurePosixPath(name).suffix.lower())
-        if magic is None:
-            return refuse("type", 400, f"allowed types: {', '.join(sorted(UPLOAD_MAGIC))}")
-        data = file.file.read(cap + 1)
-        if len(data) > cap:
-            return refuse("size", 413, f"file larger than {cap} bytes")
-        if not data.startswith(magic):
-            return refuse("content", 400, "file content does not match its extension")
+        # the guard middleware already refused oversize bodies before parsing
+        data = file.file.read(upload_cap() + 1)
+        try:
+            name = check_file(file.filename, data)
+        except UploadRefused as e:
+            return refuse(e.code, e.status_code, e.detail)
         with db.connect() as conn:
             src = conn.execute("select id, config, name from sources where kind='upload' and enabled "
                                "and (%s::bigint is null or id = %s) order by id limit 1",
