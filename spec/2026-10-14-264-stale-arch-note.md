@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 264
 intent: intent/2026-10-14-264-stale-arch-note.md
 ---
