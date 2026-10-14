@@ -440,7 +440,13 @@ def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int
             PLACEHOLDERS)
         if c.get("logo"):  # top-right of the case slide, 25 mm high at most
             w, h = (Mm(x) for x in _fit(c["logo"], 50, 25))
-            prs.slides[-1].shapes.add_picture(BytesIO(c["logo"]), prs.slide_width - w - Mm(8), Mm(6), width=w, height=h)
+            slide, logo_left = prs.slides[-1], prs.slide_width - w - Mm(8)
+            slide.shapes.add_picture(BytesIO(c["logo"]), logo_left, Mm(6), width=w, height=h)
+            idx = next(i for i, n in case_layout[1].items() if n == "Title")
+            title = next(ph for ph in slide.placeholders if ph.placeholder_format.idx == idx)
+            if title.top < Mm(6) + h and title.left + title.width > logo_left - Mm(4):  # a long title must not run under the logo
+                left, top, height = title.left, title.top, title.height  # read first: setting one value writes the inherited others
+                title.left, title.top, title.height, title.width = left, top, height, logo_left - Mm(4) - left
         if a := architecture_of(c):
             _architecture_slide(prs, _layout(prs, DIAGRAM_LAYOUT, DIAGRAM_PLACEHOLDERS), c["title"], a[1])
         for d in c["diagrams"]:

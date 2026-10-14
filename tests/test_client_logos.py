@@ -169,3 +169,32 @@ def test_no_logo_without_permission_a_logo_or_for_a_protected_client(case_with, 
     assert pictures(gen([cid], "pptx").content) == 0
     assert f"/logos/{client_id}.png" not in prev([cid]).text
     assert f"/logos/{client_id}.png" not in client(R).post("/search", data={"bid_text": "onboarding"}).text
+
+
+def test_a_name_protect_rewrites_gets_no_logo(approved, reg):
+    reg("Zorp", "a retailer")  # protected; the referenceable client's name contains it, so outputs show its label instead
+    _, client_id = reg("Zorp", "a logistics firm", referenceable=True, suffix=" Logistics")
+    with db.connect() as c:
+        c.execute("update clients set logo_allowed=true where id=%s", (client_id,))
+        c.execute("insert into client_logos(client_id,png,width,height) values (%s,%s,200,100)", (client_id, img()))
+    cid = approved(full())
+    link(cid, client_id)
+    for fmt in ("docx", "case_study_docx"):
+        assert drawings(gen([cid], fmt).content) == 0
+    assert pictures(gen([cid], "pptx").content) == 0
+    assert f"/logos/{client_id}.png" not in prev([cid]).text
+    with db.connect() as c:  # the card rule alone allows it: only the masked check in build() keeps it out of outputs
+        assert clients.logo_for(c, client_id)
+        c.execute("delete from client_logos where client_id=%s", (client_id,))
+
+
+def test_a_long_title_stops_before_the_logo_on_the_slide(case_with):
+    cid, _ = case_with(True, True)
+    with db.connect() as c:
+        c.execute("update cases set data = jsonb_set(data, '{title,value}', to_jsonb(%s::text)) where id=%s", ("A very long title " * 12, cid))
+    prs = Presentation(BytesIO(gen([cid], "pptx").content))
+    slide = prs.slides[0]
+    logo = next(sh for sh in slide.shapes if sh.shape_type == 13)
+    idx = next(p.placeholder_format.idx for p in slide.slide_layout.placeholders if p.name == "Title")
+    title = next(p for p in slide.placeholders if p.placeholder_format.idx == idx)
+    assert title.left + title.width <= logo.left
