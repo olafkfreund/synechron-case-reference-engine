@@ -175,3 +175,12 @@ exist, which would stop the app starting. This goes in the PR.
     already blocks approval.
   - The flag is per section, not per sentence.
   - Full suite 1456 passed.
+- **Step 7 eval, second run, after the guard** (counts only, 11 presale
+  documents, local `qwen3:14b`):
+  - 9 capability drafts and 2 engagements.
+  - 0 commercial terms, outcomes, lessons and callouts.
+  - The model still wrote result language in 3 documents despite the
+    prompt. The guard flagged every one (7 result flags in all), so none
+    can be approved without a reviewer's fix.
+  - The prompt reduces result language; the guard is the control that
+    enforces it.
