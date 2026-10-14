@@ -34,7 +34,7 @@
 </div>
 {% set tx = "text" if sections else "fields" %}{% set anchors = {"challenge": tx, "solution": tx, "implementation": tx, "configuration": tx, "capabilities": "fields", "technologies": "fields", "results": "fields", "period": "fields", "diagram": "diagrams"} %}
 <div class="section-card"><div class="card-head"><h2>Completeness: {{ checks | selectattr("ok") | list | length }} of {{ checks | length }}</h2></div>
-<ul class="checks">{% for c in checks %}<li>{% if c.ok %}{{ icon("check") }}{% else %}{{ icon("alert") }}{% endif %} {% if not c.ok and c.key in anchors %}<a href="#{{ anchors[c.key] }}">{{ c.label }}</a>{% else %}{{ c.label }}{% endif %}: {{ c.detail }}</li>{% endfor %}</ul></div>
+<ul class="checks">{% for c in checks %}<li>{% if c.ok %}{{ icon("check") }}{% else %}{{ icon("alert") }}{% endif %} <span>{% if not c.ok and c.key in anchors %}<a href="#{{ anchors[c.key] }}">{{ c.label }}</a>{% else %}{{ c.label }}{% endif %}: {{ c.detail }}</span></li>{% endfor %}</ul></div>
 {% if notes or unlisted %}<div class="section-card"><div class="card-head"><h2>Needs your attention</h2></div>
 {% for n in notes %}<div class="note">{{ n }}</div>{% endfor %}
 {% for o in unlisted %}<div class="note">organisation not in client registry: {{ o }}
