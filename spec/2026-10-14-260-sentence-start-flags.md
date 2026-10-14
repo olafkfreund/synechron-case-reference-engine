@@ -89,3 +89,27 @@ matching the intent.
 - **Reviews:** Opus and Codex, read-only.
 - **Full suite:**
   `docker compose build app && docker compose run --rm app pytest`.
+
+## Revision 2026-10-14 (approved by the user: "approve all", after the measurement below)
+
+**Measurement.** The design above took name flags on the stored prose from
+7 to 6. The flagged words (Need, Amend, Define, Append, Development) occur
+nowhere in the quotes, in any case, and the existing check already matches
+the quotes case-insensitively. Evidence from the document therefore cannot
+clear them.
+
+**Change.** The "alternative rejected" bundled word list is now adopted. A
+sentence-opening word is also dropped when its lowercase form is in
+`app/data/common_words.txt`:
+- **Contents:** the SCOWL size-35 English, American and British word
+  lists (2020.12.07), lowercase entries only, which leaves out proper
+  names. That is 40,196 words, 352 KB.
+- **Licence:** SCOWL's permissive licence notice is kept in
+  `app/data/common_words.LICENSE`.
+- **Loading:** the list is read once per process into a frozenset.
+
+**Accepted risk.** A product whose name is a common word ("Snowflake",
+"Spark", "Atlas", "Vault") is no longer flagged when it opens a sentence.
+It is still flagged anywhere mid-sentence. Names that are not words (Kafka,
+Terraform, Jenkins, Okta, Databricks) and acronyms are still flagged
+everywhere.

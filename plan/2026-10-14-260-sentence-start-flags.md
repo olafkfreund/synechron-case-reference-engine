@@ -85,3 +85,20 @@ they do now.
 ## Deviations
 
 None yet.
+
+## Revision 2026-10-14 (spec revision, approved by the user)
+
+- **Step 1b.**
+  - Add `app/data/common_words.txt`, built from nixpkgs `scowl`
+    2020.12.07: `{english,american,british}-words.{10,20,35}`, latin1
+    converted to UTF-8, `^[a-z][a-z-]*$` entries only, sorted and unique.
+  - Add `app/data/common_words.LICENSE`, the SCOWL copyright notice.
+  - In `writeup.py`, an `lru_cache` loader puts the list in a frozenset,
+    and `ordinary` also checks `first.lower() in words()`.
+  - → verify: the step 2 tests, plus "Need …", "Amend …", "Append …" and
+    "Define …" with **no** lowercase evidence give no flag. "Kafka …" and
+    "Okta …" are still flagged. "They chose Snowflake." mid-sentence is
+    still flagged.
+- **Step 4, replaced.** Re-run check_prose, old and new, over the stored
+  prose of the demo database, counts only (`scratchpad/m260`). Expected:
+  name flags drop from 7 to the true unknowns only.
