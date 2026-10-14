@@ -107,10 +107,10 @@ As listed per step. Every new check is negative-controlled once.
 
 ## Rollback
 
-Revert the merge commit. Capability cases then fail the old check
-constraint on their next update, so before reverting run
-`update cases set status='rejected' where basis='capability'`. This is
-documented in the PR.
+Revert the merge commit, but first delete the capability cases:
+`delete from cases where basis='capability'`. The old `cases_basis_check`
+is re-added at every start and would refuse to apply while such rows
+exist, which would stop the app starting. This goes in the PR.
 
 ## Deviations
 
