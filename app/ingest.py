@@ -116,16 +116,14 @@ def accept_upload(conn, user, name: str | None, data: bytes) -> int:
                         (user.sub, user.name, src[0], key, len(data), job)).fetchone()[0]
 
 
-def upload_status(conn, user, upload_id: int) -> str:
-    """queued | failed | indexed | in_review | approved | rejected; owner only, nothing but the code."""
-    row = conn.execute(
-        "select j.status, d.id, c.status, exists(select 1 from jobs x where x.kind='extract' and x.status in ('queued','running') "
-        "and (x.payload->>'document_id')::bigint = d.id) from uploads u left join jobs j on j.id = u.job_id "
-        "left join documents d on d.source_id = u.source_id and d.external_id = u.s3_key "
-        "left join cases c on c.document_id = d.id where u.id=%s and u.user_key=%s", (upload_id, user.sub)).fetchone()
-    if not row:
-        raise HTTPException(404, "no such upload")
-    job, doc, case, extracting = row
+STATUS_COLS = ("j.status, d.id, c.status, exists(select 1 from jobs x where x.kind='extract' and x.status in ('queued','running') "
+               "and (x.payload->>'document_id')::bigint = d.id)")
+STATUS_FROM = ("from uploads u left join jobs j on j.id = u.job_id "
+               "left join documents d on d.source_id = u.source_id and d.external_id = u.s3_key "
+               "left join cases c on c.document_id = d.id")
+
+
+def status_code(job, doc, case, extracting) -> str:
     if job == "failed" or (job == "done" and doc is None):
         return "failed"
     if doc is None:
@@ -133,6 +131,21 @@ def upload_status(conn, user, upload_id: int) -> str:
     if case is None and extracting:  # triage has not decided yet: not "not a case" yet
         return "queued"
     return {"extracted": "in_review", "approved": "approved", "rejected": "rejected"}.get(case, "indexed")
+
+
+def upload_status(conn, user, upload_id: int) -> str:
+    """queued | failed | indexed | in_review | approved | rejected; owner only, nothing but the code."""
+    row = conn.execute(f"select {STATUS_COLS} {STATUS_FROM} where u.id=%s and u.user_key=%s", (upload_id, user.sub)).fetchone()
+    if not row:
+        raise HTTPException(404, "no such upload")
+    return status_code(*row)
+
+
+def my_uploads(conn, user, limit: int = 50) -> list[tuple[int, str, object, str]]:
+    """(id, file name, when, status) of the user's newest uploads, one query."""
+    rows = conn.execute(f"select u.id, u.s3_key, u.created_at, {STATUS_COLS} {STATUS_FROM} "
+                        "where u.user_key=%s order by u.id desc limit %s", (user.sub, limit)).fetchall()
+    return [(r[0], r[1].rsplit("/", 1)[-1], r[2], status_code(*r[3:])) for r in rows]
 
 
 def reopen_merged(conn, doc_ids: list[int]) -> None:

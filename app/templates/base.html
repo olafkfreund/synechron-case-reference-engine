@@ -11,6 +11,7 @@
 {% if user %}
 {% set path = request.url.path %}
 {% set tabs = [("/search", "Find references"), ("/research", "Research"), ("/library", "Library")] %}
+{% if 'user' in user.roles and staff_uploads() %}{% set tabs = tabs + [("/upload", "Upload")] %}{% endif %}
 {% if 'reviewer' in user.roles %}{% set tabs = tabs + [("/review", "Review queue"), ("/documents", "Latest documents")] %}{% endif %}
 {% if 'admin' in user.roles %}{% set tabs = tabs + [("/admin/sources", "Sources"), ("/admin/clients", "Client registry"), ("/admin/models", "Model approvals"), ("/admin/audit", "Audit")] %}{% endif %}
 <div class="site-user"><span class="avatar" aria-hidden="true">{% for w in user.name.split()[:2] %}{{ w[0] | upper }}{% endfor %}</span><span title="{{ user.roles | sort | join(', ') or 'no role' }}">{{ user.name }} · {{ "admin" if 'admin' in user.roles else "reviewer" if 'reviewer' in user.roles else "user" if 'user' in user.roles else "no role" }}</span>

@@ -28,7 +28,7 @@
 {% if members %}<dl class="status-list"><dt>Members</dt><dd>Merged from {{ members|length }} contracts</dd></dl>
 <div class="table-box" style="margin-top:12px"><table><thead><tr><th>Document</th><th>Source</th><th>External id</th><th>Basis</th><th>Status</th></tr></thead><tbody>
 {% for m in members %}<tr><td>{{ m[1] }}{% if m[6] %} <span class="badge bad">withdrawn</span>{% endif %}{% if m[8] %} <span class="badge warn">changed since merge</span>{% endif %}</td><td>{{ m[2] }}</td><td><code>{{ m[3] }}</code></td><td>{{ m[4] }}</td><td>{{ m[5] }}</td></tr>{% endfor %}</tbody></table></div>
-{% else %}<dl class="status-list"><dt>Document</dt><dd><b>{{ document }}</b></dd><dt>Source</dt><dd>{{ source }}</dd><dt>External id</dt><dd><code>{{ external_id }}</code></dd></dl>{% endif %}
+{% else %}<dl class="status-list"><dt>Document</dt><dd><b>{{ document }}</b></dd><dt>Source</dt><dd>{{ source }}</dd><dt>External id</dt><dd><code>{{ external_id }}</code></dd>{% if uploaded_by %}<dt>Uploaded by</dt><dd>{{ uploaded_by }}</dd>{% endif %}</dl>{% endif %}
 {% if basis_reason %}<p class="muted" style="margin:12px 0 0">{{ basis_reason }}</p>{% endif %}
 </div>
 {% set tx = "text" if sections else "fields" %}{% set anchors = {"challenge": tx, "solution": tx, "implementation": tx, "configuration": tx, "capabilities": "fields", "technologies": "fields", "results": "fields", "period": "fields", "diagram": "diagrams"} %}
