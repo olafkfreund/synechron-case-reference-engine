@@ -1735,3 +1735,75 @@ def test_list_counts_action_notes_only_and_a_failed_generate_note_wins_the_reaso
     assert "Extracted before architecture" not in c.get(f"/review/{loud}").text.split("Architecture</h2>")[1]
     js = c.get("/static/review.js").text
     assert '" word"' in js and "Nothing to preview yet." in js and 'split("\\n\\n")' in js and 'pv.textContent' not in js
+
+
+def _notes(cid, notes=None):  # read, or overwrite, a case's needs_attention (#264)
+    from psycopg.types.json import Jsonb
+    with db.connect() as c:
+        if notes is not None:
+            c.execute("update cases set data = jsonb_set(data, '{needs_attention}', %s) where id=%s", (Jsonb(notes), cid))
+        return c.execute("select data->'needs_attention' from cases where id=%s", (cid,)).fetchone()[0]
+
+
+STALE = ["Re-extracted with richer extraction: check and approve again", "architecture has 7 unsupported item(s); edit it before approval",
+         "architecture proposal failed (TimeoutError)"]
+
+
+def test_architecture_notes_follow_the_current_diagram(make, monkeypatch):  # #264
+    from app import writeup
+    cid = arch_case(make)
+    _notes(cid, STALE)
+    assert post_arch(cid, text=ARCH_TEXT).status_code == 303
+    flags = row(cid)[1]["architecture"]["flags"]
+    want = [STALE[0]] + ([f"architecture has {len(flags)} unsupported item(s); edit it before approval"] if flags else [])
+    assert _notes(cid) == want  # a clean save drops the stale count and failure; a flagged one leaves one fresh count
+    _notes(cid, STALE)
+    monkeypatch.setattr(writeup, "complete_json", lambda *a, **k: writeup.ArchProposal(components=[]))
+    assert post_arch(cid, "/regenerate", confirm="true").status_code == 303
+    n = _notes(cid)
+    assert STALE[1] not in n and STALE[2] not in n and n[0] == STALE[0]
+    assert n.count("architecture: no new proposal; the current one is kept") == 1
+    _notes(cid, STALE)
+    assert post_arch(cid, "/remove").status_code == 303 and _notes(cid) == [STALE[0]]
+
+
+def test_set_arch_note_counts_a_flagged_architecture_once():
+    from app import writeup
+    from app.schema import Architecture
+    case = ReferenceCase.model_validate_json(case_data())
+    case.needs_attention = list(STALE)
+    case.architecture = Architecture(title="t", components=[], flows=[], callouts=[], flags=["a", "b"])
+    writeup.set_arch_note(case)
+    assert case.needs_attention == [STALE[0], "architecture has 2 unsupported item(s); edit it before approval"]
+
+
+def test_failed_regenerate_replaces_the_old_architecture_notes_once(make, monkeypatch):  # #264 review
+    from app import writeup
+    cid = arch_case(make)
+    post_arch(cid, text=ARCH_TEXT)
+    _notes(cid, STALE + ["architecture: the model proposed nothing the points support"])
+    monkeypatch.setattr(writeup, "complete_json", lambda *a, **k: (_ for _ in ()).throw(ValueError("boom")))
+    assert post_arch(cid, "/regenerate", confirm="true").status_code == 303
+    n = _notes(cid)
+    arch = [x for x in n if x.lower().startswith(writeup.ARCH_NOTES)]
+    flags = row(cid)[1]["architecture"]["flags"]  # the kept diagram's own count, then this failure: nothing stale, nothing twice
+    assert arch == [f"architecture has {len(flags)} unsupported item(s); edit it before approval", "architecture proposal failed (ValueError)"]
+    assert n[0] == STALE[0]
+
+
+def test_save_architecture_counts_flags_for_a_flagged_diagram(make):  # #264 review: the flagged branch through the route
+    cid = arch_case(make)
+    _notes(cid, STALE)
+    assert post_arch(cid, text=ARCH_TEXT).status_code == 303  # ARCH_TEXT's callout and terms are flagged on this case
+    flags = row(cid)[1]["architecture"]["flags"]
+    assert flags and _notes(cid) == [STALE[0], f"architecture has {len(flags)} unsupported item(s); edit it before approval"]
+
+
+def test_set_arch_note_adds_nothing_for_a_clean_architecture():
+    from app import writeup
+    from app.schema import Architecture
+    case = ReferenceCase.model_validate_json(case_data())
+    case.needs_attention = list(STALE) + ["Architecture: your diagram from before the document changed was kept; check it still holds"]
+    case.architecture = Architecture(title="t", components=[], flows=[], callouts=[], flags=[])
+    writeup.set_arch_note(case)
+    assert case.needs_attention == [STALE[0]]  # the capitalised kept note is an architecture note too

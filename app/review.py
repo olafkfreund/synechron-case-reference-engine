@@ -581,6 +581,7 @@ def save_architecture(cid: int, request: Request, text: str = Form(), v: str = F
         if arch:
             case.architecture = arch
             arch.flags = check_architecture(case)
+            writeup.set_arch_note(case)  # the earlier count or failure is no longer true (#264)
             save(conn, cid, case)
             _arch_log(conn, cid, "edit", user)
             _reopen(conn, cid)
@@ -605,16 +606,20 @@ def regenerate_architecture(cid: int, v: str = Form(), confirm: bool = Form(Fals
             "where m.id = %s or m.merged_into = %s", (cid, cid))}
     work = case.model_copy(deep=True)
     work.architecture = None
+    writeup.set_arch_note(work)  # work then holds only what this attempt says (#264)
     writeup.propose(work, next((c for c in DATA_CLASSES if c in classes), "confidential"))
     with db.connect() as conn:
         case, _ = load(conn, cid, user, v)  # 409 if the case changed meanwhile
         if work.architecture:
             case.architecture = work.architecture
         elif case.architecture:
-            work.needs_attention.append("architecture: no new proposal; the current one is kept")
+            if not any(n.startswith("architecture proposal failed") for n in work.needs_attention):  # one note per event
+                work.needs_attention.append("architecture: no new proposal; the current one is kept")
         else:
             work.needs_attention.append("architecture: the model proposed nothing the points support")
-        case.needs_attention += [n for n in dict.fromkeys(work.needs_attention) if n not in case.needs_attention]
+        writeup.set_arch_note(case)  # drops the earlier notes, counts the current diagram's flags (#264)
+        case.needs_attention += [n for n in dict.fromkeys(work.needs_attention)  # what this attempt says, once
+                                 if n.startswith(("architecture proposal failed", "architecture: ")) and n not in case.needs_attention]
         save(conn, cid, case)
         _arch_log(conn, cid, "regenerate", user)
         _reopen(conn, cid)
@@ -628,6 +633,7 @@ def remove_architecture(cid: int, v: str = Form(), user: User = Depends(require(
         if not case.architecture:
             raise HTTPException(404, "no architecture")
         case.architecture = None
+        writeup.set_arch_note(case)
         save(conn, cid, case)
         _arch_log(conn, cid, "remove", user)
         _reopen(conn, cid)

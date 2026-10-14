@@ -292,6 +292,7 @@ def extract(document_id: int, basis: str = "delivered", basis_reason: str = "", 
             case.architecture.flags = check_architecture(case)  # against the new quotes
             if case.architecture.flags != before:
                 case.architecture.by_reviewer = False  # the evidence moved: it needs a fresh confirmation
+            writeup.set_arch_note(case)  # a count if the kept diagram is now flagged (#264)
             case.needs_attention.append("Architecture: your diagram from before the document changed was kept; check it still holds")
         data = case.model_dump()
         conn.execute(
