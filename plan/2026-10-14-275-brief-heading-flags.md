@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 275
 spec: spec/2026-10-14-275-brief-heading-flags.md
 ---
