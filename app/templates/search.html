@@ -5,15 +5,15 @@
 <ul class="doc-list">{% for e in list %}{% for d in e.docs %}<li>{{ icon("file") }}<span class="doc-label">{{ e.label }}</span>
 {% if d.web %}<a class="btn btn-sm ghost" href="/go/{{ d.id }}" target="_blank" rel="noopener noreferrer">Open</a>{% endif %}{% if d.folder %}<a class="btn btn-sm ghost" href="/go/{{ d.id }}/folder" target="_blank" rel="noopener noreferrer">Open folder</a>{% endif %}{% if not d.web and not d.folder %}<span class="muted">Stored in the engine. Ask a reviewer for a copy.</span>{% endif %}</li>{% endfor %}{% endfor %}</ul></details>{% endif %}{% endmacro %}
 {% macro card_head(c) %}<div class="meta">{% if c.logo %}<img src="/logos/{{ c.logo }}.png" alt="" class="logo-sm">{% else %}<span class="avatar" aria-hidden="true">{{ icon("building") }}</span>{% endif %}
-<div class="who"><h3>{{ c.title }}</h3><span>{{ c.label }}</span></div>{{ basis(c.basis) }} {{ completeness(c.score) }}</div>{% endmacro %}
-{% macro result_actions(c) %}<div class="result-actions">
+<div class="who"><h3>{{ c.title }}</h3><span>{{ c.label }}</span></div>{{ basis(c) }} {{ completeness(c.score) }}</div>{% if c.note %}<p class="muted small flush">{{ c.note }}</p>{% endif %}{% endmacro %}
+{% macro result_actions(c) %}{% set offered = [("pdf_docx", "PDF"), ("md", "Markdown")] if c.basis == "capability" else [("pptx", "PowerPoint"), ("pdf_docx", "PDF"), ("pdf_pptx", "PDF slides"), ("md", "Markdown"), ("case_study_docx", "Case study · Word"), ("case_study_pdf", "Case study · PDF")] %}<div class="result-actions">
 <form method="post" action="/generate" class="generate"><input type="hidden" name="case_ids" value="{{ c.id }}">
 <button class="btn" formaction="/preview" aria-label="Preview {{ c.title }}">Preview</button>
 <button class="btn primary word" name="format" value="docx" aria-label="Download {{ c.title }} as Word">Download Word</button>
 <details class="mini"><summary aria-label="Other formats for {{ c.title }}">Other formats</summary>
-<div class="row">{% for v, l in [("pptx", "PowerPoint"), ("pdf_docx", "PDF"), ("pdf_pptx", "PDF slides"), ("md", "Markdown"), ("case_study_docx", "Case study · Word"), ("case_study_pdf", "Case study · PDF")] %}<button class="btn" name="format" value="{{ v }}" aria-label="{{ l }} for {{ c.title }}">{{ l }}</button>{% endfor %}</div></details></form>
+<div class="row">{% for v, l in offered %}<button class="btn" name="format" value="{{ v }}" aria-label="{{ l }} for {{ c.title }}">{{ l }}</button>{% endfor %}</div></details></form>
 <form method="post" action="/research/from-case" class="research-form"><input type="hidden" name="case_id" value="{{ c.id }}"><button class="btn ghost">Research this (public sources)</button></form></div>{% endmacro %}
-{% macro basis(x) %}<span class="badge neutral">{{ "Engagement (contracted scope)" if x == "engagement" else "Delivered case" }}</span>{% endmacro %}
+{% macro basis(c) %}<span class="badge neutral">{{ {"engagement": "Engagement (contracted scope)", "capability": "Capability document"}.get(c.basis, "Delivered case") }}</span>{% endmacro %}
 {% block body %}
 <div class="page-head"><div><h1>Find reference cases</h1><p>Paste the bid requirement; narrow by industry, region or technology if you like.</p></div></div>
 {% macro pick(id, name, cur, opts) %}<div class="field"><label for="{{ id }}">{{ caller() }}</label>
@@ -24,7 +24,7 @@
 {% call pick("f-region", "region", f.region, facets.region) %}<span>Region</span>{% endcall %}
 {% call pick("f-tech", "tech", f.tech, facets.tech) %}<span>Technology</span>{% endcall %}
 <div class="field"><label for="f-kind">Kind</label>
-<select id="f-kind" name="kind">{% for v, t in [("", "Any"), ("delivered", "Delivered case"), ("engagement", "Engagement")] %}<option value="{{ v }}"{{ " selected" if v == kind }}>{{ t }}</option>{% endfor %}</select></div>
+<select id="f-kind" name="kind">{% for v, t in [("", "Any"), ("delivered", "Delivered case"), ("engagement", "Engagement"), ("capability", "Capability")] %}<option value="{{ v }}"{{ " selected" if v == kind }}>{{ t }}</option>{% endfor %}</select></div>
 <div class="field"><label for="f-sort">Sort</label>
 <select id="f-sort" name="sort">{% for v, t in [("newest", "Newest"), ("title", "Title"), ("industry", "Industry")] %}<option value="{{ v }}"{{ " selected" if v == sort }}>{{ t }}</option>{% endfor %}</select></div>
 <button class="btn">Filter</button></div></form>
@@ -34,6 +34,8 @@
 <input type="hidden" name="industry" value="{{ f.industry }}"><input type="hidden" name="region" value="{{ f.region }}"><input type="hidden" name="tech" value="{{ f.tech }}"><input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="sort" value="{{ sort }}">
 <div class="row"><button class="btn primary">Search with bid text</button></div></form>
 {% for n in notes %}<div class="note">{{ n }}</div>{% endfor %}
+{% if capability %}<form method="post" action="/search" class="row"><input type="hidden" name="bid_text" value="{{ bid_text }}"><input type="hidden" name="industry" value="{{ f.industry }}"><input type="hidden" name="region" value="{{ f.region }}"><input type="hidden" name="tech" value="{{ f.tech }}"><input type="hidden" name="kind" value="capability">
+<span class="muted">{{ capability }} capability document{{ " matches" if capability == 1 else "s match" }} &middot; not delivery evidence</span> <button class="btn ghost">Show them</button></form>{% endif %}
 {% if ran and not top %}<div class="empty-state">{{ icon("search") }}<p><b>No matching approved cases</b></p><p>Try a broader bid context or remove a filter.</p></div>{% endif %}
 {% if not ran and not rows %}<div class="empty-state">{{ icon("search") }}<p><b>No approved cases match these filters</b></p></div>{% endif %}
 {% for r in rows %}
@@ -63,7 +65,7 @@
 <button class="btn" formaction="/preview">Preview all</button>
 <button class="btn primary" name="format" value="docx">{{ what }} (Word)</button>
 <details class="mini"><summary>Other formats</summary>
-<div class="row">{% for v, l in [("pptx", "PowerPoint"), ("pdf_docx", "PDF"), ("pdf_pptx", "PDF slides"), ("md", "Markdown")] %}<button class="btn" name="format" value="{{ v }}" aria-label="{{ what }}: {{ l }}">{{ l }}</button>{% endfor %}</div></details></form>{% endwith %}{% endif %}
+<div class="row">{% for v, l in ([("pdf_docx", "PDF"), ("md", "Markdown")] if top | selectattr("basis", "equalto", "capability") | list else [("pptx", "PowerPoint"), ("pdf_docx", "PDF"), ("pdf_pptx", "PDF slides"), ("md", "Markdown")]) %}<button class="btn" name="format" value="{{ v }}" aria-label="{{ what }}: {{ l }}">{{ l }}</button>{% endfor %}</div></details></form>{% endwith %}{% endif %}
 {% if top %}<p class="muted small">Downloads contain the approved case record only, not the suggested wording above.</p>{% endif %}
 {% if library %}<div class="section-card"><div class="card-head"><h2>From the library</h2><span class="muted">{{ library | length }}</span></div>
 <p class="muted small">Tick up to 3 to include in &ldquo;Download all&rdquo; (public statements, after the cases). The single-case downloads leave them out.</p>
@@ -71,5 +73,5 @@
 <span class="badge neutral">{{ "Brief" if i.kind == "brief" else "Quotes" }}</span>{% if i.stale %}<span class="badge">re-check</span>{% endif %}
 <span class="muted push">{{ i.sources }} source{{ "" if i.sources == 1 else "s" }} &middot; {{ "today" if i.age == 0 else (i.age ~ " day" ~ ("" if i.age == 1 else "s") ~ " old") }}</span></div>{% endfor %}</div>{% endif %}
 {% if others %}<div class="section-card"><div class="card-head"><h2>Other matches</h2></div>
-{% for o in others %}<div class="other-row"><b>{{ o.title }}</b> {{ basis(o.basis) }} {{ completeness(o.score) }} <span class="muted">({{ o.label }})</span><p>{{ o.summary }}</p>{{ sources(o.sources) }}</div>{% endfor %}</div>{% endif %}
+{% for o in others %}<div class="other-row"><b>{{ o.title }}</b> {{ basis(o) }} {{ completeness(o.score) }} <span class="muted">({{ o.label }})</span>{% if o.note %}<p class="muted small flush">{{ o.note }}</p>{% endif %}<p>{{ o.summary }}</p>{{ sources(o.sources) }}</div>{% endfor %}</div>{% endif %}
 {% endblock %}

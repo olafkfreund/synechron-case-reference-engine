@@ -7,7 +7,7 @@ import pytest
 from docx import Document
 
 from app import db, office, render
-from app.schema import Outcome, ReferenceCase, Sourced
+from app.schema import Outcome, Prose, ReferenceCase, Sourced
 from tests.test_auth import client, env  # noqa: F401
 from tests.test_review import DOCS, make  # noqa: F401
 from tests.test_search import approved, data, link, reg  # noqa: F401
@@ -913,3 +913,50 @@ def test_produce_matches_generate_bytes(approved, fmt):
         return za.namelist() == zb.namelist() and all(za.read(n) == zb.read(n) for n in za.namelist() if n != "docProps/core.xml")
     assert r.status_code == 200 and same(body, r.content) and mime == r.headers["content-type"]
     assert r.headers["content-disposition"] == f'attachment; filename="{name}"'
+
+
+def test_section_of_a_capability_case_has_the_note_and_no_results_or_lessons():  # #213
+    case = ReferenceCase(title=Sourced[str](value="Offer", source_quote="q"), basis="capability",
+                         outcomes=[Outcome(metric="m", value="3 days", source_quote="q")],
+                         lessons_learned=Sourced[str](value="Start early", source_quote="q"))
+    s = render.section(case, "a client")
+    assert s["note"] == render.CAPABILITY_NOTE
+    assert "Outcomes" not in [x["heading"] for x in s["lists"]] and "Lessons learned" not in [b["heading"] for b in s["blocks"]]
+
+
+def capability():
+    return full().model_copy(update={"basis": "capability"})
+
+
+def test_capability_goes_in_its_own_section_after_the_cases(approved):  # #213
+    cap, dlv = approved(capability()), approved(full())
+    note = render.CAPABILITY_NOTE
+    t = doc_text(gen([cap, dlv], "docx").content)
+    assert t.count("Our capability") == 1 and t.count(note) == 1
+    assert t.index("Our capability") > t.rindex("Outcomes") and "Outcomes" in t  # the delivered case keeps its results, before the heading
+    assert t.index(note) > t.index("Our capability")
+    m = gen([cap, dlv], "md").text
+    assert m.count("# Our capability") == 1 and m.count(note) == 1 and m.index("Our capability") > m.index("Outcomes")
+    assert "Our capability" not in gen([dlv], "md").text
+    only = gen([cap], "md").text
+    assert "Our capability" in only and "Outcomes" not in only and "12 to 3" not in only
+    p = prev([cap, dlv]).text
+    assert "Our capability" in p and note in p
+    assert "Our capability" in prev([cap]).text  # a lone capability previews: no case-study build for it
+
+
+@pytest.mark.parametrize("fmt", ["case_study_docx", "case_study_pdf", "pptx", "pdf_pptx"])
+def test_capability_refuses_case_study_and_slide_formats(approved, fmt):
+    r = gen([approved(capability())], fmt)
+    assert r.status_code == 400 and r.json()["detail"] == "capability documents can't be case studies"
+    assert gen([approved(full())], "md").status_code == 200
+
+
+def test_section_never_outputs_capability_text_that_claims_a_result():  # #213
+    from app.writeup import RESULT_FLAG
+    case = ReferenceCase(title=Sourced[str](value="Offer", source_quote="q"), basis="capability", summary="It reduced cost.",
+                         solution=Sourced[str](value="Delivered a ledger", source_quote="q"),
+                         prose={"challenge": Prose(text="This resulted in speed.", by_reviewer=True, flags=[RESULT_FLAG])})
+    s = render.section(case, "a client")
+    assert s["summary"] == "" and not s["blocks"]
+    assert render.section(case.model_copy(update={"basis": "delivered"}), "a client")["summary"] == "It reduced cost."

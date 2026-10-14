@@ -241,3 +241,16 @@ def test_check_prose_opener_review_fixes():  # #260 review: digits, coined names
     assert "names 'Plan9', which no quote supports" in wu.check_prose("Plan9 consolidated the ledgers.", q, q)
     assert wu.check_prose("Trackly monitored the fleet.", q, q) == ["names 'Trackly', which no quote supports"]
     assert wu.check_prose("Globex won the bid. Contact bids@globex.com.", q, q)[0] == "names 'Globex', which no quote supports"
+
+
+def test_capability_prose_that_claims_a_result_is_flagged(monkeypatch):  # #213
+    for t in ("The work resulted in faster onboarding.", "We achieved this.", "Outcomes include speed.", "It reduced costs.", "Delivered on time."):
+        assert wu.check_prose(t, [Q1], [Q1], offering=True) == [wu.RESULT_FLAG]
+        assert wu.check_prose(t, [Q1], [Q1]) == []  # a delivered case may say it
+    assert wu.check_prose("We offer to migrate the legacy ledger to Snowflake.", [Q1], [Q1], offering=True) == []
+    stub(monkeypatch, solution="We offer to migrate the legacy ledger to Snowflake. This resulted in speed.")
+    c = case(solution=[("Migrate the ledger", Q1)])
+    c.basis = "capability"
+    wu.write(c, "internal")
+    assert c.prose["solution"].flags == [wu.RESULT_FLAG] and c.needs_attention
+    assert "resulted in" in wu.WRITEUP_SYSTEM

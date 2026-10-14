@@ -24,6 +24,7 @@ NOTICES = {  # allow-list: the query string picks a message, never supplies one
     "nosource": ("bad", "Upload refused: no enabled upload source is configured"),
     "source": ("bad", "Upload refused: that source is not an enabled upload source"),
     "reextract": ("ok", "Older cases queued for re-extraction; they go back to review"),
+    "capability": ("ok", "Capability drafts queued; they go to review"),
 }
 # #222: cases extracted before the current EXTRACTION_VERSION; a merged parent has no document, so the join drops it
 REEXTRACT_BATCH = 25
@@ -37,6 +38,12 @@ OLDER = """from cases c join documents d on d.id = c.document_id
                     and (j.payload->>'document_id')::bigint = d.id)"""
 REEXTRACT = ("insert into jobs(kind, payload) select 'extract', jsonb_build_object('document_id', d.id, 'basis', c.basis, "
              "'basis_reason', coalesce(c.data->>'basis_reason', ''), 'checksum', d.checksum) " + OLDER + " order by c.id limit %s")
+# #213: proposals, decks and contracts triage skipped before capability documents existed (live, no case, nothing queued)
+SKIPPED = """from documents d where d.kind in ('proposal','deck','contract') and d.deleted_at is null
+    and not exists (select 1 from cases c where c.document_id = d.id)
+    and not exists (select 1 from jobs j where j.kind='extract' and (j.payload->>'document_id')::bigint = d.id)"""  # any status: a failed one is not skipped
+CAPABILITY_DRAFTS = ("insert into jobs(kind, payload) select 'extract', jsonb_build_object('document_id', d.id, 'basis', 'capability', "
+                     "'basis_reason', '', 'checksum', d.checksum) " + SKIPPED + " order by d.id limit %s")
 DATA_CLASSES = ("confidential", "sanitised", "public")
 REQUIRED = {"s3": ("bucket",), "upload": ("bucket",), "sharepoint": ("tenant_id", "drive_id"),
             "confluence": ("base_url", "spaces")}
@@ -79,9 +86,10 @@ def sources_page(request: Request, notice: str = "", source: int | None = None,
         rows = conn.execute("select id, kind, name, config, acl_groups, enabled, last_run_at, last_counts, data_class, "
                             "greatest(0, floor(extract(epoch from now() - last_run_at) / 86400))::int from sources order by name").fetchall()
         older = conn.execute("select count(*) " + OLDER, (EXTRACTION_VERSION,)).fetchone()[0]
+        skipped = conn.execute("select count(*) " + SKIPPED).fetchone()[0]
     done = notice == "uploaded"
     return page(request, "sources.html", user, sources=rows, kinds=sorted(JOB), classes=DATA_CLASSES,
-                notice=NOTICES.get(notice), older=older, queued=queued if notice == "reextract" else None, total=total, job=job if done else None,
+                notice=NOTICES.get(notice), older=older, skipped=skipped, queued=queued if notice in ("reextract", "capability") else None, total=total, job=job if done else None,
                 source_name=next((r[2] for r in rows if r[0] == source and r[1] == "upload"), None) if done else None,
                 upload_cap=upload_cap(), upload_types=sorted(UPLOAD_MAGIC))
 
@@ -94,6 +102,15 @@ def reextract(user: User = Depends(require("admin"))):
         total = conn.execute("select count(*) " + OLDER, (EXTRACTION_VERSION,)).fetchone()[0]
         queued = conn.execute(REEXTRACT, (EXTRACTION_VERSION, REEXTRACT_BATCH)).rowcount
     return RedirectResponse(f"/admin/sources?notice=reextract&queued={queued}&total={total}", status_code=303)
+
+
+@router.post("/admin/capability-drafts")
+def capability_drafts(user: User = Depends(require("admin"))):
+    with db.connect() as conn:
+        conn.execute("select pg_advisory_xact_lock(%s)", (REEXTRACT_LOCK,))  # two clicks must not queue twice
+        total = conn.execute("select count(*) " + SKIPPED).fetchone()[0]
+        queued = conn.execute(CAPABILITY_DRAFTS, (REEXTRACT_BATCH,)).rowcount
+    return RedirectResponse(f"/admin/sources?notice=capability&queued={queued}&total={total}", status_code=303)
 
 
 @router.post("/admin/sources")

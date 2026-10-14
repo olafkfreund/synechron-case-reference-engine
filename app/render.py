@@ -18,8 +18,8 @@ from app import anonymise, db, office
 from app.archdiagram import layout, to_mermaid, to_pptx_shapes, to_png, to_svg
 from app.main import User, require, wants_html
 from app.clients import logo_for
-from app.review import PNG_HEADERS, VISIBLE, page
-from app.writeup import PRICE_FLAG
+from app.review import CAPABILITY_NOTE, PNG_HEADERS, VISIBLE, page
+from app.writeup import PRICE_FLAG, RESULT_WORDS
 from app.schema import ArchCallout, ArchComponent, ArchFlow, Architecture, ReferenceCase, fence, plain, vague_metric
 
 router = APIRouter()
@@ -33,6 +33,8 @@ CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")  # invalid in XML; also used 
 SLIDE_TEXT = 300  # challenge/solution excerpt on a slide; the Word version has the full text
 SLIDE_OUTCOMES = 5
 ENGAGEMENT_NOTE = "Engagement reference: contracted scope; no outcomes are claimed."
+CAPABILITY_HEADING = "Our capability"
+NOTES = {"engagement": ENGAGEMENT_NOTE, "capability": CAPABILITY_NOTE}
 
 
 class Withheld(Exception):
@@ -205,26 +207,26 @@ def section(case: ReferenceCase, client: str) -> dict:
                ("Engagement type", v(case.engagement_type)),
                ("Duration", f"{v(case.duration_months)} months" if v(case.duration_months) else None),
                ("Team size", v(case.team_size)), ("Period", period)]
+    claims = lambda t: case.basis == "capability" and bool(RESULT_WORDS.search(t or ""))  # an offering never goes out claiming a result (#213)
     def prose(f, head):  # approved prose replaces the one-line value only when it is unflagged or the reviewer's own
         p = case.prose.get(f)
-        if p and p.text.strip() and (not p.flags or p.by_reviewer):
+        if p and p.text.strip() and (not p.flags or p.by_reviewer) and not claims(p.text):
             return p.text, [x.strip() for x in p.text.split("\n\n") if x.strip()]
-        return head, [head]  # the headline value goes out unchanged: one paragraph, no split
+        return (None, []) if claims(head) else (head, [head])  # the headline value goes out unchanged: one paragraph, no split
 
     blocks = [("Challenge", prose("challenge", v(case.challenge))), ("Solution", prose("solution", v(case.solution))),
               ("Implementation approach", prose("implementation", v(case.implementation))),
               ("Configuration and integration", prose("configuration", v(case.configuration))),
-              ("Lessons learned", (None, []) if case.basis == "engagement" else prose("lessons_learned", v(case.lessons_learned)))]
+              ("Lessons learned", (None, []) if case.basis != "delivered" else prose("lessons_learned", v(case.lessons_learned)))]
     lists = [("Capabilities", [v(c) for c in case.capabilities]),
              ("Technology", [v(t) for t in case.tech_stack]),
              ("Technical references", [v(t) for t in case.tech_references]),
              ("Outcomes", [(f"{o.metric}: {o.value}" if not vague_metric(o) else o.value) for o in case.outcomes if not o.unsourced])]
-    engagement = case.basis == "engagement"
-    if engagement:  # contracted scope claims no results, whatever the record holds
+    if case.basis != "delivered":  # contracted scope or an offering claims no results, whatever the record holds
         lists = [x for x in lists if x[0] != "Outcomes"]
     return dict(
-        title=v(case.title) or "", client=client, summary=case.summary,
-        basis=case.basis, note=ENGAGEMENT_NOTE if engagement else "",
+        title=v(case.title) or "", client=client, summary="" if claims(case.summary) else case.summary,
+        basis=case.basis, note=NOTES.get(case.basis, ""),
         details=[dict(label=a, value=str(b)) for a, b in details if b not in (None, "")],
         blocks=[dict(heading=a, text=t, paragraphs=ps) for a, (t, ps) in blocks if t],
         lists=[dict(heading=a, bullets=[str(i) for i in b if i]) for a, b in lists if any(b)],
@@ -240,7 +242,7 @@ def architecture_dict(case: ReferenceCase) -> dict | None:
         return None  # a reviewer's confirmation lets a flag pass, never a price
     shown = [i for i, o in enumerate(case.outcomes) if not o.unsourced]  # the Outcomes list as section() shows it
     # a contract claims no results (as in section()); a callout is numbered by its outcome's place in the shown list
-    callouts = [] if case.basis == "engagement" else [{"text": c.text, "outcome": shown.index(c.outcome)} for c in a.callouts if c.outcome in shown]
+    callouts = [] if case.basis != "delivered" else [{"text": c.text, "outcome": shown.index(c.outcome)} for c in a.callouts if c.outcome in shown]
     return {"title": a.title, "components": [c.model_dump(exclude={"cite"}) for c in a.components],
             "flows": [f.model_dump(exclude={"cite"}) for f in a.flows], "callouts": callouts, "footer": ""}
 
@@ -512,6 +514,10 @@ _env.filters["link"] = link
 _env.filters["fence"] = fence
 MD = _env.from_string("""\
 {% for c in cases %}
+{% if c.group %}
+# {{ c.group | md }}
+
+{% endif %}
 # {{ c.title | md }}
 
 *{{ c.client | md }}*
@@ -735,6 +741,7 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
     if fmt is not None and fmt not in OUTPUTS:  # after the input checks, as on main
         raise HTTPException(400, f"format must be one of {', '.join(OUTPUTS)}")
     study = bool(fmt) and fmt.startswith("case_study")
+    one_per_case = study or fmt in ("pptx", "pdf_pptx")  # case studies and reference slides: an offering is neither
     if study and len(ids) != 1:
         raise HTTPException(400, "a case study is one case")
     claims, pages = [], []
@@ -756,6 +763,10 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
     by_id = {r[0]: r for r in rows}
     if len(by_id) != len(ids):
         raise HTTPException(404, "no such case")
+    capability = [i for i in ids if by_id[i][1].get("basis") == "capability"]
+    if capability and one_per_case:
+        raise HTTPException(400, "capability documents can't be case studies")
+    ids = [i for i in ids if i not in capability] + capability  # "Our capability" comes after the reference cases
     clients = anonymise.load_clients(conn)
     sections, anonymised, attached, logos = [], False, [], []
     for i in ids:
@@ -775,6 +786,8 @@ def build(conn, case_ids, research_id, industry_context_ack, user, fmt=None, lib
             except Withheld:
                 sec["architecture"], sec["arch_withheld"] = None, True
         sections.append(sec)
+    if capability:
+        sections[-len(capability)]["group"] = CAPABILITY_HEADING
     try:
         sections = protect(sections, clients)
     except Withheld as e:
@@ -840,7 +853,7 @@ def preview(request: Request, case_ids: list[int] = Form([]), research_id: int |
                 raise
             return friendly(request, user, e.status_code, e.detail, "/search")
         footer, retitled = "", False  # what a case-study download adds; the same code path as /generate, so the text cannot drift
-        if len(ids) == 1:
+        if len(ids) == 1 and sections[0]["basis"] != "capability":
             _, study, study_industry, _, _, _ = build(conn, case_ids, research_id, industry_context_ack, user, "case_study_docx", library_ids)
             footer, retitled = study[0]["footer"], bool(study_industry) and study_industry["heading"] != (industry or {}).get("heading")
     for c in sections:  # a structure protect() could not keep intact is left out, and the page says so

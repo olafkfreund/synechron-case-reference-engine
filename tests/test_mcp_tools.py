@@ -213,3 +213,24 @@ def test_the_audit_page_escapes_client_id_and_tool(mcp):
         conn.execute("insert into tool_calls (user_key, client_id, tool, outcome, ms) values (%s, '<script>alert(1)</script>', '<b>x</b>', 'ok', 1)", (s.who,))
     t = portal_client(["g-admin"]).get("/admin/audit").text
     assert "<script>alert(1)</script>" not in t and "&lt;script&gt;alert(1)&lt;/script&gt;" in t and "&lt;b&gt;x&lt;/b&gt;" in t
+
+
+def test_capability_kind_rows_carry_basis_and_note_and_outputs_refuse_case_studies(mcp, approved):  # #213
+    from tests.test_search import set_basis
+    from app.render import CAPABILITY_NOTE
+    d = approved(data(title="Delivered onboarding"))
+    k = approved(data(title="Capability onboarding", basis="capability"))
+    set_basis(k, "capability")
+    s = mcp()
+    default = s.out("search_references", bid_text="onboarding")
+    assert k not in [r["id"] for r in default["picks"] + default["others"]]
+    assert k not in [r["id"] for r in s.out("list_latest")["rows"]]
+    for out, key in ((s.out("search_references", bid_text="onboarding", kind="capability"), "picks"), (s.out("list_latest", kind="capability"), "rows")):
+        rows = out["picks"] + out["others"] if key == "picks" else out["rows"]
+        assert [r["id"] for r in rows if r["id"] in (d, k)] == [k]
+        assert all(r["basis"] == "capability" and r["note"] == CAPABILITY_NOTE for r in rows)
+    assert s.out("get_case", case_id=k)["note"] == CAPABILITY_NOTE
+    for fmt in ("case_study_docx", "case_study_pdf", "pptx", "pdf_pptx"):
+        res = s.call("generate_output", case_ids=[k], format=fmt)
+        assert res["isError"] and "capability documents can't be case studies" in res["content"][0]["text"]
+    assert "Our capability" in s.out("generate_output", case_ids=[d, k], format="md")["markdown"]

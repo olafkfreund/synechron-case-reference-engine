@@ -67,3 +67,9 @@ def test_minimum_boundary():
 def test_detail_wording_states_the_minimum():
     d = {i["key"]: i["detail"] for i in checklist(case(challenge=S(W(69))))}
     assert d["challenge"] == "69 words (minimum 80)" and d["capabilities"] == "0 (minimum 3)"
+
+
+def test_capability_results_need_only_a_described_offering():  # #213
+    assert ok(case(basis="capability", solution=S("s")))["results"]
+    assert not ok(case(basis="capability"))["results"]
+    assert not ok(case(basis="capability", outcomes=[Outcome(metric="m", value="v")]))["results"]

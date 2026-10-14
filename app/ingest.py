@@ -61,11 +61,13 @@ def triage_text(text: str, data_class: str) -> Triage:
 
 
 def basis_for(t: Triage, source_config: dict) -> str | None:
-    """'delivered', 'engagement', or None (not extracted)."""
+    """'delivered', 'engagement', 'capability' (an offering, #213), or None (not extracted)."""
     if t.kind == "case" or (t.kind in ("proposal", "deck") and t.describes_delivered_work):
         return "delivered"
     if t.kind == "contract" and (t.executed or (source_config or {}).get("executed_contracts") is True):
         return "engagement"
+    if t.kind in ("proposal", "deck", "contract"):  # not delivered work, not an executed contract
+        return "capability"
     return None
 
 
@@ -226,7 +228,7 @@ def ingest(source_id: int, external_id: str, title: str, data: bytes, source_ver
         if not cfg:
             raise LookupError(f"source {source_id} no longer exists")
         basis = basis_for(triage, cfg[0])
-        reason = {"delivered": "", "engagement": "executed contract" if triage.executed else "source marked executed"}.get(basis)
+        reason = {"delivered": "", "capability": "", "engagement": "executed contract" if triage.executed else "source marked executed"}.get(basis)
         # upsert: an upload and a crawl of the same item may race past the select above
         # the groups are read from the source here, under for share, so a concurrent save is never overwritten
         got = conn.execute(

@@ -376,3 +376,52 @@ def test_source_grid_is_scoped_to_the_sources_rows_and_review_rows_keep_their_la
     block = css.split("@media (min-width:900px){\n.source-row.src")[1].split("\n}")[0]
     assert not re.search(r"^\.source-row[ >:{.]", block.split("\n", 1)[1], re.M) and ".field-row>:nth-child(3):last-child{grid-column:3 / -1}" in css
     assert re.search(r"\.field-row \.acts\{display:flex;flex-wrap:wrap;gap:6px\}\n@media \(min-width:900px\)\{\n\.field-row \.acts\{flex-direction:column", css)
+
+
+def test_capability_drafts_queue_only_skipped_proposals_decks_and_contracts(env):  # noqa: F811  #213
+    from app.sources import SKIPPED
+    db.init()
+    with db.connect() as c:
+        n0 = c.execute("select count(*) " + SKIPPED).fetchone()[0]  # leftovers from elsewhere
+        sid = _src(c, False)
+        want = {_doc(c, sid, k) for k in ("proposal", "deck", "contract")}
+        _doc(c, sid, "other")
+        _doc(c, sid, "case")
+        _doc(c, sid, "proposal", deleted=True)
+        _case(c, _doc(c, sid, "proposal"), "extracted", "delivered", "")
+        _job(c, _doc(c, sid, "deck"))
+        _job(c, _doc(c, sid, "proposal"), status="failed")  # a failed extract of a delivered/engagement document is not "skipped"
+    try:
+        assert "Capability drafts from skipped documents (" + str(n0 + 3) + ")" in client([ADMIN]).get("/admin/sources").text
+        assert client([REV]).post("/admin/capability-drafts").status_code == 403
+        r = client([ADMIN]).post("/admin/capability-drafts", follow_redirects=False)
+        assert r.status_code == 303 and f"total={n0 + 3}" in r.headers["location"]
+        with db.connect() as c:
+            got = [p for (p,) in _jobs(c, sid) if p["basis"] == "capability"]
+        assert {p["document_id"] for p in got} == want and len(got) == 3
+        again = client([ADMIN]).post("/admin/capability-drafts", follow_redirects=False)
+        assert "queued=0" in again.headers["location"]  # the jobs just queued block a duplicate
+    finally:
+        _clean(sid)
+
+
+def test_capability_drafts_are_capped_per_click_and_the_next_click_continues(env):  # noqa: F811  #213
+    from app.sources import REEXTRACT_BATCH, SKIPPED
+    db.init()
+    with db.connect() as c:
+        n0 = c.execute("select count(*) " + SKIPPED).fetchone()[0]
+        sid = _src(c, False)
+        for _ in range(REEXTRACT_BATCH + 2):
+            _doc(c, sid, "deck")
+    try:
+        r = client([ADMIN]).post("/admin/capability-drafts", follow_redirects=False)
+        assert f"queued={REEXTRACT_BATCH}&total={n0 + REEXTRACT_BATCH + 2}" in r.headers["location"]
+        if n0 == 0:  # with leftovers from elsewhere ahead of ours (by id), the split between clicks is not ours to assert
+            with db.connect() as c:
+                assert len(_jobs(c, sid)) == REEXTRACT_BATCH
+            r = client([ADMIN]).post("/admin/capability-drafts", follow_redirects=False)
+            assert "queued=2&total=2" in r.headers["location"]
+            with db.connect() as c:
+                assert len(_jobs(c, sid)) == REEXTRACT_BATCH + 2
+    finally:
+        _clean(sid)
