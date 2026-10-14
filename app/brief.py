@@ -130,20 +130,25 @@ def owned(conn, bid, user):
     return row
 
 
-@router.post("/research/{rid}/brief")
-def start(rid: int, n: list[int] = Form([]), title: str = Form(""), user: User = Depends(require("user"))):
+def create(conn, user: User, rid: int, n: list[int], title: str = "") -> int:
     if len(set(n)) > MAX_QUOTES:
         raise HTTPException(400, f"pick at most {MAX_QUOTES} statements")
+    claims = research.picked_claims(conn, rid, n, user)  # indices into the stored row, then visible_claims
+    try:
+        t = research.finalize(title.strip(), anonymise.load_clients(conn)) if title.strip() else ""  # "": the model's title stands
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    quotes = [{k: c.get(k) for k in SOURCE_KEYS} for c in claims]  # copied: the brief outlives the research row
+    bid = conn.execute("insert into briefs(research_id, created_by, title, quotes) values (%s,%s,%s,%s) returning id",
+                       (rid, user.sub, t, Jsonb(quotes))).fetchone()[0]
+    conn.execute("insert into jobs(kind, payload) values ('brief', jsonb_build_object('brief_id', %s::bigint))", (bid,))
+    return bid
+
+
+@router.post("/research/{rid}/brief")
+def start(rid: int, n: list[int] = Form([]), title: str = Form(""), user: User = Depends(require("user"))):
     with db.connect() as conn:
-        claims = research.picked_claims(conn, rid, n, user)  # indices into the stored row, then visible_claims
-        try:
-            t = research.finalize(title.strip(), anonymise.load_clients(conn)) if title.strip() else ""  # "": the model's title stands
-        except ValueError as e:
-            raise HTTPException(400, str(e)) from None
-        quotes = [{k: c.get(k) for k in SOURCE_KEYS} for c in claims]  # copied: the brief outlives the research row
-        bid = conn.execute("insert into briefs(research_id, created_by, title, quotes) values (%s,%s,%s,%s) returning id",
-                           (rid, user.sub, t, Jsonb(quotes))).fetchone()[0]
-        conn.execute("insert into jobs(kind, payload) values ('brief', jsonb_build_object('brief_id', %s::bigint))", (bid,))
+        bid = create(conn, user, rid, n, title)
     return RedirectResponse(f"/briefs/{bid}", status_code=303)
 
 
@@ -190,18 +195,24 @@ def make_output(body, quotes, clients, format) -> tuple[bytes, str, str]:
         raise HTTPException(503, str(e)) from None
 
 
+def output(conn, user: User, bid: int, fmt: str) -> tuple[bytes, str, str]:
+    """(bytes, media type, filename) of the caller's finished brief; writes the audit row."""
+    if fmt not in ("docx", "pdf_docx", "md"):
+        raise HTTPException(400, "unknown format")
+    status, _, _, quotes, body = owned(conn, bid, user)
+    if status != "done":
+        raise HTTPException(409, "the brief is not ready")
+    if body.get("flags"):
+        raise HTTPException(409, "fix the flagged sentences first")
+    data, mime, ext = make_output(body, quotes, anonymise.load_clients(conn), fmt)  # re-checked now: a client may be protected since
+    conn.execute("insert into generations(user_id, format, research_id) "
+                 "select %s, %s, research_id from briefs where id=%s", (user.sub, f"brief-{fmt}", bid))
+    return data, mime, f"brief-{bid}.{ext}"
+
+
 @router.post("/briefs/{bid}/download")
 def download(bid: int, format: str = Form(), user: User = Depends(require("user"))):
-    if format not in ("docx", "pdf_docx", "md"):
-        raise HTTPException(400, "unknown format")
     with db.connect() as conn:
-        status, _, _, quotes, body = owned(conn, bid, user)
-        if status != "done":
-            raise HTTPException(409, "the brief is not ready")
-        if body.get("flags"):
-            raise HTTPException(409, "fix the flagged sentences first")
-        data, mime, ext = make_output(body, quotes, anonymise.load_clients(conn), format)  # re-checked now: a client may be protected since
-        conn.execute("insert into generations(user_id, format, research_id) "
-                     "select %s, %s, research_id from briefs where id=%s", (user.sub, f"brief-{format}", bid))
-    return Response(data, media_type=mime, headers={"Content-Disposition": f'attachment; filename="brief-{bid}.{ext}"',
+        data, mime, name = output(conn, user, bid, format)
+    return Response(data, media_type=mime, headers={"Content-Disposition": f'attachment; filename="{name}"',
                                                     "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})

@@ -153,18 +153,24 @@ def research_from_case(request: Request, case_id: int = Form(), user: User = Dep
     return page(request, "research_preview.html", user, query=query, note=note, case_id=case_id)
 
 
-@router.post("/research/send")
-def research_send(query: str = Form(), case_id: int | None = Form(None), user: User = Depends(require("user"))):
+def start(conn, user: User, query: str, case_id: int | None = None) -> int:
+    """Queue a research run for a query the caller already scrubbed (it is finalized again here)."""
     try:
         q = finalize(query, anonymise.load_clients())  # the hidden field is user-controlled: never trust it
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
+    if case_id is not None and not visible_case(conn, case_id, user):
+        raise HTTPException(404, "no such case")
+    rid = conn.execute("insert into research(query, created_by, case_id) values (%s,%s,%s) returning id",
+                       (q, user.sub, case_id)).fetchone()[0]
+    conn.execute("insert into jobs(kind, payload) values ('research', jsonb_build_object('research_id', %s::bigint))", (rid,))
+    return rid
+
+
+@router.post("/research/send")
+def research_send(query: str = Form(), case_id: int | None = Form(None), user: User = Depends(require("user"))):
     with db.connect() as conn:
-        if case_id is not None and not visible_case(conn, case_id, user):
-            raise HTTPException(404, "no such case")
-        rid = conn.execute("insert into research(query, created_by, case_id) values (%s,%s,%s) returning id",
-                           (q, user.sub, case_id)).fetchone()[0]
-        conn.execute("insert into jobs(kind, payload) values ('research', jsonb_build_object('research_id', %s::bigint))", (rid,))
+        rid = start(conn, user, query, case_id)
     return RedirectResponse(f"/research/{rid}", status_code=303)
 
 

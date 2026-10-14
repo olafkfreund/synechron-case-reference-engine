@@ -65,52 +65,53 @@ def _refuse(request, user, status, message, back):
     return render.friendly(request, user, status, message, back)
 
 
+def save_item(conn, user: User, research_id: int | None, brief_id: int | None, n: list[int], topic: str) -> int:
+    """Save picked research quotes or a finished brief; raises HTTPException (400/409 are the refusals)."""
+    if (research_id is None) == (brief_id is None):
+        raise HTTPException(400, "save either research quotes or a brief")
+    clients = anonymise.load_clients(conn)
+    if research_id is not None:
+        claims = research.picked_claims(conn, research_id, n, user, strict=True)  # stored row, by index
+        rid, kind, body = research_id, "quotes", {"quotes": [{k: c.get(k) for k in SOURCE_KEYS} for c in claims]}
+        fallback = ""
+    else:
+        status, _, title, quotes, b = brief.owned(conn, brief_id, user)
+        if status != "done" or b.get("flags"):
+            raise HTTPException(409, "only a finished brief with no flagged sentences can be saved")
+        rid = conn.execute("select research_id from briefs where id=%s", (brief_id,)).fetchone()[0]
+        kind, body = "brief", {"quotes": quotes, "brief": {k: b[k] for k in ("title", "takeaways", "themes")}}
+        fallback = b.get("title") or title or ""
+    query = (conn.execute("select query from research where id=%s", (rid,)).fetchone() or [""])[0] if rid else ""
+    try:
+        t = research.finalize(topic.strip(), clients) if topic.strip() else None  # scrubbed like a research query
+        if t is None:  # no topic typed: the brief's title or the search, scrubbed the same way, else a placeholder
+            for d in (fallback, query):
+                try:
+                    t = research.finalize(d, clients) if d.strip() else None
+                except ValueError:
+                    t = None
+                if t:
+                    break
+            t = t or "Untitled research"
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    if any(anonymise.blocked(x, clients) for x in (t, query, *_strings(body))):  # each field alone: a join could hide a name
+        raise HTTPException(400, "the item names a protected client; it cannot be saved")
+    return conn.execute("insert into library_items(topic, kind, query, body, created_by, created_by_name) values (%s,%s,%s,%s,%s,%s) returning id",
+                        (t, kind, query, Jsonb(body), user.sub, "" if user.name.strip() in ("", user.sub) else user.name)).fetchone()[0]
+
+
 @router.post("/library/save")
 def save(request: Request, research_id: int | None = Form(None), brief_id: int | None = Form(None), n: list[int] = Form([]),
          topic: str = Form(""), user: User = Depends(require("user"))):
     back = f"/research/{research_id}" if research_id is not None else f"/briefs/{brief_id}" if brief_id is not None else "/library"
-
-    def refuse(status, message):
-        return _refuse(request, user, status, message, back)
-
-    if (research_id is None) == (brief_id is None):
-        return refuse(400, "save either research quotes or a brief")
-    with db.connect() as conn:
-        clients = anonymise.load_clients(conn)
-        if research_id is not None:
-            try:
-                claims = research.picked_claims(conn, research_id, n, user, strict=True)  # stored row, by index
-            except HTTPException as e:
-                if e.status_code != 400:
-                    raise  # a missing research row stays a 404
-                return refuse(400, e.detail)
-            rid, kind, body = research_id, "quotes", {"quotes": [{k: c.get(k) for k in SOURCE_KEYS} for c in claims]}
-            fallback = ""
-        else:
-            status, _, title, quotes, b = brief.owned(conn, brief_id, user)
-            if status != "done" or b.get("flags"):
-                return refuse(409, "only a finished brief with no flagged sentences can be saved")
-            rid = conn.execute("select research_id from briefs where id=%s", (brief_id,)).fetchone()[0]
-            kind, body = "brief", {"quotes": quotes, "brief": {k: b[k] for k in ("title", "takeaways", "themes")}}
-            fallback = b.get("title") or title or ""
-        query = (conn.execute("select query from research where id=%s", (rid,)).fetchone() or [""])[0] if rid else ""
-        try:
-            t = research.finalize(topic.strip(), clients) if topic.strip() else None  # scrubbed like a research query
-            if t is None:  # no topic typed: the brief's title or the search, scrubbed the same way, else a placeholder
-                for d in (fallback, query):
-                    try:
-                        t = research.finalize(d, clients) if d.strip() else None
-                    except ValueError:
-                        t = None
-                    if t:
-                        break
-                t = t or "Untitled research"
-        except ValueError as e:
-            return refuse(400, str(e))
-        if any(anonymise.blocked(x, clients) for x in (t, query, *_strings(body))):  # each field alone: a join could hide a name
-            return refuse(400, "the item names a protected client; it cannot be saved")
-        lid = conn.execute("insert into library_items(topic, kind, query, body, created_by, created_by_name) values (%s,%s,%s,%s,%s,%s) returning id",
-                           (t, kind, query, Jsonb(body), user.sub, "" if user.name.strip() in ("", user.sub) else user.name)).fetchone()[0]
+    try:
+        with db.connect() as conn:
+            lid = save_item(conn, user, research_id, brief_id, n, topic)
+    except HTTPException as e:
+        if e.status_code not in (400, 409):
+            raise  # a missing research row or brief stays a 404
+        return _refuse(request, user, e.status_code, e.detail, back)
     return RedirectResponse(f"/library/{lid}", status_code=303)
 
 
@@ -239,17 +240,23 @@ def export(lid: int, request: Request, format: str = Form(), user: User = Depend
     return research.export_file(claims, format, f"library-{lid}")
 
 
+def output(conn, user: User, lid: int, fmt: str) -> tuple[bytes, str, str]:
+    """(bytes, media type, filename) of a library brief; writes the audit row."""
+    if fmt not in ("docx", "pdf_docx", "md"):
+        raise HTTPException(400, "unknown format")
+    _, kind, _, body, *_ = _item(conn, lid)
+    if kind != "brief":
+        raise HTTPException(400, "export quotes as Markdown or CSV")
+    data, mime, ext = brief.make_output(body["brief"], body["quotes"], anonymise.load_clients(conn), fmt)
+    conn.execute("insert into generations(user_id, format) values (%s,%s)", (user.sub, f"library-{fmt}"))
+    return data, mime, f"library-{lid}.{ext}"
+
+
 @router.post("/library/{lid}/download")
 def download(lid: int, format: str = Form(), user: User = Depends(require("user"))):
-    if format not in ("docx", "pdf_docx", "md"):
-        raise HTTPException(400, "unknown format")
     with db.connect() as conn:
-        _, kind, _, body, *_ = _item(conn, lid)
-        if kind != "brief":
-            raise HTTPException(400, "export quotes as Markdown or CSV")
-        data, mime, ext = brief.make_output(body["brief"], body["quotes"], anonymise.load_clients(conn), format)
-        conn.execute("insert into generations(user_id, format) values (%s,%s)", (user.sub, f"library-{format}"))
-    return Response(data, media_type=mime, headers={"Content-Disposition": f'attachment; filename="library-{lid}.{ext}"',
+        data, mime, name = output(conn, user, lid, format)
+    return Response(data, media_type=mime, headers={"Content-Disposition": f'attachment; filename="{name}"',
                                                     "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 
