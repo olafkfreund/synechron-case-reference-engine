@@ -24,8 +24,10 @@ def prev(ids, groups=R, **kw):
 
 
 def doc_text(content):
+    from docx.oxml.ns import qn
     d = Document(BytesIO(content))
-    parts = [p.text for p in d.paragraphs] + [p.text for p in d.sections[0].header.paragraphs]
+    parts = ["".join(t.text or "" for t in p.iter(qn("w:t"))) for p in d.element.body.iter(qn("w:p"))]
+    parts += [p.text for p in d.sections[0].header.paragraphs] + [p.text for p in d.sections[0].footer.paragraphs]
     return "\n".join(parts)
 
 
@@ -43,9 +45,9 @@ def test_docx_content_and_leaks(approved, reg):
     assert r.status_code == 200 and "attachment" in r.headers["content-disposition"]
     t = doc_text(r.content)
     for want in ("Faster onboarding", "a UK retailer", "Slow manual KYC & checks", "18 months", "Kubernetes",
-                 "onboarding: 12 to 3 days", "Onboarding fell from 12 days", "DRAFT TEMPLATE"):
+                 "onboarding: 12 to 3 days", "Onboarding fell from 12 days", "Synechron \u00b7 Confidential"):
         assert want in t, want
-    for bad in ("{{", "{%", "Hidden quote", "Secret Org", "Hidden attention"):
+    for bad in ("{{", "{%", "Hidden quote", "Secret Org", "Hidden attention", "DRAFT TEMPLATE"):
         assert bad not in t, bad
 
 
@@ -960,3 +962,27 @@ def test_section_never_outputs_capability_text_that_claims_a_result():  # #213
     s = render.section(case, "a client")
     assert s["summary"] == "" and not s["blocks"]
     assert render.section(case.model_copy(update={"basis": "delivered"}), "a client")["summary"] == "It reduced cost."
+
+
+PALETTE = {"002535", "0A5A78", "FBF321", "FFFFFF", "000000", "808285", "F4F4F4"}
+
+
+def test_docx_templates_use_aptos_and_brand_palette():
+    for path in (render.TEMPLATE, render.TEMPLATE_CASE_STUDY, render.BRIEF_TEMPLATE):
+        d = Document(path)
+        for name in ("Normal", "Title", "Heading 1", "Heading 2", "Caption", "List Bullet", "Header", "Footer"):
+            assert d.styles[name].font.name == "Aptos", (path.name, name)
+        with zipfile.ZipFile(path) as z:
+            styles = z.read("word/styles.xml").decode()
+            assert "Aptos" in styles and "Calibri" not in styles and "Cambria" not in styles
+            cols = {c.upper() for c in re.findall(r'(?:w:val|w:color|w:fill)="([0-9A-Fa-f]{6})"', styles)}
+            assert cols and cols <= PALETTE, (path.name, cols - PALETTE)
+            for part in ("word/document.xml", "word/header1.xml", "word/footer1.xml"):
+                xml = z.read(part).decode()
+                assert "DRAFT TEMPLATE" not in xml, (path.name, part)
+                pcols = {c.upper() for c in re.findall(r'(?:w:color[^>]*w:val|w:color|w:fill)="([0-9A-Fa-f]{6})"', xml)}
+                assert pcols <= PALETTE, (path.name, part, pcols - PALETTE)
+            assert "<w:drawing>" in z.read("word/header1.xml").decode()
+            footer = z.read("word/footer1.xml").decode()
+            assert "Synechron \u00b7 Confidential" in footer and "PAGE" in footer
+
