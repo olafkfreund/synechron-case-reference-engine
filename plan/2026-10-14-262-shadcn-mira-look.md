@@ -188,3 +188,14 @@ None yet.
   - **Accented letters.** Montserrat's latin-ext subset is added, with
     fontsource's `unicode-range`.
   - **Stale comment** refreshed.
+- **Review fixes, batch 2** (agy; full suite 1449 passed):
+  - **Danger-ghost hover** is a 16 % `--bad-fg` tint. Its contrast is now
+    tested, which moved `--bad-fg` to `#B80006` (light) and `#FF7B7E`
+    (dark).
+  - **Touch block.** It now covers the file input and "+ Add source", and
+    drops the 4 px tap-area overlays. The chevron
+    (`summary.btn-sm::after`) is kept.
+  - **Open panels** get `8px 12px 12px` padding, which removes the double
+    border.
+  - **Licence.** The full Hugeicons MIT licence is at
+    `app/templates/LICENSE-hugeicons.txt`.

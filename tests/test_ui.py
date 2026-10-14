@@ -264,6 +264,10 @@ def test_theme_contrast():
         assert min(ratio(t["input-border"], t[b]) for b in ("bg", "surface", "subtle")) >= 3, name  # a field's edge is a UI component
         assert ratio(t["header-text"], t["header"]) >= 4.5 and ratio(t["header-tag"], t["header"]) >= 4.5, name
         assert ratio(t["header-text"], t["header-hover"]) >= 4.5, name
+        for base in ("surface", "bg", "subtle"):  # danger-ghost hover: bad-fg 16% over the page
+            c, b = t["bad-fg"], t[base]
+            mix = "#" + "".join(f"{round(int(c[i:i + 2], 16) * .16 + int(b[i:i + 2], 16) * .84):02X}" for i in (1, 3, 5))
+            assert ratio(c, mix) >= 4.5, (name, base)
         assert ratio(t["header-strong"], t["header"]) >= 4.5, name  # the brand link on hover
         assert ratio(t["header-text"], t["header"]) >= 4.5 and ratio(t["on-accent"], t["accent"]) >= 4.5, name  # nav text and the active tab
         assert ratio(t["header-focus"], t["header"]) >= 3 and ratio(t["header-border"], t["header"]) >= 3, name

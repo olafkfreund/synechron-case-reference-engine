@@ -11,7 +11,7 @@
 --bg:#FAFAFA;--surface:#FFFFFF;--text:#0A0A0A;--muted:#6B6B6B;--border:#E5E5E5;--subtle:#F5F5F5;
 --accent:#FDC700;--accent-hover:#FDD233;--on-accent:#733E0A;--link:#733E0A;--focus:#733E0A;--header:#FFFFFF;--paper:#FFFFFF;
 --input-border:#8A8A8A;
---ok-bg:#E5F2E9;--ok-fg:#1E6B3A;--warn-bg:#FBF0D9;--warn-fg:#6B4600;--bad-bg:#FDE5E7;--bad-fg:#C10007;
+--ok-bg:#E5F2E9;--ok-fg:#1E6B3A;--warn-bg:#FBF0D9;--warn-fg:#6B4600;--bad-bg:#FDE5E7;--bad-fg:#B80006;
 --header-text:#404040;--header-strong:#0A0A0A;--header-tag:#6B6B6B;--header-border:#8A8A8A;--header-focus:#733E0A;--header-hover:#F5F5F5;
 --shadow:0 1px 2px rgb(0 0 0/.04),0 2px 12px rgb(0 0 0/.06);
 --r-control:10px;--r-card:14px;
@@ -22,14 +22,14 @@
 --bg:#0A0A0A;--surface:#171717;--text:#FAFAFA;--muted:#A1A1A1;--border:#2E2E2E;--subtle:#262626;
 --accent:#F0B100;--accent-hover:#F5C842;--on-accent:#733E0A;--link:#F0B100;--focus:#F0B100;--header:#0A0A0A;--paper:#F4F6F8;
 --input-border:#747474;
---ok-bg:#173A26;--ok-fg:#9DE0B4;--warn-bg:#3D2F12;--warn-fg:#F5CF85;--bad-bg:#452627;--bad-fg:#FF6467;
+--ok-bg:#173A26;--ok-fg:#9DE0B4;--warn-bg:#3D2F12;--warn-fg:#F5CF85;--bad-bg:#452627;--bad-fg:#FF7B7E;
 --header-text:#D4D4D4;--header-strong:#FAFAFA;--header-tag:#A1A1A1;--header-border:#6B6B6B;--header-focus:#F0B100;--header-hover:#262626;
 --shadow:0 1px 2px rgb(0 0 0/.3),0 2px 12px rgb(0 0 0/.3)}}
 :root[data-theme="dark"]{color-scheme:dark;
 --bg:#0A0A0A;--surface:#171717;--text:#FAFAFA;--muted:#A1A1A1;--border:#2E2E2E;--subtle:#262626;
 --accent:#F0B100;--accent-hover:#F5C842;--on-accent:#733E0A;--link:#F0B100;--focus:#F0B100;--header:#0A0A0A;--paper:#F4F6F8;
 --input-border:#747474;
---ok-bg:#173A26;--ok-fg:#9DE0B4;--warn-bg:#3D2F12;--warn-fg:#F5CF85;--bad-bg:#452627;--bad-fg:#FF6467;
+--ok-bg:#173A26;--ok-fg:#9DE0B4;--warn-bg:#3D2F12;--warn-fg:#F5CF85;--bad-bg:#452627;--bad-fg:#FF7B7E;
 --header-text:#D4D4D4;--header-strong:#FAFAFA;--header-tag:#A1A1A1;--header-border:#6B6B6B;--header-focus:#F0B100;--header-hover:#262626;
 --shadow:0 1px 2px rgb(0 0 0/.3),0 2px 12px rgb(0 0 0/.3)}
 /* end tokens */
@@ -93,7 +93,7 @@ main{max-width:1200px;margin:0 auto;padding:28px 24px 64px}
 .btn.ghost,.btn.danger-ghost{border-color:transparent;background:none;color:var(--link)}
 .btn.danger-ghost{background:var(--bad-bg)}
 .btn.ghost:hover,.btn.danger-ghost:hover{background:var(--subtle);border-color:transparent;color:var(--text)}
-.btn.danger-ghost:hover{background:var(--bad-bg)}
+.btn.danger-ghost:hover{background:color-mix(in srgb,var(--bad-fg) 16%,transparent)}
 .btn.danger-ghost,.btn.danger-ghost:hover{color:var(--bad-fg)}
 .btn.link{border:0;background:none;color:var(--link);text-decoration:underline;padding:0 4px}
 .btn.link:hover{color:var(--text)}
@@ -192,9 +192,8 @@ details.mini>summary::after{content:"";width:7px;height:7px;border-right:2px sol
 details.mini[open]>summary::after{transform:rotate(-135deg) translateY(-2px)}
 details.mini>summary.btn-sm::after{position:static;inset:auto}  /* the chevron, not .btn-sm's touch-target overlay */
 /* open: the summary stays put; the rest is a subtle block under it */
-details.mini[open]{flex:1 1 100%;background:var(--subtle);border:1px solid var(--border);border-radius:var(--r-card);padding:0 0 12px}
+details.mini[open]{flex:1 1 100%;background:var(--subtle);border:1px solid var(--border);border-radius:var(--r-card);padding:8px 12px 12px}
 details.mini[open]>summary{margin:0 0 12px}
-details.mini[open]>:not(summary){margin-left:12px;margin-right:12px}
 details.mini .field{margin-top:0}
 .head-panel{width:min(100%,460px)}
 .head-panel[open]{flex:1 1 100%}
@@ -218,7 +217,7 @@ details.mini:not([open])>summary,.client-row .slot{min-width:84px;justify-conten
 .source-row .status-list{margin:0 0 12px}
 .source-row.src .run{white-space:nowrap}
 .source-row.src .btn-sm,.source-row.src summary{white-space:nowrap}
-/* Sources only: 36px buttons, with a 44px touch target from a pseudo-element the chevron does not use */
+/* Sources only: 28px buttons, with a 36px touch target from a pseudo-element the chevron does not use (44px on touch, below) */
 .source-row.src details.mini>summary{min-height:28px;padding:0 10px;font-size:13px;position:relative}
 .source-row.src details.mini>summary::before{content:"";position:absolute;inset:-4px 0}
 .src-add>summary{min-height:36px;padding:0 12px;font-size:13px;position:relative}
@@ -391,4 +390,5 @@ main img{background:var(--paper);padding:8px;border-radius:var(--r-control);max-
 .paper svg{width:100%;height:auto;display:block}
 
 /* touch: every control and nav link keeps a 44px target */
-@media (any-pointer:coarse){.btn,button,.btn-sm,details.mini>summary,.source-row.src details.mini>summary,.site-nav a,textarea,input[type=text],input[type=search],input[type=email],input[type=number],input[type=date],input[type=password],select{min-height:44px}}
+@media (any-pointer:coarse){.btn,button,.btn-sm,details.mini>summary,.source-row.src details.mini>summary,.site-nav a,textarea,input[type=text],input[type=search],input[type=email],input[type=number],input[type=date],input[type=password],select,input[type=file],.src-add>summary{min-height:44px}
+.btn-sm:not(summary)::after,.source-row.src details.mini>summary::before,.src-add>summary::after{content:none}}  /* 44px already: no 4px overlays to overlap stacked buttons */
