@@ -182,11 +182,18 @@ def review_list(request: Request, user: User = Depends(require("reviewer"))):
             "select c.id, c.data, d.title, c.review_due, c.member_count from cases c left join documents d on d.id = c.document_id "
             f"where {REVIEWABLE} and c.status = 'approved' and c.review_due > now() "
             "and c.review_due <= now() + interval '30 days' order by c.review_due", (list(user.groups),)).fetchall()
+        # a count only, never names: documents with a queued or running extract, and uploads not yet read; the reviewer's own ACL applies
+        processing = conn.execute(
+            "select (select count(distinct d.id) from jobs j join documents d on d.id = (j.payload->>'document_id')::bigint "
+            "where j.kind = 'extract' and j.status in ('queued','running') and d.deleted_at is null and d.acl_groups && %s::text[]) "
+            "+ (select count(*) from uploads u join jobs j on j.id = u.job_id join sources s on s.id = u.source_id "
+            "where j.kind = 'ingest_upload' and j.status in ('queued','running') and s.acl_groups && %s::text[])",
+            (list(user.groups), list(user.groups))).fetchone()[0]
     cases = [dict(id=i, status=s, title=d["title"]["value"], document=t,
                   attention=len(split_notes(d.get("needs_attention", []))[0]), unsourced=count_unsourced(d), members=n)
              for i, s, d, t, n in found]
     due_soon = [dict(id=i, title=d["title"]["value"], document=t, due=due.strftime("%Y-%m-%d"), members=n) for i, d, t, due, n in soon]
-    return page(request, "review_list.html", user, cases=cases, due_soon=due_soon)
+    return page(request, "review_list.html", user, cases=cases, due_soon=due_soon, processing=processing)
 
 
 SKIP_CONTRACT = "Skipped: contract not marked executed"

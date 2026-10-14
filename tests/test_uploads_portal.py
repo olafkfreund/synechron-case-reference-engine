@@ -1,4 +1,7 @@
+import shutil
+import subprocess
 import uuid
+from pathlib import Path
 
 import boto3
 import pytest
@@ -37,7 +40,7 @@ def test_plain_user_uploads_and_sees_only_their_own(staff):
     assert r.status_code == 303 and r.headers["location"] == "/upload?notice=uploaded"
     post(other, "theirs.docx")
     page = me.get("/upload").text
-    assert "mine.docx" in page and "theirs.docx" not in page and "queued" in page
+    assert "mine.docx" in page and "theirs.docx" not in page and "Waiting in line" in page
     assert "File received" in me.get("/upload?notice=uploaded").text
     assert 'href="/upload"' in page  # the tab
 
@@ -95,3 +98,50 @@ def test_the_tab_lookup_is_cached(staff, monkeypatch):
     assert review.staff_uploads() is True  # still cached: no query
     review._staff_seen = (0.0, False)
     assert review.staff_uploads() is False
+
+
+def test_page_shows_labels_and_loads_the_script_only_while_pending(staff):
+    me = client([USER], sub="u1", name="Una")
+    assert "upload.js" not in me.get("/upload").text and "updates every 15 seconds" not in me.get("/upload").text  # nothing yet
+    post(me)
+    page = me.get("/upload").text
+    assert "Waiting" in page and "Waiting in line: " in page and 'class="dot"' in page
+    assert "/static/upload.js?v=" in page and "updates every 15 seconds" in page and "Reload to see progress" in page
+    assert "this page updates by itself" in me.get("/upload?notice=uploaded").text
+    with db.connect() as c:
+        c.execute("update jobs set status='failed' where id=(select job_id from uploads where user_key='u1')")
+    page = me.get("/upload").text
+    assert "Couldn&#39;t process" in page and "upload.js" not in page and "updates every 15 seconds" not in page
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="needs node")
+def test_upload_js_does_not_reload_while_a_file_is_chosen(tmp_path):
+    js = Path(__file__).parent.parent / "app/static/upload.js"
+    stub = (f"var files=[], n=0, tick;"
+            "global.document={getElementById:function(){return {files:files}}};"
+            "global.location={reload:function(){n++}};"
+            "global.setInterval=function(f,ms){tick=f; if(ms!==15000) throw 1};"
+            f"require({str(js)!r});"
+            "tick(); if(n!==1) throw new Error('should reload with no file');"
+            "files.push({}); tick(); if(n!==1) throw new Error('reloaded with a file chosen');")
+    subprocess.run(["node", "-e", stub], check=True)
+
+
+def test_review_queue_counts_processing_documents_it_can_see(make, staff):  # noqa: F811
+    from tests.test_review import DOCS
+    rev = client(R)
+    assert "still being processed" not in rev.get("/review").text  # hidden at 0
+    mine, hidden = make(), make(acl=("g-other",))
+    with db.connect() as c:
+        for cid, st in ((mine, "running"), (hidden, "queued")):
+            did = c.execute("select document_id from cases where id=%s", (cid,)).fetchone()[0]
+            c.execute("insert into jobs(kind, status, payload) values ('extract', %s, jsonb_build_object('document_id', %s::bigint))", (st, did))
+            c.execute("insert into jobs(kind, status, payload) values ('extract', 'done', jsonb_build_object('document_id', %s::bigint))", (did,))
+        c.execute("update sources set acl_groups=%s where id=%s", ([DOCS], staff))
+        j = c.execute("insert into jobs(kind, status) values ('ingest_upload','queued') returning id").fetchone()[0]
+        c.execute("insert into uploads(user_key, user_name, source_id, s3_key, bytes, job_id) values ('x-1','Secret Name',%s,'up/k/Secret.docx',1,%s)", (staff, j))
+    page = rev.get("/review").text
+    assert "2 documents are still being processed and will appear here when ready." in page  # one extract + one upload; the other ACL is not counted
+    assert "Secret" not in page and "Source doc" not in page.split("still being processed")[0].split("</h1>")[-1]
+    with db.connect() as c:
+        c.execute("delete from jobs where kind in ('extract','ingest_upload')")

@@ -97,3 +97,13 @@ None yet.
     codes landed here, not in step 4, because the tools call
     `upload_status`. Step 4 keeps the docs and the MCP tests.
   - **Deleted job row.** It reads "Waiting, 0 ahead".
+- **Steps 2 and 3.**
+  - **Refresh.** `upload.js` reloads every 15 seconds unless a file is
+    chosen. The pulsing dot respects `prefers-reduced-motion`, and a
+    `<noscript>` line says "Reload to see progress". The node stub test is
+    skipped when the image has no node; it was run on the host.
+  - **Review-queue count.** `VISIBLE` applies to cases, and a document in
+    processing usually has no case yet. The count therefore uses document
+    ACLs (`documents.acl_groups && groups`, not deleted) for `extract`
+    jobs, and the upload source's `acl_groups` for `ingest_upload` jobs.
+    It is a count only, with no names.
