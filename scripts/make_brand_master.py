@@ -170,6 +170,14 @@ def main(src, dst):
     for layout in list(prs.slide_layouts):
         if layout.name not in keep:
             prs.slide_layouts.remove(layout)
+    # brand v2: Aptos for all text. The template still names Arial (legal line, bullets), which the
+    # container does not have, so PDFs fell back to DejaVu
+    for el in [prs.slide_master._element] + [l._element for l in prs.slide_layouts]:
+        for node in el.iter():
+            if node.get("typeface") == "Arial":
+                node.set("typeface", "Aptos")
+                for attr in ("panose", "pitchFamily", "charset"):
+                    node.attrib.pop(attr, None)
     p = prs.core_properties
     p.title, p.author, p.last_modified_by = "Reference cases", "Reference Engine", "Reference Engine"
     p.comments = p.subject = p.keywords = p.category = ""

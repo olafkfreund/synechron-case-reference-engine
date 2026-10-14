@@ -999,3 +999,11 @@ def test_docx_templates_use_aptos_and_brand_palette():
             footer = z.read("word/footer1.xml").decode()
             assert "Synechron \u00b7 Confidential" in footer and "PAGE" in footer
 
+
+
+@pytest.mark.parametrize("fmt", ["pptx", "docx"])
+def test_pdfs_embed_only_aptos(fmt):  # #282: a font the container lacks falls back silently (DejaVu)
+    sec = render.section(full(), "a UK retailer")
+    office = render.to_pptx([sec]) if fmt == "pptx" else render.to_docx([sec])
+    fonts = set(re.findall(rb"/BaseFont\s*/[A-Z]{6}\+([A-Za-z0-9-]+)", render.to_pdf(office, "." + fmt)))
+    assert fonts and all(f.startswith(b"Aptos") for f in fonts), fonts
