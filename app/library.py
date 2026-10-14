@@ -159,9 +159,8 @@ def suggest(bid_text: str, filters: dict, clients) -> list[dict]:
     return [h[1] for h in hits[:SUGGEST_MAX]]
 
 
-@router.get("/library")
-def index(request: Request, q: str = Query("", max_length=200), topic: str = Query("", max_length=200),
-          kind: str = Query("", max_length=10), due: int = Query(0, ge=0, le=1), user: User = Depends(require("user"))):
+def listing(q: str, topic: str, kind: str, due: int = 0) -> tuple[list[dict], list[tuple[str, int]]]:
+    """The library rows a reader may see now, and the topic chips; the portal page and the MCP tool share it."""
     q = q.strip()
     kind = kind if kind in ("brief", "quotes") else ""
     with db.connect() as conn:
@@ -186,8 +185,16 @@ def index(request: Request, q: str = Query("", max_length=200), topic: str = Que
             continue
         items.append({"id": lid, "topic": shown, "kind": k, "sources": len(body["quotes"]), "age": age, "stale": stale,
                       "by": name or COLLEAGUE})
-    topics = [(label, n) for label, n in sorted(counts.values(), key=lambda x: -x[1])[:TOPIC_CHIPS]]
-    return page(request, "library.html", user, items=items[:LIST_LIMIT], q=q, topic=topic, kind=kind, due=due, topics=topics)
+    return items[:LIST_LIMIT], [(label, n) for label, n in sorted(counts.values(), key=lambda x: -x[1])[:TOPIC_CHIPS]]
+
+
+@router.get("/library")
+def index(request: Request, q: str = Query("", max_length=200), topic: str = Query("", max_length=200),
+          kind: str = Query("", max_length=10), due: int = Query(0, ge=0, le=1), user: User = Depends(require("user"))):
+    q = q.strip()
+    kind = kind if kind in ("brief", "quotes") else ""
+    items, topics = listing(q, topic, kind, due)
+    return page(request, "library.html", user, items=items, q=q, topic=topic, kind=kind, due=due, topics=topics)
 
 
 @router.get("/library/{lid}")
