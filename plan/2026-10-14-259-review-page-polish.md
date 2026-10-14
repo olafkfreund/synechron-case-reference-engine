@@ -182,3 +182,9 @@ Revert the merge commit. There is no data or schema change.
   - Two existing assertions count `<script` on the detail page as 2
     (`theme.js` and `review.js`). `css_version` also hashes `review.js`.
   - `node --check` ran on the host, because the app image has no node.
+- Step 3:
+  - With no architecture, the editor's own "Save architecture" sits inside
+    "Write it by hand". The shared action row (Save, Regenerate, Remove)
+    appears once an architecture exists.
+  - The edit form got `id="arch-form"`, so the row's Save can use
+    `form="arch-form"`. Nothing was removed or renamed.

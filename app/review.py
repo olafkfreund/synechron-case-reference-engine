@@ -557,7 +557,9 @@ def _arch_panel(case, form):
              if p.value and p.source_quote and not p.unsourced]
     cites += [(f"reference {i}", r.value, r.source_quote) for i, r in enumerate(case.tech_references, 1) if r.value and r.source_quote and not r.unsourced]
     text, errors = form if form else (arch_lines(a) if a else "", [])
-    return dict(a=a, svg=svg, cites=cites, text=text, errors=errors, outcomes=[f"{i}. {o.metric} {o.value}" for i, o in enumerate(case.outcomes, 1) if not o.unsourced])
+    note = next((n for n in case.needs_attention if n.lower().startswith("architecture")), None)
+    reason = "Extracted before architecture diagrams were added." if case.extraction_version < 4 else note or "No architecture yet."
+    return dict(a=a, svg=svg, cites=cites, text=text, reason=reason, errors=errors, outcomes=[f"{i}. {o.metric} {o.value}" for i, o in enumerate(case.outcomes, 1) if not o.unsourced])
 
 
 @router.post("/review/{cid}/architecture")

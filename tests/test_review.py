@@ -1690,3 +1690,18 @@ def test_text_form_posts_the_same_fields_and_review_js_loads_only_here(make):  #
     assert "review.js" not in c.get("/review").text
     js = c.get("/static/review.js").text
     assert "innerHTML" not in js and "textContent" in js
+
+
+def test_architecture_empty_state_gives_a_reason_and_a_generate_button(make):  # plan #259 step 3
+    for kw, reason in (({"extraction_version": 3}, "Extracted before architecture diagrams were added."),
+                       ({"extraction_version": 4, "needs_attention": ["architecture proposal failed"]}, "architecture proposal failed"), ({"extraction_version": 4}, "No architecture yet.")):
+        cid = make(data=case_data(**kw))
+        html = client(R).get(f"/review/{cid}").text
+        assert reason in html and "Generate diagram" in html and "Write it by hand" in html
+        assert f'action="/review/{cid}/architecture/regenerate"' in html and "Generating takes this case out of search" not in html
+    cid = arch_case(make)
+    post_arch(cid, text=ARCH_TEXT)
+    html = client(R).get(f"/review/{cid}").text
+    assert "Generate diagram" not in html and "Write it by hand" not in html and 'form="arch-form"' in html
+    ap = make("approved", "10 days", data=case_data(extraction_version=4, **SOURCED))
+    assert "Generating takes this case out of search until you approve it again." in client(R).get(f"/review/{ap}").text
