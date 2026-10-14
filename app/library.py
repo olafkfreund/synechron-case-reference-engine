@@ -65,6 +65,11 @@ def _refuse(request, user, status, message, back):
     return render.friendly(request, user, status, message, back)
 
 
+def _links(conn, rid, quotes, clients) -> list[dict]:
+    """The image links of the cited pages; one naming a protected client is left out, never a reason to refuse the save."""
+    return [i for i in research.image_links(conn, rid, quotes) if not any(anonymise.blocked(str(v), clients) for v in i.values())]
+
+
 def save_item(conn, user: User, research_id: int | None, brief_id: int | None, n: list[int], topic: str) -> int:
     """Save picked research quotes or a finished brief; raises HTTPException (400/409 are the refusals)."""
     if (research_id is None) == (brief_id is None):
@@ -73,7 +78,7 @@ def save_item(conn, user: User, research_id: int | None, brief_id: int | None, n
     if research_id is not None:
         claims = research.picked_claims(conn, research_id, n, user, strict=True)  # stored row, by index
         rid, kind, body = research_id, "quotes", {"quotes": [{k: c.get(k) for k in SOURCE_KEYS} for c in claims]}
-        body["images"] = research.image_links(conn, rid, claims)
+        body["images"] = _links(conn, rid, claims, clients)
         fallback = ""
     else:
         status, _, title, quotes, b = brief.owned(conn, brief_id, user)
@@ -81,7 +86,7 @@ def save_item(conn, user: User, research_id: int | None, brief_id: int | None, n
             raise HTTPException(409, "only a finished brief with no flagged sentences can be saved")
         rid = conn.execute("select research_id from briefs where id=%s", (brief_id,)).fetchone()[0]
         kind, body = "brief", {"quotes": quotes, "brief": {k: b[k] for k in ("title", "takeaways", "themes")}}
-        body["images"] = research.image_links(conn, rid, quotes)  # links kept with the item: the research may be gone
+        body["images"] = _links(conn, rid, quotes, clients)  # links kept with the item: the research may be gone
         fallback = b.get("title") or title or ""
     query = (conn.execute("select query from research where id=%s", (rid,)).fetchone() or [""])[0] if rid else ""
     try:

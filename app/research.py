@@ -38,6 +38,7 @@ MAX_BYTES, TIMEOUT, MAX_MARKDOWN = 5 * 1024 * 1024, 10, 20_000
 TYPES = {"text/html": ".html", "application/xhtml+xml": ".html", "application/pdf": ".pdf"}
 CACHE_DAYS = 30
 IMAGE_ACCEPT, MIN_IMAGE, PAGE_IMAGES, MAX_IMAGES, MAX_ALT = "image/png,image/jpeg", 400, 3, 9, 200
+PAGE_FETCHES, RUN_FETCHES = 6, 24  # image fetch attempts, not successes
 
 
 class ResearchError(RuntimeError):
@@ -202,7 +203,7 @@ def image_links(conn, rid, quotes) -> list[dict]:
     titles = {q.get("url"): q.get("title") for q in quotes}
     rows = conn.execute("select page_url, image_url from research_images where research_id=%s and page_url = any(%s) order by id limit %s",
                         (rid, list(titles), MAX_IMAGES)).fetchall()
-    return [{"title": titles[p] or "", "publisher": httpx.URL(p).host, "url": u} for p, u in rows]
+    return [{"title": titles[p] or "", "publisher": httpx.URL(p).host, "url": u, "page": p} for p, u in rows]
 
 
 @router.get("/research/{rid}/images/{iid}.png")
@@ -453,56 +454,69 @@ class Fetcher:
 
 
 class ImageFinder(HTMLParser):
-    """(absolute url, alt) of the <img> tags worth fetching; a figcaption stands in for a missing alt."""
+    """(absolute url, alt) of the <img> tags worth fetching; the figcaption stands in for a missing alt."""
 
     def __init__(self, base: str):
         super().__init__()
-        self.base, self.found, self.caption, self.fig, self.start = base, [], "", False, 0
+        self.base, self.found, self.caption, self.cap, self.start = base, [], "", False, 0
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
         if tag == "figure":
-            self.fig, self.caption, self.start = True, "", len(self.found)
+            self.caption, self.start = "", len(self.found)
+        elif tag == "figcaption":
+            self.cap = True
         if tag != "img" or not a.get("src"):
             return
         src = urljoin(self.base, a["src"].strip())
         if not src.startswith(("http://", "https://")) or src.lower().split("?")[0].endswith(".svg"):
             return  # data:, svg and anything that is not a web address
-        if any(str(a.get(k, "")).isdigit() and int(a[k]) < MIN_IMAGE for k in ("width", "height")):
-            return
-        self.found.append([src, a.get("alt") or ""])
+        for k in ("width", "height"):
+            v = str(a.get(k) or "").strip().lower().removesuffix("px")
+            if v.isascii() and v.isdigit() and int(v) < MIN_IMAGE:
+                return
+        self.found.append([src, (a.get("alt") or "").strip()])
 
     def handle_data(self, data):
-        if self.fig:
+        if self.cap:
             self.caption += data
 
     def handle_endtag(self, tag):
-        if tag == "figure":
-            self.fig = False
+        if tag == "figcaption":
+            self.cap = False
+        elif tag == "figure":
             for f in self.found[self.start:]:
                 f[1] = f[1] or " ".join(self.caption.split())
 
 
-def page_images(fetcher: Fetcher, html: bytes, page_url: str, room: int) -> list[dict]:
-    """Up to PAGE_IMAGES decoded images of one page. One that fails is skipped: images never fail the research."""
+def page_images(fetcher: Fetcher, html: bytes, page_url: str, room: int, tried: set) -> list[dict]:
+    """Up to PAGE_IMAGES decoded images of one page. `tried` holds every address attempted in this run: it dedupes and caps the
+    fetches (PAGE_FETCHES a page, RUN_FETCHES a run). One that fails is skipped: images never fail the research."""
     finder = ImageFinder(page_url)
     try:
         finder.feed(html.decode("utf-8", "replace"))
     except Exception:  # noqa: BLE001 - broken markup keeps what was found so far
         pass
-    out = []
+    out, here = [], 0
     for src, alt in finder.found:
-        if len(out) >= min(PAGE_IMAGES, room):
+        if len(out) >= min(PAGE_IMAGES, room) or here >= PAGE_FETCHES or len(tried) >= RUN_FETCHES:
             break
+        if src in tried:
+            continue
+        tried.add(src)
+        here += 1
         try:
             if not fetcher.allowed(src):
                 continue
-            body, ctype, _ = fetcher._get(src, diagrams.MAX_BYTES, check_robots=True, accept=IMAGE_ACCEPT)
+            body, ctype, final = fetcher._get(src, diagrams.MAX_BYTES, check_robots=True, accept=IMAGE_ACCEPT)
             if ctype not in ("image/png", "image/jpeg"):
                 continue
             png, w, h, _ = diagrams._decode(body)
             if png and min(w, h) >= MIN_IMAGE:
-                out.append({"page_url": page_url, "image_url": src, "alt": plain(alt)[:MAX_ALT], "png": png, "width": w, "height": h})
+                alt = plain(re.sub(r"[\x00-\x1f\x7f]", " ", alt))
+                # an alt cut at the limit could split a protected name past apply() and blocked(): too long means none
+                out.append({"page_url": page_url, "src": src, "image_url": final, "alt": alt if len(alt) <= MAX_ALT else "",
+                            "png": png, "width": w, "height": h})
         except Exception:  # noqa: BLE001
             continue
     return out
@@ -757,7 +771,7 @@ def run(research_id: int) -> None:
             "and jsonb_array_length(coalesce(results->'pages', '[]'::jsonb)) > 0 "  # a run that got nothing is retried (#141)
             f"and retrieved_at > now() - interval '{CACHE_DAYS} days' order by id desc limit 1", (query, research_id)).fetchone()
     try:
-        images = []
+        images, tried = [], set()
         if cached:
             results = dict(cached[0])
             if "claims" not in results or "note" in results:  # pre-claims row, or extraction failed: redo it
@@ -781,7 +795,7 @@ def run(research_id: int) -> None:
                     pages.append({"url": final, "publisher": httpx.URL(final).host, "title": (hit.get("title") or "")[:200],
                                   "retrieved_at": datetime.now(timezone.utc).isoformat(), "markdown": md})
                     if ctype != "application/pdf":
-                        images += page_images(fetcher, body, final, MAX_IMAGES - len(images))
+                        images += page_images(fetcher, body, final, MAX_IMAGES - len(images), tried)
                 except Exception as e:  # noqa: BLE001 - one bad page must not stop the rest
                     skipped.append({"domain": host, "error": type(e).__name__})  # domain and type only
             claims, note = extract_claims(query, pages)
@@ -791,9 +805,18 @@ def run(research_id: int) -> None:
             # a cache hit keeps the original fetch time, so the 30-day window never restarts
             conn.execute("update research set status='done', results=%s, retrieved_at=coalesce(%s, now()) where id=%s",
                          (Jsonb(results), cached[1] if cached else None, research_id))
-            for i in images:  # empty on a cache hit: never copied
-                conn.execute("insert into research_images(research_id, page_url, image_url, alt, png, width, height) "
-                             "values (%(r)s, %(page_url)s, %(image_url)s, %(alt)s, %(png)s, %(width)s, %(height)s)", {**i, "r": research_id})
+        if images:  # empty on a cache hit: never copied
+            with db.connect() as conn:
+                clients = anonymise.load_clients(conn)
+            for i in images:  # each in its own transaction: a row the database refuses is skipped, the research stays done
+                if anonymise.blocked("\n".join(i[k] for k in ("alt", "page_url", "src", "image_url")), clients):
+                    continue  # the address before and after redirects
+                try:
+                    with db.connect() as conn:
+                        conn.execute("insert into research_images(research_id, page_url, image_url, alt, png, width, height) "
+                                     "values (%(r)s, %(page_url)s, %(image_url)s, %(alt)s, %(png)s, %(width)s, %(height)s)", {**i, "r": research_id})
+                except Exception:  # noqa: BLE001
+                    continue
     except Exception as e:  # noqa: BLE001
         with db.connect() as conn:
             conn.execute("update research set status='failed', error=%s where id=%s",

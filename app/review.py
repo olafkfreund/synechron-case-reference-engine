@@ -391,13 +391,13 @@ def add_diagram(cid: int, file: UploadFile, caption: str = Form(), v: str = Form
     return RedirectResponse(f"/review/{cid}", status_code=303)
 
 
-def _queue_diagram(conn, cid, case, raw, caption, user, image_id=None, credit="", research_image_id=None):
+def _queue_diagram(conn, cid, case, raw, caption, user, image_id=None, credit="", research_image_id=None, rights=None):
     """A new pending diagram for the worker to decode (#200); the case row is locked by the caller."""
     if len(case.diagrams) >= diagrams.MAX_PER_CASE:
         raise HTTPException(400, f"a case has at most {diagrams.MAX_PER_CASE} diagrams")
     did = conn.execute("insert into diagrams(case_id, raw, created_by) values (%s, %s, %s) returning id",
                        (cid, raw, user.sub)).fetchone()[0]
-    case.diagrams.append(Diagram(id=did, caption=caption, status="pending", image_id=image_id, credit=credit, research_image_id=research_image_id))
+    case.diagrams.append(Diagram(id=did, caption=caption, status="pending", image_id=image_id, credit=credit, research_image_id=research_image_id, **(rights or {})))
     save(conn, cid, case)
     conn.execute("insert into jobs(kind, payload) values ('diagram', jsonb_build_object('diagram_id', %s::bigint))", (did,))
     _reopen(conn, cid)
@@ -798,13 +798,15 @@ def _attach_images(conn, cid, case, research_id, imgs, user):
         page_url, alt = row[1], research.visible_images([row[:4]], clients)[0]["alt"]
         src = next((p for p in row[5].get("pages", []) if p.get("url") == page_url), {})
         host = httpx.URL(page_url).host
-        title = plain(src.get("title") or "") or host
-        credit = anonymise.apply(f"Image: {title}, {host}, {page_url}, retrieved {str(src.get('retrieved_at') or '')[:10]}", clients)
+        if anonymise.blocked(f"{host}\n{page_url}", clients):  # a url is never rewritten
+            raise HTTPException(400, "the credit names a protected client")
+        title = anonymise.apply(plain(src.get("title") or "") or host, clients)
+        credit = f"Image: {title}, {host}, {page_url}, retrieved {str(src.get('retrieved_at') or '')[:10]}"
         if anonymise.blocked(credit, clients):
             raise HTTPException(400, "the credit names a protected client")
         caption = _caption(conn, alt or f"Image from {host}")
-        conn.execute("update research_images set rights_by=%s, rights_at=now(), rights_basis=%s where id=%s", (user.sub, im["basis"], im["id"]))
-        _queue_diagram(conn, cid, case, bytes(row[4]), caption, user, credit=credit, research_image_id=im["id"])  # the reviewer is recorded, never credited
+        rights = {"rights_by": user.sub, "rights_at": datetime.now(timezone.utc).isoformat(), "rights_basis": im["basis"]}
+        _queue_diagram(conn, cid, case, bytes(row[4]), caption, user, credit=credit, research_image_id=im["id"], rights=rights)  # the reviewer is recorded, never credited
 
 
 def _attach(cid, s, research_id, library_id, n, user, imgs=()):

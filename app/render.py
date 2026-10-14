@@ -131,7 +131,10 @@ def brief_section(body: dict, quotes: list[dict], clients, images=()) -> dict:
         return " ".join(kept)
 
     links = []  # links only, never pixels; one naming a protected client is left out
+    alive = {s["url"] for s in sources}  # only the pages of the quotes that survived above
     for i in images:
+        if CTRL.sub("", str(i.get("page") or "")) not in alive:
+            continue
         link = {"title": clean(plain(str(i.get("title") or "")) or i.get("publisher")), "publisher": CTRL.sub("", str(i.get("publisher") or "")),
                 "url": CTRL.sub("", str(i.get("url") or ""))}
         if not anonymise.blocked("\n".join(link.values()), clients):

@@ -413,6 +413,25 @@ check the brief has a diagram, counts only.
     `scripts/make_reference_template.py`.
   - **Test gap.** `case_study_docx` has no test of its own; it shares the
     caption path that the md, preview and bid docx tests cover.
+- **Phase (c) review fixes** (Opus, Codex and agy; full suite 1466
+  passed; each fix negative-controlled):
+  - **Insert isolation.** Image inserts run after the `done` commit, each
+    on its own, and control characters are stripped from the alt.
+  - **Final URL.** It is stored, and an image whose alt, page, src or
+    final URL names a protected client is not stored at all. The view
+    filter stays as a second layer.
+  - **Attempt caps.** 6 per page and 24 per run, with identical `src`
+    deduped.
+  - **Width parsing** is safe for `px` and non-ASCII digits.
+  - **Long alt.** One over 200 characters is dropped, not cut.
+  - **Captions** come from `<figcaption>` only.
+  - **Library saves** drop blocked links.
+  - **Brief links** come only from the pages of quotes that survive
+    `brief_section`.
+  - **Credit.** Only the title goes through `apply()`; the URLs are
+    checked, never rewritten.
+  - **Rights per attach.** Rights are recorded on the case diagram itself.
+    The `research_images.rights_*` columns from c1 are left unused.
 
 ## Tests
 

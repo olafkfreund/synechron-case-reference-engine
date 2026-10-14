@@ -168,10 +168,9 @@ def test_confirmed_image_becomes_a_pending_diagram_with_a_credit_and_no_reviewer
     (d,) = case_diagrams(cid)
     assert d["status"] == "pending" and d["caption"] == "Kafka topology"
     assert d["credit"] == "Image: Guide to Kafka, docs.example, https://docs.example/guide, retrieved 2026-10-01"
-    assert "u1" not in str(d)
+    assert "u1" not in d["credit"] + d["caption"]
+    assert (d["rights_by"], d["rights_basis"], bool(d["rights_at"])) == ("u1", "Licensed CC-BY, see footer", True)  # on the case, per attach
     with db.connect() as conn:
-        assert conn.execute("select rights_by, rights_at is not null, rights_basis from research_images where id=%s", (iid,)).fetchone() \
-            == ("u1", True, "Licensed CC-BY, see footer")
         assert conn.execute("select count(*) from jobs where kind='diagram' and payload->>'diagram_id'=%s", (str(d["id"]),)).fetchone()[0] == 1
     diagrams.process(d["id"])
     (d,) = case_diagrams(cid)
@@ -197,8 +196,6 @@ def test_missing_confirmation_basis_or_wrong_owner_changes_nothing(approved, reg
     mine = make_row("research test mine", created_by="u1")
     assert attach_form(c, cid, mine, iid, page=rid).status_code == 404  # the image belongs to another research
     assert case_diagrams(cid) == []
-    with db.connect() as conn:
-        assert conn.execute("select rights_by from research_images where id=%s", (iid,)).fetchone()[0] is None
 
 
 def test_only_a_reviewer_may_confirm_rights(approved, reg, echo):  # noqa: F811
@@ -305,3 +302,119 @@ def test_a_library_brief_keeps_its_image_links_after_the_research_is_gone(reg): 
     assert "https://cdn.example/topology.png" in t
     with db.connect() as conn:
         conn.execute("delete from library_items where id=%s", (lid,))
+
+
+# --- review fixes -------------------------------------------------------------------------------------
+
+def ok_images(web, *names, host="docs.example"):  # noqa: F811
+    for n in names:
+        web.pages[(host, n)] = (200, PNG_HEADERS, img())
+
+
+def test_a_control_character_in_the_alt_never_fails_the_research(web, cleanup, monkeypatch):  # noqa: F811
+    from app import ingest
+    monkeypatch.setattr(ingest, "to_markdown", lambda data, name, **kw: "page")  # the raw page, NUL and all, is not what is stored
+    setup(web, '<img src="/a.png" alt="x\x00y"><img src="/b.png" alt="fine">')
+    ok_images(web, "/a.png", "/b.png")
+    rid = make_row(f"research test {uuid.uuid4().hex}")
+    rs.run(rid)
+    with db.connect() as c:
+        assert c.execute("select status from research where id=%s", (rid,)).fetchone()[0] == "done"
+    assert [r[2] for r in stored(rid)] == ["x y", "fine"]
+    monkeypatch.setattr(rs, "plain", lambda t: "x\x00y")  # a value the strip missed: that one row is refused by Postgres and skipped
+    rid = make_row(f"research test {uuid.uuid4().hex}")
+    rs.run(rid)
+    with db.connect() as c:
+        assert c.execute("select status from research where id=%s", (rid,)).fetchone()[0] == "done"
+    assert stored(rid) == []
+
+
+def test_the_final_url_after_a_redirect_is_stored_and_checked(web, cleanup):  # noqa: F811
+    reg = f"Zorp{uuid.uuid4().hex[:6]}"  # not the reg fixture: it replaces the model call
+    with db.connect() as c:
+        cid = c.execute("insert into clients(name, anonymised_label) values (%s,'a retailer') returning id", (reg,)).fetchone()[0]
+    setup(web, '<img src="/r.png"><img src="/p.png">')
+    web.pages[("docs.example", "/r.png")] = (302, {"location": "/final.png"}, b"")
+    web.pages[("docs.example", "/p.png")] = (302, {"location": f"/{reg}.png"}, b"")
+    ok_images(web, "/final.png", f"/{reg}.png")
+    rid = make_row(f"research test {uuid.uuid4().hex}")
+    rs.run(rid)
+    assert [r[1] for r in stored(rid)] == ["https://docs.example/final.png"]  # the protected one is not stored
+    with db.connect() as c:
+        c.execute("delete from clients where id=%s", (cid,))
+
+
+def test_attempts_are_capped_and_a_bad_size_attribute_is_safe(web, cleanup):  # noqa: F811
+    tags = ('<img src="/same.png"><img src="/same.png"><img src="/s.png" width="100px"><img src="/w.png" width="\u0663\u0663">'
+            '<img src="/ok.png" width="500px">') + "".join(f'<img src="/m{i}.png">' for i in range(10))
+    setup(web, tags)
+    ok_images(web, "/ok.png", "/same.png")
+    rid = make_row(f"research test {uuid.uuid4().hex}")
+    rs.run(rid)
+    got = [p for _, p in web.seen if p.endswith(".png")]
+    assert got.count("/same.png") == 1 and "/s.png" not in got and "/w.png" in got
+    assert len(got) == rs.PAGE_FETCHES
+    assert len(stored(rid)) == 2
+
+
+def test_a_run_makes_at_most_24_image_fetches(web, cleanup):  # noqa: F811
+    web.results = [f"https://h{i}.example/guide" for i in range(6)]
+    for i in range(6):
+        web.html(f"h{i}.example", "/robots.txt", "")
+        web.html(f"h{i}.example", "/guide", "".join(f'<img src="/{j}.png">' for j in range(8)))
+    rid = make_row(f"research test {uuid.uuid4().hex}")
+    rs.run(rid)
+    assert len([p for _, p in web.seen if p.endswith(".png")]) == rs.RUN_FETCHES
+
+
+def test_alt_over_the_limit_is_dropped_and_only_a_figcaption_names_an_image(web, cleanup):  # noqa: F811
+    setup(web, f'<img src="/long.png" alt="{"w" * 201}"><figure><img src="/c.png" alt="  "><p>junk text</p><figcaption> the  caption </figcaption></figure>')
+    ok_images(web, "/long.png", "/c.png")
+    rid = make_row(f"research test {uuid.uuid4().hex}")
+    rs.run(rid)
+    assert [r[2] for r in stored(rid)] == ["", "the caption"]
+
+
+def test_a_library_save_leaves_out_a_protected_image_link(reg):  # noqa: F811
+    rid = with_image(reg)
+    add_image(rid, alt="second")
+    with db.connect() as c:
+        c.execute("update research_images set image_url=%s where research_id=%s and alt='second'", (f"https://cdn.example/{reg}.png", rid))
+        c.execute("update research set results=%s where id=%s", (json.dumps({"pages": [], "claims": [
+            {"statement": "S", "quote": "q q q q", "type": "vendor_claim", "url": "https://docs.example/guide", "publisher": "docs.example",
+             "retrieved_at": "2026-10-01T00:00:00+00:00", "rank": 3}]}), rid))
+    r = as_user("u1").post("/library/save", data={"research_id": rid, "n": [0], "topic": "Kafka"}, follow_redirects=False)
+    assert r.status_code == 303
+    lid = int(r.headers["location"].rsplit("/", 1)[1])
+    with db.connect() as c:
+        links = c.execute("select body->'images' from library_items where id=%s", (lid,)).fetchone()[0]
+        c.execute("delete from library_items where id=%s", (lid,))
+    assert [i["url"] for i in links] == ["https://cdn.example/topology.png"]
+
+
+def test_a_brief_lists_images_only_of_pages_whose_quotes_survive(reg):  # noqa: F811
+    rid = with_image(reg)
+    add_image(rid, alt="other page", page=f"https://other.example/{reg}")
+    with db.connect() as c:
+        c.execute("update research_images set image_url='https://cdn.example/other.png' where research_id=%s and alt='other page'", (rid,))
+    quotes = [{"quote": Q[0], "publisher": "docs.example", "url": "https://docs.example/guide", "title": "Kafka guide", "type": "vendor_claim"},
+              {"quote": Q[1], "publisher": "other.example", "url": f"https://other.example/{reg}", "title": "x", "type": "vendor_claim"}]
+    with db.connect() as c:
+        bid = c.execute("insert into briefs(created_by, title, quotes, body, status, research_id) values ('u1','t',%s,%s,'done',%s) returning id",
+                        (json.dumps(quotes), json.dumps({**body(), "flags": []}), rid)).fetchone()[0]
+    t = as_user("u1").post(f"/briefs/{bid}/download", data={"format": "md"}).text
+    assert "topology.png" in t and "other.png" not in t
+
+
+def test_the_credit_never_rewrites_a_url_and_each_attach_keeps_its_rights(approved, reg, echo):  # noqa: F811
+    c, cid, rid, iid = reviewer_row(approved, reg, echo)
+    with db.connect() as conn:
+        conn.execute("update research set results=%s where id=%s", (json.dumps({"pages": [{**PAGE, "title": f"{reg} guide"}], "claims": [{**BASE, "quote": "q q q q", "url": PAGE["url"], "publisher": "docs.example"}]}), rid))
+    attach_form(c, cid, rid, iid)
+    (d,) = case_diagrams(cid)
+    assert reg not in d["credit"] and d["credit"].startswith("Image: ")  # the title is anonymised
+    with db.connect() as conn:
+        conn.execute("update research_images set page_url=%s where id=%s", (f"https://docs.example/{reg}", iid))
+    other = approved(case_with())
+    r = attach_form(c, other, rid, iid, page=rid)  # a url naming a protected client is refused, not rewritten
+    assert r.status_code in (400, 404) and case_diagrams(other) == []  # hidden on the research page first, refused either way
