@@ -305,3 +305,42 @@ label, cite}]}`.
    text lines. They reach case studies only as a diagram candidate the
    reviewer chooses to use.
 6. The phase order is (a), (b), (c), (d), each its own PR.
+
+## Revision 2026-10-14: phase (d) reuses the architecture renderer (draft, needs approval)
+
+**Why.** Phase (d) was designed before #246 shipped `app/archdiagram.py`,
+the customer-grade renderer behind case architectures:
+- zones, kinds and icons
+- a grid router
+- SVG, PNG, native PowerPoint shapes and Mermaid output
+
+The approved (d) design adds a **second** drawer: Pillow boxes and arrows,
+4 columns, 1200×600. The user rejected that kind of output for customers
+on 2026-10-13 ("just boxes without any substance").
+
+**Change.** A brief's diagram becomes an `Architecture`-shaped object and
+is drawn by `archdiagram`. There is no new drawer.
+- **What the model returns.** `components` (name, role, zone, kind, cite)
+  and `flows` (src, dst, label, mode, cite), from the brief's numbered
+  `<quotes>`. It uses the same `ARCH_SYSTEM` caps (6–12 components, at most
+  14 flows) and the same rule: names copied from the cited quote.
+- **Checks.** `check_architecture` and `prune_architecture` are reused,
+  with the cited **public quotes** as the evidence, together with
+  `blocked()`. The flags block the download, as the plan says.
+- **Editing.** The same line editor as the case architecture (`title:` /
+  `component:` / `flow:`), parsed by the existing `parse_architecture`.
+- **Outputs.**
+  - Brief docx and PDF: a PNG via `archdiagram.to_png`, with "Diagram
+    drawn by Synechron from sources [n]…" under it.
+  - Markdown: the Mermaid text.
+  - The library brief carries the diagram.
+  - Attaching it to a case offers it as a `document_images` candidate
+    with a null document. It reaches the case only through the reviewer's
+    **Use**, as approved.
+- **What doesn't change.** `DRAFT_MODEL`, `data_class="public"`, the
+  class-only failure note, the owner-only route, the credit text, and the
+  reviewer-only path into a case.
+
+**Rejected.** The approved Pillow drawer. It would duplicate layout, text
+wrapping and routing, and it gives the look the user turned down.
+
