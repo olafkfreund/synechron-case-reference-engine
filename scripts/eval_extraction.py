@@ -119,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
             pts = {f: len(case.points.get(f, [])) for f in POINT_FIELDS}  # counts only
             words = {f: len(p.text.split()) for f, p in case.prose.items()}  # counts only
             flagged = sum(bool(p.flags) for p in case.prose.values())
+            name_flags = sum(f.startswith("names '") for p in case.prose.values() for f in p.flags)  # a count only (#260)
             arch = case.architecture  # counts only
             arch_counts = {"components": len(arch.components), "flows": len(arch.flows), "flags": len(arch.flags),
                            "cited": sum(bool(c.cite.strip()) for c in arch.components),
@@ -126,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
             images = len(document_images_from(p.read_bytes(), p.name))  # a count only; the images are not kept
             rows.append((sourced, len(items), secs, vram, bad))
             print(f"{model} {p.name[:30]} kind={tri.kind} executed={tri.executed} basis={basis} sourced={sourced}/{len(items)} caps={len(case.capabilities)} "
-                  f"tech={len(case.tech_stack)} refs={len(case.tech_references)} outcomes={len(case.outcomes)} points={pts} prose_words={words} flagged={flagged} architecture={arch_counts} images={images} "
+                  f"tech={len(case.tech_stack)} refs={len(case.tech_references)} outcomes={len(case.outcomes)} points={pts} prose_words={words} flagged={flagged} name_flags={name_flags} architecture={arch_counts} images={images} "
                   f"parts={len(extract.split(text[:extract.MAX_CHARS]))} summary={'kept' if case.summary else 'blank'} bad_metrics={bad} notes={case.needs_attention} "
                   f"{secs:.0f}s vram={vram:.1f}GB\n    fields: {filled}", flush=True)
         if rows:
