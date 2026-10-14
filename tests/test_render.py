@@ -906,5 +906,10 @@ def test_produce_matches_generate_bytes(approved, fmt):
     r = gen([cid], fmt)
     with db.connect() as c:
         body, mime, name = render.produce(c, User("u1", "U", frozenset(R), roles_for(R)), fmt, [cid], None, False, [])
-    assert r.status_code == 200 and body == r.content and mime == r.headers["content-type"]
+    def same(a, b):  # an Office file stamps its creation time, which can differ by a second between the two builds
+        if not a.startswith(b"PK"):
+            return a == b
+        za, zb = zipfile.ZipFile(BytesIO(a)), zipfile.ZipFile(BytesIO(b))
+        return za.namelist() == zb.namelist() and all(za.read(n) == zb.read(n) for n in za.namelist() if n != "docProps/core.xml")
+    assert r.status_code == 200 and same(body, r.content) and mime == r.headers["content-type"]
     assert r.headers["content-disposition"] == f'attachment; filename="{name}"'

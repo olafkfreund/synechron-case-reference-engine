@@ -171,12 +171,17 @@ def test_nothing_leaks_through_the_new_tools(mcp, reg, make):  # noqa: F811
     rid = done_research(who, Q)
     s = mcp(who=who, groups=GROUPS)
     secret = f"SECRET-QUESTION-{uuid.uuid4().hex}"
-    outs = [s.call("generate_output", case_ids=[cid], format="md"), s.call("start_research", question=secret),
+    bid_text = f"BID-TEXT-{uuid.uuid4().hex} onboarding"
+    lid = s.out("save_library_item", research_id=rid, n=[0], topic="Sign in")["library_id"]
+    outs = [s.call("search_references", bid_text=bid_text),
+            s.call("generate_output", case_ids=[cid], format="md", research_id=rid, library_ids=[lid]),
+            s.call("generate_output", case_ids=[cid], format="md"), s.call("start_research", question=secret),
             s.call("get_research", research_id=rid), s.call("create_brief", research_id=rid, n=[0]),
             s.call("save_library_item", research_id=rid, n=[0], topic="x"), s.call("list_library")]
     blob = json.dumps(outs)
-    assert reg not in blob and marker not in blob and "stored.example" not in blob and secret not in blob
-    url = outs[0]["structuredContent"]["download_url"]  # generate_output
+    assert reg not in blob and marker not in blob and "stored.example" not in blob and secret not in blob and bid_text not in blob
+    assert not outs[1].get("isError"), outs[1]
+    url = outs[1]["structuredContent"]["download_url"]  # generate_output
     with db.connect() as c:
         rows = repr(c.execute("select * from tool_calls where user_key=%s", (who,)).fetchall())
-    assert secret not in rows and url.rsplit("/", 1)[1] not in rows
+    assert secret not in rows and bid_text not in rows and url.rsplit("/", 1)[1] not in rows

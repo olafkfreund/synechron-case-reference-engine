@@ -62,9 +62,10 @@ def test_download_writes_the_audit_rows_then(web, approved):
 
 def test_another_user_gets_403_and_no_file(web, approved):
     url = link("o1", case_ids=[approved()])
-    r = web.get(url, headers=bearer("someone-else"))
-    assert r.status_code == 403 and gens("someone-else") == 0
-    assert portal_client(GROUPS, sub="someone-else").get(url).status_code == 403
+    other = f"o-{uuid.uuid4()}"
+    r = web.get(url, headers=bearer(other))
+    assert r.status_code == 403 and gens(other) == 0
+    assert portal_client(GROUPS, sub=other).get(url).status_code == 403 and gens(other) == 0
 
 
 def test_no_credentials_and_unapproved_client_are_refused(web, approved):
