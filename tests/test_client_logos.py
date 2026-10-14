@@ -110,3 +110,62 @@ def test_registry_page_shows_the_logo_state(cl):
     t = client([ADMIN]).get("/admin/clients").text
     assert "Logo ready" in t and f'src="/admin/clients/{ready}/logo.png"' in t and f'action="/admin/clients/{ready}/logo/remove"' in t
     assert "Rejected: " + diagrams.LOGO_TOO_SMALL in t and f'src="/admin/clients/{nologo}/logo.png"' not in t
+
+
+# --- outputs (step 4)
+import zipfile  # noqa: E402
+
+from pptx import Presentation  # noqa: E402
+
+from tests.test_render import R, full, gen, prev  # noqa: E402,F401
+from tests.test_review import DOCS, make  # noqa: E402,F401
+from tests.test_search import approved, link, reg  # noqa: E402,F401
+
+
+@pytest.fixture
+def case_with(approved, reg):
+    def build(ref, allowed, png=True):
+        name, client_id = reg("Zorp", "a UK retailer", referenceable=ref)
+        with db.connect() as c:
+            c.execute("update clients set logo_allowed=%s where id=%s", (allowed, client_id))
+            if png:
+                c.execute("insert into client_logos(client_id,png,width,height) values (%s,%s,200,100)", (client_id, img()))
+        cid = approved(full())
+        link(cid, client_id)
+        return cid, client_id
+    yield build
+    with db.connect() as c:
+        c.execute("delete from client_logos where client_id in (select id from clients where name like 'Zorp%')")
+
+
+def drawings(content):
+    return zipfile.ZipFile(BytesIO(content)).read("word/document.xml").decode().count("<w:drawing>")
+
+
+def pictures(content):
+    return sum(sh.shape_type == 13 for s in Presentation(BytesIO(content)).slides for sh in s.shapes)
+
+
+def test_an_allowed_client_gets_its_logo_in_every_format(case_with):
+    cid, client_id = case_with(True, True)
+    assert drawings(gen([cid], "docx").content) == 1
+    assert drawings(gen([cid], "case_study_docx").content) == 1
+    assert pictures(gen([cid], "pptx").content) == 1
+    assert f'src="/logos/{client_id}.png"' in prev([cid]).text
+    assert f'src="/logos/{client_id}.png"' in client(R).post("/search", data={"bid_text": "onboarding"}).text
+    assert b"logo" not in gen([cid], "md").content.lower()
+
+
+@pytest.mark.parametrize("ref,allowed,png", [(True, False, True), (True, True, False), (False, True, True), (False, False, True)])
+def test_no_logo_without_permission_a_logo_or_for_a_protected_client(case_with, ref, allowed, png):
+    cid, client_id = case_with(ref, allowed, png)
+    for fmt in ("docx", "case_study_docx"):
+        body = gen([cid], fmt).content
+        assert drawings(body) == 0
+        t = "\n".join(p.text for p in __import__("docx").Document(BytesIO(body)).paragraphs)
+        assert "{{" not in t and "{%" not in t
+    first = __import__("docx").Document(BytesIO(gen([cid], "case_study_docx").content)).paragraphs[0]
+    assert first.text.strip()  # the title, not an empty paragraph left by the logo condition
+    assert pictures(gen([cid], "pptx").content) == 0
+    assert f"/logos/{client_id}.png" not in prev([cid]).text
+    assert f"/logos/{client_id}.png" not in client(R).post("/search", data={"bid_text": "onboarding"}).text

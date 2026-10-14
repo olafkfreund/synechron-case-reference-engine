@@ -4,7 +4,7 @@
 {% macro sources(list) %}{% if list %}<details class="mini"><summary>Source documents · {{ list | map(attribute="docs") | map("length") | sum }}</summary>
 <ul class="doc-list">{% for e in list %}{% for d in e.docs %}<li>{{ icon("file") }}<span class="doc-label">{{ e.label }}</span>
 {% if d.web %}<a class="btn btn-sm ghost" href="/go/{{ d.id }}" target="_blank" rel="noopener noreferrer">Open</a>{% endif %}{% if d.folder %}<a class="btn btn-sm ghost" href="/go/{{ d.id }}/folder" target="_blank" rel="noopener noreferrer">Open folder</a>{% endif %}{% if not d.web and not d.folder %}<span class="muted">Stored in the engine. Ask a reviewer for a copy.</span>{% endif %}</li>{% endfor %}{% endfor %}</ul></details>{% endif %}{% endmacro %}
-{% macro card_head(c) %}<div class="meta"><span class="avatar" aria-hidden="true">{{ icon("building") }}</span>
+{% macro card_head(c) %}<div class="meta">{% if c.logo %}<img src="/logos/{{ c.logo }}.png" alt="" height="24">{% else %}<span class="avatar" aria-hidden="true">{{ icon("building") }}</span>{% endif %}
 <div class="who"><h3>{{ c.title }}</h3><span>{{ c.label }}</span></div>{{ basis(c.basis) }} {{ completeness(c.score) }}</div>{% endmacro %}
 {% macro result_actions(c) %}<div class="result-actions">
 <form method="post" action="/generate" class="generate"><input type="hidden" name="case_ids" value="{{ c.id }}">

@@ -7,7 +7,7 @@
 <div class="note">This is the content of the download; the layout comes from the Word and PowerPoint templates.</div>
 {% for c in cases %}
 <article class="section-card">
-<h2>{{ c.title }} <span class="muted">{{ c.client }}</span></h2>
+<h2>{% if c.logo_cid %}<img src="/logos/{{ c.logo_cid }}.png" alt="" height="24"> {% endif %}{{ c.title }} <span class="muted">{{ c.client }}</span></h2>
 {% if c.note %}<div class="note">{{ c.note }}</div>{% endif %}
 <p>{{ c.summary }}</p>
 <ul>{% for x in c.details %}<li><b>{{ x.label }}:</b> {{ x.value }}</li>{% endfor %}</ul>

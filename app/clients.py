@@ -122,11 +122,20 @@ def delete(cid: int, v: str = Form(), user: User = Depends(require("admin"))):
     return RedirectResponse("/admin/clients", status_code=303)
 
 
+SHOWN = "c.referenceable and c.logo_allowed and l.png is not null"  # the display rule (#267), the only copy
+
+
 def logo_for(conn, client_id) -> bytes | None:
-    """The one display rule (#267): a decoded logo of a referenceable, logo-allowed client. Every surface calls this."""
-    row = conn.execute("select l.png from client_logos l join clients c on c.id = l.client_id "
-                       "where c.id=%s and c.referenceable and c.logo_allowed and l.png is not null", (client_id,)).fetchone()
+    """A decoded logo of a referenceable, logo-allowed client. Every surface calls this or logo_cids()."""
+    row = conn.execute(f"select l.png from client_logos l join clients c on c.id = l.client_id where c.id=%s and {SHOWN}",
+                       (client_id,)).fetchone()
     return bytes(row[0]) if row else None
+
+
+def logo_cids(conn, ids) -> set[int]:
+    """Which of these clients show a logo, without reading the images (cards)."""
+    return {r[0] for r in conn.execute(f"select c.id from client_logos l join clients c on c.id = l.client_id "
+                                       f"where c.id = any(%s) and {SHOWN}", (list(ids),))}
 
 
 def _logo_audit(conn, cid, action, user):
