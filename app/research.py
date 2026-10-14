@@ -8,6 +8,7 @@ import re
 import socket
 import threading
 import time
+from html.parser import HTMLParser
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 from urllib.parse import urljoin
@@ -19,7 +20,7 @@ from fastapi.responses import RedirectResponse, Response
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app import anonymise, db, ingest
+from app import anonymise, db, diagrams, ingest
 from app.llm import MAX_TOKENS, complete_json, json_cue, profile
 from app.main import User, require
 from app.review import VISIBLE, page, reviewable_cases
@@ -36,6 +37,7 @@ MAX_RESULTS, MAX_REDIRECTS = 8, 3
 MAX_BYTES, TIMEOUT, MAX_MARKDOWN = 5 * 1024 * 1024, 10, 20_000
 TYPES = {"text/html": ".html", "application/xhtml+xml": ".html", "application/pdf": ".pdf"}
 CACHE_DAYS = 30
+IMAGE_ACCEPT, MIN_IMAGE, PAGE_IMAGES, MAX_IMAGES, MAX_ALT = "image/png,image/jpeg", 400, 3, 9, 200
 
 
 class ResearchError(RuntimeError):
@@ -346,7 +348,7 @@ class Fetcher:
         # shortcut: per job only; needs a shared (Postgres) limit before worker_desired_count > 1 (#45)
         self.robots, self.last = {}, {}
 
-    def _get(self, url: str, limit: int, check_robots: bool = False) -> tuple[bytes, str, str]:
+    def _get(self, url: str, limit: int, check_robots: bool = False, accept: str = "text/html,application/pdf") -> tuple[bytes, str, str]:
         """One vetted GET with manual redirects. Returns (body, content type, final URL by name, not by IP)."""
         for _ in range(MAX_REDIRECTS + 1):
             u, port = vet_url(url)
@@ -358,7 +360,7 @@ class Fetcher:
             target = u.copy_with(host=ip)  # connect to the vetted address; Host and SNI keep the name
             opened = []
             try:
-                body, ctype, location = _within(TIMEOUT, lambda: self._hop(u, target, limit, opened))
+                body, ctype, location = _within(TIMEOUT, lambda: self._hop(u, target, limit, opened, accept))
             except ResearchError:
                 for r in opened:
                     r.close()  # the abandoned hop stops at its next read
@@ -373,11 +375,11 @@ class Fetcher:
             return body, ctype, location
         raise Blocked("too many redirects")
 
-    def _hop(self, u, target, limit, opened):
+    def _hop(self, u, target, limit, opened, accept):
         """One request. (None, None, location) for a redirect, else (body, content type, final URL)."""
         deadline = time.monotonic() + TIMEOUT
         with self.http.stream("GET", target, headers={"Host": u.netloc.decode(), "User-Agent": UA,
-                                                      "Accept": "text/html,application/pdf"},
+                                                      "Accept": accept},
                               extensions={"sni_hostname": u.host}) as r:
             opened.append(r)
             if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
@@ -420,6 +422,62 @@ class Fetcher:
         if ctype not in TYPES:
             raise BadContentType("not html or pdf")
         return body, ctype, final
+
+
+class ImageFinder(HTMLParser):
+    """(absolute url, alt) of the <img> tags worth fetching; a figcaption stands in for a missing alt."""
+
+    def __init__(self, base: str):
+        super().__init__()
+        self.base, self.found, self.caption, self.fig, self.start = base, [], "", False, 0
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == "figure":
+            self.fig, self.caption, self.start = True, "", len(self.found)
+        if tag != "img" or not a.get("src"):
+            return
+        src = urljoin(self.base, a["src"].strip())
+        if not src.startswith(("http://", "https://")) or src.lower().split("?")[0].endswith(".svg"):
+            return  # data:, svg and anything that is not a web address
+        if any(str(a.get(k, "")).isdigit() and int(a[k]) < MIN_IMAGE for k in ("width", "height")):
+            return
+        self.found.append([src, a.get("alt") or ""])
+
+    def handle_data(self, data):
+        if self.fig:
+            self.caption += data
+
+    def handle_endtag(self, tag):
+        if tag == "figure":
+            self.fig = False
+            for f in self.found[self.start:]:
+                f[1] = f[1] or " ".join(self.caption.split())
+
+
+def page_images(fetcher: Fetcher, html: bytes, page_url: str, room: int) -> list[dict]:
+    """Up to PAGE_IMAGES decoded images of one page. One that fails is skipped: images never fail the research."""
+    finder = ImageFinder(page_url)
+    try:
+        finder.feed(html.decode("utf-8", "replace"))
+    except Exception:  # noqa: BLE001 - broken markup keeps what was found so far
+        pass
+    out = []
+    for src, alt in finder.found:
+        if len(out) >= min(PAGE_IMAGES, room):
+            break
+        try:
+            if not fetcher.allowed(src):
+                continue
+            body, ctype, _ = fetcher._get(src, diagrams.MAX_BYTES, check_robots=True, accept=IMAGE_ACCEPT)
+            if ctype not in ("image/png", "image/jpeg"):
+                continue
+            png, w, h, _ = diagrams._decode(body)
+            if png and min(w, h) >= MIN_IMAGE:
+                out.append({"page_url": page_url, "image_url": src, "alt": plain(alt)[:MAX_ALT], "png": png, "width": w, "height": h})
+        except Exception:  # noqa: BLE001
+            continue
+    return out
 
 
 def brave_search(query: str) -> list[dict]:
@@ -671,6 +729,7 @@ def run(research_id: int) -> None:
             "and jsonb_array_length(coalesce(results->'pages', '[]'::jsonb)) > 0 "  # a run that got nothing is retried (#141)
             f"and retrieved_at > now() - interval '{CACHE_DAYS} days' order by id desc limit 1", (query, research_id)).fetchone()
     try:
+        images = []
         if cached:
             results = dict(cached[0])
             if "claims" not in results or "note" in results:  # pre-claims row, or extraction failed: redo it
@@ -693,6 +752,8 @@ def run(research_id: int) -> None:
                     md = convert(body, name)
                     pages.append({"url": final, "publisher": httpx.URL(final).host, "title": (hit.get("title") or "")[:200],
                                   "retrieved_at": datetime.now(timezone.utc).isoformat(), "markdown": md})
+                    if ctype != "application/pdf":
+                        images += page_images(fetcher, body, final, MAX_IMAGES - len(images))
                 except Exception as e:  # noqa: BLE001 - one bad page must not stop the rest
                     skipped.append({"domain": host, "error": type(e).__name__})  # domain and type only
             claims, note = extract_claims(query, pages)
@@ -702,6 +763,9 @@ def run(research_id: int) -> None:
             # a cache hit keeps the original fetch time, so the 30-day window never restarts
             conn.execute("update research set status='done', results=%s, retrieved_at=coalesce(%s, now()) where id=%s",
                          (Jsonb(results), cached[1] if cached else None, research_id))
+            for i in images:  # empty on a cache hit: never copied
+                conn.execute("insert into research_images(research_id, page_url, image_url, alt, png, width, height) "
+                             "values (%(r)s, %(page_url)s, %(image_url)s, %(alt)s, %(png)s, %(width)s, %(height)s)", {**i, "r": research_id})
     except Exception as e:  # noqa: BLE001
         with db.connect() as conn:
             conn.execute("update research set status='failed', error=%s where id=%s",
