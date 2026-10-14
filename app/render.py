@@ -17,6 +17,7 @@ from app import anonymise, db, office
 from app.archdiagram import layout, to_mermaid, to_pptx_shapes, to_png, to_svg
 from app.main import User, require, wants_html
 from app.review import PNG_HEADERS, VISIBLE, page
+from app.writeup import PRICE_FLAG
 from app.schema import ArchCallout, ArchComponent, ArchFlow, Architecture, ReferenceCase, fence, plain, vague_metric
 
 router = APIRouter()
@@ -224,8 +225,8 @@ def architecture_dict(case: ReferenceCase) -> dict | None:
     """The architecture as plain text and keys: only when it has components and no unresolved flag (#246).
     It goes through protect() with the rest, and every output draws from that protected dict, never from the case."""
     a = case.architecture
-    if not a or not a.components or a.flags:
-        return None
+    if not a or not a.components or any(PRICE_FLAG in f for f in a.flags) or (a.flags and not a.by_reviewer):
+        return None  # a reviewer's confirmation lets a flag pass, never a price
     shown = [i for i, o in enumerate(case.outcomes) if not o.unsourced]  # the Outcomes list as section() shows it
     # a contract claims no results (as in section()); a callout is numbered by its outcome's place in the shown list
     callouts = [] if case.basis == "engagement" else [{"text": c.text, "outcome": shown.index(c.outcome)} for c in a.callouts if c.outcome in shown]

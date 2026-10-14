@@ -350,3 +350,59 @@ code ignores it. The demo can be re-seeded.
     guard; `route(budget=3)` proves the cap.
   - One flag for no cite plus no match; `no-store` on `architecture.png`;
     a font cache.
+- B1:
+  - In the model's output, flows and callouts refer to components and
+    outcomes by 1-based number; code assigns the ids.
+  - Rows with bad literals or unknown endpoints are dropped in code, not
+    failing the reply.
+  - A reviewer's architecture is re-checked against new quotes on
+    re-extraction.
+  - The autouse writeup stub returns `model()`, so each model class gets
+    its own empty reply.
+  - A proposal with zero components sets nothing.
+- B2:
+  - The override is `by_reviewer`, set when a reviewer saves (B3), the same
+    as prose: editing counts as confirming.
+  - A price flag blocks even a reviewer's architecture.
+  - Negative controls passed for B1 (trimming, class-only note,
+    reviewer-keep) and for the gate.
+- B3:
+  - A new append-only `architecture_changes` table, since the diagram
+    routes had no per-case audit.
+  - The editor shows callout outcomes 1-based.
+  - The SVG is wrapped in a zoom link and hint, because the `zoom` macro
+    renders an `<img>`.
+  - A Regenerate that yields nothing adds a note.
+  - The line format can't express a name containing `|` or `->`.
+  - The reviewer PNG route is limited to `REVIEWABLE` cases.
+- B3 negative controls passed (`v`, the PNG role check, a parse error
+  keeping the old version, the check on save). Architecture changes are
+  listed on `/admin/audit`.
+- B4: `eval_extraction.py` prints architecture counts per document. The
+  test only covers the empty case; the session runs the real eval.
+- Phase B review fixes (Codex gpt-6-sol + Opus):
+  - Regenerate: no lock is held over the model call; a `v` reload before
+    saving; a failure keeps the old architecture, with the note added once.
+  - Exports honour `by_reviewer`, but a price still blocks.
+  - Approve recomputes the flags.
+  - Re-extraction resets `by_reviewer` when the flags change, and skips the
+    model call for a kept diagram.
+  - Every name word (3+ letters) must come from the quote, tech,
+    references or `ARCH_VOCAB`.
+  - First words are checked unless they're in `OPENERS`, a heuristic list
+    of common verbs.
+  - `EXTRACTION_VERSION` is 4.
+  - The append-only test covers `architecture_changes` and
+    `case_approval_overrides`.
+  - The parser takes ASCII digits only and caps its errors at 20.
+  - Known: `approve()` dropping unsourced points can shift stored cite
+    numbers. This predates phase B and doesn't affect exports.
+- After the first real eval (12 components, 11–14 flows, 10–27 flags):
+  - `ARCH_SYSTEM` asks for 6–8 components, named with words copied from the
+    cited quote.
+  - `_build_arch` keeps the strongest components and cited flows before the
+    caps.
+  - The eval prints `flag_kinds` counts, never flag text.
+- Second real eval (after the prompt changes): 6 components, 6 flows, 14 and
+  7 flags. Every callout flag came from engagement cases, so engagement
+  proposals now get no callouts (message, prompt and build).

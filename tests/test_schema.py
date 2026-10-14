@@ -392,3 +392,30 @@ def test_no_cite_and_no_tech_match_is_one_flag():
     c, check = _checked(components=[{"id": "m", "name": "Mystery box", "role": "x", "zone": "core", "kind": "app", "cite": ""}], flows=[], callouts=[])
     flags = check(c)
     assert sum("has no cite" in f for f in flags) == 1 and not any("matches neither" in f for f in flags)
+
+
+def test_a_lowercase_product_in_a_component_name_is_flagged_but_generic_words_are_not():
+    def comp(name):
+        return {"id": "k", "name": name, "role": "Carries claim events", "zone": "data", "kind": "queue", "cite": "configuration 1"}
+    c, check = _checked(components=[comp("salesforce event bus")], flows=[], callouts=[])
+    assert any("'salesforce'" in f for f in check(c)) and not any("'event'" in f or "'bus'" in f for f in check(c))
+    for ok in ("Kafka event bus", "claim events"):
+        c, check = _checked(components=[comp(ok)], flows=[], callouts=[])
+        assert check(c) == [], ok
+    c, check = _checked(components=[{**comp("Mobile app"), "cite": "solution 1"}], flows=[], callouts=[])
+    assert check(c) == []
+
+
+def test_a_capitalised_first_word_in_a_role_label_callout_or_title_is_checked():
+    def comp(role):
+        return {"id": "k", "name": "Kafka events", "role": role, "zone": "data", "kind": "queue", "cite": "configuration 1"}
+    c, check = _checked(components=[comp("Salesforce receives events")], flows=[], callouts=[])
+    assert any("'Salesforce'" in f for f in check(c))
+    c, check = _checked(flows=[{"src": "a", "dst": "k", "label": "Marketo sync", "mode": "event", "cite": "configuration 1"}])
+    assert any("'Marketo'" in f for f in check(c))
+    c, check = _checked(callouts=[{"text": "Tableau view of 11 days to 4", "outcome": 0}])
+    assert any("'Tableau'" in f for f in check(c))
+    c, check = _checked(title="Workday claims")
+    assert any("'Workday'" in f for f in check(c))
+    c, check = _checked(components=[comp("The events carrier")], flows=[], callouts=[], title="Solution architecture")
+    assert check(c) == []  # an ordinary opener and the default title pass
