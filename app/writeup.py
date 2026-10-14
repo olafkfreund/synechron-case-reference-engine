@@ -203,6 +203,16 @@ def _build_arch(r: ArchProposal, case: ReferenceCase) -> Architecture:
     return Architecture(components=comps, flows=flows, callouts=notes)
 
 
+ARCH_NOTES = ("architecture has ", "architecture proposal failed", "architecture: ")  # every producer of an architecture note
+
+
+def set_arch_note(case: ReferenceCase) -> None:
+    """Drop every earlier architecture note; if the current architecture is flagged, add one fresh count (#264)."""
+    case.needs_attention = [n for n in case.needs_attention if not n.startswith(ARCH_NOTES)]
+    if case.architecture and case.architecture.flags:
+        case.needs_attention.append(f"architecture has {len(case.architecture.flags)} unsupported item(s); edit it before approval")
+
+
 def propose(case: ReferenceCase, data_class: str) -> None:
     """Set `case.architecture` from the sourced points, pruned and checked; a failure leaves a class-only note."""
     if case.architecture and case.architecture.by_reviewer:
@@ -218,7 +228,6 @@ def propose(case: ReferenceCase, data_class: str) -> None:
     prune_architecture(case)
     if case.architecture and case.architecture.components:
         case.architecture.flags = check_architecture(case)
-        if case.architecture.flags:
-            case.needs_attention.append(f"architecture has {len(case.architecture.flags)} unsupported item(s); edit it before approval")
     else:
         case.architecture = None
+    set_arch_note(case)

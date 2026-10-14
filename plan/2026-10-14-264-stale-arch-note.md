@@ -61,4 +61,9 @@ Revert the merge commit. Stored notes are left as written.
 
 ## Deviations
 
-None yet.
+None in the code.
+- **Tests:** `test_architecture_notes_follow_the_current_diagram` (save,
+  regenerate, remove) and `test_set_arch_note_counts_a_flagged_architecture_once`.
+- **Negative control:** without the save call, the stale "proposal failed"
+  note survives and the test fails.
+- **Full suite:** 1444 passed.
