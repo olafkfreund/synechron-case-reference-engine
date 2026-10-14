@@ -194,7 +194,7 @@ def test_a_long_title_stops_before_the_logo_on_the_slide(case_with):
     with db.connect() as c:
         c.execute("update cases set data = jsonb_set(data, '{title,value}', to_jsonb(%s::text)) where id=%s", ("A very long title " * 12, cid))
     prs = Presentation(BytesIO(gen([cid], "pptx").content))
-    slide = prs.slides[0]
+    slide = list(prs.slides)[1]  # after the brand cover (#282)
     logo = next(sh for sh in slide.shapes if sh.shape_type == 13)
     idx = next(p.placeholder_format.idx for p in slide.slide_layout.placeholders if p.name == "Title")
     title = next(p for p in slide.placeholders if p.placeholder_format.idx == idx)

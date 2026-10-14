@@ -9,7 +9,7 @@ import pytest
 
 from app import db, render
 from tests.test_auth import env  # noqa: F401
-from tests.test_render import doc_text, pdf_text, slides  # noqa: F401
+from tests.test_render import body, doc_text, pdf_text, slides  # noqa: F401
 from tests.test_research import as_user, reg  # noqa: F401
 from tests.test_review import DOCS, make  # noqa: F401
 from tests.test_search import approved, data  # noqa: F401
@@ -114,7 +114,7 @@ def test_docx_and_pdf_have_the_quote_and_source(rows, approved):
 def test_pptx_industry_slide_keeps_the_quote_next_to_the_phrase(rows, approved):
     rid, cid = rows([claim(), claim(Q2, "configuration", "docs.vendor.io", "https://docs.vendor.io/x")]), approved()
     prs, out = slides(gen(rid, [cid], "pptx").content)
-    assert len(out) == 2 and prs.slides[1].slide_layout.name == render.INDUSTRY_LAYOUT
+    assert len(out) == 2 and body(prs)[1].slide_layout.name == render.INDUSTRY_LAYOUT
     ind = out[1]
     assert ind["Title"] == [render.INDUSTRY_HEADING] and ind["Summary"] == [render.INDUSTRY_DISCLAIMER]
     assert len(ind["Statements"]) == 2
@@ -164,7 +164,7 @@ def test_script_in_a_quote_is_escaped_everywhere(rows, approved):
     xml = zipfile.ZipFile(BytesIO(d)).read("word/document.xml").decode()
     assert "<script>" not in xml and "&lt;script&gt;" in xml and evil in doc_text(d)
     p = gen(rid, [cid], "pptx").content
-    slide_xml = zipfile.ZipFile(BytesIO(p)).read("ppt/slides/slide2.xml").decode()
+    slide_xml = zipfile.ZipFile(BytesIO(p)).read("ppt/slides/slide3.xml").decode()  # cover, case, industry (#282)
     assert "<script>" not in slide_xml and "&lt;script&gt;" in slide_xml  # text, never markup
 
 

@@ -3,6 +3,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends libreoffice-core libreoffice-writer libreoffice-impress libgl1 libglib2.0-0 \
  && rm -rf /var/lib/apt/lists/*
 # Aptos, the brand font, from Microsoft's download: installed, never committed (its EULA grants no distribution) (#282)
+COPY --chmod=644 brand/aptos-fonts.conf /etc/fonts/conf.d/60-aptos.conf
 RUN python -c "import hashlib, io, sys, urllib.request, zipfile; \
 url = 'https://download.microsoft.com/download/8/6/0/860a94fa-7feb-44ef-ac79-c072d9113d69/Microsoft%20Aptos%20Fonts.zip'; \
 data = urllib.request.urlopen(url, timeout=120).read(); \

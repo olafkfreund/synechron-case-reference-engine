@@ -27,6 +27,7 @@ TEMPLATE = Path(__file__).resolve().parent.parent / "brand" / "reference.docx"
 TEMPLATE_CASE_STUDY = TEMPLATE.with_name("case_study.docx")
 MASTER = Path(__file__).resolve().parent.parent / "brand" / "master.pptx"
 LAYOUT = "Reference case"
+COVER, CLOSING = "Cover", "Closing"  # brand/master.pptx from the official template (scripts/make_brand_master.py)
 PLACEHOLDERS = ("Title", "Client", "Summary", "Challenge", "Solution", "Outcomes", "Technology")
 WITHHELD = "output withheld: a protected client name is present"
 CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")  # invalid in XML; also used to split names
@@ -443,6 +444,12 @@ def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int
     case_layout = _layout(prs, LAYOUT, PLACEHOLDERS)
     if case_layout is None:
         raise ValueError(f"{MASTER.name} has no slide layout named {LAYOUT!r}")
+    cover, closing = (next((l for l in prs.slide_layouts if l.name == n), None) for n in (COVER, CLOSING))
+    if cover is None or closing is None:  # brand v2: every deck opens on a cover and closes on the yellow-device cover
+        raise ValueError(f"{MASTER.name} needs slide layouts named {COVER!r} and {CLOSING!r}")
+    names = {ph.placeholder_format.idx: ph.name for ph in cover.placeholders}
+    _fill(prs, cover, names, {"Title": ["Reference cases"], "Subtitle": [f"{datetime.now(timezone.utc):%B %Y}"]},
+          tuple(n for n in ("Title", "Subtitle") if n in names.values()))
     diagram_layout = None
     if any(d["id"] in images for c in sections for d in c["diagrams"]):  # a master without it fails only now
         diagram_layout = _layout(prs, DIAGRAM_LAYOUT, DIAGRAM_PLACEHOLDERS)
@@ -480,6 +487,7 @@ def to_pptx(sections: list[dict], industry: dict | None = None, images: dict[int
                 "Title": [industry["heading"]], "Client": [""], "Summary": [industry["disclaimer"]],
                 "Challenge": [""], "Solution": [""], "Outcomes": slide_statements(industry),
                 "Technology": ["Sources: " + ", ".join(refs)] if refs else [""]}, PLACEHOLDERS)
+    prs.slides.add_slide(closing)
     props = prs.core_properties
     props.title, props.author, props.last_modified_by = "Reference cases", "Reference Engine", "Reference Engine"
     props.comments = props.subject = props.keywords = props.category = ""
