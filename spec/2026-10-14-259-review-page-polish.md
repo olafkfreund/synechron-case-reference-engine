@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 259
 intent: intent/2026-10-14-259-review-page-polish.md
 ---
