@@ -375,3 +375,8 @@ code ignores it. The demo can be re-seeded.
   - A Regenerate that yields nothing adds a note.
   - The line format can't express a name containing `|` or `->`.
   - The reviewer PNG route is limited to `REVIEWABLE` cases.
+- B3 negative controls passed (`v`, the PNG role check, a parse error
+  keeping the old version, the check on save). Architecture changes are
+  listed on `/admin/audit`.
+- B4: `eval_extraction.py` prints architecture counts per document. The
+  test only covers the empty case; the session runs the real eval.

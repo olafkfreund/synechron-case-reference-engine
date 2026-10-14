@@ -370,3 +370,15 @@ def test_approval_overrides_are_append_only_for_the_app(app_role):
         with as_app("pw-1") as a:
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 a.execute(stmt)
+
+
+def test_architecture_changes_are_listed_escaped_for_admins_only(approved):
+    with db.connect() as c:
+        c.execute("insert into architecture_changes(case_id, action, changed_by) values (7, 'edit', %s)", ("<b>rev</b>",))
+    try:
+        t = client([ADMIN]).get("/admin/audit").text
+        assert "Architecture changes" in t and "&lt;b&gt;rev&lt;/b&gt;" in t and "<b>rev</b>" not in t
+        assert client(R).get("/admin/audit").status_code == 403
+    finally:
+        with db.connect() as c:
+            c.execute("delete from architecture_changes where changed_by=%s", ("<b>rev</b>",))
