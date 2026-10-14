@@ -7,8 +7,8 @@ from typing import get_args
 from pydantic import Field
 
 from app.llm import complete_json
-from app.schema import (CITE_POINTS, POINT_FIELDS, ArchCallout, ArchComponent, ArchFlow, Architecture, Prose, ReferenceCase,
-                        _Model, _norm, _cite_quote, _tech_values, _words, check_architecture, numbers, prune_architecture)
+from app.schema import (CITE_POINTS, POINT_FIELDS, ArchCallout, ArchComponent, ArchFlow, Architecture, Evidence, Prose,
+                        ReferenceCase, _Model, _norm, _words, evidence_of_case, check_architecture, numbers, prune_architecture)
 
 _PARAS = "1 to 4 paragraphs separated by a blank line, written only from the given points; empty if there are none."
 
@@ -196,26 +196,26 @@ def _arch_message(case: ReferenceCase) -> str:
     return f"basis: {case.basis}\n<points>\n" + "\n".join(lines) + "\n</points>"
 
 
-def _build_arch(r: ArchProposal, case: ReferenceCase) -> Architecture:
+def _build_arch(r: ArchProposal, ev: Evidence) -> Architecture:
     """Rows with a valid zone, kind and mode; at the caps the weakest go first: no sourced cite, a name the quote does not use, few flows."""
     zones, kinds, modes = (get_args(m.model_fields[f].annotation) for m, f in
                            ((ArchComponent, "zone"), (ArchComponent, "kind"), (ArchFlow, "mode")))
-    tech = " ".join(_tech_values(case))
+    tech = ev.tech
     rows = [(n, c) for n, c in enumerate(r.components, 1) if c.name.strip() and c.zone in zones and c.kind in kinds]
     degree = {n: sum(n in (f.src, f.dst) for f in r.flows) for n, _ in rows}
 
     def strength(item):
         n, c = item
-        q = _cite_quote(case, c.cite) if c.cite.strip() else None
+        q = ev.quote(c.cite) if c.cite.strip() else None
         return (q is not None and bool(_words(c.name) & (_words(q) | _words(tech))), q is not None, degree[n])
     keep = sorted(sorted(rows, key=strength, reverse=True)[:12])  # best 12, back in the model's order
     number = {n: f"c{i}" for i, (n, _) in enumerate(keep, 1)}
     comps = [ArchComponent(id=number[n], name=c.name.strip()[:40], role=c.role.strip()[:70], zone=c.zone, kind=c.kind, cite=c.cite.strip())
              for n, c in keep]
     good = [f for f in r.flows if f.src in number and f.dst in number and f.mode in modes]
-    good.sort(key=lambda f: _cite_quote(case, f.cite) is None if f.cite.strip() else True)  # sourced flows first (stable)
+    good.sort(key=lambda f: ev.quote(f.cite) is None if f.cite.strip() else True)  # sourced flows first (stable)
     flows = [ArchFlow(src=number[f.src], dst=number[f.dst], label=f.label.strip()[:40], mode=f.mode, cite=f.cite.strip()) for f in good]
-    notes = [] if case.basis != "delivered" else [ArchCallout(text=k.text.strip()[:60], outcome=k.outcome - 1) for k in r.callouts if k.text.strip()]
+    notes = [] if not ev.delivered else [ArchCallout(text=k.text.strip()[:60], outcome=k.outcome - 1) for k in r.callouts if k.text.strip()]
     return Architecture(components=comps, flows=flows, callouts=notes)
 
 
@@ -236,7 +236,7 @@ def propose(case: ReferenceCase, data_class: str) -> None:
     if not any(p.value and p.source_quote and not p.unsourced for f in CITE_POINTS for p in case.points.get(f, [])):
         return
     try:
-        arch = _build_arch(complete_json("EXTRACT_MODEL", ARCH_SYSTEM, _arch_message(case), ArchProposal, data_class=data_class), case)
+        arch = _build_arch(complete_json("EXTRACT_MODEL", ARCH_SYSTEM, _arch_message(case), ArchProposal, data_class=data_class), evidence_of_case(case))
     except Exception as e:  # noqa: BLE001 - the class only: a message could echo document text
         set_arch_note(case)  # this failure replaces any earlier architecture note
         case.needs_attention.append(f"architecture proposal failed ({type(e).__name__})")

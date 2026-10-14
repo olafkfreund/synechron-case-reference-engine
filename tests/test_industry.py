@@ -925,3 +925,37 @@ def test_a_blank_note_is_dropped_the_flat_list_keeps_the_whole_note_and_the_slid
     assert flat == [{"text": CODE + " [1]", "mono": True}]            # the whole note, newlines and all
     lead = render.industry_section([note("\n\n  first real line\nsecond")], [])
     assert render.slide_statements(lead)[0].endswith("first real line (see source [1])")
+
+
+def test_a_library_briefs_diagram_is_a_candidate_for_the_case_and_reaches_it_only_through_use(approved, env):
+    from tests.test_brief import QUOTES, body
+    from tests.test_review import ver
+    cid, other = approved(), approved()
+    d = {"components": [{"id": "c1", "name": "Entra", "role": "x", "zone": "core", "kind": "service", "cite": "source 1"}]}
+    with db.connect() as c:
+        lid = c.execute("insert into library_items(topic, kind, body, created_by) values ('t','brief',%s,'u9') returning id",
+                        (json.dumps({"quotes": QUOTES, "brief": {**{k: body()[k] for k in ("title", "takeaways", "themes")}, "diagram": d}}),)).fetchone()[0]
+    try:
+        u = as_user("u1", RV)
+        assert u.post(f"/review/{cid}/sources", data={"library_id": lid, "n": [0], "s": token(cid)}, follow_redirects=False).status_code == 303
+        with db.connect() as c:
+            iid, doc, case_id, credit = c.execute("select id, document_id, case_id, credit from document_images where case_id=%s", (cid,)).fetchone()
+            assert c.execute("select data->'diagrams' from cases where id=%s", (cid,)).fetchone()[0] == []  # a candidate, not a diagram
+        assert doc is None and case_id == cid and credit == "Diagram drawn by Synechron from the attached public sources"
+        assert u.get(f"/review/{cid}/images/{iid}.png").content.startswith(b"\x89PNG")
+        assert u.get(f"/review/{other}/images/{iid}.png").status_code == 404  # only the case it was offered to
+        assert f"/review/{cid}/images/{iid}.png" in u.get(f"/review/{cid}").text
+        u.post(f"/review/{cid}/sources", data={"library_id": lid, "n": [0], "s": token(cid)})  # again: still one candidate
+        with db.connect() as c:
+            assert c.execute("select count(*) from document_images where case_id=%s", (cid,)).fetchone()[0] == 1
+        assert u.post(f"/review/{cid}/images/{iid}/use", data={"caption": "Sign in", "v": ver(cid)}, follow_redirects=False).status_code == 303
+        with db.connect() as c:
+            (dg,) = c.execute("select data->'diagrams' from cases where id=%s", (cid,)).fetchone()[0]
+        assert dg["credit"] == credit and dg["image_id"] == iid
+        u.post(f"/review/{other}/sources", data={"library_id": lid, "n": [1], "s": token(other)})  # only source 2: the diagram cites source 1
+        with db.connect() as c:
+            assert c.execute("select count(*) from document_images where case_id=%s", (other,)).fetchone()[0] == 0
+    finally:
+        with db.connect() as c:
+            c.execute("delete from library_items where id=%s", (lid,))
+            c.execute("delete from document_images where case_id = any(%s)", ([cid, other],))

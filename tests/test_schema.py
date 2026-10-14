@@ -419,3 +419,17 @@ def test_a_capitalised_first_word_in_a_role_label_callout_or_title_is_checked():
     assert any("'Workday'" in f for f in check(c))
     c, check = _checked(components=[comp("The events carrier")], flows=[], callouts=[], title="Solution architecture")
     assert check(c) == []  # an ordinary opener and the default title pass
+
+
+def test_architecture_flags_and_pruning_equal_those_the_pre_evidence_code_gave():
+    """tests/arch_flags_main.json holds what check_architecture and prune_architecture returned on main (494cc8b), before Evidence."""
+    import json
+    from pathlib import Path
+    from app.schema import check_architecture, evidence_of_case, prune_architecture
+    expected = json.loads((Path(__file__).parent / "arch_flags_main.json").read_text())
+    assert expected["bad"]["flags"]  # the fixture is not empty
+    for name, e in expected.items():
+        c, _ = _checked(**e["arch"])
+        assert check_architecture(c) == e["flags"] == check_architecture(evidence_of_case(c), c.architecture), name
+        prune_architecture(evidence_of_case(c), c.architecture)
+        assert [x.id for x in c.architecture.components] == e["pruned"], name

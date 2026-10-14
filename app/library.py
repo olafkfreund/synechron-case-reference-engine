@@ -85,7 +85,7 @@ def save_item(conn, user: User, research_id: int | None, brief_id: int | None, n
         if status != "done" or b.get("flags"):
             raise HTTPException(409, "only a finished brief with no flagged sentences can be saved")
         rid = conn.execute("select research_id from briefs where id=%s", (brief_id,)).fetchone()[0]
-        kind, body = "brief", {"quotes": quotes, "brief": {k: b[k] for k in ("title", "takeaways", "themes")}}
+        kind, body = "brief", {"quotes": quotes, "brief": {k: b[k] for k in ("title", "takeaways", "themes", "diagram") if k in b}}
         body["images"] = _links(conn, rid, quotes, clients)  # links kept with the item: the research may be gone
         fallback = b.get("title") or title or ""
     query = (conn.execute("select query from research where id=%s", (rid,)).fetchone() or [""])[0] if rid else ""

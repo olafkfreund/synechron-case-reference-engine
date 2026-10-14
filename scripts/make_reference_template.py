@@ -4,7 +4,7 @@ blocks[{heading,text,paragraphs[str]}], lists[{heading,bullets[]}], diagrams[{im
 groups[{title, lead, quotes[{quote, n, mono, rich}]}] (rich: a RichText of the note, only when mono), sources[{n, title, publisher, url, date}], note, show_head (false when only library briefs follow: skip the heading, disclaimer, groups and sources),
 briefs[{title, disclaimer, takeaways[str], themes[{heading, text}], sources[{n, title, publisher, url, date}], note}] (library briefs, each with its own sources)
 (statements[{text}] is the flat fallback). The optional second path gets the brief template (brand/brief.docx): brief with title, disclaimer,
-takeaways[str], themes[{heading, text}], sources[{n, title, publisher, url, date}], appendix[{n, quote, mono, rich}], note.
+takeaways[str], themes[{heading, text}], diagram (an InlineImage; falsy when there is none) and credit, sources[{n, title, publisher, url, date}], appendix[{n, quote, mono, rich}], note.
 Usage: make_reference_template.py <out.docx> [<brief.docx>]
        make_reference_template.py --case-study <case_study.docx>   (one case per document: same context, cases has one item)"""
 import sys
@@ -186,6 +186,11 @@ if len(sys.argv) > 2:
     b.add_heading("{{ t.heading }}", 2)
     b.add_paragraph("{{ t.text }}")
     b.add_paragraph("{%p endfor %}")
+    b.add_paragraph("{%p if brief.diagram %}")
+    b.add_heading("Diagram", 2)
+    b.add_paragraph("{{ brief.diagram }}")
+    b.add_paragraph("{{ brief.credit }}").runs[0].italic = True
+    b.add_paragraph("{%p endif %}")
     b.add_paragraph("{%p if brief.sources %}")
     b.add_heading("Sources", 2)
     b.add_paragraph("{%p for s in brief.sources %}")

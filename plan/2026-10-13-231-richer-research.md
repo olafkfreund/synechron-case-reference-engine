@@ -330,6 +330,79 @@ removes the diagram.
 Then the full suite. **Eval:** re-run the MLflow query in the demo and
 check the brief has a diagram, counts only.
 
+### Phase (d), revised 2026-10-14: reuse the architecture renderer (approved by the user 2026-10-14)
+
+This replaces steps d1–d5 above. The spec revision of 2026-10-14 is
+approved.
+
+**d1. Evidence, not cases.**
+- The architecture helpers currently resolve cites against a
+  `ReferenceCase`:
+  - `writeup._build_arch(r, case)` (`app/writeup.py:199`)
+  - `schema.check_architecture(case)` and `prune_architecture(case)`
+    (`app/schema.py:464-473`)
+  - `review.parse_architecture(text, case)` (`app/review.py:523`)
+- Add one small structure: `Evidence(cites: dict[str, tuple[str, str]],
+  vocab: set[str])`, mapping a cite label to (value, quote) plus the
+  allowed vocabulary.
+  - `evidence_of_case(case)` builds it from the case points and
+    references, giving today's labels.
+  - `evidence_of_quotes(quotes)` builds it from a brief's numbered
+    quotes, with labels "source 1", "source 2" and so on.
+- The helpers take `Evidence`. The case callers pass
+  `evidence_of_case(case)`, so their behaviour is unchanged.
+- → verify:
+  - every existing architecture test is green and unchanged
+  - a new test: the same architecture checked through
+    `evidence_of_case` gives the same flags as before
+- Trap: this is a pure refactor for cases. No prompt or output for a case
+  may change.
+
+**d2. Proposing for a brief** (`app/brief.py:99` `run()`).
+- After the brief, one `DRAFT_MODEL` call with `ARCH_SYSTEM`, adapted
+  only to say "cite source N". It sends the brief's numbered `<quotes>`
+  with `data_class="public"`.
+- `_build_arch` and `prune` use `evidence_of_quotes`. The result is
+  stored as `body["diagram"]` (`Architecture.model_dump()`).
+- On failure, a class-only note.
+- `check()` (`:59`) adds each `check_architecture(...)` flag with `where`
+  "diagram: …", plus `blocked()` on every label and name. Flags block the
+  download, as the other brief flags do.
+- → verify: tests with a fake model covering a clean diagram, an unknown
+  cite dropped, an invented name flagged, a protected name blocked, and
+  a model failure leaving a note.
+
+**d3. The brief page.**
+- `GET /brief/{bid}/diagram.png` is owner-only, uses `PNG_HEADERS`, and
+  renders `archdiagram.to_png(layout(arch))`.
+- A line editor, the same format as the case architecture, posts to
+  `/brief/{bid}/diagram`. It re-parses with `parse_architecture(text,
+  evidence_of_quotes(...))`, re-checks, and saves. An empty box removes
+  the diagram.
+- → verify: owner-only (another user gets 404), a stale version gives
+  409, and save, parse errors and remove behave.
+
+**d4. Outputs.**
+- **Brief docx and PDF.** The `brand/brief.docx` field
+  `{%p if diagram %}` holds an `InlineImage` (`to_png`, 160 mm wide) and
+  the line "Diagram drawn by Synechron from sources [n, m…]", added via
+  `scripts/make_reference_template.py` and regenerated.
+- **Markdown.** A fenced `mermaid` block from `archdiagram.to_mermaid`.
+- **Library briefs** carry `body["diagram"]`.
+- **Attaching a library brief to a case.** `_attach()` (`app/review.py:832`)
+  inserts the PNG as a `document_images` candidate with a null
+  `document_id`; make the column nullable if it isn't. The credit text is
+  as above. It reaches the case only through the reviewer's **Use**.
+- → verify:
+  - docx, PDF and md contain the diagram and credit
+  - no diagram means no gap
+  - the library keeps it
+  - the attach creates a candidate, never a case diagram
+
+**d5. Full suite, screenshots, reviews and PR.** Screenshots of a brief
+with a diagram, in light and dark. Opus, Codex and agy reviews. Run
+`docker compose build app && docker compose run --rm app pytest`.
+
 ## Deviations
 
 - Phase (a):
@@ -432,6 +505,65 @@ check the brief has a diagram, counts only.
     checked, never rewritten.
   - **Rights per attach.** Rights are recorded on the case diagram itself.
     The `research_images.rights_*` columns from c1 are left unused.
+- **Phase (d) revised, d1.**
+  - **`Evidence` fields.** It carries `quotes`, `tech`, `outcomes` and
+    `delivered`, not `(cites, vocab)`. Tech matching needs the raw text,
+    and the unchanged flags and callouts need the others.
+    `evidence_of_quotes` leaves `tech` empty, so every brief component
+    must cite a source.
+  - **Callers unchanged.** `check_architecture` and `prune_architecture`
+    still accept a plain case, so existing callers and tests are
+    untouched.
+  - **Parser untouched.** `parse_architecture` never used its case
+    argument.
+- **Phase (d) revised, d2.**
+  - **Prompt.** `ARCH_BRIEF_SYSTEM` is `ARCH_SYSTEM` with "numbered
+    quotes", "cite source N" and `<quotes>` substituted. The message
+    starts with `basis: capability`, so the existing rule drops outcome
+    callouts; a brief has no delivered outcomes.
+  - **Flags.** They use `where: "diagram"`, with the label in `sentence`,
+    which is what the brief page prints.
+  - **Saving.** `save()` keeps `diagram` and `diagram_note` across edits.
+  - **Tests.** The existing brief fakes answer only the `Brief` call.
+- **Phase (d) revised, d3.**
+  - **Version.** `v` is `md5(body::text)`, as on the case page.
+  - **Save.** A saved diagram is checked but not pruned, as the case
+    editor does.
+  - **Errors.** A parse error re-renders the page with status 400 and
+    keeps the stored diagram.
+- **Phase (d) revised, d4** (full suite 1578 passed, 4 skipped):
+  - **Two extra columns.** `document_images` also gets `case_id`
+    (cascade) and `credit` beside the nullable `document_id`; otherwise a
+    case candidate has no case link and nowhere to keep the credit. The
+    candidate queries and the image route are scoped by `case_id`, and
+    repeat attaches are deduped by sha256.
+  - **Withholding.** `brief_section` leaves the diagram out if
+    anonymisation would change it, if it is blocked, or if it cites a
+    dropped source, and counts that in the note.
+  - **Credit numbers.** "[n…]" refers to the brief's sources, as the
+    plan worded it.
+- **Phase (d) revised, review fixes** (Opus, Codex and agy; full suite
+  1582 passed, 4 skipped):
+  - **Case offer.** A case is offered the diagram only if every source it
+    cites was attached, and the case credit has no brief numbers.
+  - **Index and constraint.** `document_images_case_idx`, a check that a
+    row has a document or a case, and the candidate queries back as the
+    indexed document query `union all` a `case_id` query.
+  - **Strict pruning for briefs only** (`Evidence.strict`): unresolvable
+    cites and their flows are dropped.
+  - **Visible problems.** `check()` flags diagram text that
+    anonymisation would change, and the output note gives the real
+    reason.
+  - **Locking.** `save` and `save_diagram` share a locked version check,
+    the edit form carries `v`, and oversize diagram text gets a 400.
+  - **`tech_match`** accepts a case.
+  - **Real "unchanged" test.** The unchanged-behaviour test compares
+    against flags recorded from main at 494cc8b
+    (`tests/arch_flags_main.json`).
+  - **Negative controls run:** strict pruning, the version check, the
+    cited-source check and `tech_match`.
+  - **Not negative-controlled:** the index split, the withholding check
+    and the oversize check.
 
 ## Tests
 
