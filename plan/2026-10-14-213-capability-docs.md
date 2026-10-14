@@ -114,4 +114,11 @@ exist, which would stop the app starting. This goes in the PR.
 
 ## Deviations
 
-None yet.
+- **Step 1.**
+  - **Drafts at ingest.** Under decision 1, ingest now queues capability
+    drafts for new proposals, decks and unexecuted contracts, because it
+    extracts any non-`None` basis. The step 5 admin action therefore
+    covers only documents ingested before this change.
+  - **Changed tests.** Five existing ingest tests that pinned "skipped"
+    were updated to expect `capability`. `other` is the kind that is still
+    skipped.

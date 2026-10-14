@@ -118,7 +118,7 @@ def test_new_version_updates_in_place_and_reopens_case(env):
 
 def test_non_case_routed_away(env):
     _, sid = env
-    TRIAGE["v"] = ing.Triage(kind="proposal", describes_delivered_work=False)
+    TRIAGE["v"] = ing.Triage(kind="other", describes_delivered_work=False)
     ing.ingest(sid, "a", "a", b"x")
     assert jobs() == 0
     TRIAGE["v"] = ing.Triage(kind="deck", describes_delivered_work=True)
@@ -130,11 +130,12 @@ def test_non_case_routed_away(env):
     ("case", False, False, False, "delivered"),
     ("proposal", True, False, False, "delivered"),
     ("deck", True, False, False, "delivered"),
-    ("proposal", False, True, False, None),
-    ("deck", False, False, False, None),
+    ("proposal", False, True, False, "capability"),
+    ("deck", False, False, False, "capability"),
+    ("other", False, False, False, None),
     ("other", True, True, True, None),
     ("contract", False, True, False, "engagement"),
-    ("contract", True, False, False, None),
+    ("contract", True, False, False, "capability"),
     ("contract", False, False, True, "engagement"),
 ])
 def test_basis_for_routing_table(kind, deliv, executed, flag, want):
@@ -146,7 +147,7 @@ def test_contract_payload_and_source_flag(env):
     _, sid = env
     TRIAGE["v"] = ing.Triage(kind="contract", describes_delivered_work=False, executed=False)
     ing.ingest(sid, "a", "a", b"x")
-    assert jobs() == 0
+    assert jobs() == 1  # an unexecuted contract is a capability draft (#213)
     with db.connect() as c:
         c.execute("update sources set config=config || '{\"executed_contracts\": true}' where id=%s", (sid,))
     ing.ingest(sid, "b", "b", b"y")
@@ -155,7 +156,7 @@ def test_contract_payload_and_source_flag(env):
     with db.connect() as c:
         got = c.execute("select payload->>'basis', payload->>'basis_reason' from jobs where (payload->>'document_id')::bigint in "
                         "(select id from documents where source_id=%s) order by id", (sid,)).fetchall()
-    assert got == [("engagement", "source marked executed"), ("engagement", "executed contract")]
+    assert got == [("capability", ""), ("engagement", "source marked executed"), ("engagement", "executed contract")]
 
 
 def _toggle_during_triage(monkeypatch, sid, sql):
@@ -180,13 +181,14 @@ def test_executed_ticked_during_triage_queues_engagement(env, monkeypatch):
     assert _flag_jobs(sid) == [("engagement", "source marked executed")]
 
 
-def test_executed_unticked_during_triage_queues_nothing(env, monkeypatch):
+def test_executed_unticked_during_triage_queues_no_engagement(env, monkeypatch):
     _, sid = env
     with db.connect() as c:
         c.execute("update sources set config=config || '{\"executed_contracts\": true}' where id=%s", (sid,))
     _toggle_during_triage(monkeypatch, sid, "update sources set config=config - 'executed_contracts' where id=%s")
     ing.ingest(sid, "a", "a", b"x")
-    assert jobs() == 0
+    with db.connect() as c:
+        assert c.execute("select payload->>'basis' from jobs").fetchall() == [("capability",)]
 
 
 def test_ingest_waits_for_an_uncommitted_tick(env, monkeypatch):
@@ -593,7 +595,7 @@ def test_unrelated_document_leaves_merged_cases_alone(env):
 
 def test_executed_flag_must_be_true_not_truthy():
     t = ing.Triage(kind="contract", describes_delivered_work=False, executed=False)
-    assert ing.basis_for(t, {"executed_contracts": "false"}) is None
+    assert ing.basis_for(t, {"executed_contracts": "false"}) == "capability"
     assert ing.basis_for(t, {"executed_contracts": True}) == "engagement"
 
 
@@ -787,7 +789,7 @@ def test_a_document_that_gets_no_case_gets_no_images(env, monkeypatch):
     monkeypatch.setattr(ing, "document_images_from", lambda *a, **k: [(b"p", 500, 400, "")])
     ing.ingest(sid, "a", "a.docx", b"one")
     assert len(images_of(sid)) == 1
-    TRIAGE["v"] = ing.Triage(kind="proposal", describes_delivered_work=False)
+    TRIAGE["v"] = ing.Triage(kind="other", describes_delivered_work=False)
     ing.ingest(sid, "a", "a.docx", b"two")  # now routed away: the old candidates go
     assert images_of(sid) == []
 

@@ -79,7 +79,7 @@ alter table documents add column if not exists images_version int not null defau
 -- what a case claims: work delivered, or scope contracted (signed SOW / change order)
 alter table cases add column if not exists basis text not null default 'delivered';
 alter table cases drop constraint if exists cases_basis_check;
-alter table cases add constraint cases_basis_check check (basis in ('delivered','engagement'));
+alter table cases add constraint cases_basis_check check (basis in ('delivered','engagement','capability'));
 
 -- a merged engagement (#55) has no document of its own; its member cases point to it
 alter table cases alter column document_id drop not null;

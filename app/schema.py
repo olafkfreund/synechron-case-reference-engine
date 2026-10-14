@@ -225,7 +225,7 @@ class ReferenceCase(_Model):
     diagrams: SkipJsonSchema[list[Diagram]] = []
     architecture: SkipJsonSchema[Architecture | None] = None
     dismissed_images: SkipJsonSchema[list[int]] = []  # document_images candidates the reviewer turned down (#212)
-    basis: SkipJsonSchema[Literal["delivered", "engagement"]] = "delivered"
+    basis: SkipJsonSchema[Literal["delivered", "engagement", "capability"]] = "delivered"
     extraction_version: SkipJsonSchema[int] = 1  # bump EXTRACTION_VERSION when extraction output changes
     basis_reason: SkipJsonSchema[str] = ""  # "executed contract" | "source marked executed"
 
