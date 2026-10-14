@@ -28,6 +28,7 @@ def clean():
     with db.connect() as c:
         c.execute("delete from sources where name = any(%s)", ([s["name"] for s in DEMO["sources"]],))
         c.execute("delete from clients where name = any(%s)", ([x["name"] for x in DEMO["clients"]],))
+        c.execute("delete from model_approvals where model = 'mcp-client:local-dev-review'")
 
 
 @pytest.fixture
@@ -36,6 +37,7 @@ def env(monkeypatch):
         monkeypatch.setenv(k, "x")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
     monkeypatch.setenv("S3_BUCKET", "demo")
+    monkeypatch.setenv("MCP_ISSUER", "http://idp.localhost:8080/refs-mcp")  # the mock IdP
     monkeypatch.setattr(seed, "to_markdown",
                         lambda data, name: "\n\n".join(p.text for p in Document(io.BytesIO(data)).paragraphs))
     db.init()
@@ -61,6 +63,9 @@ def test_seed_twice(env):
     assert first == (len(DEMO["cases"]), len(DEMO["cases"]), len(DEMO["clients"]))
     assert seed.main() == 0
     assert counts() == first  # the second run adds no rows
+    with db.connect() as c:  # one live 30-day approval for the dev reviewer client, not one per run
+        assert c.execute("select count(*) from model_approvals where model = 'mcp-client:local-dev-review' and data_class = 'confidential' "
+                         "and expires_at > now() + interval '29 days' and revoked_by is null").fetchone()[0] == 1
 
     with db.connect() as c:
         rows = c.execute("select c.status, c.basis, c.client_id, c.data, d.external_id from cases c "
@@ -320,3 +325,33 @@ def test_first_demo_source_is_the_staff_source_even_on_an_old_database(env):
     with db.connect() as c:
         got = dict(c.execute("select name, coalesce(config->>'staff', '') from sources where name like 'Demo: %'").fetchall())
     assert got[first] == "true" and [n for n, v in got.items() if v] == [first]
+
+
+def test_compose_mock_idp_gives_the_review_client_its_scope():
+    import yaml
+    cfg = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    maps = json.loads(cfg["services"]["idp"]["environment"]["JSON_CONFIG"])["tokenCallbacks"][0]["requestMappings"]
+    by = {m["match"]: m["claims"] for m in maps}
+    assert by["local-dev-review"]["scp"] == "refs.access refs.review" and by["local-dev-review"]["azp"] == "local-dev-review"
+    assert by["local-dev"]["scp"] == "refs.access"
+    assert {"local-dev", "local-dev-review"} <= set(cfg["services"]["web"]["environment"]["MCP_CLIENT_IDS"].split(","))
+
+
+LIVE = "select count(*) from model_approvals where model = 'mcp-client:local-dev-review' and expires_at > now() and revoked_by is null"
+
+
+def test_a_revoked_dev_approval_is_replaced_not_counted(env):
+    assert seed.main() == 0
+    with db.connect() as c:
+        c.execute("update model_approvals set revoked_by = 'admin' where model = 'mcp-client:local-dev-review'")  # still in date
+    assert seed.main() == 0
+    with db.connect() as c:
+        assert c.execute(LIVE).fetchone()[0] == 1
+
+
+def test_no_dev_approval_unless_the_issuer_is_the_mock(env, monkeypatch, capsys):
+    monkeypatch.setenv("MCP_ISSUER", "https://login.microsoftonline.com/t/v2.0")
+    assert seed.main() == 0
+    with db.connect() as c:
+        assert c.execute(LIVE).fetchone()[0] == 0
+    assert "not approved" in capsys.readouterr().out

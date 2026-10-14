@@ -24,6 +24,7 @@ have not yet been run against a real tenant. The local mock IdP steps were run.
 | `list_library`, `get_library_item` | The shared library, as a reader sees it now (`q`, `topic`, `kind`), and one item. |
 | `create_brief`, `get_brief` | Queues a brief from picked statements of your research (`research_id`, `n`, optional `title`), then reads it when done. A brief is private to its creator. |
 | `download_brief`, `download_library_item` | Download links for a finished brief or a library brief (`docx`, `pdf_docx` or `md`). |
+| `list_review_queue`, `get_review_case`, `edit_case` | Reviewers only. See *Reviewing from an AI client*. |
 
 
 What comes back:
@@ -113,6 +114,64 @@ Set `MCP_ENABLED=1`. Without it `/mcp` does not exist (404). See `.env.example` 
    resource metadata, so a client can request that scope as written.
 
 Open question: whether Entra accepts the RFC 8707 `resource` parameter that some clients send.
+
+## Reviewing from an AI client
+
+Three tools let a reviewer check and correct extracted cases from an AI client: `list_review_queue` (the
+cases waiting for review, 20 a page), `get_review_case` (`case_id`: each field with its quote and whether it
+is sourced, the prose and its flags, the action notes, the completeness checklist, and the version `v`) and
+`edit_case` (`case_id`, `v`, `field`, and the form's `value`, `metric`, `start`, `end`, `quote`, `written`,
+`action`). `edit_case` does exactly what the portal's edit form does and returns the new `v`.
+
+Every reviewer call passes all of these, and a refusal is audited:
+
+1. the normal gate (valid token, `refs.access`, an approved AI client, your groups);
+2. the **reviewer** role;
+3. the **`refs.review`** scope in the token;
+4. a live approval for the client under **Model approvals** (`/admin/models`): model `mcp-client:<client id>`,
+   data class `confidential`, not expired. Revoking or letting it expire stops that client at once.
+5. the portal's own checks: a case you may not see is "no such case"; a case that changed or was already
+   decided is a 409.
+
+Setup:
+
+- **Entra:** add the delegated scope `refs.review` (admin consent only) next to `refs.access`, and
+  pre-authorise only the client apps that should review. The server lists both scopes in its protected
+  resource metadata; a client that asks only for `refs.access` gets a token that works for every other tool
+  but not these. To review, the client requests `api://<app id>/refs.access api://<app id>/refs.review`
+  (for Claude Code, remove and add the server again with that scope, or sign in again when it asks for more
+  scope), so a reviewer's token is issued deliberately. A client that is not pre-authorised for it cannot
+  get a token with the scope.
+- **Admin:** in Model approvals add `mcp-client:<the client's app id>` with data class `confidential` and an
+  expiry. Without it the reviewer tools refuse, even with the scope.
+
+What leaves the portal: the extracted fields and their short source quotes, the prose, the action notes and
+the case's document title, to the AI client's model. Never sent: the document text, its identifier or any
+URL, other cases, who uploaded it, or public sources.
+
+What stays in the portal: approve and reject, merge, architecture, diagrams and the registry.
+
+A 409 means the case changed since you read it (someone else edited it, or it was decided). Call
+`get_review_case` again for the new `v`, check the field, and retry the edit. Editing an approved case that
+is due soon takes it back to *extracted*, as in the portal.
+
+Locally: `scripts/mcp_token.sh --review <user> <group>` asks the mock IdP for the `local-dev-review` client
+with both scopes, and `scripts/seed_demo.py` approves that client for 30 days. A reviewer only sees cases whose
+documents are open to one of their groups, and the mock puts one group in a token. The demo documents are in
+the groups `delivery` and `sales`, so give that group the reviewer role for the test:
+
+```sh
+cat > /tmp/reviewer.yml <<'EOF'
+services:
+  web:
+    environment:
+      ROLE_USER_GROUPS: delivery
+      ROLE_REVIEWER_GROUPS: delivery
+EOF
+MCP_ENABLED=1 docker compose -f docker-compose.yml -f /tmp/reviewer.yml up -d --build web
+docker compose run --rm worker python scripts/seed_demo.py     # the cases and the client's approval
+scripts/mcp_token.sh --review alice delivery                   # then call the three tools with this token
+```
 
 ## Revoking access
 
