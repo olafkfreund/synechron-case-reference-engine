@@ -151,3 +151,10 @@ exist, which would stop the app starting. This goes in the PR.
   - **Merge note.** #231 phase (c) also edits that script (the brief image
     section). Whichever merges second regenerates both templates from the
     merged script.
+- **Steps 5 and 6** (full suite 1454 passed):
+  - **Admin action.** It skips documents that already have a case or a
+    queued or running extract job. It takes the re-extract advisory lock,
+    so a repeat click queues nothing, and it is 403 for non-admins.
+  - **MCP.** `kind="capability"`, and every row carries a `note`.
+    `generate_output` refuses through the shared `build()`.
+  - **Test fix.** A step 1 test now filters jobs by its own source.

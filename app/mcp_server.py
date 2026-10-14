@@ -173,6 +173,7 @@ class Row(BaseModel):
     title: str
     label: str
     basis: str
+    note: str = ""  # set for engagement and capability: what the basis does not claim
     sources: list[Source]
     summary: str = ""
     reason: str = ""
@@ -445,7 +446,7 @@ def _sources(entries, origin: str) -> list[Source]:
 
 def _row(d: dict, origin: str) -> Row:
     at = d.get("approved_at")
-    return Row(**{k: d[k] for k in ("id", "title", "label", "basis", "summary", "reason", "tailored", "outcomes", "industry",
+    return Row(**{k: d[k] for k in ("id", "title", "label", "basis", "note", "summary", "reason", "tailored", "outcomes", "industry",
                                     "region", "tech") if k in d}, sources=_sources(d["sources"], origin), approved_at=at.isoformat() if at else None)
 
 
@@ -566,14 +567,14 @@ def register(server, origin: str) -> None:
             industry: Annotated[str, Field(max_length=search.MAX_FILTER_CHARS)] = "",
             region: Annotated[str, Field(max_length=search.MAX_FILTER_CHARS)] = "",
             tech: Annotated[str, Field(max_length=search.MAX_FILTER_CHARS)] = "",
-            kind: Annotated[str, Field(description="delivered or engagement; anything else means both")] = "",
+            kind: Annotated[str, Field(description="delivered, engagement or capability (offerings, not delivery evidence); anything else means delivered and engagement")] = "",
             sort: Annotated[str, Field(description="newest, title or industry; only when browsing")] = "newest",
             page: Annotated[int, Field(ge=1, le=1000, description="only when browsing")] = 1,
     ) -> Annotated[CallToolResult, SearchOut]:
         """Find approved reference cases for a bid: ranked picks and other matches, or a browse list when no bid text is given."""
         def work(user):
             filters = {k: v.strip() for k, v in dict(industry=industry, region=region, tech=tech).items()}
-            k = kind if kind in ("delivered", "engagement") else ""
+            k = kind if kind in ("delivered", "engagement", "capability") else ""
             if bid_text.strip():
                 top, others, notes = search.results(user, bid_text, filters, k)
             else:
@@ -595,12 +596,12 @@ def register(server, origin: str) -> None:
 
     @server.tool(annotations=READ_ONLY)
     async def list_latest(
-            kind: Annotated[str, Field(description="delivered or engagement; anything else means both")] = "",
+            kind: Annotated[str, Field(description="delivered, engagement or capability (offerings, not delivery evidence); anything else means delivered and engagement")] = "",
             page: Annotated[int, Field(ge=1, le=1000)] = 1,
     ) -> Annotated[CallToolResult, LatestOut]:
         """The newest approved reference cases, 20 to a page."""
         def work(user):
-            k = kind if kind in ("delivered", "engagement") else ""
+            k = kind if kind in ("delivered", "engagement", "capability") else ""
             out = LatestOut(rows=[_row(d, origin) for d in search.browse(user, {}, k, "newest", page)])
             return out, [r.id for r in out.rows]
         return await _run(work, "list_latest")

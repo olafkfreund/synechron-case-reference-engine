@@ -34,7 +34,8 @@ S3 and SharePoint: optional <code>"include_ext"</code> (default docx, pptx, pdf)
 {% if notice %}<p class="badge {{ notice[0] }}" role="status">{{ notice[1] }}{% if queued is not none %}: {{ queued }} of {{ total }}{% endif %}{% if job %}: job {{ job }}{% if source_name %} to {{ source_name }}{% endif %}{% endif %}</p>{% endif %}
 
 <div class="section-card client-list">
-<div class="card-head"><h2>Sources ({{ sources | length }})</h2>{% if older %}<form method="post" action="/admin/reextract" class="action-row"><button class="btn btn-sm">Re-extract older cases ({{ older }}): cases go back to review</button></form>{% endif %}</div>
+<div class="card-head"><h2>Sources ({{ sources | length }})</h2>{% if older %}<form method="post" action="/admin/reextract" class="action-row"><button class="btn btn-sm">Re-extract older cases ({{ older }}): cases go back to review</button></form>{% endif %}
+{% if skipped %}<form method="post" action="/admin/capability-drafts" class="action-row"><button class="btn btn-sm">Capability drafts from skipped documents ({{ skipped }})</button></form>{% endif %}</div>
 {% if not sources %}<div class="empty-state">{{ icon("database") }}<p>No sources yet.</p><p>Use “+ Add source” above.</p></div>{% endif %}
 {% for id, kind, name, config, acl, enabled, last_run, counts, dc, days in sources %}
 <div class="source-row src">

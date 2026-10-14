@@ -188,7 +188,8 @@ def test_executed_unticked_during_triage_queues_no_engagement(env, monkeypatch):
     _toggle_during_triage(monkeypatch, sid, "update sources set config=config - 'executed_contracts' where id=%s")
     ing.ingest(sid, "a", "a", b"x")
     with db.connect() as c:
-        assert c.execute("select payload->>'basis' from jobs").fetchall() == [("capability",)]
+        assert c.execute("select payload->>'basis' from jobs where (payload->>'document_id')::bigint in "
+                         "(select id from documents where source_id=%s)", (sid,)).fetchall() == [("capability",)]
 
 
 def test_ingest_waits_for_an_uncommitted_tick(env, monkeypatch):
