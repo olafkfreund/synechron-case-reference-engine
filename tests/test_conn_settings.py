@@ -5,6 +5,7 @@ import pytest
 from moto import mock_aws
 
 from app import conn_settings as cs, db
+from app.schema import ReferenceCase
 
 
 @pytest.fixture
@@ -97,3 +98,32 @@ def test_audit_table_is_append_only_for_the_app_role():
                        "has_table_privilege('refs_app','connection_setting_changes','update'), "
                        "has_table_privilege('refs_app','connection_setting_changes','delete')").fetchone()
     assert ok == (True, False, False)
+
+
+def test_callers_pick_up_a_change_after_the_ttl(managed, clock, monkeypatch):
+    from app import crawl, llm, research
+    sm, ids = managed
+    sm.put_secret_value(SecretId=ids["BRAVE_API_KEY"], SecretString="old")
+    seen = []
+    monkeypatch.setattr(research, "_brave_attempts", lambda client, q, key: seen.append(key) or [])
+    research.brave_search("q")
+    sm.put_secret_value(SecretId=ids["BRAVE_API_KEY"], SecretString="new")
+    research.brave_search("q")
+    clock[0] += cs.TTL + 1
+    research.brave_search("q")
+    assert seen == ["old", "old", "new"]
+
+    monkeypatch.setenv("GRAPH_CLIENT_ID", "env-id")
+    monkeypatch.setenv("GRAPH_CLIENT_SECRET", "env-secret")  # managed: ignored
+    with pytest.raises(RuntimeError, match="GRAPH_CLIENT_SECRET"):
+        crawl.Graph("t").login()
+
+    monkeypatch.setenv("EXTRACT_MODEL", "bedrock/env-model")
+    with db.connect() as c:
+        c.execute("insert into connection_settings(name, value, changed_by) values ('EXTRACT_MODEL','bedrock/row-model','a')")
+    clock[0] += cs.TTL + 1
+    calls = []
+    monkeypatch.setattr(llm.litellm, "completion", lambda **kw: calls.append(kw) or (_ for _ in ()).throw(RuntimeError("stop")))
+    with pytest.raises(RuntimeError):
+        llm.complete_json("EXTRACT_MODEL", "s", "u", ReferenceCase, data_class="public")
+    assert calls[0]["model"] == "bedrock/row-model"
