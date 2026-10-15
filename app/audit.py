@@ -11,6 +11,10 @@ router = APIRouter()
 PAGE_SIZE = 50
 
 
+def shown(v):
+    return ", ".join(map(str, v)) if isinstance(v, list) else v
+
+
 def config_summary(action, old, new):
     if action == "create":
         return "created"
@@ -22,7 +26,7 @@ def config_summary(action, old, new):
     before, after = old.get("config") or {}, new.get("config") or {}
     for key in sorted(before.keys() | after.keys()):
         if before.get(key) != after.get(key):
-            changes.append(f"{key}: {before.get(key, '—')} → {after.get(key, '—')}")
+            changes.append(f"{key}: {shown(before.get(key, '—'))} → {shown(after.get(key, '—'))}")
     return "; ".join(changes)
 
 

@@ -85,7 +85,8 @@ The Confluence crawler account must be a dedicated non-admin account that no res
 {% if kind == 'confluence' %}<div class="field"><label for="s{{ id }}-spaces">Spaces</label><input type="text" id="s{{ id }}-spaces" name="spaces" value="{{ config.get('spaces', []) | join(', ') }}"></div>
 <div class="field"><label for="s{{ id }}-api">API prefix</label><select id="s{{ id }}-api" name="api_prefix">
 <option value="/wiki"{{ " selected" if config.get("api_prefix", "/wiki") == "/wiki" }}>/wiki (Confluence Cloud)</option>
-<option value=""{{ " selected" if config.get("api_prefix", "/wiki") == "" }}>none (Data Center)</option></select></div>{% endif %}
+<option value=""{{ " selected" if config.get("api_prefix", "/wiki") == "" }}>none (Data Center)</option>
+{% if config.get("api_prefix", "/wiki") not in ("/wiki", "") %}<option selected>{{ config.api_prefix }}</option>{% endif %}</select></div>{% endif %}
 </div>
 <p class="field-help">Narrowing the scope withdraws documents outside it on the next crawl; any scope change makes the next crawl a full one.</p>
 {% if counts %}<h3>Last run counts</h3>

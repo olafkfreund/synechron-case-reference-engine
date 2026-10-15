@@ -456,6 +456,10 @@ def test_parse_config_builds_only_the_named_keys(kind, fields, want):
     ("confluence", {"base_url": "https://u:p@x.atlassian.net", "spaces": "ENG"}),
     ("confluence", {"base_url": "https://x.atlassian.net?t=1", "spaces": "ENG"}),
     ("confluence", {"base_url": "https://x.atlassian.net#f", "spaces": "ENG"}),
+    ("confluence", {"base_url": "https://x.atlassian.net?", "spaces": "ENG"}),
+    ("confluence", {"base_url": "https://x.atlassian.net#", "spaces": "ENG"}),
+    ("confluence", {"base_url": "https://@x.atlassian.net", "spaces": "ENG"}),
+    ("confluence", {"base_url": "https://x.atlassian.net/a\tb", "spaces": "ENG"}),
     ("confluence", {"base_url": "https://x.atlassian.net:8443", "spaces": "ENG"}),
     ("confluence", {"base_url": "https://x.atlassian.net", "spaces": ""}),
     ("confluence", {"base_url": "https://x.atlassian.net", "spaces": "EN G"}),
@@ -540,14 +544,19 @@ def test_edit_refused_while_the_source_is_crawling(env):  # noqa: F811
         with db.connect(autocommit=True) as crawl:  # what a crawler holds for its whole run
             crawl.execute("select pg_advisory_lock(2, %s)", (sid,))
             r = a.post(f"/admin/sources/{sid}", data={"acl_groups": "g9", "prefix": "x/"})
-            html = a.post(f"/admin/sources/{sid}", data={"acl_groups": "g9"}, headers={"accept": "text/html"},
-                          follow_redirects=False)
+            html = a.post(f"/admin/sources/{sid}", data={"acl_groups": "g9", "include_ext": "pdf"},
+                          headers={"accept": "text/html"}, follow_redirects=False)
+            with db.connect() as c:
+                assert _source(c, name)[2:] == (cfg, None, enabled)  # a scope change waits for the crawl
+                assert c.execute("select acl_groups from sources where id=%s", (sid,)).fetchone()[0] == ["g1"]
+            # an ACL tightening or a disable must not wait hours: the crawl re-reads the ACL at its end
+            ok = a.post(f"/admin/sources/{sid}", data={"acl_groups": "g9", "prefix": ""}, follow_redirects=False)
             crawl.execute("select pg_advisory_unlock(2, %s)", (sid,))
         assert r.status_code == 409 and html.headers["location"] == "/admin/sources?notice=crawling"
+        assert ok.status_code == 303
         with db.connect() as c:
-            assert _source(c, name)[2:] == (cfg, None, enabled)
-            assert c.execute("select acl_groups from sources where id=%s", (sid,)).fetchone()[0] == ["g1"]
-        assert [r[0] for r in _changes(sid)] == ["create"]
+            assert c.execute("select acl_groups, enabled from sources where id=%s", (sid,)).fetchone() == (["g9"], False)
+        assert [r[0] for r in _changes(sid)] == ["create", "disable"]
         assert "A crawl is running" in a.get("/admin/sources?notice=crawling").text
     finally:
         with db.connect() as c:
@@ -566,6 +575,51 @@ def test_saving_a_legacy_config_unchanged_is_not_a_scope_change(env):  # noqa: F
         with db.connect() as c:
             assert _source(c, name)[2:4] == ({"bucket": "bkt", "executed_contracts": False}, "c1")
         assert _changes(sid) == []
+    finally:
+        with db.connect() as c:
+            c.execute("delete from sources where id=%s", (sid,))
+
+
+def test_empty_fields_clear_the_scope_and_pick_data_center(env):  # noqa: F811
+    db.init()
+    a, s3, cf = client([ADMIN]), f"s3-{uuid.uuid4().hex[:8]}", f"cf-{uuid.uuid4().hex[:8]}"
+    a.post("/admin/sources", data={"kind": "s3", "name": s3, "acl_groups": "g1", "bucket": "refs-bkt",
+                                   "prefix": "a/", "include_ext": "pdf"})
+    a.post("/admin/sources", data={"kind": "confluence", "name": cf, "acl_groups": "g1", "spaces": "ENG",
+                                   "base_url": "https://wiki.example.com", "api_prefix": ""})
+    with db.connect() as c:
+        sid, cid = _source(c, s3)[0], _source(c, cf)[0]
+        assert _source(c, cf)[2]["api_prefix"] == ""  # Data Center, not the /wiki default
+        c.execute("update sources set cursor='c1' where id = any(%s)", ([sid, cid],))
+    try:
+        a.post(f"/admin/sources/{sid}", data={"acl_groups": "g1", "prefix": "", "include_ext": ""})
+        a.post(f"/admin/sources/{cid}", data={"acl_groups": "g1", "spaces": "ENG", "api_prefix": "/wiki"})
+        with db.connect() as c:
+            assert _source(c, s3)[2:4] == ({"bucket": "refs-bkt", "prefix": "", "executed_contracts": False}, None)
+            assert _source(c, cf)[2]["api_prefix"] == "/wiki" and _source(c, cf)[3] is None
+        a.post(f"/admin/sources/{cid}", data={"acl_groups": "g1", "api_prefix": ""})
+        with db.connect() as c:
+            assert _source(c, cf)[2]["api_prefix"] == ""
+    finally:
+        with db.connect() as c:
+            c.execute("delete from sources where id = any(%s)", ([sid, cid],))
+
+
+def test_a_legacy_value_posted_back_unchanged_still_saves(env):  # noqa: F811
+    db.init()
+    name, a = f"s3-{uuid.uuid4().hex[:8]}", client([ADMIN])
+    legacy = {"bucket": "bkt", "prefix": "/docs", "include_ext": [".PDF"], "token": "LEGACY-SECRET"}
+    with db.connect() as c:  # created before #283: values the typed rules refuse, and a free-form key
+        sid = c.execute("insert into sources(kind, name, config, acl_groups, cursor) values ('s3', %s, %s, %s, 'c1') "
+                        "returning id", (name, Jsonb(legacy), ["g1"])).fetchone()[0]
+    try:
+        r = a.post(f"/admin/sources/{sid}", follow_redirects=False, data={
+            "acl_groups": "g2", "name": name + "-x", "prefix": "/docs", "include_ext": ".PDF"})
+        assert r.status_code == 303
+        with db.connect() as c:
+            assert _source(c, name + "-x")[2:4] == ({**legacy, "executed_contracts": False}, "c1")
+        assert "LEGACY-SECRET" not in str(_changes(sid))
+        assert a.post(f"/admin/sources/{sid}", data={"acl_groups": "g2", "prefix": "/other"}).status_code == 400
     finally:
         with db.connect() as c:
             c.execute("delete from sources where id=%s", (sid,))

@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from starlette.datastructures import FormData
 from psycopg.errors import CheckViolation, UniqueViolation
 from psycopg.types.json import Jsonb
 
@@ -58,6 +59,8 @@ DEFAULTS = {"prefix": "", "api_prefix": "/wiki"}  # what the crawlers use for an
 
 def field(key: str, raw: str):
     """One config value from its form text, or None to leave the key out (the crawler default)."""
+    if not isinstance(raw, str):  # a file posted under a config field
+        raise HTTPException(400, f"invalid {key}")
     v = raw.strip()
     ok = False
     if key == "bucket":
@@ -77,8 +80,8 @@ def field(key: str, raw: str):
     elif key == "base_url":
         try:
             u = urlsplit(v)
-            ok = (u.scheme == "https" and bool(u.hostname) and not (u.username or u.password or u.query or u.fragment)
-                  and u.port in (None, 443))
+            ok = (u.scheme == "https" and bool(u.hostname) and u.port in (None, 443)
+                  and not re.search(r"[?#@\s]", v))  # on the raw text: urlsplit drops "?", "#", "@" and tabs when empty
         except ValueError:
             pass
         v = v.rstrip("/")
@@ -90,6 +93,11 @@ def field(key: str, raw: str):
     if not ok:
         raise HTTPException(400, f"invalid {key}")
     return v
+
+
+async def raw_form(request: Request) -> FormData:
+    """The posted form as sent: FastAPI turns an empty field into its default, so "" (clear it) and absent differ only here."""
+    return await request.form()
 
 
 def parse_config(kind: str, fields: dict[str, str]) -> dict:
@@ -125,7 +133,12 @@ def log_acl_change(conn, sid, old, new, who):
                  (sid, old, new, who))
 
 
+KNOWN = {k for ks in (*ROOT.values(), *SCOPE.values()) for k in ks} | {"executed_contracts", "staff"}
+
+
 def log_config_change(conn, sid, action, old, new, who):
+    # only the keys this form knows: a legacy free-form key (a token?) never reaches the append-only table
+    old, new = ({**d, "config": {k: v for k, v in d["config"].items() if k in KNOWN}} if d else d for d in (old, new))
     conn.execute("insert into source_config_changes(source_id, action, old, new, changed_by) values (%s,%s,%s,%s,%s)",
                  (sid, action, old and Jsonb(old), new and Jsonb(new), who))
 
@@ -171,11 +184,8 @@ def capability_drafts(user: User = Depends(require("admin"))):
 @router.post("/admin/sources")
 def create(kind: str = Form(), name: str = Form(), acl_groups: str = Form(),
            data_class: str = Form("confidential"), executed_contracts: bool = Form(False), staff: bool = Form(False),
-           bucket: str = Form(""), prefix: str = Form(""), include_ext: str = Form(""), tenant_id: str = Form(""),
-           drive_id: str = Form(""), base_url: str = Form(""), spaces: str = Form(""), api_prefix: str = Form("/wiki"),
-           user: User = Depends(require("admin"))):
-    cfg = parse_config(kind, {"bucket": bucket, "prefix": prefix, "include_ext": include_ext, "tenant_id": tenant_id,
-                              "drive_id": drive_id, "base_url": base_url, "spaces": spaces, "api_prefix": api_prefix})
+           form: FormData = Depends(raw_form), user: User = Depends(require("admin"))):
+    cfg = parse_config(kind, {"api_prefix": "/wiki", **{k: form[k] for k in ROOT.get(kind, ()) + SCOPE.get(kind, ()) if k in form}})
     if data_class not in DATA_CLASSES:
         raise HTTPException(400, "invalid data class")
     if executed_contracts:
@@ -198,8 +208,7 @@ def create(kind: str = Form(), name: str = Form(), acl_groups: str = Form(),
 
 @router.post("/admin/sources/{sid}")
 def update(request: Request, sid: int, acl_groups: str = Form(), enabled: bool = Form(False), data_class: str = Form(""),
-           executed_contracts: bool = Form(False), name: str | None = Form(None), prefix: str | None = Form(None),
-           include_ext: str | None = Form(None), spaces: str | None = Form(None), api_prefix: str | None = Form(None),
+           executed_contracts: bool = Form(False), name: str | None = Form(None), form: FormData = Depends(raw_form),
            user: User = Depends(require("admin"))):
     if data_class and data_class not in DATA_CLASSES:  # empty: leave it as it is
         raise HTTPException(400, "invalid data class")
@@ -207,13 +216,7 @@ def update(request: Request, sid: int, acl_groups: str = Form(), enabled: bool =
         raise HTTPException(400, "at least one access group is required")
     if name is not None and not name.strip():
         raise HTTPException(400, "a name is required")
-    posted = {"prefix": prefix, "include_ext": include_ext, "spaces": spaces, "api_prefix": api_prefix}
     with db.connect() as conn:  # one transaction: the change and its log row commit together
-        # #283: the key every crawler holds for its whole run; an edit never races a crawl
-        if not conn.execute("select pg_try_advisory_xact_lock(2, %s)", (sid,)).fetchone()[0]:
-            if wants_html(request):
-                return RedirectResponse("/admin/sources?notice=crawling", status_code=303)
-            raise HTTPException(409, "a crawl is running for this source")
         old = conn.execute("select data_class, acl_groups, coalesce(config->'executed_contracts' = 'true', false), "
                            "kind, name, config, enabled from sources where id=%s for update", (sid,)).fetchone()
         if not old:
@@ -221,14 +224,20 @@ def update(request: Request, sid: int, acl_groups: str = Form(), enabled: bool =
         kind, old_name, old_cfg, was_enabled = old[3:]
         cfg = {**old_cfg, "executed_contracts": executed_contracts}  # unknown stored keys and the root are kept
         for k in SCOPE[kind]:  # absent from the form: unchanged; the root is never read from it
-            if posted[k] is not None and (v := field(k, posted[k])) != old_cfg.get(k, DEFAULTS.get(k)):  # the form
-                # always posts its fields: the crawler's default for an absent key is no change
+            shown = old_cfg.get(k, DEFAULTS.get(k))  # what the edit form prefilled: posted back, it is no change,
+            shown = ", ".join(map(str, shown)) if isinstance(shown, list) else shown  # even a legacy value field() refuses
+            if k in form and form[k] != shown and (v := field(k, form[k])) != old_cfg.get(k, DEFAULTS.get(k)):
                 if v is None:
                     cfg.pop(k, None)
                 else:
                     cfg[k] = v
         new_name = name.strip() if name is not None else old_name
         rescope = any(cfg.get(k) != old_cfg.get(k) for k in SCOPE[kind])  # a full crawl applies the new scope
+        # a crawl read the scope when it started: only a scope change waits for it; ACL, class and disable go through
+        if rescope and not conn.execute("select pg_try_advisory_xact_lock(2, %s)", (sid,)).fetchone()[0]:
+            if wants_html(request):
+                return RedirectResponse("/admin/sources?notice=crawling", status_code=303)
+            raise HTTPException(409, "a crawl is running for this source")
         try:
             conn.execute("update sources set acl_groups=%s, enabled=%s, data_class=coalesce(nullif(%s,''), data_class), "
                          "config=%s, name=%s, cursor=case when %s then null else cursor end "

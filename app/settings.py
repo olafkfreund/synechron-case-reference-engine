@@ -46,7 +46,7 @@ def settings_page(request: Request, user: User = Depends(require("admin"))):
         rows = conn.execute(
             "select s.id, s.name, s.kind, s.enabled, s.last_run_at, s.last_counts, "
             "(select max(j.updated_at) from jobs j where j.status='failed' and j.kind like 'crawl_%' "
-            "and (j.payload->>'source_id')::bigint = s.id) from sources s order by s.name").fetchall()
+            "and j.payload->>'source_id' = s.id::text) from sources s order by s.name").fetchall()
     sources = [(sid, name, kind, enabled, last_run, {key: (counts or {}).get(key, 0) for key in COUNTS}, failed_at)
                for sid, name, kind, enabled, last_run, counts, failed_at in rows]
     return page(request, "settings.html", user, values=values, secrets=secrets, sources=sources, roles=roles,
