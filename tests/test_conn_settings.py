@@ -127,3 +127,118 @@ def test_callers_pick_up_a_change_after_the_ttl(managed, clock, monkeypatch):
     with pytest.raises(RuntimeError):
         llm.complete_json("EXTRACT_MODEL", "s", "u", ReferenceCase, data_class="public")
     assert calls[0]["model"] == "bedrock/row-model"
+
+
+# ---- writes, through the Settings routes ----
+
+from tests.test_auth import ADMIN, REV, client, env  # noqa: E402,F401
+
+SENTINEL = "SECRET-SENTINEL-288"
+GUID = "11111111-2222-3333-4444-555555555555"
+
+
+@pytest.fixture
+def admins(env, managed, monkeypatch):  # noqa: F811
+    monkeypatch.setenv("MODEL_CHOICES", "bedrock/m1,bedrock/m2")
+    monkeypatch.setenv("EXTRACT_MODEL", "bedrock/m1")
+    with db.connect() as c:
+        c.execute("delete from connection_setting_changes")
+    return client([ADMIN], sub="admin-a"), client([ADMIN], sub="admin-b")
+
+
+def post(c, path, **form):
+    return c.post("/admin/settings/connections/" + path, data=form, follow_redirects=False)
+
+
+def audit_text():
+    with db.connect() as c:
+        return " ".join(str(r) for r in c.execute("select * from connection_setting_changes").fetchall())
+
+
+def test_one_admin_save_takes_effect_and_never_echoes(admins):
+    a, _ = admins
+    assert post(a, "brave", BRAVE_API_KEY=SENTINEL).status_code == 303
+    assert cs.get("BRAVE_API_KEY") == SENTINEL
+    html = a.get("/admin/settings").text
+    assert "BRAVE_API_KEY</td><td>Configured" in html and SENTINEL not in html
+    assert "applied" in audit_text() and SENTINEL not in audit_text()
+    assert post(a, "brave", BRAVE_API_KEY="").status_code == 303  # blank: unchanged
+    assert cs.get("BRAVE_API_KEY") == SENTINEL
+
+
+def test_validation_names_the_field_never_the_value(admins):
+    a, _ = admins
+    for path, form, field in (("sharepoint", {"GRAPH_CLIENT_ID": "not-a-guid-" + SENTINEL, "GRAPH_CLIENT_SECRET": "x"}, "GRAPH_CLIENT_ID"),
+                              ("confluence", {"CONFLUENCE_EMAIL": SENTINEL, "CONFLUENCE_TOKEN": "x"}, "CONFLUENCE_EMAIL"),
+                              ("brave", {"BRAVE_API_KEY": SENTINEL + "\nx"}, "BRAVE_API_KEY"),
+                              ("brave", {"BRAVE_API_KEY": cs.CLEARED}, "BRAVE_API_KEY"),
+                              ("brave", {"BRAVE_API_KEY": "k" * 4097}, "BRAVE_API_KEY"),
+                              ("models", {"EXTRACT_MODEL": "openai/" + SENTINEL}, "EXTRACT_MODEL")):
+        r = post(a, path, **form)
+        assert r.status_code == 400 and field in r.text and SENTINEL not in r.text, (path, field)
+    assert audit_text() == ""
+
+
+def test_new_id_needs_its_secret(admins):
+    a, _ = admins
+    r = post(a, "sharepoint", GRAPH_CLIENT_ID=GUID)
+    assert r.status_code == 400 and "GRAPH_CLIENT_SECRET" in r.text
+    assert post(a, "sharepoint", GRAPH_CLIENT_ID=GUID, GRAPH_CLIENT_SECRET=SENTINEL).status_code == 303
+    assert (cs.get("GRAPH_CLIENT_ID"), cs.get("GRAPH_CLIENT_SECRET")) == (GUID, SENTINEL)
+    assert post(a, "GRAPH_CLIENT_SECRET/restore").status_code == 400  # half a pair is never restored
+
+
+def test_two_admin_key_waits_for_a_second_admin(admins):
+    a, b = admins
+    assert post(a, "openai", OPENAI_API_KEY=SENTINEL).status_code == 303
+    assert cs.get("OPENAI_API_KEY") is None  # never set before: the proposal must not become current
+    html = b.get("/admin/settings").text
+    assert "Waiting for approval: proposed by admin-a" in html and SENTINEL not in html
+    assert post(a, "OPENAI_API_KEY/approve").status_code == 403
+    assert post(a, "openai", OPENAI_API_KEY="other").status_code == 409  # one open proposal
+    assert post(b, "OPENAI_API_KEY/approve").status_code == 303
+    assert cs.get("OPENAI_API_KEY") == SENTINEL
+    assert SENTINEL not in audit_text()
+
+
+def test_model_reject_withdraw_and_restore(admins):
+    a, b = admins
+    assert post(a, "models", EXTRACT_MODEL="bedrock/m2").status_code == 303
+    assert post(b, "EXTRACT_MODEL/withdraw").status_code == 403
+    assert post(b, "EXTRACT_MODEL/reject").status_code == 303
+    assert cs.get("EXTRACT_MODEL") == "bedrock/m1"
+    post(a, "models", EXTRACT_MODEL="bedrock/m2")
+    assert post(a, "EXTRACT_MODEL/withdraw").status_code == 303
+    post(a, "models", EXTRACT_MODEL="bedrock/m2")
+    post(b, "EXTRACT_MODEL/approve")
+    assert cs.get("EXTRACT_MODEL") == "bedrock/m2"
+    assert post(b, "EXTRACT_MODEL/restore").status_code == 303  # proposes m1 again
+    assert cs.get("EXTRACT_MODEL") == "bedrock/m2"
+    assert post(a, "EXTRACT_MODEL/approve").status_code == 303
+    assert cs.get("EXTRACT_MODEL") == "bedrock/m1"
+
+
+def test_restore_and_clear_a_secret(admins):
+    a, _ = admins
+    post(a, "brave", BRAVE_API_KEY="k1")
+    post(a, "brave", BRAVE_API_KEY="k2")
+    assert post(a, "BRAVE_API_KEY/restore").status_code == 303
+    assert cs.get("BRAVE_API_KEY") == "k1"
+    assert post(a, "BRAVE_API_KEY/clear").status_code == 303
+    assert cs.get("BRAVE_API_KEY") is None
+    assert post(a, "EXTRACT_MODEL/clear").status_code == 400
+
+
+def test_writes_are_admin_only(admins):
+    rev = client([REV], sub="rev")
+    assert post(rev, "brave", BRAVE_API_KEY=SENTINEL).status_code == 403
+    assert post(rev, "BRAVE_API_KEY/clear").status_code == 403
+    assert cs.get("BRAVE_API_KEY") is None
+
+
+def test_changes_show_on_audit_without_secrets(admins):
+    a, _ = admins
+    post(a, "brave", BRAVE_API_KEY=SENTINEL)
+    post(a, "models", EXTRACT_MODEL="bedrock/m2")
+    html = a.get("/admin/audit").text
+    assert "Connection changes" in html and "BRAVE_API_KEY" in html and "bedrock/m2" in html and SENTINEL not in html

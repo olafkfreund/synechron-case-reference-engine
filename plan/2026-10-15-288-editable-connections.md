@@ -271,3 +271,9 @@ docker compose run --rm app pytest tests/test_conn_settings.py tests/test_settin
 
 - **Step 1: unmanaged means environment for all ten names.** Without `SETTINGS_SECRET_IDS`, the plain values come from the environment too, not from `connection_settings`, and the page is read-only. Today's tests and a bare `docker run` are unchanged, and editing is never half on.
 - **Step 1: clearing stores `-`.** botocore refuses an empty `SecretString` (minimum length 1) before the call is sent, so real AWS would too. A cleared secret holds `conn_settings.CLEARED` (`-`), and `get()` reads it as not configured. Step 3's validation refuses `-` as a submitted value.
+- **Step 3: no restore for half a pair.** "Restore previous" is offered only for Brave, the three provider keys and the two models. Restoring only the id or only the secret of SharePoint or Confluence could pair one identity's id with another's secret, which the intent rules out. To roll back a pair, enter both values again.
+- **Step 3: secret stage moves are explicit.** Every write stores the new version under `REFS_PENDING` and then moves `AWSCURRENT` with `update_secret_version_stage`. Reads ask for `VersionStage="AWSCURRENT"`. Two reasons:
+  - **moto keeps returning its own default version.** It does so after a stage move, and an implicit `put_secret_value` moves the wrong one.
+  - **`AWSPREVIOUS` must be the value that was in force.**
+- **Step 3: a new secret's first proposal stays pending.** AWS makes the first version of a secret `AWSCURRENT`, so before proposing a never-set secret, the code first stores a cleared (`-`) version.
+- **Step 3: errors are a 400/403/409 naming the setting,** like the Sources page, not a re-rendered form.
