@@ -49,7 +49,9 @@ code,.mono{font-family:"IBM Plex Mono",monospace;font-size:13px}
 /* header */
 .site-header{background:var(--header);color:var(--header-strong);border-bottom:1px solid var(--border)}
 .site-header-in{max-width:1280px;margin:0 auto;padding:10px 24px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 24px}
-.brand{display:flex;align-items:baseline;gap:10px;text-decoration:none;color:inherit}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit}
+.brand-logo{width:200px;height:auto;color:var(--header-strong);flex:none}
+.brand-mark{display:none;width:32px;height:32px;color:var(--header-strong);flex:none}
 .site-header .brand:hover{color:var(--header-strong)}
 .brand-name{font-weight:600;font-size:18px;letter-spacing:.01em}
 .brand-tag{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--header-tag)}
@@ -365,6 +367,7 @@ fieldset.pick legend{font-weight:600;padding:0 6px;text-transform:capitalize}
 /* phones (#90 second check) */
 @media (max-width:699px){
 .site-header-in{padding:6px 16px;gap:2px 12px}
+.brand-logo{display:none}.brand-mark{display:block}
 .brand-tag{display:none}
 .brand-name{font-size:16px}
 .site-user{gap:8px}
