@@ -552,3 +552,20 @@ def test_edit_refused_while_the_source_is_crawling(env):  # noqa: F811
     finally:
         with db.connect() as c:
             c.execute("delete from sources where id=%s", (sid,))
+
+
+def test_saving_a_legacy_config_unchanged_is_not_a_scope_change(env):  # noqa: F811
+    db.init()
+    name, a = f"s3-{uuid.uuid4().hex[:8]}", client([ADMIN])
+    with db.connect() as c:  # created before #283: no prefix key
+        sid = c.execute("insert into sources(kind, name, config, acl_groups, cursor) values ('s3', %s, %s, %s, 'c1') "
+                        "returning id", (name, Jsonb({"bucket": "bkt"}), ["g1"])).fetchone()[0]
+    try:
+        a.post(f"/admin/sources/{sid}", data={"acl_groups": "g1", "enabled": "on", "name": name, "prefix": "",
+                                              "include_ext": ""})
+        with db.connect() as c:
+            assert _source(c, name)[2:4] == ({"bucket": "bkt", "executed_contracts": False}, "c1")
+        assert _changes(sid) == []
+    finally:
+        with db.connect() as c:
+            c.execute("delete from sources where id=%s", (sid,))

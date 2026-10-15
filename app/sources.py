@@ -53,6 +53,7 @@ ROOT = {"s3": ("bucket",), "upload": ("bucket", "prefix"), "sharepoint": ("tenan
         "confluence": ("base_url",)}
 SCOPE = {"s3": ("prefix", "include_ext"), "upload": ("include_ext",), "sharepoint": ("include_ext",),
          "confluence": ("spaces", "api_prefix")}
+DEFAULTS = {"prefix": "", "api_prefix": "/wiki"}  # what the crawlers use for an absent key (crawl.py)
 
 
 def field(key: str, raw: str):
@@ -220,8 +221,9 @@ def update(request: Request, sid: int, acl_groups: str = Form(), enabled: bool =
         kind, old_name, old_cfg, was_enabled = old[3:]
         cfg = {**old_cfg, "executed_contracts": executed_contracts}  # unknown stored keys and the root are kept
         for k in SCOPE[kind]:  # absent from the form: unchanged; the root is never read from it
-            if posted[k] is not None:
-                if (v := field(k, posted[k])) is None:
+            if posted[k] is not None and (v := field(k, posted[k])) != old_cfg.get(k, DEFAULTS.get(k)):  # the form
+                # always posts its fields: the crawler's default for an absent key is no change
+                if v is None:
                     cfg.pop(k, None)
                 else:
                     cfg[k] = v
