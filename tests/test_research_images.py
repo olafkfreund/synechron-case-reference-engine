@@ -2,6 +2,7 @@ import uuid
 
 import pytest
 from io import BytesIO
+from pathlib import Path
 
 from PIL import Image
 
@@ -277,7 +278,8 @@ def test_a_brief_lists_images_as_links_only(reg):  # noqa: F811
         assert c.post(f"/briefs/{bid}/download", data={"format": fmt}).status_code == 200
     z = zipfile.ZipFile(io.BytesIO(c.post(f"/briefs/{bid}/download", data={"format": "docx"}).content))
     assert "Images on the cited pages" in z.read("word/document.xml").decode() and "https://cdn.example/topology.png" in z.read("word/document.xml").decode()
-    assert not [n for n in z.namelist() if n.startswith("word/media/")]  # a link, never pixels
+    brand = {(Path(__file__).resolve().parent.parent / "brand" / f"wordmark-{c}.png").read_bytes() for c in ("white", "black")}
+    assert all(z.read(n) in brand for n in z.namelist() if n.startswith("word/media/"))  # a link, never pixels; only our wordmark (#282)
     assert "Images on the cited pages" not in c.post(f"/briefs/{brief_of(None)}/download", data={"format": "md"}).text
 
 

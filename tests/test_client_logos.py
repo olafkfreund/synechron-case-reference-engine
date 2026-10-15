@@ -1,5 +1,7 @@
+import re
 import uuid
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -138,8 +140,15 @@ def case_with(approved, reg):
         c.execute("delete from client_logos where client_id in (select id from clients where name like 'Zorp%')")
 
 
+BRAND = {(Path(__file__).resolve().parent.parent / "brand" / f"wordmark-{c}.png").read_bytes() for c in ("white", "black")}
+
+
 def drawings(content):
-    return zipfile.ZipFile(BytesIO(content)).read("word/document.xml").decode().count("<w:drawing>")
+    """Pictures in the body that are not the Synechron wordmark the templates carry (#282)."""
+    z = zipfile.ZipFile(BytesIO(content))
+    rels = dict(re.findall(r'Id="(rId\d+)"[^>]*Target="([^"]+)"', z.read("word/_rels/document.xml.rels").decode()))
+    embeds = re.findall(r'r:embed="(rId\d+)"', z.read("word/document.xml").decode())
+    return sum(z.read("word/" + rels[r]) not in BRAND for r in embeds)
 
 
 def pictures(content):
@@ -194,7 +203,7 @@ def test_a_long_title_stops_before_the_logo_on_the_slide(case_with):
     with db.connect() as c:
         c.execute("update cases set data = jsonb_set(data, '{title,value}', to_jsonb(%s::text)) where id=%s", ("A very long title " * 12, cid))
     prs = Presentation(BytesIO(gen([cid], "pptx").content))
-    slide = prs.slides[0]
+    slide = list(prs.slides)[1]  # after the brand cover (#282)
     logo = next(sh for sh in slide.shapes if sh.shape_type == 13)
     idx = next(p.placeholder_format.idx for p in slide.slide_layout.placeholders if p.name == "Title")
     title = next(p for p in slide.placeholders if p.placeholder_format.idx == idx)

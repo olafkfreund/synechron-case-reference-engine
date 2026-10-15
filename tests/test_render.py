@@ -5,6 +5,7 @@ from io import BytesIO
 
 import pytest
 from docx import Document
+from lxml import etree
 
 from app import db, office, render
 from app.schema import Outcome, Prose, ReferenceCase, Sourced
@@ -24,8 +25,10 @@ def prev(ids, groups=R, **kw):
 
 
 def doc_text(content):
+    from docx.oxml.ns import qn
     d = Document(BytesIO(content))
-    parts = [p.text for p in d.paragraphs] + [p.text for p in d.sections[0].header.paragraphs]
+    parts = ["".join(t.text or "" for t in p.iter(qn("w:t"))) for p in d.element.body.iter(qn("w:p"))]
+    parts += [p.text for p in d.sections[0].header.paragraphs] + [p.text for p in d.sections[0].footer.paragraphs]
     return "\n".join(parts)
 
 
@@ -43,9 +46,9 @@ def test_docx_content_and_leaks(approved, reg):
     assert r.status_code == 200 and "attachment" in r.headers["content-disposition"]
     t = doc_text(r.content)
     for want in ("Faster onboarding", "a UK retailer", "Slow manual KYC & checks", "18 months", "Kubernetes",
-                 "onboarding: 12 to 3 days", "Onboarding fell from 12 days", "DRAFT TEMPLATE"):
+                 "onboarding: 12 to 3 days", "Onboarding fell from 12 days", "Synechron \u00b7 Confidential"):
         assert want in t, want
-    for bad in ("{{", "{%", "Hidden quote", "Secret Org", "Hidden attention"):
+    for bad in ("{{", "{%", "Hidden quote", "Secret Org", "Hidden attention", "DRAFT TEMPLATE"):
         assert bad not in t, bad
 
 
@@ -285,11 +288,20 @@ def test_markdown_escapes_ampersand():
     assert render.md("R&D") == "R\\&D"
 
 
+def body(prs):
+    """The slides between the brand cover and the closing slide (#282)."""
+    s = list(prs.slides)
+    assert s[0].slide_layout.name == render.COVER and s[-1].slide_layout.name == render.CLOSING
+    cover = [p.text_frame.text for p in s[0].placeholders]
+    assert cover[0] == "Reference cases" and all(not p.has_text_frame or not p.text_frame.text for p in s[-1].placeholders)
+    return s[1:-1]
+
+
 def slides(content):
-    """[{placeholder name: [paragraph texts]}] per slide, names taken from the slide's layout."""
+    """[{placeholder name: [paragraph texts]}] per content slide, names taken from the slide's layout."""
     prs = Presentation(BytesIO(content))
     out = []
-    for s in prs.slides:
+    for s in body(prs):
         names = {p.placeholder_format.idx: p.name for p in s.slide_layout.placeholders}
         out.append({names[p.placeholder_format.idx]: [x.text for x in p.text_frame.paragraphs] for p in s.placeholders})
     return prs, out
@@ -351,10 +363,15 @@ def test_pptx_missing_placeholder_or_layout_fails_loudly(tmp_path, monkeypatch):
         render.to_pptx([])
 
 
-def test_master_template_is_marked_draft():
+def test_master_is_the_brand_template_with_blue_cover_and_closing():  # #282
     prs = Presentation(render.MASTER)
-    layout = next(l for l in prs.slide_layouts if l.name == "Reference case")
-    assert any("DRAFT TEMPLATE" in s.text_frame.text for s in layout.shapes if s.has_text_frame)
+    layouts = {l.name: l for l in prs.slide_layouts}
+    assert set(layouts) == {render.COVER, render.CLOSING, render.LAYOUT, render.INDUSTRY_LAYOUT, render.DIAGRAM_LAYOUT}
+    for name in (render.COVER, render.CLOSING):  # brand v2 cover option 2: yellow device on Synechron blue
+        assert '<a:srgbClr val="002535"/>' in etree.tostring(layouts[name]._element.cSld.bg).decode()
+    text = " ".join(sh.text_frame.text for l in prs.slide_layouts for sh in l.shapes if sh.has_text_frame)
+    assert "DRAFT" not in text
+    assert prs.slide_width == 12192000  # the official 16:9 template
 
 
 def test_control_character_cannot_rebuild_a_protected_name(approved, reg):
@@ -395,7 +412,7 @@ def test_extra_layout_placeholder_is_removed_and_sample_slides_refused(tmp_path,
     prs.save(extended)
     monkeypatch.setattr(render, "MASTER", extended)
     out = Presentation(BytesIO(render.to_pptx([render.section(data(), "a client")])))
-    assert len(list(out.slides[0].placeholders)) == len(NAMES)  # the logo placeholder was removed
+    assert len(list(body(out)[0].placeholders)) == len(NAMES)  # the logo placeholder was removed
     prs.slides.add_slide(layout)  # a master that ships its own sample slide
     prs.save(extended)
     with pytest.raises(ValueError, match="no slides"):
@@ -576,11 +593,11 @@ def test_pptx_diagram_slide_per_diagram(approved):
     prs, out = slides(gen([cid], "pptx").content)
     assert [set(s) for s in out] == [set(NAMES), {"Title", "Caption"}, {"Title", "Caption"}]
     assert out[1]["Caption"] == ["System overview"] and out[1]["Title"] == ["Faster onboarding"]
-    pics = [[sh for sh in s.shapes if sh.shape_type == 13] for s in prs.slides]
+    pics = [[sh for sh in s.shapes if sh.shape_type == 13] for s in body(prs)]
     assert [len(p) for p in pics] == [0, 1, 1]
     wide, tall = pics[1][0], pics[2][0]
     assert abs(wide.width / wide.height - 4) < .01 and abs(tall.width / tall.height - .5) < .01
-    assert wide.width <= 9 * 914400 and tall.height <= 5 * 914400
+    assert wide.width <= 12.5 * 914400 and tall.height <= 5 * 914400
 
 
 def test_pptx_without_diagram_layout_fails_only_with_diagrams(tmp_path, monkeypatch):
@@ -744,7 +761,7 @@ def with_arch(*names, flags=(), label="Open account", by_reviewer=False, **kw):
 
 def pptx_arch(content):
     prs = Presentation(BytesIO(content))
-    return [s for s in prs.slides if any(sh.name.startswith("arch:") for sh in s.shapes)]
+    return [s for s in body(prs) if any(sh.name.startswith("arch:") for sh in s.shapes)]
 
 
 def test_architecture_is_in_every_format_and_the_preview(approved):
@@ -960,3 +977,35 @@ def test_section_never_outputs_capability_text_that_claims_a_result():  # #213
     s = render.section(case, "a client")
     assert s["summary"] == "" and not s["blocks"]
     assert render.section(case.model_copy(update={"basis": "delivered"}), "a client")["summary"] == "It reduced cost."
+
+
+PALETTE = {"002535", "0A5A78", "FBF321", "FFFFFF", "000000", "808285", "F4F4F4"}
+
+
+def test_docx_templates_use_aptos_and_brand_palette():
+    for path in (render.TEMPLATE, render.TEMPLATE_CASE_STUDY, render.BRIEF_TEMPLATE):
+        d = Document(path)
+        for name in ("Normal", "Title", "Heading 1", "Heading 2", "Caption", "List Bullet", "Header", "Footer"):
+            assert d.styles[name].font.name == "Aptos", (path.name, name)
+        with zipfile.ZipFile(path) as z:
+            styles = z.read("word/styles.xml").decode()
+            assert "Aptos" in styles and "Calibri" not in styles and "Cambria" not in styles
+            cols = {c.upper() for c in re.findall(r'(?:w:val|w:color|w:fill)="([0-9A-Fa-f]{6})"', styles)}
+            assert cols and cols <= PALETTE, (path.name, cols - PALETTE)
+            for part in ("word/document.xml", "word/header1.xml", "word/footer1.xml"):
+                xml = z.read(part).decode()
+                assert "DRAFT TEMPLATE" not in xml, (path.name, part)
+                pcols = {c.upper() for c in re.findall(r'(?:w:color[^>]*w:val|w:color|w:fill)="([0-9A-Fa-f]{6})"', xml)}
+                assert pcols <= PALETTE, (path.name, part, pcols - PALETTE)
+            assert "<w:drawing>" in z.read("word/header1.xml").decode()
+            footer = z.read("word/footer1.xml").decode()
+            assert "Synechron \u00b7 Confidential" in footer and "PAGE" in footer
+
+
+
+@pytest.mark.parametrize("fmt", ["pptx", "docx"])
+def test_pdfs_embed_only_aptos(fmt):  # #282: a font the container lacks falls back silently (DejaVu)
+    sec = render.section(full(), "a UK retailer")
+    office = render.to_pptx([sec]) if fmt == "pptx" else render.to_docx([sec])
+    fonts = set(re.findall(rb"/BaseFont\s*/(?:[A-Z]{6}\+)?([A-Za-z0-9-]+)", render.to_pdf(office, "." + fmt)))
+    assert fonts and all(f.startswith(b"Aptos") for f in fonts), fonts

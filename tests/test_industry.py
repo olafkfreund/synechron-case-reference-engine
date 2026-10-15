@@ -9,7 +9,7 @@ import pytest
 
 from app import db, render
 from tests.test_auth import env  # noqa: F401
-from tests.test_render import doc_text, pdf_text, slides  # noqa: F401
+from tests.test_render import body, doc_text, pdf_text, slides  # noqa: F401
 from tests.test_research import as_user, reg  # noqa: F401
 from tests.test_review import DOCS, make  # noqa: F401
 from tests.test_search import approved, data  # noqa: F401
@@ -114,7 +114,7 @@ def test_docx_and_pdf_have_the_quote_and_source(rows, approved):
 def test_pptx_industry_slide_keeps_the_quote_next_to_the_phrase(rows, approved):
     rid, cid = rows([claim(), claim(Q2, "configuration", "docs.vendor.io", "https://docs.vendor.io/x")]), approved()
     prs, out = slides(gen(rid, [cid], "pptx").content)
-    assert len(out) == 2 and prs.slides[1].slide_layout.name == render.INDUSTRY_LAYOUT
+    assert len(out) == 2 and body(prs)[1].slide_layout.name == render.INDUSTRY_LAYOUT
     ind = out[1]
     assert ind["Title"] == [render.INDUSTRY_HEADING] and ind["Summary"] == [render.INDUSTRY_DISCLAIMER]
     assert len(ind["Statements"]) == 2
@@ -164,7 +164,7 @@ def test_script_in_a_quote_is_escaped_everywhere(rows, approved):
     xml = zipfile.ZipFile(BytesIO(d)).read("word/document.xml").decode()
     assert "<script>" not in xml and "&lt;script&gt;" in xml and evil in doc_text(d)
     p = gen(rid, [cid], "pptx").content
-    slide_xml = zipfile.ZipFile(BytesIO(p)).read("ppt/slides/slide2.xml").decode()
+    slide_xml = zipfile.ZipFile(BytesIO(p)).read("ppt/slides/slide3.xml").decode()  # cover, case, industry (#282)
     assert "<script>" not in slide_xml and "&lt;script&gt;" in slide_xml  # text, never markup
 
 
@@ -859,11 +859,11 @@ def test_a_note_is_a_longer_fence_in_markdown_and_never_cleaned(rows):
     assert "&lt;" not in r.text and "\\*" not in r.text                        # no HTML or Markdown escaping inside the fence
 
 
-def test_a_note_is_consolas_lines_in_docx_and_first_line_in_pptx(rows, approved):
+def test_a_note_is_aptos_mono_lines_in_docx_and_first_line_in_pptx(rows, approved):
     rid = rows([note(), claim()])
     doc = gen(rid, [approved()], "docx", ack=True).content
     xml = zipfile.ZipFile(BytesIO(doc)).read("word/document.xml").decode()
-    assert "Consolas" in xml and "mlflow.set_registry_uri" in xml and "**keep**" in xml and "<w:br/>" in xml
+    assert "Aptos Mono" in xml and "mlflow.set_registry_uri" in xml and "**keep**" in xml and "<w:br/>" in xml
     sl = slides(gen(rid, [approved()], "pptx", ack=True).content)[1]
     text = "\n".join(x for s in sl for ps in s.values() for x in ps)
     assert 'mlflow.set_registry_uri("db") (see source [' in text and "**keep**" not in text
@@ -910,11 +910,11 @@ def test_library_and_review_pages_show_a_note_as_pre(rows, approved, env):
         conn.execute("delete from library_items where id=%s", (lid,))
 
 
-def test_a_note_is_consolas_in_the_brief_docx(rows):
+def test_a_note_is_aptos_mono_in_the_brief_docx(rows):
     sec = render.brief_section({"title": "t", "takeaways": [], "themes": []},
                                [{"quote": CODE, "type": "technical_note", "publisher": "v.example", "url": "https://v.example/n"}], [])
     xml = zipfile.ZipFile(BytesIO(render.to_brief_docx(sec))).read("word/document.xml").decode()
-    assert "Consolas" in xml and "mlflow.set_registry_uri" in xml and "<w:br/>" in xml  # the lines break inside one run
+    assert "Aptos Mono" in xml and "mlflow.set_registry_uri" in xml and "<w:br/>" in xml  # the lines break inside one run
 
 
 def test_a_blank_note_is_dropped_the_flat_list_keeps_the_whole_note_and_the_slide_uses_a_real_line():

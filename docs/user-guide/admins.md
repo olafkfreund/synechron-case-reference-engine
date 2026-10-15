@@ -14,8 +14,16 @@ Choosing where reference documents are crawled from, and who may read them.
 **Steps**
 
 1. Open **Sources**.
-2. To add one, open **+ Add source**, fill in **Kind**, **Name**, **Config (JSON)**, **Data class** and **Access groups**, and press **Add source**.
+2. To add one, open **+ Add source**, choose the **Kind**, and fill in **Name**, the kind's own fields, **Data class** and **Access groups**. Then press **Add source**. The kind's own fields are:
+   - S3: **Bucket**, plus an optional **Prefix** and **File types**
+   - upload: **Bucket**, **Prefix** and optional **File types**
+   - SharePoint: **Tenant ID**, **Drive ID** and optional **File types**
+   - Confluence: **Site URL**, **Spaces** and **API prefix**
 3. To change one, press **Edit** on its row, then **Save**.
+   - The bucket, tenant and drive, site URL, and an upload source's prefix can't be changed. To change one, add a new source and disable the old one.
+   - The name, prefix, file types, spaces and API prefix can be changed. Any change to these makes the next crawl a full one. Narrowing them withdraws the documents outside the new scope.
+   - While a source is being crawled, its edits are refused until the crawl finishes.
+   - Every change is recorded on **Audit**.
 4. Open the help panels on the page when unsure:
    - **Access groups**: the groups whose members can read the source. SharePoint files whose permissions differ from the site root, and Confluence pages with a read restriction, are skipped by the crawl. Enter only groups that can read all of the site or space.
    - **Data classes**: confidential documents only go to local or own-cloud models unless a model is approved. Mark a source sanitised or public only when that is true.
@@ -23,7 +31,21 @@ Choosing where reference documents are crawled from, and who may read them.
 
 **What you see**
 
-A row per source with its kind, whether it is enabled, its data class and when it last ran.
+A row per source with its number (the source id crawl jobs use), its kind, whether it is enabled, its data class and when it last ran.
+
+## Check connections and sign-in
+
+**Steps**
+
+1. Open **Settings**.
+
+**What you see**
+
+- **Connections**: the SharePoint, Confluence, S3, Brave and model settings, and whether each secret is configured. Secret values are never shown.
+- **Sources**: each source's last run, its counts, and when a crawl last failed.
+- **Single sign-on**, **Roles** and **MCP**: the sign-in provider, which groups grant each role (yours are marked), and the MCP settings.
+
+These are set in Terraform and Secrets Manager, not in the portal. A wrong sign-in value could lock every admin out.
 
 ## Crawl a source
 
@@ -50,7 +72,7 @@ Adding a single file to an upload source.
 
 **Steps**
 
-1. Add a source with **Kind** `upload` and **Config (JSON)** such as `{"bucket": "example-bid-library", "prefix": "cases/"}`.
+1. Add a source with **Kind** `upload`, a **Bucket** such as `example-bid-library` and a **Prefix** such as `cases/`.
 2. On that source's row, press **Upload**, choose the file, and press **Upload** again.
 
 Scripts can send the file instead. The curl option `-b cookies.txt` reads your signed-in session cookie
