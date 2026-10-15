@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 293
 intent: intent/2026-10-15-293-connections-look.md
 ---
