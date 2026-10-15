@@ -1061,7 +1061,7 @@ class ExactMcpPath:
 
 
 def enabled() -> bool:
-    return os.environ.get("MCP_ENABLED") == "1"
+    return os.environ.get("MCP_ENABLED", "1") != "0"  # on by default; build() refuses to start without sign-in settings
 
 
 def build(origin: str):
@@ -1069,13 +1069,13 @@ def build(origin: str):
     env = os.environ
     issuer, audience = env.get("MCP_ISSUER", ""), env.get("MCP_AUDIENCE", "")
     if not issuer or not audience:
-        raise RuntimeError("MCP_ENABLED needs MCP_ISSUER (Entra v2 issuer) and MCP_AUDIENCE")
+        raise RuntimeError("MCP is on (MCP_ENABLED=0 turns it off) and needs MCP_ISSUER (Entra v2 issuer) and MCP_AUDIENCE")
     scope = env.get("MCP_SCOPE", "refs.access")
     jwks = env.get("MCP_JWKS_URL") or issuer.removesuffix("/v2.0").rstrip("/") + "/discovery/v2.0/keys"
     resource = env.get("MCP_RESOURCE_URL") or origin + "/mcp"
     client_ids = frozenset(c.strip() for c in env.get("MCP_CLIENT_IDS", "").split(",") if c.strip())
     if not client_ids:
-        raise RuntimeError("MCP_ENABLED needs MCP_CLIENT_IDS: the comma-separated app ids of the approved AI clients")
+        raise RuntimeError("MCP is on (MCP_ENABLED=0 turns it off) and needs MCP_CLIENT_IDS: the comma-separated app ids of the approved AI clients")
     verifier = EntraVerifier(issuer, audience, jwks, env.get("MCP_TENANT_ID", ""), scope)
     auth = AuthSettings(issuer_url=issuer, resource_server_url=resource, required_scopes=[scope],
                         validate_token_resource=False)
