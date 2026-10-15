@@ -38,14 +38,26 @@ A row per source with its number (the source id crawl jobs use), its kind, wheth
 **Steps**
 
 1. Open **Settings**.
+2. Under **Connections**, each connector (SharePoint, Confluence, Brave search, Models, Ollama Cloud, OpenAI and Gemini) has its own form:
+   - Secrets are write-only, and a blank secret field leaves the current secret unchanged.
+   - For SharePoint (`GRAPH_CLIENT_ID` and `GRAPH_CLIENT_SECRET`) and Confluence (`CONFLUENCE_EMAIL` and `CONFLUENCE_TOKEN`), entering a new client id or email requires its secret in the same save.
+   - Press **Save** on a one-admin connector (`GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`, `CONFLUENCE_EMAIL`, `CONFLUENCE_TOKEN`, `BRAVE_API_KEY`) to apply the change. Changes reach every container within a minute without restarting tasks.
+3. Rows marked **Two admins** (`OLLAMA_CLOUD_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `EXTRACT_MODEL` and `DRAFT_MODEL`) need a second admin before they take effect:
+   - Submit the form with Propose to open a proposal (one open proposal per setting at a time).
+   - Another admin presses **Approve** to apply the change or **Reject** to discard it. The proposer cannot approve or reject their own change, and can press Withdraw to cancel it.
+4. To roll back or remove a setting:
+   - Press **Restore previous** to return a single secret (`BRAVE_API_KEY`, `OLLAMA_CLOUD_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`) or model (`EXTRACT_MODEL`, `DRAFT_MODEL`) to its previous value. **Restore previous** is not available for the SharePoint or Confluence pairs, because restoring only half a pair could mismatch an id and secret; enter both values again instead.
+   - Press **Clear** on a secret row to unconfigure that secret.
+   - Both actions follow the setting's one-admin or two-admin rule.
 
 **What you see**
 
-- **Connections**: the SharePoint, Confluence, S3, Brave and model settings, and whether each secret is configured. Secret values are never shown.
+- **Connections**: each setting's current value (or whether its secret is configured; secret values are never shown), who last changed it and when, any open proposal, and the read-only Terraform rows with their reasons:
+  - `S3_BUCKET` is set in Terraform because the ECS task IAM roles are bound to that bucket.
+  - `OLLAMA_API_BASE` is set in Terraform because the host URL decides where documents are sent.
+  - `EXTRACT_MODEL_OPTIONS` and `DRAFT_MODEL_OPTIONS` are set in Terraform per model alias. A Bedrock model chosen on the page also needs its ARN in the Terraform variable `bedrock_model_arns`.
 - **Sources**: each source's last run, its counts, and when a crawl last failed.
-- **Single sign-on**, **Roles** and **MCP**: the sign-in provider, which groups grant each role (yours are marked), and the MCP settings.
-
-These are set in Terraform and Secrets Manager, not in the portal. A wrong sign-in value could lock every admin out.
+- **Single sign-on**, **Roles** and **MCP**: the sign-in provider (`OIDC_*`), which groups grant each role (`ROLE_*_GROUPS`, with yours marked), and the MCP settings (`MCP_*`). These stay in Terraform (and `OIDC_CLIENT_SECRET` in Secrets Manager) because a wrong sign-in or role value could lock every admin out.
 
 ## Crawl a source
 
@@ -116,7 +128,7 @@ the client is referenceable.
 
 **What it's for**
 
-Allowing a specific AI model to read confidential documents, and choosing the extraction and drafting models (`EXTRACT_MODEL` and `DRAFT_MODEL`, set via `extract_model` and `draft_model` in Terraform).
+Allowing a specific AI model to read confidential documents, and choosing the extraction and drafting models (`EXTRACT_MODEL` and `DRAFT_MODEL`, chosen on **Settings** from `model_choices` or set via `extract_model` and `draft_model` in Terraform).
 
 The supported model families:
 
@@ -130,7 +142,7 @@ The supported model families:
 - Claude runs through Bedrock only. Anthropic's direct API is not used. When `extract_model` or `draft_model` uses a Bedrock cross-region inference profile (such as `bedrock/eu.anthropic.claude-sonnet-4-5-20250929-v1:0`), put both the inference profile ARN and the foundation-model ARNs in `bedrock_model_arns`.
 - Prefer a general GPT model over Codex for extraction. For `EXTRACT_MODEL` (`extract_model`), use a general model such as `openai/gpt-5` rather than `openai/gpt-5-codex`.
 - OpenAI and Gemini are always third-party. They cannot be relabelled as `local` or `our-cloud` in `EXTRACT_MODEL_OPTIONS` or `DRAFT_MODEL_OPTIONS`. They may read confidential documents only when the exact model id has an active, unrevoked approval on **Model approvals**.
-- Provider key secrets. OpenAI models read `OPENAI_API_KEY` and Gemini models read `GEMINI_API_KEY`; each key is sent only to its own provider. In AWS, Terraform creates the Secrets Manager secret `<name>/openai-api-key` or `<name>/gemini-api-key` only when `extract_model` or `draft_model` starts with `openai/` or `gemini/`, and passes it to the `web` and `worker` tasks. Fill any created secret before starting the tasks. **Settings** shows only whether `OPENAI_API_KEY` and `GEMINI_API_KEY` are configured, never their values.
+- Provider key secrets. OpenAI models read `OPENAI_API_KEY`, Gemini models read `GEMINI_API_KEY` and Ollama Cloud models read `OLLAMA_CLOUD_KEY`; each key is sent only to its own provider. In AWS, Terraform creates the Secrets Manager secrets and admins set or rotate them on **Settings** (with two admins) or in Secrets Manager without restarting tasks. **Settings** shows only whether each secret is configured, never its value.
 
 **Steps**
 
@@ -156,7 +168,7 @@ Seeing who generated what, and which admin changes were made.
 1. Open **Audit**.
 2. Read **Generated outputs**. To look at one person, type their id in **User (exact sub)** and press **Filter**.
 3. Use **« newer** and **older »** to page through.
-4. Further down are **Model approvals**, **Source data class changes** and **Access group changes**.
+4. Further down are **Model approvals**, **Source configuration changes**, **Connection changes**, **Source data class changes** and **Access group changes**. **Connection changes** lists the last 100 connection edits and proposals (`proposed`, `applied`, `approved`, `rejected`, `withdrawn`, `restored`, `cleared`) with who made each change and when; plain values show old and new values, while secret values are never stored or shown.
 
 **What you see**
 
