@@ -52,6 +52,8 @@ def test_skip_reason():
     assert rs.skip_reason("ReadTimeout") == "didn't respond in time"
     assert rs.skip_reason(None) is None
     assert rs.skip_reason("Zzz") == "other errors"
+    assert [rs.skip_reason(n) for n in ("TooLarge", "BadContentType", "ConvertFailed", "ResearchError", "ConvertTimeout")] == [
+        "too large", "not a web page or PDF", "not a web page or PDF", "refused by the server", "didn't respond in time"]
 
 
 @pytest.fixture

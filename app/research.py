@@ -272,7 +272,7 @@ def research_view(rid: int, request: Request, user: User = Depends(require("user
     skip_reasons = Counter(r for s in skipped if (r := skip_reason(s.get("error")))).most_common()
     query = "[withheld]" if anonymise.blocked(row[0], clients) else row[0]  # a client protected after it was sent
     return page(request, "research_view.html", user, query=query, status=row[1], error=row[2], ours=ours,
-                pages=pages, skipped=skipped, skip_reasons=skip_reasons, omitted=omitted, claims=claims, groups=groups,
+                pages=pages, skipped=len(skipped), skip_reasons=skip_reasons, omitted=omitted, claims=claims, groups=groups,
                 note=row[3].get("note"), case_id=row[4] if case else None, research_id=rid,
                 attach_cases=attach_cases, images=images)
 
@@ -449,7 +449,7 @@ class Fetcher:
             except ResearchError as e:
                 for r in opened:
                     r.close()  # the abandoned hop stops at its next read
-                if isinstance(e, Stalled) and self.backend:  # a host that stalls before its headers leaves no response to close
+                if isinstance(e, Stalled) and self.backend:  # a stalled hop, before its headers or mid-body, may leave no response to close
                     for s in self.backend.socks:
                         try:
                             s.shutdown(socket.SHUT_RDWR)

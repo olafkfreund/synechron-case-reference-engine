@@ -152,6 +152,10 @@ def test_view_explains_skipped_sources_without_showing_domains(reg):
     t = html.unescape(c.get(loc).text)
     assert "5 source(s) skipped: 2 don't allow automated access, 1 didn't respond in time, 1 blocked by our safety checks, 1 other errors." in t
     assert all(s["domain"] not in t for s in skipped)
+    loc = sent(c, None)  # a hidden source counts but gives no reason
+    finish(loc, [], pages=[{"url": f"https://{reg}.example/x", "publisher": "w.example", "retrieved_at": "2026-10-01T00:00:00+00:00"}],
+           skipped=skipped[:1])
+    assert "2 source(s) skipped: 1 don't allow automated access." in html.unescape(c.get(loc).text)
 
 
 def test_view_shows_our_approach_only_while_visible_and_applies_protection(approved, reg, echo, monkeypatch):
