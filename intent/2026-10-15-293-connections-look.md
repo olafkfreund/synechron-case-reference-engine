@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 293
 author: olafkfreund
 ---
@@ -96,8 +96,7 @@ column on phones, using the portal's existing card style:
 
 ## Open questions
 
-1. **Two-column grid on wide screens, or one column?**
-   Suggested: two columns at 900 px and up, using the existing `admin-grid`.
-2. **Should the environment names (`OPENAI_API_KEY`) stay visible?**
-   Suggested: yes, as small muted text under each label, because ops reads
-   them.
+None. Decided on 2026-10-15, when the intent was approved with the suggested answers:
+
+1. **Two columns from 900 px,** using the existing `admin-grid`. One column on phones.
+2. **The environment names stay visible,** as small muted text under each label.
