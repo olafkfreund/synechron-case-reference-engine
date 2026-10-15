@@ -34,11 +34,18 @@ services:
       AWS_ENDPOINT_URL: http://s3:5000
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
+      # the six connection secrets (#288): seeded from the shell once; after that the Settings page edits them
+      GRAPH_CLIENT_SECRET: ${GRAPH_CLIENT_SECRET:-}
+      CONFLUENCE_TOKEN: ${CONFLUENCE_TOKEN:-}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      OLLAMA_CLOUD_KEY: ${OLLAMA_CLOUD_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     entrypoint:
       - python
       - -c
       - |
-        import boto3, time
+        import boto3, os, time
         c = boto3.client("s3", region_name="eu-west-1")
         for _ in range(30):
             try:
@@ -51,6 +58,13 @@ services:
                 time.sleep(1)
         else:
             raise SystemExit("s3 never answered")
+        sm = boto3.client("secretsmanager", region_name="eu-west-1")
+        for name in ("GRAPH_CLIENT_SECRET", "CONFLUENCE_TOKEN", "BRAVE_API_KEY", "OLLAMA_CLOUD_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"):
+            value = os.environ.get(name)
+            try:
+                sm.create_secret(Name=f"refs-local/{name}", **({"SecretString": value} if value else {}))
+            except sm.exceptions.ResourceExistsException:
+                pass  # set in the portal since: keep it
   app:
     build: .
     environment:
@@ -69,9 +83,10 @@ services:
       EXTRACT_MODEL_OPTIONS: ${EXTRACT_MODEL_OPTIONS:-}
       DRAFT_MODEL: ${DRAFT_MODEL:-}
       DRAFT_MODEL_OPTIONS: ${DRAFT_MODEL_OPTIONS:-}
-      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      SETTINGS_SECRET_IDS: '{"GRAPH_CLIENT_SECRET":"refs-local/GRAPH_CLIENT_SECRET","CONFLUENCE_TOKEN":"refs-local/CONFLUENCE_TOKEN","BRAVE_API_KEY":"refs-local/BRAVE_API_KEY","OLLAMA_CLOUD_KEY":"refs-local/OLLAMA_CLOUD_KEY","OPENAI_API_KEY":"refs-local/OPENAI_API_KEY","GEMINI_API_KEY":"refs-local/GEMINI_API_KEY"}'  # moto (s3 service); edits are lost when it restarts
+      MODEL_CHOICES: ${MODEL_CHOICES:-${EXTRACT_MODEL:-},${DRAFT_MODEL:-}}
+      GRAPH_CLIENT_ID: ${GRAPH_CLIENT_ID:-}
+      CONFLUENCE_EMAIL: ${CONFLUENCE_EMAIL:-}
       AWS_ENDPOINT_URL: http://s3:5000
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
@@ -97,9 +112,10 @@ services:
       EXTRACT_MODEL_OPTIONS: ${EXTRACT_MODEL_OPTIONS:-}
       DRAFT_MODEL: ${DRAFT_MODEL:-}
       DRAFT_MODEL_OPTIONS: ${DRAFT_MODEL_OPTIONS:-}
-      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      SETTINGS_SECRET_IDS: '{"GRAPH_CLIENT_SECRET":"refs-local/GRAPH_CLIENT_SECRET","CONFLUENCE_TOKEN":"refs-local/CONFLUENCE_TOKEN","BRAVE_API_KEY":"refs-local/BRAVE_API_KEY","OLLAMA_CLOUD_KEY":"refs-local/OLLAMA_CLOUD_KEY","OPENAI_API_KEY":"refs-local/OPENAI_API_KEY","GEMINI_API_KEY":"refs-local/GEMINI_API_KEY"}'  # moto (s3 service); edits are lost when it restarts
+      MODEL_CHOICES: ${MODEL_CHOICES:-${EXTRACT_MODEL:-},${DRAFT_MODEL:-}}
+      GRAPH_CLIENT_ID: ${GRAPH_CLIENT_ID:-}
+      CONFLUENCE_EMAIL: ${CONFLUENCE_EMAIL:-}
       AWS_ENDPOINT_URL: http://s3:5000
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
