@@ -325,3 +325,27 @@ def test_review_rows_keep_capitals_off_and_the_action_column_fixed():  # plan #2
     css = (Path(__file__).parent.parent / "app" / "static" / "portal.css").read_text()
     rows = "".join(re.findall(r"\.field-row[^{]*\{[^}]*\}|\.mini-label\{[^}]*\}", css))
     assert "capitalize" not in rows and "200px minmax(0,1fr) minmax(0,1.4fr) 136px" in css
+
+
+# --- brand theme (plan #291 step 3) ---
+def test_logo_partial_is_clean_and_follows_the_theme():
+    t = (Path(__file__).parent.parent / "app" / "templates" / "_logo.html").read_text()
+    for s in ('role="img"', 'aria-label="Synechron"', 'fill="currentColor"'):
+        assert s in t
+    for bad in ("<style", 'fill="#', "<script", "<?xml", "<!--"):
+        assert bad not in t
+
+
+def test_header_shows_the_logo_once_and_keeps_the_product_name(make, approved, monkeypatch):  # noqa: F811
+    r = pages(make, approved, monkeypatch)["home"]
+    brand = re.search(r'<a class="brand"[^>]*>.*?</a>', r.text, re.S).group(0)
+    assert r.text.count('class="brand-logo"') == 1 and "Reference Engine" in brand
+
+
+def test_brand_tokens():
+    _, region = token_blocks()
+    for tok in ("--fs-m:16px", "--r-control:8px", "--r-card:8px"):
+        assert tok in region
+    for blk in (":root{", ':root:not([data-theme="light"])', ':root[data-theme="dark"]'):
+        assert theme(blk, region)["brand-mark"] == "#FBF321"
+    assert theme(":root{", region)["accent"] == "#002535"
