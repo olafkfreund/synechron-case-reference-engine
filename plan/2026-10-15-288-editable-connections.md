@@ -277,3 +277,12 @@ docker compose run --rm app pytest tests/test_conn_settings.py tests/test_settin
   - **`AWSPREVIOUS` must be the value that was in force.**
 - **Step 3: a new secret's first proposal stays pending.** AWS makes the first version of a secret `AWSCURRENT`, so before proposing a never-set secret, the code first stores a cleared (`-`) version.
 - **Step 3: errors are a 400/403/409 naming the setting,** like the Sources page, not a re-rendered form.
+- **Review fixes (Opus, Codex).**
+  - **Changes go live last.** The audit and id rows are written first. Then `_commit_and_activate` moves `AWSCURRENT` and commits. If either step fails, the secrets go back to the versions that were current, so no change is live without its audit row. `REFS_PENDING` is dropped afterwards, as best effort.
+  - **A decision names its proposal.** Approve, Reject and Withdraw send the id of the proposal on screen. A proposal that was replaced since the page loaded gets 409.
+  - **A save compares under the lock.** It compares ids and models with the database, not the 60 s cache.
+  - **Approving a model re-checks it** against `MODEL_CHOICES`.
+  - **Restoring a two-admin secret moves `REFS_PENDING` explicitly** (`RemoveFromVersionId`).
+  - **The Secrets Manager client** gets its own session (thread-safe), a 2 s connect and 5 s read timeout, and 2 attempts.
+  - **IAM:** `ListSecretVersionIds` is dropped because nothing calls it.
+  - **The admin guide states the outage behaviour.**

@@ -4,14 +4,18 @@ Secrets live in Secrets Manager (AWSCURRENT of the id in SETTINGS_SECRET_IDS) an
 environment once managed; plain values live in connection_settings, else the environment. Without
 SETTINGS_SECRET_IDS (tests, a bare docker run) everything comes from the environment and editing is off."""
 import json
+import logging
 import os
 import re
 import time
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from app import db
+
+log = logging.getLogger(__name__)
 
 SECRET_NAMES = ("GRAPH_CLIENT_SECRET", "CONFLUENCE_TOKEN", "BRAVE_API_KEY", "OLLAMA_CLOUD_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY")
 PLAIN_NAMES = ("GRAPH_CLIENT_ID", "CONFLUENCE_EMAIL", "EXTRACT_MODEL", "DRAFT_MODEL")
@@ -38,7 +42,9 @@ def clear_cache() -> None:
 
 
 def _client():
-    return boto3.client("secretsmanager")
+    # a session per client: the default one is not thread-safe; short timeouts so an outage serves the stale value fast
+    return boto3.session.Session().client("secretsmanager", config=Config(
+        connect_timeout=2, read_timeout=5, retries={"max_attempts": 2}))
 
 
 def _load_secret(secret_id: str) -> str | None:
@@ -125,19 +131,44 @@ def _make_current(secret_id: str, version: str) -> None:
                                               **({"RemoveFromVersionId": current} if current else {}))
 
 
-def _drop_pending(secret_id: str, version: str) -> None:
-    _client().update_secret_version_stage(SecretId=secret_id, VersionStage=PENDING, RemoveFromVersionId=version)
-
-
-def _put(secret_id: str, value: str, pending: bool) -> str:
-    if pending and "AWSCURRENT" not in _stages(secret_id):
-        # the first version of a secret always becomes AWSCURRENT: give it a cleared one so the proposal stays pending
+def _pending(secret_id: str, value: str) -> str:
+    """Store value as a new version labelled REFS_PENDING; AWSCURRENT does not move."""
+    if "AWSCURRENT" not in _stages(secret_id):
+        # the first version of a secret always becomes AWSCURRENT: give it a cleared one so the new value waits
         _client().put_secret_value(SecretId=secret_id, SecretString=CLEARED)
-    version = _client().put_secret_value(SecretId=secret_id, SecretString=value, VersionStages=[PENDING])["VersionId"]
-    if not pending:  # moved explicitly, not by put's implicit AWSCURRENT, so AWSPREVIOUS is the value that was in force
-        _make_current(secret_id, version)
-        _drop_pending(secret_id, version)
-    return version
+    return _client().put_secret_value(SecretId=secret_id, SecretString=value, VersionStages=[PENDING])["VersionId"]
+
+
+def _label_pending(secret_id: str, version: str) -> None:
+    held = _stages(secret_id).get(PENDING)
+    if held != version:
+        _client().update_secret_version_stage(SecretId=secret_id, VersionStage=PENDING, MoveToVersionId=version,
+                                              **({"RemoveFromVersionId": held} if held else {}))
+
+
+def _tidy(secret_id: str, version: str) -> None:
+    """Drop REFS_PENDING after the change is committed; a label left behind is harmless, so failures are only logged."""
+    try:
+        _client().update_secret_version_stage(SecretId=secret_id, VersionStage=PENDING, RemoveFromVersionId=version)
+    except Exception as e:  # noqa: BLE001
+        log.warning("could not drop %s from a version of %s: %s", PENDING, secret_id, type(e).__name__)
+
+
+def _commit_and_activate(conn, moves: list[tuple[str, str]]) -> None:
+    """The audit and id rows are written; now make each (secret id, version) current and commit. If anything
+    fails, the secrets go back to the versions that were current, so no change is live without its audit row."""
+    before = [(sid, _stages(sid).get("AWSCURRENT")) for sid, _ in moves]
+    try:
+        for sid, version in moves:
+            _make_current(sid, version)
+        conn.commit()
+    except Exception:
+        for sid, old in before:
+            if old:
+                _make_current(sid, old)
+        raise
+    for sid, version in moves:
+        _tidy(sid, version)
 
 
 def _log(conn, name, action, actor, old=None, new=None, version=None):
@@ -150,10 +181,10 @@ def _lock(conn, name):
 
 
 def proposal(conn, name):
-    """(actor, new, secret_version) of the open proposal: the name's latest row, when that is a proposal."""
-    row = conn.execute("select action, actor, new, secret_version from connection_setting_changes "
+    """(row id, actor, new, secret_version) of the open proposal: the name's latest row, when that is a proposal."""
+    row = conn.execute("select id, action, actor, new, secret_version from connection_setting_changes "
                        "where name=%s order by id desc limit 1", (name,)).fetchone()
-    return row[1:] if row and row[0] == "proposed" else None
+    return (row[0], *row[2:]) if row and row[1] == "proposed" else None
 
 
 def _plain_now(conn, name):
@@ -173,117 +204,116 @@ def _ids():
     return ids
 
 
+def _open_check(conn, name):
+    _lock(conn, name)
+    if proposal(conn, name):
+        raise Refused(409, f"{name} has a change waiting for approval")
+
+
 def save(conn, actor: str, values: dict[str, str]) -> None:
     """One save of one connector's form. Blank fields are unchanged. A one-admin setting takes effect now;
-    a two-admin one becomes a proposal."""
+    a two-admin one becomes a proposal. Commits."""
     ids = _ids()
-    changes = {}
-    for name, raw in values.items():
-        if name not in MANAGED or not raw.strip():
-            continue
-        value = check(name, raw)
-        if name in PLAIN_NAMES and value == get(name):
-            continue
-        changes[name] = value
+    checked = {name: check(name, raw) for name, raw in values.items() if name in MANAGED and raw.strip()}
+    for name in sorted(set(values) & set(MANAGED)):  # the whole form's names, so a pair is compared under its lock
+        _open_check(conn, name)
+    changes = {n: v for n, v in checked.items() if n in SECRET_NAMES or v != _plain_now(conn, n)}
     for id_name, secret_name in PAIRS.items():
         if id_name in changes and secret_name not in changes:
             raise Refused(400, f"{secret_name} is required with a new {id_name}")
-    for name in sorted(changes):
-        _lock(conn, name)
-        if proposal(conn, name):
-            raise Refused(409, f"{name} has a change waiting for approval")
-    moved = []  # (secret id, version that was current): undone if a later write fails
+    pending = []
     try:
-        for name in sorted(changes, key=lambda n: n in PLAIN_NAMES):  # secrets first, then the ids
-            value = changes[name]
-            if name in TWO_ADMIN:
-                if name in SECRET_NAMES:
-                    _log(conn, name, "proposed", actor, version=_put(ids[name], value, pending=True))
+        for name, value in changes.items():
+            if name in SECRET_NAMES:
+                version = _pending(ids[name], value)
+                if name in TWO_ADMIN:
+                    _log(conn, name, "proposed", actor, version=version)
                 else:
-                    _log(conn, name, "proposed", actor, old=_plain_now(conn, name), new=value)
-            elif name in SECRET_NAMES:
-                before = _stages(ids[name]).get("AWSCURRENT")
-                version = _put(ids[name], value, pending=False)
-                moved.append((ids[name], before))
-                _log(conn, name, "applied", actor, version=version)
+                    pending.append((ids[name], version))
+                    _log(conn, name, "applied", actor, version=version)
+            elif name in TWO_ADMIN:
+                _log(conn, name, "proposed", actor, old=_plain_now(conn, name), new=value)
             else:
                 _log(conn, name, "applied", actor, old=_plain_now(conn, name), new=value)
                 _set_plain(conn, name, value, actor)
-    except Exception:
-        for secret_id, before in moved:
-            if before:
-                _make_current(secret_id, before)
-        raise
+        _commit_and_activate(conn, pending)
     finally:
         clear_cache()
 
 
-def decide(conn, actor: str, name: str, action: str) -> None:
-    """approve / reject (another admin) or withdraw (the proposer) the open proposal."""
+def decide(conn, actor: str, name: str, action: str, proposal_id: int) -> None:
+    """approve / reject (another admin) or withdraw (the proposer) the proposal the admin saw. Commits."""
     ids = _ids()
     _lock(conn, name)
     open_ = proposal(conn, name)
-    if not open_:
-        raise Refused(409, f"{name} has no change waiting for approval")
-    proposer, new, version = open_
+    if not open_ or open_[0] != proposal_id:  # withdrawn, decided or replaced since the page was loaded
+        raise Refused(409, f"the change to {name} is no longer waiting; reload the page")
+    _, proposer, new, version = open_
     if action in ("approve", "reject") and actor == proposer:
         raise Refused(403, "a second admin must decide this change")
     if action == "withdraw" and actor != proposer:
         raise Refused(403, "only the admin who proposed it can withdraw it")
     done = {"approve": "approved", "reject": "rejected", "withdraw": "withdrawn"}[action]
-    if name in SECRET_NAMES:
-        if action == "approve":
-            _make_current(ids[name], version)
-        _drop_pending(ids[name], version)
-        _log(conn, name, done, actor, version=version)
-    else:
-        old = _plain_now(conn, name)
-        if action == "approve":
-            _set_plain(conn, name, new, actor)
-        _log(conn, name, done, actor, old=old, new=new)
-    clear_cache()
+    try:
+        if name in SECRET_NAMES:
+            _log(conn, name, done, actor, version=version)
+            _commit_and_activate(conn, [(ids[name], version)] if action == "approve" else [])
+            if action != "approve":
+                _tidy(ids[name], version)
+        else:
+            if action == "approve":
+                check(name, new)  # still in MODEL_CHOICES
+            _log(conn, name, done, actor, old=_plain_now(conn, name), new=new)
+            if action == "approve":
+                _set_plain(conn, name, new, actor)
+            conn.commit()
+    finally:
+        clear_cache()
 
 
 def restore(conn, actor: str, name: str) -> None:
-    """Back to the previous value; a two-admin setting proposes it instead."""
+    """Back to the previous value; a two-admin setting proposes it instead. Commits."""
     ids = _ids()
     if name in PAIRS or name in PAIRS.values():  # half a pair back would mix two identities
         raise Refused(400, f"{name} is part of a pair: enter the id and secret again")
-    _lock(conn, name)
-    if proposal(conn, name):
-        raise Refused(409, f"{name} has a change waiting for approval")
-    if name in SECRET_NAMES:
-        previous = _stages(ids[name]).get("AWSPREVIOUS")
-        if not previous:
-            raise Refused(409, f"{name} has no previous value")
-        if name in TWO_ADMIN:
-            _client().update_secret_version_stage(SecretId=ids[name], VersionStage=PENDING, MoveToVersionId=previous)
-            _log(conn, name, "proposed", actor, version=previous)
+    _open_check(conn, name)
+    try:
+        if name in SECRET_NAMES:
+            previous = _stages(ids[name]).get("AWSPREVIOUS")
+            if not previous:
+                raise Refused(409, f"{name} has no previous value")
+            if name in TWO_ADMIN:
+                _label_pending(ids[name], previous)
+                _log(conn, name, "proposed", actor, version=previous)
+                conn.commit()
+            else:
+                _log(conn, name, "restored", actor, version=previous)
+                _commit_and_activate(conn, [(ids[name], previous)])
         else:
-            _make_current(ids[name], previous)
-            _log(conn, name, "restored", actor, version=previous)
-    else:
-        last = conn.execute("select old from connection_setting_changes where name=%s and action in "
-                            "('applied','approved','restored') order by id desc limit 1", (name,)).fetchone()
-        if not last:
-            raise Refused(409, f"{name} has no previous value")
-        target = last[0] or os.environ.get(name)  # null: it came from Terraform
-        if not target:
-            raise Refused(409, f"{name} has no previous value")
-        _log(conn, name, "proposed", actor, old=_plain_now(conn, name), new=target)  # only models get here: two admins
-    clear_cache()
+            last = conn.execute("select old from connection_setting_changes where name=%s and action in "
+                                "('applied','approved','restored') order by id desc limit 1", (name,)).fetchone()
+            target = (last[0] if last else None) or os.environ.get(name)  # null: it came from Terraform
+            if not last or not target:
+                raise Refused(409, f"{name} has no previous value")
+            _log(conn, name, "proposed", actor, old=_plain_now(conn, name), new=target)  # only models get here: two admins
+            conn.commit()
+    finally:
+        clear_cache()
 
 
 def clear(conn, actor: str, name: str) -> None:
-    """A secret becomes "not configured"; a two-admin one proposes that."""
+    """A secret becomes "not configured"; a two-admin one proposes that. Commits."""
     ids = _ids()
     if name not in SECRET_NAMES:
         raise Refused(400, f"{name} cannot be cleared")
-    _lock(conn, name)
-    if proposal(conn, name):
-        raise Refused(409, f"{name} has a change waiting for approval")
-    if name in TWO_ADMIN:
-        _log(conn, name, "proposed", actor, version=_put(ids[name], CLEARED, pending=True))
-    else:
-        _log(conn, name, "cleared", actor, version=_put(ids[name], CLEARED, pending=False))
-    clear_cache()
+    _open_check(conn, name)
+    try:
+        version = _pending(ids[name], CLEARED)
+        if name in TWO_ADMIN:
+            _log(conn, name, "proposed", actor, version=version)
+            conn.commit()
+        else:
+            _log(conn, name, "cleared", actor, version=version)
+            _commit_and_activate(conn, [(ids[name], version)])
+    finally:
+        clear_cache()

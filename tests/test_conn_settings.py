@@ -1,4 +1,6 @@
 import json
+import os
+import sys
 
 import boto3
 import pytest
@@ -147,6 +149,10 @@ def admins(env, managed, monkeypatch):  # noqa: F811
 
 
 def post(c, path, **form):
+    name, _, action = path.partition("/")
+    if action in ("approve", "reject", "withdraw") and "proposal" not in form:  # the proposal on screen
+        with db.connect() as conn:
+            form["proposal"] = (cs.proposal(conn, name) or (0,))[0]
     return c.post("/admin/settings/connections/" + path, data=form, follow_redirects=False)
 
 
@@ -242,3 +248,61 @@ def test_changes_show_on_audit_without_secrets(admins):
     post(a, "models", EXTRACT_MODEL="bedrock/m2")
     html = a.get("/admin/audit").text
     assert "Connection changes" in html and "BRAVE_API_KEY" in html and "bedrock/m2" in html and SENTINEL not in html
+
+
+def test_a_decision_applies_only_to_the_proposal_seen(admins):
+    a, b = admins
+    post(a, "models", EXTRACT_MODEL="bedrock/m2")
+    with db.connect() as conn:
+        seen = cs.proposal(conn, "EXTRACT_MODEL")[0]
+    post(a, "EXTRACT_MODEL/withdraw")
+    post(a, "models", EXTRACT_MODEL="bedrock/m2")  # a new proposal replaces the one b saw
+    assert post(b, "EXTRACT_MODEL/approve", proposal=seen).status_code == 409
+    assert cs.get("EXTRACT_MODEL") == "bedrock/m1"
+
+
+def test_a_failed_commit_leaves_the_old_secret_in_force(admins, monkeypatch):
+    import psycopg
+    a, _ = admins
+    post(a, "brave", BRAVE_API_KEY="k1")
+
+    real = psycopg.Connection.commit
+
+    def fail(self):  # only the settings change's commit: the login check commits too
+        if sys._getframe(1).f_code.co_name == "_commit_and_activate":
+            raise psycopg.OperationalError("connection lost")
+        return real(self)
+    with monkeypatch.context() as m, pytest.raises(psycopg.OperationalError):
+        m.setattr(psycopg.Connection, "commit", fail)
+        post(a, "brave", BRAVE_API_KEY="k2")
+    cs.clear_cache()
+    assert cs.get("BRAVE_API_KEY") == "k1"
+    assert audit_text().count("applied") == 1
+    stages = cs._stages(json.loads(os.environ["SETTINGS_SECRET_IDS"])["BRAVE_API_KEY"])
+    assert len(stages) >= 2  # k2 was written: the failure came after Secrets Manager, not before
+
+
+def test_secret_proposal_reject_and_two_admin_restore(admins):
+    a, b = admins
+    post(a, "gemini", GEMINI_API_KEY="g1")
+    post(b, "GEMINI_API_KEY/approve")
+    post(a, "gemini", GEMINI_API_KEY="g2")
+    assert post(b, "GEMINI_API_KEY/reject").status_code == 303
+    assert cs.get("GEMINI_API_KEY") == "g1"
+    post(a, "gemini", GEMINI_API_KEY="g2")
+    post(b, "GEMINI_API_KEY/approve")
+    assert post(a, "GEMINI_API_KEY/restore").status_code == 303  # proposes g1
+    assert cs.get("GEMINI_API_KEY") == "g2"
+    assert post(b, "GEMINI_API_KEY/approve").status_code == 303
+    assert cs.get("GEMINI_API_KEY") == "g1"
+    assert post(a, "GEMINI_API_KEY/clear").status_code == 303  # proposes "not configured"
+    assert post(b, "GEMINI_API_KEY/approve").status_code == 303
+    assert cs.get("GEMINI_API_KEY") is None
+
+
+def test_decisions_are_admin_only(admins):
+    a, _ = admins
+    post(a, "models", EXTRACT_MODEL="bedrock/m2")
+    rev = client([REV], sub="rev")
+    for action in ("approve", "reject", "withdraw", "restore"):
+        assert post(rev, "EXTRACT_MODEL/" + action).status_code == 403

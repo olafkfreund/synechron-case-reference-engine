@@ -89,7 +89,7 @@ data "aws_iam_policy_document" "web" {
   source_policy_documents = [data.aws_iam_policy_document.bedrock.json, data.aws_iam_policy_document.db_secret.json]
 
   statement {
-    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret", "secretsmanager:ListSecretVersionIds", "secretsmanager:PutSecretValue", "secretsmanager:UpdateSecretVersionStage"]
+    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret", "secretsmanager:PutSecretValue", "secretsmanager:UpdateSecretVersionStage"]
     resources = values(local.conn_secret_ids)
   }
 

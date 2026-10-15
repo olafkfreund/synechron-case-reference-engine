@@ -1,7 +1,7 @@
 import os
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from starlette.datastructures import FormData
 
@@ -59,13 +59,13 @@ def settings_page(request: Request, user: User = Depends(require("admin"))):
             "select s.id, s.name, s.kind, s.enabled, s.last_run_at, s.last_counts, "
             "(select max(j.updated_at) from jobs j where j.status='failed' and j.kind like 'crawl_%' "
             "and j.payload->>'source_id' = s.id::text) from sources s order by s.name").fetchall()
-        changes = conn.execute("select distinct on (name) name, action, actor, at, new, secret_version "
+        changes = conn.execute("select distinct on (name) name, action, actor, at, new, id "
                                "from connection_setting_changes order by name, id desc").fetchall()
     sources = [(sid, name, kind, enabled, last_run, {key: (counts or {}).get(key, 0) for key in COUNTS}, failed_at)
                for sid, name, kind, enabled, last_run, counts, failed_at in rows]
-    last = {name: (action, actor, at) for name, action, actor, at, new, version in changes}
-    proposals = {name: (actor, at, new if name in cs.PLAIN_NAMES else None)
-                 for name, action, actor, at, new, version in changes if action == "proposed"}
+    last = {name: (action, actor, at) for name, action, actor, at, new, cid in changes}
+    proposals = {name: (actor, at, new if name in cs.PLAIN_NAMES else None, cid)
+                 for name, action, actor, at, new, cid in changes if action == "proposed"}
     return page(request, "settings.html", user, values=values, secrets=secrets, sources=sources, roles=roles,
                 mcp_enabled=mcp_enabled, connectors=CONNECTORS, editable=cs.editable(), last=last, proposals=proposals,
                 two_admin=cs.TWO_ADMIN, plain=cs.PLAIN_NAMES, model_choices=cs.model_choices())
@@ -92,9 +92,9 @@ def save_connection(group: str, form: FormData = Depends(raw_form), user: User =
 
 
 @router.post("/admin/settings/connections/{name}/{action}")
-def change_connection(name: str, action: str, user: User = Depends(require("admin"))):
+def change_connection(name: str, action: str, proposal: int = Form(0), user: User = Depends(require("admin"))):
     if name not in cs.MANAGED or action not in ("approve", "reject", "withdraw", "restore", "clear"):
         raise HTTPException(404, "no such setting")
     if action in ("restore", "clear"):
         return _change(cs.restore if action == "restore" else cs.clear, user.sub, name)
-    return _change(cs.decide, user.sub, name, action)
+    return _change(cs.decide, user.sub, name, action, proposal)  # the proposal the admin saw
