@@ -148,6 +148,12 @@ variable "draft_model" {
   type        = string
 }
 
+variable "model_choices" {
+  description = "Other model ids admins may select. Each Bedrock id also needs its ARN in bedrock_model_arns."
+  type        = list(string)
+  default     = []
+}
+
 variable "mcp_enabled" {
   description = "MCP at /mcp for AI agents. On by default; when on, the issuer, audience and client ids below are required (plan fails otherwise)."
   type        = bool

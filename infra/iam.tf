@@ -13,8 +13,8 @@ data "aws_iam_policy_document" "ecs_tasks_assume" {
 
 locals {
   exec_secrets = {
-    web     = concat([local.secret_arn["session-secret"], local.secret_arn["oidc-client-secret"]], values(local.provider_secrets))
-    worker  = concat([local.secret_arn["graph-client-secret"], local.secret_arn["confluence-token"], local.secret_arn["brave-api-key"]], values(local.provider_secrets))
+    web     = [local.secret_arn["session-secret"], local.secret_arn["oidc-client-secret"]]
+    worker  = []
     crawl   = []
     migrate = []
   }
@@ -88,6 +88,11 @@ data "aws_iam_policy_document" "migrate" {
 data "aws_iam_policy_document" "web" {
   source_policy_documents = [data.aws_iam_policy_document.bedrock.json, data.aws_iam_policy_document.db_secret.json]
 
+  statement {
+    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret", "secretsmanager:ListSecretVersionIds", "secretsmanager:PutSecretValue", "secretsmanager:UpdateSecretVersionStage"]
+    resources = values(local.conn_secret_ids)
+  }
+
   statement { # uploads only: the web task never reads or overwrites originals
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.originals.arn}/${var.upload_prefix}*"]
@@ -101,6 +106,11 @@ data "aws_iam_policy_document" "web" {
 
 data "aws_iam_policy_document" "worker" {
   source_policy_documents = [data.aws_iam_policy_document.bedrock.json, data.aws_iam_policy_document.db_secret.json]
+
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = values(local.conn_secret_ids)
+  }
 
   statement {
     actions   = ["s3:ListBucket"]
