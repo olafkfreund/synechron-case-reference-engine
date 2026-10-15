@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 287
 spec: spec/2026-10-15-287-models-and-mcp-default.md
 ---
