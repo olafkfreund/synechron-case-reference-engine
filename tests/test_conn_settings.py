@@ -166,7 +166,7 @@ def test_one_admin_save_takes_effect_and_never_echoes(admins):
     assert post(a, "brave", BRAVE_API_KEY=SENTINEL).status_code == 303
     assert cs.get("BRAVE_API_KEY") == SENTINEL
     html = a.get("/admin/settings").text
-    assert "BRAVE_API_KEY</td><td>Configured" in html and SENTINEL not in html
+    assert 'badge ok">Configured' in html.split("<h3>Brave search</h3>")[1].split("conn-card")[0] and SENTINEL not in html
     assert "applied" in audit_text() and SENTINEL not in audit_text()
     assert post(a, "brave", BRAVE_API_KEY="").status_code == 303  # blank: unchanged
     assert cs.get("BRAVE_API_KEY") == SENTINEL

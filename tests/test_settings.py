@@ -1,9 +1,15 @@
+import re
 import uuid
 
 from psycopg.types.json import Jsonb
 
-from app import db
+from app import conn_settings as cs, db
 from tests.test_auth import ADMIN, REV, USER, client, env  # noqa: F401
+from tests.test_conn_settings import admins, managed, post  # noqa: F401
+
+
+def _connections(html: str) -> str:
+    return html.split("<h2>Connections</h2>", 1)[1].split("<h2>Sources</h2>", 1)[0]
 
 
 def test_settings_is_admin_only(env):  # noqa: F811
@@ -32,7 +38,7 @@ def test_settings_redacts_secrets_and_urls(env, monkeypatch):  # noqa: F811
     html = client([ADMIN]).get("/admin/settings").text
     assert all(value not in html for value in sentinels)
     assert "Configured" in html
-    assert "OPENAI_API_KEY</td><td>Configured" in html and "GEMINI_API_KEY</td><td>Configured" in html
+    assert all('badge ok">Configured' in html.split(f"<h3>{c}</h3>")[1].split("conn-card")[0] for c in ("OpenAI", "Gemini"))
     assert "https://idp.example:8443/metadata" in html
     assert "https://app.example/auth" in html
     assert "https://models.example:11434/api" in html
@@ -93,3 +99,41 @@ def test_settings_shows_mcp_on_by_default(env, monkeypatch):  # noqa: F811
     assert "<dt>Enabled</dt><dd>Yes" in html and "api-aud" in html
     monkeypatch.setenv("MCP_ENABLED", "0")
     assert "<dt>Enabled</dt><dd>No" in client([ADMIN]).get("/admin/settings").text
+
+
+def test_connections_inputs_have_labels(admins):  # noqa: F811
+    a, _ = admins
+    sec = _connections(a.get("/admin/settings").text)
+    tags = [t for t in re.findall(r"<(?:input|select)\b[^>]*>", sec) if 'type="hidden"' not in t]
+    assert len(tags) == len(cs.MANAGED)
+    for tag in tags:
+        m = re.search(r'\bid="([^"]+)"', tag)
+        assert m and re.search(rf'<label\b[^>]*\bfor="{re.escape(m[1])}"', sec), tag
+
+
+def test_each_connection_card_has_one_primary_button(admins):  # noqa: F811
+    a, _ = admins
+    cards = _connections(a.get("/admin/settings").text).split('class="conn-card"')[1:]
+    assert len(cards) == 7 and all(c.count("btn primary") == 1 for c in cards)
+    assert post(a, "openai", OPENAI_API_KEY="k").status_code == 303
+    assert post(a, "models", EXTRACT_MODEL="bedrock/m2").status_code == 303
+    cards = _connections(a.get("/admin/settings").text).split('class="conn-card"')[1:]
+    for c in cards:  # a card with an open proposal can't be saved (the save checks every setting on it)
+        assert c.count("btn primary") == (0 if "<h3>OpenAI</h3>" in c or "<h3>Models</h3>" in c else 1)
+    assert 'id="conn-DRAFT_MODEL"' not in _connections(a.get("/admin/settings").text)
+    assert post(a, "models", DRAFT_MODEL="bedrock/m2").status_code == 409  # why the button is hidden
+
+
+def test_connections_has_no_nested_forms(admins):  # noqa: F811
+    a, _ = admins
+    post(a, "brave", BRAVE_API_KEY="k1")
+    post(a, "brave", BRAVE_API_KEY="k2")
+    post(a, "openai", OPENAI_API_KEY="k")
+    sec = _connections(a.get("/admin/settings").text)
+    tags = re.findall(r"<(/?)form\b", sec)
+    assert tags
+    depth = 0
+    for slash in tags:
+        depth += -1 if slash else 1
+        assert depth in (0, 1)
+    assert depth == 0
