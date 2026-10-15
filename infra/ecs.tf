@@ -26,12 +26,16 @@ locals {
 
   # No HTTP_PROXY/HTTPS_PROXY anywhere: the research fetcher vets addresses itself and ignores them.
   common_env = merge(local.db_env, {
-    S3_BUCKET          = aws_s3_bucket.originals.bucket
-    EXTRACT_MODEL      = var.extract_model
-    DRAFT_MODEL        = var.draft_model
-    AWS_REGION_NAME    = var.region
-    AWS_DEFAULT_REGION = var.region
-    LITELLM_LOG        = "WARNING"
+    S3_BUCKET           = aws_s3_bucket.originals.bucket
+    EXTRACT_MODEL       = var.extract_model
+    DRAFT_MODEL         = var.draft_model
+    MODEL_CHOICES       = join(",", distinct(concat(var.model_choices, [var.extract_model, var.draft_model])))
+    SETTINGS_SECRET_IDS = jsonencode(local.conn_secret_ids)
+    GRAPH_CLIENT_ID     = var.graph_client_id
+    CONFLUENCE_EMAIL    = var.confluence_email
+    AWS_REGION_NAME     = var.region
+    AWS_DEFAULT_REGION  = var.region
+    LITELLM_LOG         = "WARNING"
   })
 
   web_env = merge(
@@ -57,22 +61,10 @@ locals {
     }, var.mcp_tenant_id == "" ? {} : { MCP_TENANT_ID = var.mcp_tenant_id }) : {},
   )
 
-  web_secrets = merge({
+  web_secrets = {
     SESSION_SECRET     = local.secret_arn["session-secret"]
     OIDC_CLIENT_SECRET = local.secret_arn["oidc-client-secret"]
-  }, local.provider_secrets)
-
-  worker_env = merge(
-    local.common_env,
-    var.graph_client_id == "" ? {} : { GRAPH_CLIENT_ID = var.graph_client_id },
-    var.confluence_email == "" ? {} : { CONFLUENCE_EMAIL = var.confluence_email },
-  )
-
-  worker_secrets = merge({
-    GRAPH_CLIENT_SECRET = local.secret_arn["graph-client-secret"]
-    CONFLUENCE_TOKEN    = local.secret_arn["confluence-token"]
-    BRAVE_API_KEY       = local.secret_arn["brave-api-key"]
-  }, local.provider_secrets)
+  }
 
   tasks = {
     web = {
@@ -89,8 +81,8 @@ locals {
       cpu     = var.worker_cpu
       memory  = var.worker_memory
       command = ["python", "-m", "app.worker"]
-      env     = local.worker_env
-      secrets = local.worker_secrets
+      env     = local.common_env
+      secrets = {}
       role    = aws_iam_role.worker.arn
       ports   = []
       stop    = 120 # SIGTERM requeues the running job; give it time
