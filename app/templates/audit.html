@@ -33,6 +33,14 @@
 </div>
 
 <div class="section-card">
+<div class="card-head"><h2>Source configuration changes</h2></div>
+{% if not config_changes %}<p class="muted">No source configuration changes recorded.</p>{% else %}
+<div class="table-box"><table><thead><tr><th>When</th><th>Source</th><th>Action</th><th>Changes</th><th>By</th></tr></thead><tbody>
+{% for at, name, action, summary, by in config_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ action }}</td><td>{{ summary }}</td><td>{{ by }}</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+</div>
+
+<div class="section-card">
 <div class="card-head"><h2>Source data class changes</h2></div>
 <p class="muted">Lowering a source to sanitised or public lets its documents reach any model.</p>
 {% if not class_changes %}<p class="muted">No data-class changes recorded.</p>{% else %}
