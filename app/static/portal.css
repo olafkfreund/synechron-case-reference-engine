@@ -8,29 +8,29 @@
 
 /* tokens */
 :root{color-scheme:light;
---bg:#FAFAFA;--surface:#FFFFFF;--text:#0A0A0A;--muted:#6B6B6B;--border:#E5E5E5;--subtle:#F5F5F5;
---accent:#FDC700;--accent-hover:#FDD233;--on-accent:#733E0A;--link:#733E0A;--focus:#733E0A;--header:#FFFFFF;--paper:#FFFFFF;
---input-border:#8A8A8A;
+--bg:#F4F4F4;--surface:#FFFFFF;--text:#001422;--muted:#5C5C5C;--border:#DCDCDC;--subtle:#F0F2F4;
+--accent:#002535;--accent-hover:#0B3B52;--on-accent:#FFFFFF;--link:#005A87;--focus:#007BB8;--header:#FFFFFF;--paper:#FFFFFF;
+--brand-mark:#FBF321;--input-border:#7A7A7A;
 --ok-bg:#E5F2E9;--ok-fg:#1E6B3A;--warn-bg:#FBF0D9;--warn-fg:#6B4600;--bad-bg:#FDE5E7;--bad-fg:#B80006;
---header-text:#404040;--header-strong:#0A0A0A;--header-tag:#6B6B6B;--header-border:#8A8A8A;--header-focus:#733E0A;--header-hover:#F5F5F5;
+--header-text:#33424D;--header-strong:#001422;--header-tag:#5C5C5C;--header-border:#7A7A7A;--header-focus:#007BB8;--header-hover:#F0F2F4;
 --shadow:0 1px 2px rgb(0 0 0/.04),0 2px 12px rgb(0 0 0/.06);
---r-control:10px;--r-card:14px;
---fs-s:13px;--fs-m:15px;--fs-l:18px;--fs-xl:20px;--fs-xxl:28px;
+--r-control:8px;--r-card:8px;
+--fs-s:13px;--fs-m:16px;--fs-l:18px;--fs-xl:20px;--fs-xxl:28px;
 --sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:24px;--sp-6:32px;
 --ink:var(--text);--ground:var(--bg);--card-border:var(--border);--line:var(--border);--thead:var(--subtle)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;
---bg:#0A0A0A;--surface:#171717;--text:#FAFAFA;--muted:#A1A1A1;--border:#2E2E2E;--subtle:#262626;
---accent:#F0B100;--accent-hover:#F5C842;--on-accent:#733E0A;--link:#F0B100;--focus:#F0B100;--header:#0A0A0A;--paper:#F4F6F8;
---input-border:#747474;
---ok-bg:#173A26;--ok-fg:#9DE0B4;--warn-bg:#3D2F12;--warn-fg:#F5CF85;--bad-bg:#452627;--bad-fg:#FF7B7E;
---header-text:#D4D4D4;--header-strong:#FAFAFA;--header-tag:#A1A1A1;--header-border:#6B6B6B;--header-focus:#F0B100;--header-hover:#262626;
+--bg:#000C14;--surface:#001422;--text:#F4F4F4;--muted:#A3B1BC;--border:#16303F;--subtle:#002535;
+--accent:#26A9E0;--accent-hover:#4DBAE8;--on-accent:#001422;--link:#4DBAE8;--focus:#26A9E0;--header:#000C14;--paper:#F4F6F8;
+--brand-mark:#FBF321;--input-border:#6A8494;
+--ok-bg:#123526;--ok-fg:#9DE0B4;--warn-bg:#3A2E12;--warn-fg:#F5CF85;--bad-bg:#3F1F26;--bad-fg:#FF8A8D;
+--header-text:#C9D3DA;--header-strong:#F4F4F4;--header-tag:#A3B1BC;--header-border:#6A8494;--header-focus:#26A9E0;--header-hover:#002535;
 --shadow:0 1px 2px rgb(0 0 0/.3),0 2px 12px rgb(0 0 0/.3)}}
 :root[data-theme="dark"]{color-scheme:dark;
---bg:#0A0A0A;--surface:#171717;--text:#FAFAFA;--muted:#A1A1A1;--border:#2E2E2E;--subtle:#262626;
---accent:#F0B100;--accent-hover:#F5C842;--on-accent:#733E0A;--link:#F0B100;--focus:#F0B100;--header:#0A0A0A;--paper:#F4F6F8;
---input-border:#747474;
---ok-bg:#173A26;--ok-fg:#9DE0B4;--warn-bg:#3D2F12;--warn-fg:#F5CF85;--bad-bg:#452627;--bad-fg:#FF7B7E;
---header-text:#D4D4D4;--header-strong:#FAFAFA;--header-tag:#A1A1A1;--header-border:#6B6B6B;--header-focus:#F0B100;--header-hover:#262626;
+--bg:#000C14;--surface:#001422;--text:#F4F4F4;--muted:#A3B1BC;--border:#16303F;--subtle:#002535;
+--accent:#26A9E0;--accent-hover:#4DBAE8;--on-accent:#001422;--link:#4DBAE8;--focus:#26A9E0;--header:#000C14;--paper:#F4F6F8;
+--brand-mark:#FBF321;--input-border:#6A8494;
+--ok-bg:#123526;--ok-fg:#9DE0B4;--warn-bg:#3A2E12;--warn-fg:#F5CF85;--bad-bg:#3F1F26;--bad-fg:#FF8A8D;
+--header-text:#C9D3DA;--header-strong:#F4F4F4;--header-tag:#A3B1BC;--header-border:#6A8494;--header-focus:#26A9E0;--header-hover:#002535;
 --shadow:0 1px 2px rgb(0 0 0/.3),0 2px 12px rgb(0 0 0/.3)}
 /* end tokens */
 
@@ -47,9 +47,11 @@ code,.mono{font-family:"IBM Plex Mono",monospace;font-size:13px}
 .skip:focus{left:8px;top:8px;z-index:10;background:var(--surface);color:var(--text);padding:8px 12px;border-radius:var(--r-control)}
 
 /* header */
-.site-header{background:var(--header);color:var(--header-strong);border-bottom:1px solid var(--border)}
+.site-header{background:var(--header);color:var(--header-strong);border-top:3px solid var(--brand-mark);border-bottom:1px solid var(--border)}
 .site-header-in{max-width:1280px;margin:0 auto;padding:10px 24px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 24px}
-.brand{display:flex;align-items:baseline;gap:10px;text-decoration:none;color:inherit}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit}
+.brand-logo{width:200px;height:auto;color:var(--header-strong);flex:none}
+.brand-mark{display:none;width:32px;height:32px;color:var(--header-strong);flex:none}
 .site-header .brand:hover{color:var(--header-strong)}
 .brand-name{font-weight:600;font-size:18px;letter-spacing:.01em}
 .brand-tag{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--header-tag)}
@@ -266,7 +268,7 @@ details.mini:not([open])>summary,.client-row .slot{min-width:84px;justify-conten
 @media (min-width:600px){.admin-grid{grid-template-columns:1fr 1fr}}
 .admin-grid a.card{padding:14px 16px}
 .admin-grid .icon,.lead-grid .side .icon{color:var(--link)}
-h2.sub{font-size:15px;color:var(--muted);margin:20px 0 8px}
+h2.sub{font-size:var(--fs-m);color:var(--muted);margin:20px 0 8px}
 
 /* search results */
 .filters>.field{flex:1 1 180px;margin:0}
@@ -362,9 +364,11 @@ fieldset.pick legend{font-weight:600;padding:0 6px;text-transform:capitalize}
 .claim .meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:13px;color:var(--muted)}
 .claim p{margin:6px 0 0}
 
+@media (max-width:999px){.brand-tag{display:none}}  /* the 200px logo leaves no room for the tag (issue 291) */
 /* phones (#90 second check) */
 @media (max-width:699px){
 .site-header-in{padding:6px 16px;gap:2px 12px}
+.brand-logo{display:none}.brand-mark{display:block}
 .brand-tag{display:none}
 .brand-name{font-size:16px}
 .site-user{gap:8px}
