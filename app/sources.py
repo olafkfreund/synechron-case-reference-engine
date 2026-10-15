@@ -13,6 +13,7 @@ from app.extract import EXTRACTION_VERSION
 from app.main import UPLOAD_MAGIC, User, require, upload_cap, wants_html
 from app.ingest import reopen_merged
 from app.review import page
+from app.settings import public_url
 
 router = APIRouter()
 # which crawler runs a source; upload sources are S3 prefixes too
@@ -57,6 +58,12 @@ SCOPE = {"s3": ("prefix", "include_ext"), "upload": ("include_ext",), "sharepoin
 DEFAULTS = {"prefix": "", "api_prefix": "/wiki"}  # what the crawlers use for an absent key (crawl.py)
 
 
+def shown(cfg: dict, key: str) -> str:
+    """A scope value as the edit form shows it, legacy shapes included; posted back unchanged, it is no change."""
+    v = cfg.get(key, DEFAULTS.get(key))
+    return "" if v is None else ", ".join(map(str, v)) if isinstance(v, list) else str(v)
+
+
 def field(key: str, raw: str):
     """One config value from its form text, or None to leave the key out (the crawler default)."""
     if not isinstance(raw, str):  # a file posted under a config field
@@ -66,9 +73,9 @@ def field(key: str, raw: str):
     if key == "bucket":
         ok = bool(re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", v))
     elif key == "prefix":
-        ok = not v.startswith("/") and ".." not in v.split("/") and len(v) <= 1024
+        ok = not v.startswith("/") and ".." not in v.split("/") and len(v) <= 1024 and not re.search(r"[\x00-\x1f\x7f]", v)
     elif key == "include_ext":
-        v = [e.strip().lower().lstrip(".") for e in v.split(",") if e.strip()] or None
+        v = list(dict.fromkeys(e.strip().lower().lstrip(".") for e in v.split(",") if e.strip())) or None
         ok = v is None or all(re.fullmatch(r"[a-z0-9]{1,10}", e) for e in v)
     elif key == "tenant_id":
         try:
@@ -81,12 +88,12 @@ def field(key: str, raw: str):
         try:
             u = urlsplit(v)
             ok = (u.scheme == "https" and bool(u.hostname) and u.port in (None, 443)
-                  and not re.search(r"[?#@\s]", v))  # on the raw text: urlsplit drops "?", "#", "@" and tabs when empty
+                  and not re.search(r"[?#@\\\s\x00-\x1f\x7f]", v))  # on the raw text: urlsplit drops "?", "#", "@" and tabs when empty
         except ValueError:
             pass
         v = v.rstrip("/")
     elif key == "spaces":
-        v = [k.strip() for k in v.split(",") if k.strip()]
+        v = list(dict.fromkeys(k.strip() for k in v.split(",") if k.strip()))
         ok = bool(v) and all(re.fullmatch(r"~?[A-Za-z0-9_-]+", k) for k in v)
     elif key == "api_prefix":
         ok = v in ("", "/wiki")
@@ -159,7 +166,7 @@ def sources_page(request: Request, notice: str = "", source: int | None = None,
     return page(request, "sources.html", user, sources=rows, kinds=sorted(JOB), classes=DATA_CLASSES,
                 notice=NOTICES.get(notice), older=older, skipped=skipped, queued=queued if notice in ("reextract", "capability") else None, total=total, job=job if done else None,
                 source_name=next((r[2] for r in rows if r[0] == source and r[1] == "upload"), None) if done else None,
-                upload_cap=upload_cap(), upload_types=sorted(UPLOAD_MAGIC))
+                upload_cap=upload_cap(), upload_types=sorted(UPLOAD_MAGIC), shown=shown, public_url=public_url)
 
 
 @router.post("/admin/reextract")
@@ -186,6 +193,8 @@ def create(kind: str = Form(), name: str = Form(), acl_groups: str = Form(),
            data_class: str = Form("confidential"), executed_contracts: bool = Form(False), staff: bool = Form(False),
            form: FormData = Depends(raw_form), user: User = Depends(require("admin"))):
     cfg = parse_config(kind, {"api_prefix": "/wiki", **{k: form[k] for k in ROOT.get(kind, ()) + SCOPE.get(kind, ()) if k in form}})
+    if not name.strip():
+        raise HTTPException(400, "a name is required")
     if data_class not in DATA_CLASSES:
         raise HTTPException(400, "invalid data class")
     if executed_contracts:
@@ -224,9 +233,8 @@ def update(request: Request, sid: int, acl_groups: str = Form(), enabled: bool =
         kind, old_name, old_cfg, was_enabled = old[3:]
         cfg = {**old_cfg, "executed_contracts": executed_contracts}  # unknown stored keys and the root are kept
         for k in SCOPE[kind]:  # absent from the form: unchanged; the root is never read from it
-            shown = old_cfg.get(k, DEFAULTS.get(k))  # what the edit form prefilled: posted back, it is no change,
-            shown = ", ".join(map(str, shown)) if isinstance(shown, list) else shown  # even a legacy value field() refuses
-            if k in form and form[k] != shown and (v := field(k, form[k])) != old_cfg.get(k, DEFAULTS.get(k)):
+            # posted back as prefilled is no change, even a legacy value field() would refuse
+            if k in form and form[k] != shown(old_cfg, k) and (v := field(k, form[k])) != old_cfg.get(k, DEFAULTS.get(k)):
                 if v is None:
                     cfg.pop(k, None)
                 else:
@@ -245,8 +253,11 @@ def update(request: Request, sid: int, acl_groups: str = Form(), enabled: bool =
         except UniqueViolation:
             raise HTTPException(400, "a source with that name exists") from None
         if (new_name, cfg) != (old_name, {**old_cfg, "executed_contracts": old[2]}):  # the flag was always written
-            log_config_change(conn, sid, "config", {"name": old_name, "config": old_cfg},
-                              {"name": new_name, "config": cfg}, user.sub)
+            before = {**old_cfg, "executed_contracts": old[2]}  # absent was always false
+            changed = [k for k in before.keys() | cfg.keys() if before.get(k) != cfg.get(k)]  # never the root: a
+            log_config_change(conn, sid, "config",  # legacy credential in a URL is not copied into the audit
+                              {"name": old_name, "config": {k: before[k] for k in changed if k in before}},
+                              {"name": new_name, "config": {k: cfg[k] for k in changed if k in cfg}}, user.sub)
         if enabled != was_enabled:
             log_config_change(conn, sid, "enable" if enabled else "disable", None, None, user.sub)
         # documents carry a copy of the groups: apply it in the same transaction, on every save, so a

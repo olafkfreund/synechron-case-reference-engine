@@ -436,6 +436,7 @@ TENANT = "9b1c6f0e-2f43-4c56-9a7b-0d1e2f3a4b5c"
     ("s3", {"bucket": "refs-bkt", "prefix": "a/b", "include_ext": ".PDF, docx"},
      {"bucket": "refs-bkt", "prefix": "a/b", "include_ext": ["pdf", "docx"]}),
     ("s3", {"bucket": "refs-bkt"}, {"bucket": "refs-bkt", "prefix": ""}),
+    ("s3", {"bucket": "refs-bkt", "include_ext": "pdf, .PDF"}, {"bucket": "refs-bkt", "prefix": "", "include_ext": ["pdf"]}),
     ("upload", {"bucket": "refs-bkt", "prefix": "uploads/"}, {"bucket": "refs-bkt", "prefix": "uploads/"}),
     ("sharepoint", {"tenant_id": TENANT.upper(), "drive_id": "b!x_y-z"}, {"tenant_id": TENANT, "drive_id": "b!x_y-z"}),
     ("confluence", {"base_url": "https://x.atlassian.net/", "spaces": "ENG, ~me", "api_prefix": "/wiki"},
@@ -460,6 +461,9 @@ def test_parse_config_builds_only_the_named_keys(kind, fields, want):
     ("confluence", {"base_url": "https://x.atlassian.net#", "spaces": "ENG"}),
     ("confluence", {"base_url": "https://@x.atlassian.net", "spaces": "ENG"}),
     ("confluence", {"base_url": "https://x.atlassian.net/a\tb", "spaces": "ENG"}),
+    ("confluence", {"base_url": "https://evil.example\\corp.atlassian.net", "spaces": "ENG"}),
+    ("confluence", {"base_url": "https://x.atlassian.net/a\x00", "spaces": "ENG"}),
+    ("s3", {"bucket": "refs-bkt", "prefix": "a\x01b"}),
     ("confluence", {"base_url": "https://x.atlassian.net:8443", "spaces": "ENG"}),
     ("confluence", {"base_url": "https://x.atlassian.net", "spaces": ""}),
     ("confluence", {"base_url": "https://x.atlassian.net", "spaces": "EN G"}),
@@ -506,7 +510,8 @@ def test_edit_scope_keeps_root_resets_cursor_and_is_audited(env):  # noqa: F811
             _, new_name, cfg2, cursor, _ = _source(c, name + "-2")
         assert cfg2["base_url"] == "https://x.atlassian.net" and cfg2["spaces"] == ["ENG", "OPS"] and cursor is None
         action, old, new, _ = _changes(sid)[-1]
-        assert action == "config" and old["config"]["spaces"] == ["ENG"] and new == {"name": new_name, "config": cfg2}
+        assert action == "config" and old == {"name": name, "config": {"spaces": ["ENG"]}}  # the changed keys only
+        assert new == {"name": new_name, "config": {"spaces": ["ENG", "OPS"]}}
         assert a.post(f"/admin/sources/{sid}", data={"acl_groups": "g1", "spaces": "E G"}).status_code == 400
         a.post(f"/admin/sources/{sid}", data={"acl_groups": "g1"})  # unchecked: disabled
         a.post(f"/admin/sources/{sid}", data={"acl_groups": "g1", "enabled": "on"})
@@ -620,6 +625,28 @@ def test_a_legacy_value_posted_back_unchanged_still_saves(env):  # noqa: F811
             assert _source(c, name + "-x")[2:4] == ({**legacy, "executed_contracts": False}, "c1")
         assert "LEGACY-SECRET" not in str(_changes(sid))
         assert a.post(f"/admin/sources/{sid}", data={"acl_groups": "g2", "prefix": "/other"}).status_code == 400
+    finally:
+        with db.connect() as c:
+            c.execute("delete from sources where id=%s", (sid,))
+
+
+def test_legacy_shapes_render_and_save_and_blank_names_are_refused(env):  # noqa: F811
+    db.init()
+    name, a = f"cf-{uuid.uuid4().hex[:8]}", client([ADMIN])
+    assert a.post("/admin/sources", data={"kind": "s3", "name": "  ", "acl_groups": "g1", "bucket": "refs-bkt"}).status_code == 400
+    legacy = {"base_url": "https://user:tok@x.atlassian.net/wiki?k=SECRETQ", "spaces": "ENG,OPS", "api_prefix": None}
+    with db.connect() as c:
+        sid = c.execute("insert into sources(kind, name, config, acl_groups) values ('confluence', %s, %s, %s) "
+                        "returning id", (name, Jsonb(legacy), ["g1"])).fetchone()[0]
+    try:
+        page_ = a.get("/admin/sources").text
+        assert "SECRETQ" not in page_ and "tok@" not in page_ and 'value="ENG,OPS"' in page_
+        r = a.post(f"/admin/sources/{sid}", follow_redirects=False,
+                   data={"acl_groups": "g2", "name": name + "-x", "spaces": "ENG,OPS", "api_prefix": ""})
+        assert r.status_code == 303
+        with db.connect() as c:
+            assert _source(c, name + "-x")[2] == {**legacy, "executed_contracts": False}
+        assert "SECRETQ" not in str(_changes(sid))
     finally:
         with db.connect() as c:
             c.execute("delete from sources where id=%s", (sid,))

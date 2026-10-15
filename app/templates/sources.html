@@ -76,17 +76,17 @@ The Confluence crawler account must be a dedicated non-admin account that no res
 {% if kind in ('s3', 'upload') %}<dt>Bucket</dt><dd>{{ config.get("bucket", "") }}</dd>{% endif %}
 {% if kind == 'upload' %}<dt>Prefix</dt><dd>{{ config.get("prefix", "") }}</dd><dt>Staff uploads</dt><dd>{{ "yes" if config.get("staff") else "no" }}</dd>{% endif %}
 {% if kind == 'sharepoint' %}<dt>Tenant ID</dt><dd>{{ config.get("tenant_id", "") }}</dd><dt>Drive ID</dt><dd>{{ config.get("drive_id", "") }}</dd>{% endif %}
-{% if kind == 'confluence' %}<dt>Site URL</dt><dd>{{ config.get("base_url", "") }}</dd>{% endif %}
+{% if kind == 'confluence' %}<dt>Site URL</dt><dd>{{ public_url(config.get("base_url") or "") }}</dd>{% endif %}
 </dl>
 <div class="cols">
-{% if kind == 's3' %}<div class="field"><label for="s{{ id }}-prefix">Prefix</label><input type="text" id="s{{ id }}-prefix" name="prefix" value="{{ config.get('prefix', '') }}"></div>{% endif %}
-{% if kind in ('s3', 'upload', 'sharepoint') %}<div class="field"><label for="s{{ id }}-ext">File types</label><input type="text" id="s{{ id }}-ext" name="include_ext" value="{{ config.get('include_ext', []) | join(', ') }}">
+{% if kind == 's3' %}<div class="field"><label for="s{{ id }}-prefix">Prefix</label><input type="text" id="s{{ id }}-prefix" name="prefix" value="{{ shown(config, 'prefix') }}"></div>{% endif %}
+{% if kind in ('s3', 'upload', 'sharepoint') %}<div class="field"><label for="s{{ id }}-ext">File types</label><input type="text" id="s{{ id }}-ext" name="include_ext" value="{{ shown(config, 'include_ext') }}">
 <span class="field-help">Extensions, comma-separated; empty means docx, pptx, pdf.</span></div>{% endif %}
-{% if kind == 'confluence' %}<div class="field"><label for="s{{ id }}-spaces">Spaces</label><input type="text" id="s{{ id }}-spaces" name="spaces" value="{{ config.get('spaces', []) | join(', ') }}"></div>
+{% if kind == 'confluence' %}<div class="field"><label for="s{{ id }}-spaces">Spaces</label><input type="text" id="s{{ id }}-spaces" name="spaces" value="{{ shown(config, 'spaces') }}"></div>
 <div class="field"><label for="s{{ id }}-api">API prefix</label><select id="s{{ id }}-api" name="api_prefix">
-<option value="/wiki"{{ " selected" if config.get("api_prefix", "/wiki") == "/wiki" }}>/wiki (Confluence Cloud)</option>
-<option value=""{{ " selected" if config.get("api_prefix", "/wiki") == "" }}>none (Data Center)</option>
-{% if config.get("api_prefix", "/wiki") not in ("/wiki", "") %}<option selected>{{ config.api_prefix }}</option>{% endif %}</select></div>{% endif %}
+<option value="/wiki"{{ " selected" if shown(config, "api_prefix") == "/wiki" }}>/wiki (Confluence Cloud)</option>
+<option value=""{{ " selected" if shown(config, "api_prefix") == "" }}>none (Data Center)</option>
+{% if shown(config, "api_prefix") not in ("/wiki", "") %}<option value="{{ shown(config, 'api_prefix') }}" selected>{{ shown(config, "api_prefix") }}</option>{% endif %}</select></div>{% endif %}
 </div>
 <p class="field-help">Narrowing the scope withdraws documents outside it on the next crawl; any scope change makes the next crawl a full one.</p>
 {% if counts %}<h3>Last run counts</h3>

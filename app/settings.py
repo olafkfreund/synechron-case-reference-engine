@@ -40,6 +40,7 @@ def settings_page(request: Request, user: User = Depends(require("admin"))):
     if mcp_enabled:
         values.update({name: os.environ.get(name, "") for name in
                        ("MCP_ISSUER", "MCP_AUDIENCE", "MCP_SCOPE", "MCP_CLIENT_IDS")})
+        values["MCP_ISSUER"] = public_url(values["MCP_ISSUER"])
     roles = [(role, [(group, group in user.groups) for group in sorted(_env_groups(f"ROLE_{role.upper()}_GROUPS"))])
              for role in ROLES]
     with db.connect() as conn:

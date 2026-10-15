@@ -12,7 +12,8 @@ PAGE_SIZE = 50
 
 
 def shown(v):
-    return ", ".join(map(str, v)) if isinstance(v, list) else v
+    v = ", ".join(map(str, v)) if isinstance(v, list) else v
+    return '""' if v == "" else v
 
 
 def config_summary(action, old, new):
