@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="page-head"><div><h1>Settings</h1><p>Read-only connection, source and access settings.</p></div></div>
+<div class="section-card">
+<div class="card-head"><h2>Connections</h2></div>
+<div class="table-box"><table><thead><tr><th>Connection</th><th>Setting</th><th>Value</th><th>Changed in</th></tr></thead><tbody>
+<tr><td>SharePoint</td><td>GRAPH_CLIENT_ID</td><td>{{ values.GRAPH_CLIENT_ID or "Not configured" }}</td><td>Terraform variable</td></tr>
+<tr><td>SharePoint</td><td>GRAPH_CLIENT_SECRET</td><td>{{ "Configured" if secrets.GRAPH_CLIENT_SECRET else "Not configured" }}</td><td>Secrets Manager</td></tr>
+<tr><td>Confluence</td><td>CONFLUENCE_EMAIL</td><td>{{ values.CONFLUENCE_EMAIL or "Not configured" }}</td><td>Terraform variable</td></tr>
+<tr><td>Confluence</td><td>CONFLUENCE_TOKEN</td><td>{{ "Configured" if secrets.CONFLUENCE_TOKEN else "Not configured" }}</td><td>Secrets Manager</td></tr>
+<tr><td>S3 originals</td><td>S3_BUCKET</td><td>{{ values.S3_BUCKET or "Not configured" }}</td><td>Terraform variable</td></tr>
+<tr><td>Brave search</td><td>BRAVE_API_KEY</td><td>{{ "Configured" if secrets.BRAVE_API_KEY else "Not configured" }}</td><td>Secrets Manager</td></tr>
+<tr><td>Models</td><td>EXTRACT_MODEL</td><td>{{ values.EXTRACT_MODEL or "Not configured" }}</td><td>Terraform variable</td></tr>
+<tr><td>Models</td><td>DRAFT_MODEL</td><td>{{ values.DRAFT_MODEL or "Not configured" }}</td><td>Terraform variable</td></tr>
+<tr><td>Models</td><td>OLLAMA_API_BASE</td><td>{{ values.OLLAMA_API_BASE or "Not configured" }}</td><td>Terraform variable</td></tr>
+<tr><td>Models</td><td>OLLAMA_CLOUD_KEY</td><td>{{ "Configured" if secrets.OLLAMA_CLOUD_KEY else "Not configured" }}</td><td>Secrets Manager</td></tr>
+</tbody></table></div></div>
+
+<div class="section-card">
+<div class="card-head"><h2>Sources</h2></div>
+{% if not sources %}<p class="muted">No sources configured.</p>{% else %}
+<div class="table-box"><table><thead><tr><th>Source</th><th>Name</th><th>Kind</th><th>Enabled</th><th>Last run</th><th>New</th><th>Updated</th><th>Deleted</th><th>Failed</th><th>Last failed crawl</th><th>Changed in</th></tr></thead><tbody>
+{% for id, name, kind, enabled, last_run, counts, failed_at in sources %}<tr><td><a href="/admin/sources">Source #{{ id }}</a></td><td>{{ name }}</td><td>{{ kind }}</td><td>{{ "Yes" if enabled else "No" }}</td><td>{{ last_run.strftime("%Y-%m-%d %H:%M") if last_run else "Never" }}</td><td>{{ counts.new }}</td><td>{{ counts.updated }}</td><td>{{ counts.deleted }}</td><td>{{ counts.failed }}</td><td>{{ failed_at.strftime("%Y-%m-%d %H:%M") if failed_at else "Never" }}</td><td>Sources page</td></tr>{% endfor %}
+</tbody></table></div>{% endif %}
+</div>
+
+<div class="section-card">
+<div class="card-head"><h2>Single sign-on</h2></div>
+<p class="muted">These settings are set in Terraform and Secrets Manager because a wrong value here could lock every admin out.</p>
+<div class="table-box"><table><thead><tr><th>Setting</th><th>Value</th><th>Changed in</th></tr></thead><tbody>
+<tr><td>OIDC_METADATA_URL</td><td>{{ values.OIDC_METADATA_URL or "Not configured" }}</td><td>Terraform variable</td></tr>
+<tr><td>OIDC_REDIRECT_URI</td><td>{{ values.OIDC_REDIRECT_URI or "Not configured" }}</td><td>Terraform variable</td></tr>
+<tr><td>OIDC_CLIENT_ID</td><td>{{ values.OIDC_CLIENT_ID or "Not configured" }}</td><td>Terraform variable</td></tr>
+<tr><td>OIDC_GROUPS_CLAIM</td><td>{{ values.OIDC_GROUPS_CLAIM }}</td><td>Terraform variable</td></tr>
+<tr><td>OIDC_CLIENT_SECRET</td><td>{{ "Configured" if secrets.OIDC_CLIENT_SECRET else "Not configured" }}</td><td>Secrets Manager</td></tr>
+</tbody></table></div></div>
+
+<div class="section-card">
+<div class="card-head"><h2>Roles</h2></div>
+<div class="table-box"><table><thead><tr><th>Role</th><th>Groups</th><th>Changed in</th></tr></thead><tbody>
+{% for role, groups in roles %}<tr><td>{{ role }}</td><td>{% for group, mine in groups %}<span class="badge {{ 'ok' if mine else 'neutral' }}">{{ group }}{% if mine %} (your group){% endif %}</span>{{ " " if not loop.last }}{% else %}<span class="muted">None</span>{% endfor %}</td><td>Terraform variable (ROLE_{{ role | upper }}_GROUPS)</td></tr>{% endfor %}
+</tbody></table></div></div>
+
+<div class="section-card">
+<div class="card-head"><h2>MCP</h2></div>
+<dl class="status-list"><dt>Enabled</dt><dd>{{ "Yes" if mcp_enabled else "No" }} — Terraform variable (MCP_ENABLED)</dd>
+{% if mcp_enabled %}{% for key in ("MCP_ISSUER", "MCP_AUDIENCE", "MCP_SCOPE", "MCP_CLIENT_IDS") %}<dt>{{ key }}</dt><dd>{{ values[key] or "Not configured" }} — Terraform variable</dd>{% endfor %}{% endif %}</dl>
+</div>
+{% endblock %}

@@ -226,6 +226,11 @@ details.mini:not([open])>summary,.client-row .slot{min-width:84px;justify-conten
 .src-add>summary{min-height:36px;padding:0 12px;font-size:13px;position:relative}
 .src-add>summary::before{content:none}  /* "+ Add source" says it already */
 .src-add>summary::after{content:"";position:absolute;inset:-4px 0}
+/* issue 283: only the chosen kind's fields show, without script; the server ignores the rest */
+.src-add form:has(#new-kind option[value="s3"]:checked) [data-kinds]:not([data-kinds~="s3"]){display:none}
+.src-add form:has(#new-kind option[value="upload"]:checked) [data-kinds]:not([data-kinds~="upload"]){display:none}
+.src-add form:has(#new-kind option[value="sharepoint"]:checked) [data-kinds]:not([data-kinds~="sharepoint"]){display:none}
+.src-add form:has(#new-kind option[value="confluence"]:checked) [data-kinds]:not([data-kinds~="confluence"]){display:none}
 @media (min-width:900px){
 .source-row.src{display:grid;grid-template-columns:24px minmax(160px,1.4fr) auto minmax(0,1fr) auto 88px 88px 88px;gap:6px 12px}
 .src .who{display:flex;align-items:center;gap:0 8px}  /* the kind badge stays beside the name; a long name wraps by itself */

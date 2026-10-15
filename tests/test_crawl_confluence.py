@@ -457,7 +457,8 @@ def test_concurrent_crawl_reports_running(cf):
 def test_worker_and_sources_know_confluence():
     from app import sources
     assert "crawl_confluence" in worker.HANDLERS
-    assert sources.JOB["confluence"] == "crawl_confluence" and sources.REQUIRED["confluence"] == ("base_url", "spaces")
+    assert sources.JOB["confluence"] == "crawl_confluence" and sources.ROOT["confluence"] == ("base_url",) \
+        and sources.SCOPE["confluence"] == ("spaces", "api_prefix")
 
 
 def test_page_under_folder_fails_closed(cf):
