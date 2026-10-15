@@ -47,6 +47,15 @@ def test_query_refused_when_a_name_would_remain_or_nothing_is_left(monkeypatch):
 
 # --- the pages --------------------------------------------------------------------------------------
 
+def test_skip_reason():
+    assert rs.skip_reason("ConnectError") == "couldn't be reached"
+    assert rs.skip_reason("ReadTimeout") == "didn't respond in time"
+    assert rs.skip_reason(None) is None
+    assert rs.skip_reason("Zzz") == "other errors"
+    assert [rs.skip_reason(n) for n in ("TooLarge", "BadContentType", "ConvertFailed", "ResearchError", "ConvertTimeout")] == [
+        "too large", "not a web page or PDF", "not a web page or PDF", "refused by the server", "didn't respond in time"]
+
+
 @pytest.fixture
 def reg(env, monkeypatch):  # noqa: F811
     db.init()
