@@ -151,3 +151,6 @@ Revert the PR. The change is markup and CSS only.
     - `.conn-pending p`
   - **The pending notice names the setting** (for example "Extraction model") only on two-setting cards.
   - **The primary-button test checks the status codes,** expects no button on a card with an open proposal, and checks that the save is refused (409).
+- **Review fix (agy).**
+  - **A card whose settings are all waiting for approval has no footer,** instead of an empty divider.
+  - **Not changed (all low):** the test slice for the last card, the read-only "waiting for approval" text, and extra tests for duplicate ids.
