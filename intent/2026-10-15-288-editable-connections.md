@@ -18,6 +18,11 @@ key, an admin has to ask the ops team to:
 The requester wants admins to manage these values in the portal, not just
 view them.
 
+**On AWS the page is also wrong today.** The web container that renders it
+never receives the SharePoint, Confluence or Brave values (`infra/ecs.tf:37-65`
+puts them on the worker only), so Settings shows them as "Not configured"
+even when they are set.
+
 #283 rejected editing on purpose. It cited secret storage, IAM, two sources
 of truth, and lockout risk. This intent reverses part of that decision at
 the requester's request, and has to answer those concerns rather than set
@@ -46,6 +51,8 @@ them aside.
 - **Every change is audited:** who, which setting, when, and whether it
   worked. Values are never recorded.
 - **A bad credential can be rolled back** to its previous version.
+- **The page shows the truth on AWS.** The web container reads the same
+  values the worker uses, so nothing set reads as "Not configured".
 
 **Still set only in Terraform, with the reason shown on the page:**
 
@@ -62,6 +69,9 @@ them aside.
   - every place that reads these values: `app/crawl.py:130,374`,
     `app/research.py:588` and `app/llm.py` (keys and models)
   - `app/audit.py`
+- the direct model reads in `app/extract.py:180` and `app/research.py:698`
+- LiteLLM's own fallback to environment keys, which a cleared key must not
+  quietly fall back to
 - **Infra:**
   - Secrets Manager secrets (`infra/secrets.tf`)
   - task-role IAM (`infra/iam.tf`): the web role can write those secrets;
@@ -99,8 +109,19 @@ them aside.
    - My suggestion: keep your choice. The allowlist, the IAM allowlist and
      the approval check together cover that risk.
    - Do you agree, or should models stay read-only?
-2. **Separation of duties.** Is one admin enough to change a credential, or
-   does a change to a connector's identity (a new client id or email) need
-   a second admin to approve it? I suggest one admin, with an audit entry.
+2. **Separation of duties.**
+   - **The risk** (agy's research): with editable provider keys and models,
+     one admin, or one stolen admin session, can do all of this alone:
+     - set `OPENAI_API_KEY` to their own account
+     - approve `openai/…` on the Models page
+     - switch `EXTRACT_MODEL` to it
+     - and so send every confidential document out.
+   - **I suggest:**
+     - Data-routing settings need a second admin to approve the change before
+       it takes effect: the provider keys (OpenAI, Gemini, Ollama Cloud) and
+       the models.
+     - Connector credentials can be changed by one admin, with an audit
+       entry: SharePoint, Confluence and Brave.
+   - Agree, or one admin for everything?
 3. **A "test connection" button.** #283 rejected it as an SSRF risk. Does it
    stay out? I suggest it stays out.
