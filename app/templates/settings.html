@@ -14,6 +14,8 @@
 <tr><td>Models</td><td>DRAFT_MODEL</td><td>{{ values.DRAFT_MODEL or "Not configured" }}</td><td>Terraform variable</td></tr>
 <tr><td>Models</td><td>OLLAMA_API_BASE</td><td>{{ values.OLLAMA_API_BASE or "Not configured" }}</td><td>Terraform variable</td></tr>
 <tr><td>Models</td><td>OLLAMA_CLOUD_KEY</td><td>{{ "Configured" if secrets.OLLAMA_CLOUD_KEY else "Not configured" }}</td><td>Secrets Manager</td></tr>
+<tr><td>Models</td><td>OPENAI_API_KEY</td><td>{{ "Configured" if secrets.OPENAI_API_KEY else "Not configured" }}</td><td>Secrets Manager</td></tr>
+<tr><td>Models</td><td>GEMINI_API_KEY</td><td>{{ "Configured" if secrets.GEMINI_API_KEY else "Not configured" }}</td><td>Secrets Manager</td></tr>
 </tbody></table></div></div>
 
 <div class="section-card">

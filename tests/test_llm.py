@@ -77,10 +77,12 @@ def test_destination_inference_and_override():
     assert d("ollama_chat/gpt-oss:120b-cloud", {}) == "third-party"
     assert d(LOCAL, {"api_base": "https://ollama.com"}) == "third-party"
     assert d("openai/gpt", {}) == "third-party"
-    assert d("openai/gpt", {"destination": "local"}) == "local"
     assert d("bedrock/x", {"destination": "bogus"}) == "our-cloud"
     assert d("ollama_chat/gemma4:cloud", {"destination": "third-party"}) == "third-party"
     for model, opts in (("ollama_chat/gemma4:cloud", {"destination": "local"}),
+                        ("openai/gpt", {"destination": "local"}), ("gemini/g", {"destination": "our-cloud"}),
+                        ("anthropic/c", {"destination": "local"}), ("vertex_ai/v", {"destination": "our-cloud"}),
+                        ("azure/gpt", {"destination": "local"}), ("gpt-5", {"destination": "our-cloud"}),
                         (LOCAL, {"destination": "our-cloud", "api_base": "https://ollama.com"})):
         with pytest.raises(RuntimeError, match="contradicts"):
             d(model, opts)
@@ -106,6 +108,41 @@ def test_policy_matrix(dc, dest, approval):
         finally:
             c.execute("delete from model_approvals where approved_by='a'")
             c.commit()
+
+
+def test_revoked_approval_refuses():
+    from app import db
+    db.init()
+    with db.connect() as c:
+        try:
+            c.execute("insert into model_approvals(model,data_class,approved_by,expires_at,revoked_by) "
+                      "values ('m1','confidential','a',now() + interval '1 day','admin')")
+            c.commit()
+            assert llm.allowed("third-party", "confidential", "m1") is False
+            c.execute("update model_approvals set revoked_by=null where approved_by='a'")
+            c.commit()
+            assert llm.allowed("third-party", "confidential", "m1") is True  # the same row, unrevoked
+        finally:
+            c.execute("delete from model_approvals where approved_by='a'")
+            c.commit()
+
+
+@pytest.mark.parametrize("model,var,other", [("openai/gpt-5", "OPENAI_API_KEY", "GEMINI_API_KEY"),
+                                             ("gemini/gemini-2.5-pro", "GEMINI_API_KEY", "OPENAI_API_KEY")])
+def test_openai_and_gemini_request_shape(monkeypatch, model, var, other):
+    monkeypatch.setenv(var, "own-key")
+    monkeypatch.setenv(other, "other-key")
+    monkeypatch.setenv("OLLAMA_CLOUD_KEY", "ollama-key")
+    _, kw = run(monkeypatch, '{"title": {}}', model=model, dc="public")
+    assert kw["response_format"] == {"type": "json_object"}
+    assert kw["messages"][0]["content"] == "sys" + llm.json_cue(llm.llm_schema(ReferenceCase))
+    assert kw["drop_params"] is True and kw["api_key"] == "own-key" and "api_base" not in kw
+    assert "other-key" not in str(kw) and "ollama-key" not in str(kw)
+    _, kw = run(monkeypatch, '{"title": {}}', model=model, dc="public", opts={"mode": "schema"})
+    assert kw["response_format"]["type"] == "json_schema"
+    monkeypatch.delenv(var)
+    _, kw = run(monkeypatch, '{"title": {}}', model=model, dc="public")
+    assert "api_key" not in kw  # LiteLLM falls back to its own lookup of the same variable
 
 
 def test_override_checks_env_base(monkeypatch):

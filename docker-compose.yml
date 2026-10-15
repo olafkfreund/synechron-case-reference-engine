@@ -15,8 +15,8 @@ services:
       - "127.0.0.1:8080:8080"
     environment:
       SERVER_PORT: "8080"
-      # refs-mcp: dev tokens for /mcp (scripts/mcp_token.sh). Claims come from the request: $${username} and $${groups}.
-      JSON_CONFIG: '{"interactiveLogin": true, "tokenCallbacks": [{"issuerId": "refs-mcp", "tokenExpiry": 3600, "requestMappings": [{"requestParam": "client_id", "match": "local-dev", "claims": {"sub": "$${username}", "oid": "$${username}", "aud": ["refs-mcp"], "scp": "refs.access", "azp": "local-dev", "groups": "$${groups}"}}, {"requestParam": "client_id", "match": "local-dev-review", "claims": {"sub": "$${username}", "oid": "$${username}", "aud": ["refs-mcp"], "scp": "refs.access refs.review", "azp": "local-dev-review", "groups": "$${groups}"}}]}]}'
+      # refs-mcp: dev tokens for /mcp (scripts/mcp_token.sh). Claims come from the request: $${username}, and $${groups} plus $${group2} (scripts/mcp_token.sh sends both).
+      JSON_CONFIG: '{"interactiveLogin": true, "tokenCallbacks": [{"issuerId": "refs-mcp", "tokenExpiry": 3600, "requestMappings": [{"requestParam": "client_id", "match": "local-dev", "claims": {"sub": "$${username}", "oid": "$${username}", "aud": ["refs-mcp"], "scp": "refs.access", "azp": "local-dev", "groups": ["$${groups}", "$${group2}"]}}, {"requestParam": "client_id", "match": "local-dev-review", "claims": {"sub": "$${username}", "oid": "$${username}", "aud": ["refs-mcp"], "scp": "refs.access refs.review", "azp": "local-dev-review", "groups": ["$${groups}", "$${group2}"]}}]}]}'
     networks:
       default:
         aliases:
@@ -55,6 +55,7 @@ services:
     build: .
     environment:
       DATABASE_URL: postgresql://postgres:dev@db/refs
+      MCP_ENABLED: "0"  # most tests build the app without MCP settings; the MCP tests turn it on themselves
     depends_on:
       db:
         condition: service_healthy
@@ -69,6 +70,8 @@ services:
       DRAFT_MODEL: ${DRAFT_MODEL:-}
       DRAFT_MODEL_OPTIONS: ${DRAFT_MODEL_OPTIONS:-}
       BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       AWS_ENDPOINT_URL: http://s3:5000
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
@@ -95,6 +98,8 @@ services:
       DRAFT_MODEL: ${DRAFT_MODEL:-}
       DRAFT_MODEL_OPTIONS: ${DRAFT_MODEL_OPTIONS:-}
       BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       AWS_ENDPOINT_URL: http://s3:5000
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
@@ -105,8 +110,8 @@ services:
       OIDC_METADATA_URL: http://idp.localhost:8080/refs/.well-known/openid-configuration
       OIDC_CLIENT_ID: refs-local
       OIDC_CLIENT_SECRET: dev-only-not-a-secret
-      # MCP at /mcp: off unless MCP_ENABLED=1 (see docs/mcp.md); the issuer is the mock IdP's refs-mcp
-      MCP_ENABLED: ${MCP_ENABLED:-}
+      # MCP at /mcp: on unless MCP_ENABLED=0 (see docs/mcp.md); the issuer is the mock IdP's refs-mcp
+      MCP_ENABLED: ${MCP_ENABLED:-1}
       MCP_ISSUER: ${MCP_ISSUER:-http://idp.localhost:8080/refs-mcp}
       MCP_AUDIENCE: refs-mcp
       MCP_CLIENT_IDS: local-dev,local-dev-review  # the mock's azp values

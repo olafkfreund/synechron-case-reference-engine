@@ -148,6 +148,42 @@ variable "draft_model" {
   type        = string
 }
 
+variable "mcp_enabled" {
+  description = "MCP at /mcp for AI agents. On by default; when on, the issuer, audience and client ids below are required (plan fails otherwise)."
+  type        = bool
+  default     = true
+}
+
+variable "mcp_issuer" {
+  description = "Entra v2 issuer for MCP tokens, https://login.microsoftonline.com/<tenant>/v2.0."
+  type        = string
+  default     = ""
+}
+
+variable "mcp_audience" {
+  description = "Audience of MCP tokens: the MCP API app registration's client id (the aud of Entra v2 tokens), not its api:// URI."
+  type        = string
+  default     = ""
+}
+
+variable "mcp_client_ids" {
+  description = "Comma-separated app ids of the approved MCP clients (Claude Code, Codex, Antigravity)."
+  type        = string
+  default     = ""
+}
+
+variable "mcp_tenant_id" {
+  description = "Entra tenant id MCP tokens must carry (optional)."
+  type        = string
+  default     = ""
+}
+
+variable "mcp_scope" {
+  description = "Scope MCP tokens must carry."
+  type        = string
+  default     = "refs.access"
+}
+
 variable "bedrock_model_arns" {
   description = "Exactly the model (and inference profile) ARNs the app may invoke."
   type        = list(string)

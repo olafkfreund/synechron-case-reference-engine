@@ -17,6 +17,7 @@ CORRECTION = ("That was the schema, not the answer. Reply with one JSON object c
 
 litellm.turn_off_message_logging = True  # document text is never logged
 MAX_TOKENS = 8192  # a full ReferenceCase with quotes; Bedrock's default may cut it off
+PROVIDERS = {"openai/": "OPENAI_API_KEY", "gemini/": "GEMINI_API_KEY"}  # each key goes to its own provider only
 
 
 class PolicyError(Exception):
@@ -53,8 +54,8 @@ def destination(model: str, opts: dict) -> str:
     if dest == "third-party":
         return dest
     if dest in ("local", "our-cloud"):
-        # an override may name a host the inference cannot see (Docker), never contradict a known third party
-        if "cloud" in model.lower() or _ollama_cloud(effective_base(model, opts)):
+        # an override may name a host the inference cannot see (Docker); only Ollama and Bedrock can be ours
+        if not model.startswith(("ollama", "bedrock/")) or "cloud" in model.lower() or _ollama_cloud(effective_base(model, opts)):
             raise RuntimeError(f"destination {dest!r} contradicts the model or api_base; fix the *_OPTIONS")
         return dest
     if model.startswith("bedrock/"):
@@ -74,7 +75,7 @@ def allowed(dest: str, data_class: str, model: str) -> bool:
         return False
     with db.connect() as c:
         return c.execute(
-            "select 1 from model_approvals where model=%s and data_class=%s and expires_at > now()",
+            "select 1 from model_approvals where model=%s and data_class=%s and expires_at > now() and revoked_by is null",
             (model, data_class)).fetchone() is not None
 
 
@@ -141,7 +142,9 @@ def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: t
     if not allowed(destination(model, opts), data_class, model):
         raise PolicyError(f"{alias} may not read {data_class} data")
     ollama = model.startswith("ollama")
-    json_mode = opts.get("mode", "json" if ollama else "schema") == "json"
+    provider = next((var for prefix, var in PROVIDERS.items() if model.startswith(prefix)), None)
+    # json mode for OpenAI and Gemini too: OpenAI's strict schema needs every field required, Writeup has defaults
+    json_mode = opts.get("mode", "json" if ollama or provider else "schema") == "json"
     schema = llm_schema(model_cls)
     extra = {}
     if json_mode:
@@ -157,6 +160,10 @@ def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: t
         # not OLLAMA_API_KEY: LiteLLM reads that one itself and sends it to every Ollama host
         if _ollama_cloud(effective_base(model, opts)) and os.environ.get("OLLAMA_CLOUD_KEY"):
             extra["api_key"] = os.environ["OLLAMA_CLOUD_KEY"]
+    if provider:
+        extra["drop_params"] = True  # GPT-5 and Codex reject temperature=0
+        if os.environ.get(provider):
+            extra["api_key"] = os.environ[provider]
 
     def too_long(more):  # Ollama drops the start of a prompt that overflows its context, without an error
         est = (len(system) + len(user) + sum(len(m["content"]) for m in more)) // 3  # characters per token; size only
@@ -166,7 +173,8 @@ def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: t
         resp = litellm.completion(
             model=model,
             messages=[
-                {"role": "system", "content": [
+                # cache_control is an Anthropic feature: plain text for OpenAI and Gemini
+                {"role": "system", "content": system if provider else [
                     {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]},
                 {"role": "user", "content": user},
                 *more,
