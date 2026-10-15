@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 288
 intent: intent/2026-10-15-288-editable-connections.md
 ---
