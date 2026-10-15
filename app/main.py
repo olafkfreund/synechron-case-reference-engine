@@ -237,6 +237,8 @@ def create_app() -> FastAPI:
     app.include_router(library.router)
     from app import audit
     app.include_router(audit.router)
+    from app import settings
+    app.include_router(settings.router)
     from app import models_admin
     app.include_router(models_admin.router)
     if mcp_app:
