@@ -22,7 +22,7 @@ from fastapi.responses import RedirectResponse, Response
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app import anonymise, db, diagrams, ingest
+from app import anonymise, conn_settings, db, diagrams, ingest
 from app.llm import MAX_TOKENS, complete_json, json_cue, profile
 from app.main import User, require
 from app.review import PNG_HEADERS, VISIBLE, page, reviewable_cases
@@ -585,7 +585,7 @@ def page_images(fetcher: Fetcher, html: bytes, page_url: str, room: int, tried: 
 
 
 def brave_search(query: str) -> list[dict]:
-    key = os.environ.get("BRAVE_API_KEY")
+    key = conn_settings.get("BRAVE_API_KEY")
     if not key:
         raise ResearchError("BRAVE_API_KEY is not set")
     with httpx.Client(transport=TRANSPORT, timeout=TIMEOUT, trust_env=False) as client:
@@ -695,7 +695,7 @@ def page_chars() -> int:
     """Characters of each page the model reads. With Ollama and num_ctx set, what 8 pages leave of the context after
     the reply and the system prompt (3 characters per token), at most 6,000; otherwise 6,000 (#217)."""
     n = profile("DRAFT_MODEL").get("num_ctx")
-    if not n or not os.environ.get("DRAFT_MODEL", "").startswith("ollama"):  # llm.py sends num_ctx to Ollama only
+    if not n or not (conn_settings.get("DRAFT_MODEL") or "").startswith("ollama"):  # llm.py sends num_ctx to Ollama only
         return 6000
     system = len(CLAIMS_SYSTEM) + len(json_cue(llm_schema(Claims), True))  # complete_json appends the cue
     size = min(6000, ((int(n) - MAX_TOKENS - 2000) * 3 - system) // MAX_RESULTS)

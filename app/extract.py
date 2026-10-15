@@ -3,7 +3,7 @@ import re
 
 from psycopg.types.json import Jsonb
 
-from app import db, writeup
+from app import conn_settings, db, writeup
 from app.llm import MAX_TOKENS, complete_json, profile
 from app.schema import FIELDS, POINT_FIELDS, Architecture, Extraction, Period, Prose, ReferenceCase, References, Sourced, _norm, assemble, check_architecture, quote_in, sourced, vague_metric
 
@@ -177,7 +177,7 @@ def chunks(text: str, size: int, overlap: int = OVERLAP) -> list[str]:
 def chunk_chars() -> int | None:
     """Characters of document one call can read (3 per token), or None when the context is not set or ignored."""
     n = profile("EXTRACT_MODEL").get("num_ctx")
-    if not n or not os.environ.get("EXTRACT_MODEL", "").startswith("ollama"):  # llm.py sends num_ctx to Ollama only
+    if not n or not (conn_settings.get("EXTRACT_MODEL") or "").startswith("ollama"):  # llm.py sends num_ctx to Ollama only
         return None
     size = (int(n) - MAX_TOKENS - 2000) * 3
     if size <= 2 * OVERLAP:  # a smaller piece could not step past its own overlap

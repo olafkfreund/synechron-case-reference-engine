@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 import litellm
 from pydantic import BaseModel, ValidationError
 
-from app import db
+from app import conn_settings, db
 from app.schema import llm_schema
 
 log = logging.getLogger(__name__)
@@ -133,9 +133,9 @@ def json_cue(schema: dict, shape_hint: bool = False) -> str:
 
 
 def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: type[M], *, data_class: str, shape_hint: bool = False) -> M:
-    """alias is an env var name (EXTRACT_MODEL | DRAFT_MODEL) holding the LiteLLM model id."""
+    """alias is a connection setting (EXTRACT_MODEL | DRAFT_MODEL) holding the LiteLLM model id (conn_settings.get)."""
     global ECHO_RETRIES
-    model = os.environ.get(alias)
+    model = conn_settings.get(alias)
     if not model:
         raise RuntimeError(f"{alias} is not set; set it to a LiteLLM model id (e.g. bedrock/<model-id>)")
     opts = profile(alias)
@@ -158,12 +158,12 @@ def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: t
             if k in opts:
                 extra[k] = opts[k]
         # not OLLAMA_API_KEY: LiteLLM reads that one itself and sends it to every Ollama host
-        if _ollama_cloud(effective_base(model, opts)) and os.environ.get("OLLAMA_CLOUD_KEY"):
-            extra["api_key"] = os.environ["OLLAMA_CLOUD_KEY"]
+        if _ollama_cloud(effective_base(model, opts)) and (key := conn_settings.get("OLLAMA_CLOUD_KEY")):
+            extra["api_key"] = key
     if provider:
         extra["drop_params"] = True  # GPT-5 and Codex reject temperature=0
-        if os.environ.get(provider):
-            extra["api_key"] = os.environ[provider]
+        if key := conn_settings.get(provider):
+            extra["api_key"] = key
 
     def too_long(more):  # Ollama drops the start of a prompt that overflows its context, without an error
         est = (len(system) + len(user) + sum(len(m["content"]) for m in more)) // 3  # characters per token; size only

@@ -10,7 +10,9 @@ alb_allowed_cidrs = ["10.20.0.0/16"] # VPN / corporate ranges only; keep the VPC
 # foundation-model ARN in every EU destination region (wildcard region) in bedrock_model_arns.
 extract_model = "bedrock/eu.anthropic.<small-claude-model-id>"
 draft_model   = "bedrock/eu.anthropic.<mid-claude-model-id>"
-# Alternatives for either model (fill the matching Secrets Manager key):
+# Other models admins may select in the portal; include each Bedrock model's ARN below.
+# model_choices = ["openai/gpt-5", "gemini/gemini-2.5-pro"]
+# Alternatives for either model (set the matching secret in the portal or Secrets Manager console):
 # extract_model = "openai/gpt-5"
 # draft_model   = "gemini/gemini-2.5-pro"
 bedrock_model_arns = [

@@ -1,21 +1,26 @@
 {% extends "base.html" %}
 {% block body %}
-<div class="page-head"><div><h1>Settings</h1><p>Read-only connection, source and access settings.</p></div></div>
+<div class="page-head"><div><h1>Settings</h1><p>Connection credentials and models are edited here; source, sign-in and access settings are read-only.</p></div></div>
 <div class="section-card">
 <div class="card-head"><h2>Connections</h2></div>
-<div class="table-box"><table><thead><tr><th>Connection</th><th>Setting</th><th>Value</th><th>Changed in</th></tr></thead><tbody>
-<tr><td>SharePoint</td><td>GRAPH_CLIENT_ID</td><td>{{ values.GRAPH_CLIENT_ID or "Not configured" }}</td><td>Terraform variable</td></tr>
-<tr><td>SharePoint</td><td>GRAPH_CLIENT_SECRET</td><td>{{ "Configured" if secrets.GRAPH_CLIENT_SECRET else "Not configured" }}</td><td>Secrets Manager</td></tr>
-<tr><td>Confluence</td><td>CONFLUENCE_EMAIL</td><td>{{ values.CONFLUENCE_EMAIL or "Not configured" }}</td><td>Terraform variable</td></tr>
-<tr><td>Confluence</td><td>CONFLUENCE_TOKEN</td><td>{{ "Configured" if secrets.CONFLUENCE_TOKEN else "Not configured" }}</td><td>Secrets Manager</td></tr>
-<tr><td>S3 originals</td><td>S3_BUCKET</td><td>{{ values.S3_BUCKET or "Not configured" }}</td><td>Terraform variable</td></tr>
-<tr><td>Brave search</td><td>BRAVE_API_KEY</td><td>{{ "Configured" if secrets.BRAVE_API_KEY else "Not configured" }}</td><td>Secrets Manager</td></tr>
-<tr><td>Models</td><td>EXTRACT_MODEL</td><td>{{ values.EXTRACT_MODEL or "Not configured" }}</td><td>Terraform variable</td></tr>
-<tr><td>Models</td><td>DRAFT_MODEL</td><td>{{ values.DRAFT_MODEL or "Not configured" }}</td><td>Terraform variable</td></tr>
-<tr><td>Models</td><td>OLLAMA_API_BASE</td><td>{{ values.OLLAMA_API_BASE or "Not configured" }}</td><td>Terraform variable</td></tr>
-<tr><td>Models</td><td>OLLAMA_CLOUD_KEY</td><td>{{ "Configured" if secrets.OLLAMA_CLOUD_KEY else "Not configured" }}</td><td>Secrets Manager</td></tr>
-<tr><td>Models</td><td>OPENAI_API_KEY</td><td>{{ "Configured" if secrets.OPENAI_API_KEY else "Not configured" }}</td><td>Secrets Manager</td></tr>
-<tr><td>Models</td><td>GEMINI_API_KEY</td><td>{{ "Configured" if secrets.GEMINI_API_KEY else "Not configured" }}</td><td>Secrets Manager</td></tr>
+{% if editable %}<p class="muted">Secrets are write-only: a blank field leaves the value unchanged. A new client id or email needs its secret in the same save. Changes reach every container within a minute. Model provider keys and models need a second admin to approve. A Bedrock model also needs its ARN in the Terraform variable bedrock_model_arns.</p>
+{% for label, group, names in connectors %}<form id="conn-{{ group }}" method="post" action="/admin/settings/connections/{{ group }}"></form>{% endfor %}
+{% else %}<p class="muted">Editing needs Secrets Manager (SETTINGS_SECRET_IDS), so these values come from the environment.</p>{% endif %}
+<div class="table-box"><table><thead><tr><th>Connection</th><th>Setting</th><th>Value</th><th>Last change</th>{% if editable %}<th>Change</th>{% endif %}</tr></thead><tbody>
+{% for label, group, names in connectors %}{% for name in names %}<tr><td>{{ label }}</td><td>{{ name }}</td><td>{% if name in plain %}{{ values[name] or "Not configured" }}{% else %}{{ "Configured" if secrets[name] else "Not configured" }}{% endif %}</td>
+<td>{% if last[name] %}{{ last[name][0] }} by {{ last[name][1] }}, {{ last[name][2].strftime("%Y-%m-%d %H:%M") }}{% else %}<span class="muted">Never</span>{% endif %}{% if name in two_admin %} <span class="badge neutral">Two admins</span>{% endif %}</td>
+{% if editable %}<td>{% if proposals[name] %}<p>Waiting for approval: proposed by {{ proposals[name][0] }}, {{ proposals[name][1].strftime("%Y-%m-%d %H:%M") }}{% if proposals[name][2] %}: {{ proposals[name][2] }}{% endif %}</p>
+{% for action, text in (("approve", "Approve"), ("reject", "Reject"), ("withdraw", "Withdraw")) %}<form class="inline" method="post" action="/admin/settings/connections/{{ name }}/{{ action }}"><input type="hidden" name="proposal" value="{{ proposals[name][3] }}"><button class="btn-sm" aria-label="{{ text }} the change to {{ name }}">{{ text }}</button></form> {% endfor %}
+{% else %}{% if name in ("EXTRACT_MODEL", "DRAFT_MODEL") %}<select form="conn-{{ group }}" name="{{ name }}" aria-label="New {{ name }}"><option value="">Unchanged</option>{% for m in model_choices %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select>
+{% elif name in plain %}<input form="conn-{{ group }}" name="{{ name }}" type="text" value="{{ values[name] }}" aria-label="New {{ name }}" autocomplete="off">
+{% else %}<input form="conn-{{ group }}" name="{{ name }}" type="password" aria-label="New {{ name }}" autocomplete="new-password">
+<form class="inline" method="post" action="/admin/settings/connections/{{ name }}/clear"><button class="btn-sm" aria-label="Clear {{ name }}">Clear</button></form>{% endif %}
+{% if names | length == 1 or name in two_admin %}<form class="inline" method="post" action="/admin/settings/connections/{{ name }}/restore"><button class="btn-sm" aria-label="Restore the previous {{ name }}">Restore previous</button></form>{% endif %}{% endif %}
+{% if loop.last %}<button class="btn btn-sm" form="conn-{{ group }}">{{ "Propose" if name in two_admin else "Save" }} {{ label }}</button>{% endif %}</td>{% endif %}</tr>
+{% endfor %}{% endfor %}
+<tr><td>S3 originals</td><td>S3_BUCKET</td><td>{{ values.S3_BUCKET or "Not configured" }}</td><td colspan="{{ 2 if editable else 1 }}">Terraform variable: the task roles are bound to this bucket</td></tr>
+<tr><td>Models</td><td>OLLAMA_API_BASE</td><td>{{ values.OLLAMA_API_BASE or "Not configured" }}</td><td colspan="{{ 2 if editable else 1 }}">Terraform variable: a host URL decides where documents are sent</td></tr>
+<tr><td>Models</td><td>EXTRACT_MODEL_OPTIONS, DRAFT_MODEL_OPTIONS</td><td>Not shown</td><td colspan="{{ 2 if editable else 1 }}">Terraform variable</td></tr>
 </tbody></table></div></div>
 
 <div class="section-card">

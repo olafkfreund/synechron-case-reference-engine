@@ -8,7 +8,7 @@ import boto3
 import httpx
 from psycopg.types.json import Jsonb
 
-from app import db
+from app import conn_settings, db
 from app.ingest import ingest, skip_unchanged
 
 MAX_FAILED_KEYS = 20
@@ -127,7 +127,7 @@ class Graph:
         self.token = None
 
     def login(self):
-        cid, secret = os.environ.get("GRAPH_CLIENT_ID"), os.environ.get("GRAPH_CLIENT_SECRET")
+        cid, secret = conn_settings.get("GRAPH_CLIENT_ID"), conn_settings.get("GRAPH_CLIENT_SECRET")
         if not cid or not secret:
             raise RuntimeError("GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET are required")
         r = self.http.post(f"https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/token", data={
@@ -371,7 +371,7 @@ class Confluence:
         self.base = self.root + prefix  # Cloud serves everything under /wiki
         self.cloud = prefix == "/wiki"  # Data Center has no v2 API and no folders
         self.api = self.base + "/rest/api"
-        email, token = os.environ.get("CONFLUENCE_EMAIL"), os.environ.get("CONFLUENCE_TOKEN")
+        email, token = conn_settings.get("CONFLUENCE_EMAIL"), conn_settings.get("CONFLUENCE_TOKEN")
         if not token:
             raise RuntimeError("CONFLUENCE_TOKEN is required (with CONFLUENCE_EMAIL for Cloud)")
         self.auth = httpx.BasicAuth(email, token) if email else None
