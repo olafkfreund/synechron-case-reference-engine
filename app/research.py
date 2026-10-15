@@ -8,6 +8,7 @@ import re
 import socket
 import threading
 import time
+from collections import Counter
 from html.parser import HTMLParser
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
@@ -72,6 +73,24 @@ class ConvertTimeout(ResearchError):
 
 class ConvertFailed(ResearchError):
     pass
+
+
+SKIP_REASONS = {"RobotsDisallowed": "don't allow automated access", "Stalled": "didn't respond in time",
+                "ConvertTimeout": "didn't respond in time", "TooLarge": "too large",
+                "BadContentType": "not a web page or PDF", "ConvertFailed": "not a web page or PDF",
+                "ResearchError": "refused by the server", "Blocked": "blocked by our safety checks"}
+
+
+def skip_reason(name: str | None) -> str | None:
+    """A plain reason for a stored skip class name (#281); None for a hidden source's placeholder."""
+    if not name:
+        return None
+    if name in SKIP_REASONS:
+        return SKIP_REASONS[name]
+    if name.endswith("Timeout"):
+        return "didn't respond in time"
+    cls = getattr(httpx, name, None)
+    return "couldn't be reached" if isinstance(cls, type) and issubclass(cls, Exception) else "other errors"
 
 
 # --- the query: generic terms only, scrubbed, shown to the user before it leaves --------------------
@@ -248,9 +267,10 @@ def research_view(rid: int, request: Request, user: User = Depends(require("user
         groups.setdefault(c["publisher"], []).append(c)
     pages = [p for p in row[3].get("pages", []) if not anonymise.blocked(f"{p.get('publisher', '')}\n{p.get('url', '')}", clients)]
     skipped = row[3].get("skipped", []) + [{}] * (len(row[3].get("pages", [])) - len(pages))
+    skip_reasons = Counter(r for s in skipped if (r := skip_reason(s.get("error")))).most_common()
     query = "[withheld]" if anonymise.blocked(row[0], clients) else row[0]  # a client protected after it was sent
     return page(request, "research_view.html", user, query=query, status=row[1], error=row[2], ours=ours,
-                pages=pages, skipped=skipped, omitted=omitted, claims=claims, groups=groups,
+                pages=pages, skipped=skipped, skip_reasons=skip_reasons, omitted=omitted, claims=claims, groups=groups,
                 note=row[3].get("note"), case_id=row[4] if case else None, research_id=rid,
                 attach_cases=attach_cases, images=images)
 
@@ -462,7 +482,7 @@ class Fetcher:
                 if len(body) > limit:
                     raise TooLarge("response too large")
                 if time.monotonic() > deadline:
-                    raise ResearchError("fetch took too long")
+                    raise Stalled("fetch took too long")
             return body, ctype, str(u)
 
     def allowed(self, url: str) -> bool:

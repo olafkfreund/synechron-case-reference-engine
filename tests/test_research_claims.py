@@ -1,5 +1,6 @@
 import csv
 import io
+import html
 import json
 import re
 import uuid
@@ -135,11 +136,22 @@ def sent(c, cid):
     return r.headers["location"]
 
 
-def finish(loc, claims, pages=()):
+def finish(loc, claims, pages=(), skipped=()):
     rid = int(loc.rsplit("/", 1)[1])
     with db.connect() as conn:
         conn.execute("update research set status='done', results=%s where id=%s",
-                     (json.dumps({"pages": list(pages), "skipped": [], "claims": claims}), rid))
+                     (json.dumps({"pages": list(pages), "skipped": list(skipped), "claims": claims}), rid))
+
+
+def test_view_explains_skipped_sources_without_showing_domains(reg):
+    c = as_user("u1")
+    loc = sent(c, None)
+    skipped = [{"domain": f"skip-{i}.example", "error": error} for i, error in enumerate(
+        ("RobotsDisallowed", "RobotsDisallowed", "Stalled", "Blocked", "NoSuchError"))]
+    finish(loc, [], skipped=skipped)
+    t = html.unescape(c.get(loc).text)
+    assert "5 source(s) skipped: 2 don't allow automated access, 1 didn't respond in time, 1 blocked by our safety checks, 1 other errors." in t
+    assert all(s["domain"] not in t for s in skipped)
 
 
 def test_view_shows_our_approach_only_while_visible_and_applies_protection(approved, reg, echo, monkeypatch):

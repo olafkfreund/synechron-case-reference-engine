@@ -60,6 +60,6 @@
 {% for p in pages %}<p style="margin:0 0 6px"><b>{{ p.publisher }}</b> &middot; <a href="{{ p.url }}" rel="noopener noreferrer">{{ p.url }}</a>
 &middot; retrieved {{ p.retrieved_at[:10] }}</p>{% endfor %}
 {% if not pages %}<p class="muted" style="margin:0">No usable sources found.</p>{% endif %}
-{% if skipped %}<p><small>{{ skipped | length }} source(s) skipped.</small></p>{% endif %}</div>
+{% if skipped %}<p><small>{{ skipped | length }} source(s) skipped{% if skip_reasons %}: {% for r, n in skip_reasons %}{{ n }} {{ r }}{{ ", " if not loop.last }}{% endfor %}{% endif %}.</small></p>{% endif %}</div>
 {% endif %}
 {% endblock %}
