@@ -23,8 +23,8 @@ that phase 1 builds on facts.
   with redirects off covers it.
 - **Lifespan:** the parent app's lifespan enters `session_manager.run()`. A
   mounted app's lifespan doesn't run on its own.
-- **Off by default:** `/mcp` exists only with `MCP_ENABLED=1`. Without it,
-  `/mcp` gives 404.
+- **On by default:** `/mcp` is mounted unless `MCP_ENABLED=0`. With
+  `MCP_ENABLED=0`, `/mcp` gives 404.
 - **Guard:** the portal's CSRF check is skipped for `/mcp` and `/mcp/...`.
   The 1 MiB body cap still applies, and the SDK's `transport_security`
   checks Host and Origin.
