@@ -17,14 +17,22 @@ The Confluence crawler account must be a dedicated non-admin account that no res
 </div></div>
 <div class="page-head-actions"><details class="detail-panel head-panel src-add"><summary>+ Add source</summary>
 <form method="post" action="/admin/sources">
-<div class="field"><label for="new-kind">Kind</label><select name="kind" id="new-kind">{% for k in kinds %}<option>{{ k }}</option>{% endfor %}</select></div>
+<div class="field"><label for="new-kind">Kind</label><select name="kind" id="new-kind">{% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select></div>
 <div class="field"><label for="new-name">Name</label><input type="text" id="new-name" name="name" required></div>
-<div class="field"><label for="new-config">Config (JSON)</label><textarea id="new-config" name="config" rows="3" required></textarea>
-<span class="field-help">By kind:<br>
-SharePoint: <code>{"tenant_id": "…", "drive_id": "…"}</code><br>
-S3 or upload: <code>{"bucket": "…", "prefix": "…"}</code><br>
-Confluence: <code>{"base_url": "https://x.atlassian.net", "spaces": ["KEY"]}</code><br>
-S3 and SharePoint: optional <code>"include_ext"</code> (default docx, pptx, pdf) limits the file types. Narrowing these withdraws matching documents already in search on the next crawl.</span></div>
+<div class="field" data-kinds="s3 upload"><label for="new-bucket">Bucket</label><input type="text" id="new-bucket" name="bucket"></div>
+<div class="field" data-kinds="s3 upload"><label for="new-prefix">Prefix</label><input type="text" id="new-prefix" name="prefix">
+<span class="field-help">An upload source's prefix is where staff files land.</span></div>
+<div class="field" data-kinds="sharepoint"><label for="new-tenant">Tenant ID</label><input type="text" id="new-tenant" name="tenant_id"></div>
+<div class="field" data-kinds="sharepoint"><label for="new-drive">Drive ID</label><input type="text" id="new-drive" name="drive_id"></div>
+<div class="field" data-kinds="confluence"><label for="new-url">Site URL</label><input type="text" id="new-url" name="base_url" placeholder="https://x.atlassian.net"></div>
+<div class="field" data-kinds="confluence"><label for="new-spaces">Spaces</label><input type="text" id="new-spaces" name="spaces">
+<span class="field-help">Space keys, comma-separated.</span></div>
+<div class="field" data-kinds="confluence"><label for="new-api">API prefix</label><select id="new-api" name="api_prefix">
+<option value="/wiki" selected>/wiki (Confluence Cloud)</option><option value="">none (Data Center)</option></select></div>
+<div class="field" data-kinds="s3 upload sharepoint"><label for="new-ext">File types</label><input type="text" id="new-ext" name="include_ext">
+<span class="field-help">Extensions, comma-separated; empty means docx, pptx, pdf.</span></div>
+<label class="check" data-kinds="upload"><input type="checkbox" name="staff"> Staff uploads go here</label>
+<p class="field-help">Only the chosen kind's fields are saved. The bucket, tenant and drive, site URL, and an upload source's prefix cannot be changed later.</p>
 <div class="field"><label for="new-dc">Data class</label><select name="data_class" id="new-dc">{% for k in classes %}<option>{{ k }}</option>{% endfor %}</select></div>
 <div class="field"><label for="new-acl">Access groups</label><input type="text" id="new-acl" name="acl_groups" required>
 <span class="field-help">Group ids, comma-separated.</span></div>
@@ -40,7 +48,7 @@ S3 and SharePoint: optional <code>"include_ext"</code> (default docx, pptx, pdf)
 {% for id, kind, name, config, acl, enabled, last_run, counts, dc, days in sources %}
 <div class="source-row src">
 {{ icon("database") }}
-<div class="who"><b>{{ name }}</b><span class="badge neutral">{{ kind }}</span></div>
+<div class="who"><b>{{ name }}</b><span class="muted">Source #{{ id }}</span><span class="badge neutral">{{ kind }}</span></div>
 <div class="chips"><span class="badge {{ 'ok' if enabled else 'neutral' }}">{{ "Enabled" if enabled else "Disabled" }}</span>
 <span class="badge {{ 'warn' if dc == 'confidential' else 'neutral' }}">{{ dc | capitalize }}</span></div>
 <span class="run">Last run: {% if last_run %}<span title="{{ last_run }}">{{ age(days) }}{{ " ago" if days }}</span>{% else %}<span class="muted">never</span>{% endif %}</span>
@@ -57,13 +65,29 @@ S3 and SharePoint: optional <code>"include_ext"</code> (default docx, pptx, pdf)
 <details class="mini"><summary class="btn-sm" aria-label="Edit {{ name }}">Edit</summary>
 <form id="s{{ id }}" method="post" action="/admin/sources/{{ id }}">
 <div class="cols">
+<div class="field"><label for="s{{ id }}-name">Name</label><input type="text" id="s{{ id }}-name" name="name" value="{{ name }}" required></div>
 <div class="field"><label for="s{{ id }}-acl">Access groups</label><input type="text" id="s{{ id }}-acl" name="acl_groups" value="{{ acl | join(', ') }}"></div>
 <div class="field"><label for="s{{ id }}-dc">Data class</label><select id="s{{ id }}-dc" name="data_class">{% for k in classes %}<option{{ " selected" if k == dc }}>{{ k }}</option>{% endfor %}</select></div>
 </div>
 <div class="row"><label class="check"><input type="checkbox" name="enabled" {{ "checked" if enabled }}> Enabled</label>
 <label class="check"><input type="checkbox" name="executed_contracts" {{ "checked" if config.get("executed_contracts") }}> All contracts here are executed</label></div>
 <h3>Config</h3>
-<dl class="status-list">{% for k, v in config.items() %}<dt>{{ k }}</dt><dd>{{ v if v is string else v | tojson }}</dd>{% endfor %}</dl>
+<dl class="status-list">
+{% if kind in ('s3', 'upload') %}<dt>Bucket</dt><dd>{{ config.get("bucket", "") }}</dd>{% endif %}
+{% if kind == 'upload' %}<dt>Prefix</dt><dd>{{ config.get("prefix", "") }}</dd><dt>Staff uploads</dt><dd>{{ "yes" if config.get("staff") else "no" }}</dd>{% endif %}
+{% if kind == 'sharepoint' %}<dt>Tenant ID</dt><dd>{{ config.get("tenant_id", "") }}</dd><dt>Drive ID</dt><dd>{{ config.get("drive_id", "") }}</dd>{% endif %}
+{% if kind == 'confluence' %}<dt>Site URL</dt><dd>{{ config.get("base_url", "") }}</dd>{% endif %}
+</dl>
+<div class="cols">
+{% if kind == 's3' %}<div class="field"><label for="s{{ id }}-prefix">Prefix</label><input type="text" id="s{{ id }}-prefix" name="prefix" value="{{ config.get('prefix', '') }}"></div>{% endif %}
+{% if kind in ('s3', 'upload', 'sharepoint') %}<div class="field"><label for="s{{ id }}-ext">File types</label><input type="text" id="s{{ id }}-ext" name="include_ext" value="{{ config.get('include_ext', []) | join(', ') }}">
+<span class="field-help">Extensions, comma-separated; empty means docx, pptx, pdf.</span></div>{% endif %}
+{% if kind == 'confluence' %}<div class="field"><label for="s{{ id }}-spaces">Spaces</label><input type="text" id="s{{ id }}-spaces" name="spaces" value="{{ config.get('spaces', []) | join(', ') }}"></div>
+<div class="field"><label for="s{{ id }}-api">API prefix</label><select id="s{{ id }}-api" name="api_prefix">
+<option value="/wiki"{{ " selected" if config.get("api_prefix", "/wiki") == "/wiki" }}>/wiki (Confluence Cloud)</option>
+<option value=""{{ " selected" if config.get("api_prefix", "/wiki") == "" }}>none (Data Center)</option></select></div>{% endif %}
+</div>
+<p class="field-help">Narrowing the scope withdraws documents outside it on the next crawl; any scope change makes the next crawl a full one.</p>
 {% if counts %}<h3>Last run counts</h3>
 <dl class="status-list">{% for k, v in counts.items() if k not in ("failed_keys", "retry_ids", "too_large") %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>{% endif %}
 <div class="action-row"><button class="btn primary" aria-label="Save {{ name }}">Save</button></div>
