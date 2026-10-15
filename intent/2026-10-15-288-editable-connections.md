@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 issue: 288
 author: olafkfreund
 ---
@@ -102,26 +102,13 @@ them aside.
 
 ## Open questions
 
-1. **Models.**
-   - You chose "editable within a Terraform allowlist".
-   - Codex's research advises keeping models Terraform-only: a model id
-     decides where confidential prompts go.
-   - My suggestion: keep your choice. The allowlist, the IAM allowlist and
-     the approval check together cover that risk.
-   - Do you agree, or should models stay read-only?
-2. **Separation of duties.**
-   - **The risk** (agy's research): with editable provider keys and models,
-     one admin, or one stolen admin session, can do all of this alone:
-     - set `OPENAI_API_KEY` to their own account
-     - approve `openai/…` on the Models page
-     - switch `EXTRACT_MODEL` to it
-     - and so send every confidential document out.
-   - **I suggest:**
-     - Data-routing settings need a second admin to approve the change before
-       it takes effect: the provider keys (OpenAI, Gemini, Ollama Cloud) and
-       the models.
-     - Connector credentials can be changed by one admin, with an audit
-       entry: SharePoint, Confluence and Brave.
-   - Agree, or one admin for everything?
-3. **A "test connection" button.** #283 rejected it as an SSRF risk. Does it
-   stay out? I suggest it stays out.
+None. Decided on 2026-10-15, when the intent was approved with the suggested
+answers:
+
+1. **Models stay editable,** but only within the Terraform allowlist. The
+   IAM allowlist and the approval check still apply.
+2. **Two admins for data routing.** A change to a provider key (OpenAI,
+   Gemini, Ollama Cloud) or a model needs a second admin to approve it
+   before it takes effect. SharePoint, Confluence and Brave credentials need
+   one admin, with an audit entry.
+3. **No "test connection" button** (an SSRF risk, as in #283).
