@@ -286,3 +286,6 @@ docker compose run --rm app pytest tests/test_conn_settings.py tests/test_settin
   - **The Secrets Manager client** gets its own session (thread-safe), a 2 s connect and 5 s read timeout, and 2 attempts.
   - **IAM:** `ListSecretVersionIds` is dropped because nothing calls it.
   - **The admin guide states the outage behaviour.**
+- **Review fixes (agy).**
+  - **A model restore re-checks** the target against `MODEL_CHOICES` before proposing it.
+  - **Clearing a secret that is already not configured is refused** (409). Clearing it again would push the real previous value out of `AWSPREVIOUS`.

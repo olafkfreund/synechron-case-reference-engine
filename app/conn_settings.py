@@ -295,7 +295,7 @@ def restore(conn, actor: str, name: str) -> None:
             target = (last[0] if last else None) or os.environ.get(name)  # null: it came from Terraform
             if not last or not target:
                 raise Refused(409, f"{name} has no previous value")
-            _log(conn, name, "proposed", actor, old=_plain_now(conn, name), new=target)  # only models get here: two admins
+            _log(conn, name, "proposed", actor, old=_plain_now(conn, name), new=check(name, target))  # only models: two admins
             conn.commit()
     finally:
         clear_cache()
@@ -307,6 +307,8 @@ def clear(conn, actor: str, name: str) -> None:
     if name not in SECRET_NAMES:
         raise Refused(400, f"{name} cannot be cleared")
     _open_check(conn, name)
+    if _load_secret(ids[name]) is None:  # clearing again would push the real previous value out of AWSPREVIOUS
+        raise Refused(409, f"{name} is already not configured")
     try:
         version = _pending(ids[name], CLEARED)
         if name in TWO_ADMIN:

@@ -306,3 +306,12 @@ def test_decisions_are_admin_only(admins):
     rev = client([REV], sub="rev")
     for action in ("approve", "reject", "withdraw", "restore"):
         assert post(rev, "EXTRACT_MODEL/" + action).status_code == 403
+
+
+def test_restore_checks_the_model_and_clear_needs_a_value(admins, monkeypatch):
+    a, b = admins
+    post(a, "models", EXTRACT_MODEL="bedrock/m2")
+    post(b, "EXTRACT_MODEL/approve")
+    monkeypatch.setenv("MODEL_CHOICES", "bedrock/m2")  # Terraform dropped m1 since
+    assert post(a, "EXTRACT_MODEL/restore").status_code == 400
+    assert post(a, "BRAVE_API_KEY/clear").status_code == 409  # never set
