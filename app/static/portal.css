@@ -364,6 +364,7 @@ fieldset.pick legend{font-weight:600;padding:0 6px;text-transform:capitalize}
 .claim .meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:13px;color:var(--muted)}
 .claim p{margin:6px 0 0}
 
+@media (max-width:999px){.brand-tag{display:none}}  /* the 200px logo leaves no room for the tag (issue 291) */
 /* phones (#90 second check) */
 @media (max-width:699px){
 .site-header-in{padding:6px 16px;gap:2px 12px}

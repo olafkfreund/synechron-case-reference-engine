@@ -332,6 +332,8 @@ def test_logo_partial_is_clean_and_follows_the_theme():
     t = (Path(__file__).parent.parent / "app" / "templates" / "_logo.html").read_text()
     for s in ('role="img"', 'aria-label="Synechron"', 'fill="currentColor"'):
         assert s in t
+    assert t.count('fill="currentColor"') == len(re.findall(r"<(path|circle|rect|polygon|ellipse)\b", t))  # every shape
+    assert t.count('role="img"') == t.count('aria-label="Synechron"') == t.count("<svg") == 2 and "id=" not in t
     for bad in ("<style", 'fill="#', "<script", "<?xml", "<!--"):
         assert bad not in t
 
@@ -340,6 +342,9 @@ def test_header_shows_the_logo_once_and_keeps_the_product_name(make, approved, m
     r = pages(make, approved, monkeypatch)["home"]
     brand = re.search(r'<a class="brand"[^>]*>.*?</a>', r.text, re.S).group(0)
     assert r.text.count('class="brand-logo"') == 1 and "Reference Engine" in brand
+    assert 'class="brand-logo"' in brand and 'class="brand-mark"' in brand
+    css = CSS.read_text()  # phones get the brandmark, and only inside the phone block
+    assert css.index("@media (max-width:699px){") < css.index(".brand-logo{display:none}.brand-mark{display:block}")
 
 
 def test_brand_tokens():
@@ -348,4 +353,4 @@ def test_brand_tokens():
         assert tok in region
     for blk in (":root{", ':root:not([data-theme="light"])', ':root[data-theme="dark"]'):
         assert theme(blk, region)["brand-mark"] == "#FBF321"
-    assert theme(":root{", region)["accent"] == "#002535"
+    assert theme(":root{", region)["accent"] == "#002535" and theme(':root[data-theme="dark"]', region)["accent"] == "#26A9E0"
