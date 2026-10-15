@@ -47,7 +47,7 @@ A row per source with its number (the source id crawl jobs use), its kind, wheth
    - Another admin presses **Approve** to apply the change or **Reject** to discard it. The proposer cannot approve or reject their own change, and can press Withdraw to cancel it.
 4. To roll back or remove a setting:
    - Press **Restore previous** to return a single secret (`BRAVE_API_KEY`, `OLLAMA_CLOUD_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`) or model (`EXTRACT_MODEL`, `DRAFT_MODEL`) to its previous value. **Restore previous** is not available for the SharePoint or Confluence pairs, because restoring only half a pair could mismatch an id and secret; enter both values again instead.
-   - Press **Clear** on a secret row to unconfigure that secret.
+   - Press **Clear** under a secret to unconfigure that secret.
    - Both actions follow the setting's one-admin or two-admin rule.
 5. If Secrets Manager cannot be reached, the app keeps using the last values it read for up to 10 minutes. After that, crawls, model calls and this page fail until it is back.
 

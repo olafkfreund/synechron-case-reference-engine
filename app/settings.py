@@ -22,6 +22,9 @@ CONNECTORS = (("SharePoint", "sharepoint", ("GRAPH_CLIENT_ID", "GRAPH_CLIENT_SEC
               ("OpenAI", "openai", ("OPENAI_API_KEY",)),
               ("Gemini", "gemini", ("GEMINI_API_KEY",)))
 GROUPS = {group: names for _, group, names in CONNECTORS}
+LABELS = {"GRAPH_CLIENT_ID": "Client id", "GRAPH_CLIENT_SECRET": "Client secret", "CONFLUENCE_EMAIL": "Email",
+          "CONFLUENCE_TOKEN": "API token", "BRAVE_API_KEY": "API key", "OLLAMA_CLOUD_KEY": "API key", "OPENAI_API_KEY": "API key",
+          "GEMINI_API_KEY": "API key", "EXTRACT_MODEL": "Extraction model", "DRAFT_MODEL": "Drafting model"}
 
 
 def public_url(value: str) -> str:
@@ -68,7 +71,8 @@ def settings_page(request: Request, user: User = Depends(require("admin"))):
                  for name, action, actor, at, new, cid in changes if action == "proposed"}
     return page(request, "settings.html", user, values=values, secrets=secrets, sources=sources, roles=roles,
                 mcp_enabled=mcp_enabled, connectors=CONNECTORS, editable=cs.editable(), last=last, proposals=proposals,
-                two_admin=cs.TWO_ADMIN, plain=cs.PLAIN_NAMES, model_choices=cs.model_choices())
+                two_admin=cs.TWO_ADMIN, plain=cs.PLAIN_NAMES, model_choices=cs.model_choices(), labels=LABELS,
+                configured=[name for name, ok in secrets.items() if ok])
 
 
 async def raw_form(request: Request) -> FormData:  # app.sources has one too, but importing it here is circular
