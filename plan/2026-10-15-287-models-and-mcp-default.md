@@ -211,4 +211,26 @@ A deployment that can't supply MCP settings in the meantime sets
 
 ## Implementation notes
 
-(filled in during implementation)
+- **Who did what:** steps 1–2 by Claude, step 3 by Codex, step 4 by agy.
+- **Step 3:** Claude added `description` fields to the new variables.
+  `terraform validate` passes. `plan` was not run (it needs AWS
+  credentials), so the precondition is checked by `validate` only.
+- **Negative controls:**
+  - without the relabel guard, the relabel test fails
+  - with `== "1"` restored, the two default-on tests fail
+- **Review fixes (Opus, Codex):**
+  - **The relabel guard is an allowlist, not a denylist.** Only `ollama*` and
+    `bedrock/` models may be overridden to `local` or `our-cloud`. A list of
+    third-party prefixes missed `azure/`, `openrouter/` and a bare `gpt-5`.
+    The `THIRD_PARTY` constant is gone.
+  - **`MCP_ENABLED` accepts `0`, `false`, `no` and `off`** (any case) as off,
+    so `false` no longer turns MCP on.
+  - **Settings shows the OpenAI and Gemini key rows**, as step 2 says. The
+    template row was missing.
+  - **The revoked-approval test** now also checks the same row unrevoked.
+  - **The Terraform example's `mcp_audience` is the API app's client id.**
+    Entra v2 tokens carry that, not the `api://` URI (Codex).
+  - **`.env.example` and `infra/README.md`** wording fixed.
+  - **`docs/mcp-spike.md` is left unchanged.** It is a record of the spike.
+- **Not changed:** `MAX_TOKENS = 8192`. GPT-5 and Gemini count reasoning
+  tokens against it, so it is a live check in the PR.

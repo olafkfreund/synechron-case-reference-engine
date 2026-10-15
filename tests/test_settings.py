@@ -32,6 +32,7 @@ def test_settings_redacts_secrets_and_urls(env, monkeypatch):  # noqa: F811
     html = client([ADMIN]).get("/admin/settings").text
     assert all(value not in html for value in sentinels)
     assert "Configured" in html
+    assert "OPENAI_API_KEY</td><td>Configured" in html and "GEMINI_API_KEY</td><td>Configured" in html
     assert "https://idp.example:8443/metadata" in html
     assert "https://app.example/auth" in html
     assert "https://models.example:11434/api" in html

@@ -46,7 +46,7 @@ daily crawl schedule, optional DataSync. Nothing is applied by CI; run it from a
 ## Things to know
 
 - **MCP is on by default.** Set `mcp_issuer` (Entra v2 HTTPS issuer), `mcp_audience`, and `mcp_client_ids` before planning; an incomplete setup fails the plan. Set `mcp_enabled = false` to disable MCP. `mcp_scope` defaults to `refs.access`; `mcp_tenant_id` is optional.
-- **Provider key secrets are optional.** `openai-api-key` and `gemini-api-key` are created only when `extract_model` or `draft_model` uses `openai/` or `gemini/`, respectively. Fill their values before starting the web and worker tasks. Both tasks receive only the keys their models use.
+- **Provider key secrets are optional.** `openai-api-key` and `gemini-api-key` are created only when `extract_model` or `draft_model` uses `openai/` or `gemini/`, respectively. Fill their values before starting the web and worker tasks. Web and worker each receive every provider key that either model uses, and no other.
 - **The web task has HTTPS egress through the NAT** (decided 2026-10-07): the OIDC login calls Entra ID server-side
   (metadata, token, keys), which has no small stable address range. The web task never parses untrusted documents;
   the worker does. Bedrock, Secrets Manager, ECR, logs and STS still go through VPC endpoints, S3 through the gateway.

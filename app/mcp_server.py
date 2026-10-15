@@ -1061,7 +1061,8 @@ class ExactMcpPath:
 
 
 def enabled() -> bool:
-    return os.environ.get("MCP_ENABLED", "1") != "0"  # on by default; build() refuses to start without sign-in settings
+    # on by default; build() refuses to start without sign-in settings
+    return os.environ.get("MCP_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
 
 
 def build(origin: str):

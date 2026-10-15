@@ -85,8 +85,9 @@ def test_token_signed_by_unknown_key_refused(env):
         assert rpc(c, "tools/list", "2025-06-18", tok=forged).status_code == 401
 
 
-def test_mcp_is_404_when_disabled(env, monkeypatch):
-    monkeypatch.setenv("MCP_ENABLED", "0")
+@pytest.mark.parametrize("off", ["0", "false", "No", " off "])
+def test_mcp_is_404_when_disabled(env, monkeypatch, off):
+    monkeypatch.setenv("MCP_ENABLED", off)
     with TestClient(main.create_app()) as c:
         assert rpc(c, "tools/list", "2025-06-18").status_code == 404
 

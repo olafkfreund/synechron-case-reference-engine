@@ -17,7 +17,6 @@ CORRECTION = ("That was the schema, not the answer. Reply with one JSON object c
 
 litellm.turn_off_message_logging = True  # document text is never logged
 MAX_TOKENS = 8192  # a full ReferenceCase with quotes; Bedrock's default may cut it off
-THIRD_PARTY = ("openai/", "gemini/", "anthropic/", "vertex_ai/")  # never local or our-cloud, whatever *_OPTIONS says
 PROVIDERS = {"openai/": "OPENAI_API_KEY", "gemini/": "GEMINI_API_KEY"}  # each key goes to its own provider only
 
 
@@ -55,8 +54,8 @@ def destination(model: str, opts: dict) -> str:
     if dest == "third-party":
         return dest
     if dest in ("local", "our-cloud"):
-        # an override may name a host the inference cannot see (Docker), never contradict a known third party
-        if model.startswith(THIRD_PARTY) or "cloud" in model.lower() or _ollama_cloud(effective_base(model, opts)):
+        # an override may name a host the inference cannot see (Docker); only Ollama and Bedrock can be ours
+        if not model.startswith(("ollama", "bedrock/")) or "cloud" in model.lower() or _ollama_cloud(effective_base(model, opts)):
             raise RuntimeError(f"destination {dest!r} contradicts the model or api_base; fix the *_OPTIONS")
         return dest
     if model.startswith("bedrock/"):

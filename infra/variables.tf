@@ -161,7 +161,7 @@ variable "mcp_issuer" {
 }
 
 variable "mcp_audience" {
-  description = "Audience of MCP tokens: the MCP app registration's id or api:// URI."
+  description = "Audience of MCP tokens: the MCP API app registration's client id (the aud of Entra v2 tokens), not its api:// URI."
   type        = string
   default     = ""
 }

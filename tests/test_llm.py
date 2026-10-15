@@ -82,6 +82,7 @@ def test_destination_inference_and_override():
     for model, opts in (("ollama_chat/gemma4:cloud", {"destination": "local"}),
                         ("openai/gpt", {"destination": "local"}), ("gemini/g", {"destination": "our-cloud"}),
                         ("anthropic/c", {"destination": "local"}), ("vertex_ai/v", {"destination": "our-cloud"}),
+                        ("azure/gpt", {"destination": "local"}), ("gpt-5", {"destination": "our-cloud"}),
                         (LOCAL, {"destination": "our-cloud", "api_base": "https://ollama.com"})):
         with pytest.raises(RuntimeError, match="contradicts"):
             d(model, opts)
@@ -118,6 +119,9 @@ def test_revoked_approval_refuses():
                       "values ('m1','confidential','a',now() + interval '1 day','admin')")
             c.commit()
             assert llm.allowed("third-party", "confidential", "m1") is False
+            c.execute("update model_approvals set revoked_by=null where approved_by='a'")
+            c.commit()
+            assert llm.allowed("third-party", "confidential", "m1") is True  # the same row, unrevoked
         finally:
             c.execute("delete from model_approvals where approved_by='a'")
             c.commit()
