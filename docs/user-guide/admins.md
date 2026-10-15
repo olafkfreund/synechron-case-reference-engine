@@ -118,7 +118,7 @@ the client is referenceable.
 
 Allowing a specific AI model to read confidential documents, and choosing the extraction and drafting models (`EXTRACT_MODEL` and `DRAFT_MODEL`, set via `extract_model` and `draft_model` in Terraform).
 
-**Supported model families**
+The supported model families:
 
 | Family | Example model id | Where it runs | Confidential data |
 | --- | --- | --- | --- |
@@ -127,10 +127,10 @@ Allowing a specific AI model to read confidential documents, and choosing the ex
 | Google Gemini | `gemini/gemini-2.5-pro` | `third-party` | Needs an active Models-page approval |
 | Ollama | `ollama_chat/qwen3:14b` | `local` (or `third-party` for cloud hosts) | Local hosts allowed; cloud hosts need an approval |
 
-- **Claude runs through Bedrock only.** Anthropic's direct API is not used. When `extract_model` or `draft_model` uses a Bedrock cross-region inference profile (such as `bedrock/eu.anthropic.claude-sonnet-4-5-20250929-v1:0`), put both the inference profile ARN and the foundation-model ARNs in `bedrock_model_arns`.
-- **Prefer a general GPT model over Codex for extraction.** For `EXTRACT_MODEL` (`extract_model`), use a general model such as `openai/gpt-5` rather than `openai/gpt-5-codex`.
-- **OpenAI and Gemini are always third-party.** They cannot be relabelled as `local` or `our-cloud` in `EXTRACT_MODEL_OPTIONS` or `DRAFT_MODEL_OPTIONS`. They may read confidential documents only when the exact model id has an active, unrevoked approval on **Model approvals**.
-- **Provider key secrets.** OpenAI models read `OPENAI_API_KEY` and Gemini models read `GEMINI_API_KEY`; each key is sent only to its own provider. In AWS, Terraform creates the Secrets Manager secret `<name>/openai-api-key` or `<name>/gemini-api-key` only when `extract_model` or `draft_model` starts with `openai/` or `gemini/`, and passes it to the `web` and `worker` tasks. Fill any created secret before starting the tasks. **Settings** shows only whether `OPENAI_API_KEY` and `GEMINI_API_KEY` are configured, never their values.
+- Claude runs through Bedrock only. Anthropic's direct API is not used. When `extract_model` or `draft_model` uses a Bedrock cross-region inference profile (such as `bedrock/eu.anthropic.claude-sonnet-4-5-20250929-v1:0`), put both the inference profile ARN and the foundation-model ARNs in `bedrock_model_arns`.
+- Prefer a general GPT model over Codex for extraction. For `EXTRACT_MODEL` (`extract_model`), use a general model such as `openai/gpt-5` rather than `openai/gpt-5-codex`.
+- OpenAI and Gemini are always third-party. They cannot be relabelled as `local` or `our-cloud` in `EXTRACT_MODEL_OPTIONS` or `DRAFT_MODEL_OPTIONS`. They may read confidential documents only when the exact model id has an active, unrevoked approval on **Model approvals**.
+- Provider key secrets. OpenAI models read `OPENAI_API_KEY` and Gemini models read `GEMINI_API_KEY`; each key is sent only to its own provider. In AWS, Terraform creates the Secrets Manager secret `<name>/openai-api-key` or `<name>/gemini-api-key` only when `extract_model` or `draft_model` starts with `openai/` or `gemini/`, and passes it to the `web` and `worker` tasks. Fill any created secret before starting the tasks. **Settings** shows only whether `OPENAI_API_KEY` and `GEMINI_API_KEY` are configured, never their values.
 
 **Steps**
 
