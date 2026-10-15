@@ -1,11 +1,13 @@
 import re
 import uuid
 
+import pytest
+from fastapi import HTTPException
 from psycopg.types.json import Jsonb
 
 from app import db
 from app.extract import EXTRACTION_VERSION
-from app.sources import OLDER
+from app.sources import OLDER, parse_config
 from app.schema import ReferenceCase, Sourced
 from tests.test_auth import ADMIN, REV, client, env  # noqa: F401
 
@@ -15,13 +17,13 @@ def test_sources_admin(env):  # noqa: F811
     name = f"sp-{uuid.uuid4().hex[:8]}"
     a = client([ADMIN])
     assert client([REV]).get("/admin/sources").status_code == 403
-    bad = a.post("/admin/sources", data={"kind": "sharepoint", "name": name, "config": '{"tenant_id": "t"}',
+    bad = a.post("/admin/sources", data={"kind": "sharepoint", "name": name, "tenant_id": "9b1c6f0e-2f43-4c56-9a7b-0d1e2f3a4b5c",
                                           "acl_groups": "g1"})
     assert bad.status_code == 400 and "drive_id" in bad.text
     assert a.post("/admin/sources", data={"kind": "sharepoint", "name": name, "acl_groups": " ",
-                                          "config": '{"tenant_id": "t", "drive_id": "d"}'}).status_code == 400
+                                          "tenant_id": "9b1c6f0e-2f43-4c56-9a7b-0d1e2f3a4b5c", "drive_id": "d"}).status_code == 400
     ok = a.post("/admin/sources", follow_redirects=False, data={
-        "kind": "sharepoint", "name": name, "config": '{"tenant_id": "t", "drive_id": "d"}', "acl_groups": "g1, g2"})
+        "kind": "sharepoint", "name": name, "tenant_id": "9b1c6f0e-2f43-4c56-9a7b-0d1e2f3a4b5c", "drive_id": "d", "acl_groups": "g1, g2"})
     assert ok.status_code == 303
     with db.connect() as c:
         sid, acl = c.execute("select id, acl_groups from sources where name=%s", (name,)).fetchone()
@@ -425,3 +427,128 @@ def test_capability_drafts_are_capped_per_click_and_the_next_click_continues(env
                 assert len(_jobs(c, sid)) == REEXTRACT_BATCH + 2
     finally:
         _clean(sid)
+
+
+TENANT = "9b1c6f0e-2f43-4c56-9a7b-0d1e2f3a4b5c"
+
+
+@pytest.mark.parametrize("kind, fields, want", [
+    ("s3", {"bucket": "refs-bkt", "prefix": "a/b", "include_ext": ".PDF, docx"},
+     {"bucket": "refs-bkt", "prefix": "a/b", "include_ext": ["pdf", "docx"]}),
+    ("s3", {"bucket": "refs-bkt"}, {"bucket": "refs-bkt", "prefix": ""}),
+    ("upload", {"bucket": "refs-bkt", "prefix": "uploads/"}, {"bucket": "refs-bkt", "prefix": "uploads/"}),
+    ("sharepoint", {"tenant_id": TENANT.upper(), "drive_id": "b!x_y-z"}, {"tenant_id": TENANT, "drive_id": "b!x_y-z"}),
+    ("confluence", {"base_url": "https://x.atlassian.net/", "spaces": "ENG, ~me", "api_prefix": "/wiki"},
+     {"base_url": "https://x.atlassian.net", "spaces": ["ENG", "~me"], "api_prefix": "/wiki"}),
+])
+def test_parse_config_builds_only_the_named_keys(kind, fields, want):
+    assert parse_config(kind, {**fields, "token": "secret", "password": "x"}) == want
+
+
+@pytest.mark.parametrize("kind, fields", [
+    ("ftp", {"bucket": "refs-bkt"}),
+    ("s3", {"bucket": "B"}), ("s3", {"bucket": "UPPER-case"}),
+    ("s3", {"bucket": "refs-bkt", "prefix": "/abs"}), ("s3", {"bucket": "refs-bkt", "prefix": "a/../b"}),
+    ("s3", {"bucket": "refs-bkt", "prefix": "a" * 1025}),
+    ("s3", {"bucket": "refs-bkt", "include_ext": "pdf, ex e"}), ("s3", {"bucket": "refs-bkt", "include_ext": "abcdefghijk"}),
+    ("sharepoint", {"tenant_id": "t", "drive_id": "d"}), ("sharepoint", {"tenant_id": TENANT, "drive_id": "a/b"}),
+    ("confluence", {"base_url": "http://x.atlassian.net", "spaces": "ENG"}),
+    ("confluence", {"base_url": "https://u:p@x.atlassian.net", "spaces": "ENG"}),
+    ("confluence", {"base_url": "https://x.atlassian.net?t=1", "spaces": "ENG"}),
+    ("confluence", {"base_url": "https://x.atlassian.net#f", "spaces": "ENG"}),
+    ("confluence", {"base_url": "https://x.atlassian.net:8443", "spaces": "ENG"}),
+    ("confluence", {"base_url": "https://x.atlassian.net", "spaces": ""}),
+    ("confluence", {"base_url": "https://x.atlassian.net", "spaces": "EN G"}),
+    ("confluence", {"base_url": "https://x.atlassian.net", "spaces": "ENG", "api_prefix": "/rest"}),
+])
+def test_parse_config_refuses(kind, fields):
+    with pytest.raises(HTTPException) as e:
+        parse_config(kind, {"api_prefix": "/wiki", **fields})
+    assert e.value.status_code == 400
+
+
+def _source(c, name):
+    return c.execute("select id, name, config, cursor, enabled from sources where name=%s", (name,)).fetchone()
+
+
+def _changes(sid):
+    with db.connect() as c:
+        return c.execute("select action, old, new, changed_by from source_config_changes where source_id=%s order by id",
+                         (sid,)).fetchall()
+
+
+def test_edit_scope_keeps_root_resets_cursor_and_is_audited(env):  # noqa: F811
+    db.init()
+    name, a = f"cf-{uuid.uuid4().hex[:8]}", client([ADMIN])
+    assert a.post("/admin/sources", follow_redirects=False, data={
+        "kind": "confluence", "name": name, "acl_groups": "g1", "base_url": "https://x.atlassian.net",
+        "spaces": "ENG"}).status_code == 303
+    with db.connect() as c:
+        sid, _, cfg, _, _ = _source(c, name)
+        c.execute("update sources set cursor='2026-01-01T00:00:00+00:00' where id=%s", (sid,))
+    try:
+        assert cfg == {"base_url": "https://x.atlassian.net", "spaces": ["ENG"], "api_prefix": "/wiki"}
+        (action, old, new, who), = _changes(sid)
+        assert (action, old, new["config"], who) == ("create", None, cfg, "u1")
+        # an ACL-only post: config and cursor unchanged, no config row
+        a.post(f"/admin/sources/{sid}", data={"acl_groups": "g1", "enabled": "on"})
+        with db.connect() as c:
+            assert _source(c, name)[2:4] == ({**cfg, "executed_contracts": False}, "2026-01-01T00:00:00+00:00")
+        assert len(_changes(sid)) == 1
+        # root fields posted are ignored; the scope changes and the cursor resets
+        a.post(f"/admin/sources/{sid}", data={"acl_groups": "g1", "enabled": "on", "spaces": "ENG, OPS",
+                                              "base_url": "https://evil.example", "name": name + "-2"})
+        with db.connect() as c:
+            _, new_name, cfg2, cursor, _ = _source(c, name + "-2")
+        assert cfg2["base_url"] == "https://x.atlassian.net" and cfg2["spaces"] == ["ENG", "OPS"] and cursor is None
+        action, old, new, _ = _changes(sid)[-1]
+        assert action == "config" and old["config"]["spaces"] == ["ENG"] and new == {"name": new_name, "config": cfg2}
+        assert a.post(f"/admin/sources/{sid}", data={"acl_groups": "g1", "spaces": "E G"}).status_code == 400
+        a.post(f"/admin/sources/{sid}", data={"acl_groups": "g1"})  # unchecked: disabled
+        a.post(f"/admin/sources/{sid}", data={"acl_groups": "g1", "enabled": "on"})
+        assert [r[0] for r in _changes(sid)[-2:]] == ["disable", "enable"]
+    finally:
+        with db.connect() as c:
+            c.execute("delete from sources where id=%s", (sid,))
+
+
+def test_upload_prefix_and_staff_survive_an_edit(env):  # noqa: F811
+    db.init()
+    name, a = f"up-{uuid.uuid4().hex[:8]}", client([ADMIN])
+    a.post("/admin/sources", data={"kind": "upload", "name": name, "acl_groups": "g1", "bucket": "refs-bkt",
+                                   "prefix": "uploads/", "staff": "on"})
+    with db.connect() as c:
+        sid, _, cfg, _, _ = _source(c, name)
+    try:
+        assert cfg == {"bucket": "refs-bkt", "prefix": "uploads/", "staff": True}
+        a.post(f"/admin/sources/{sid}", data={"acl_groups": "g1", "prefix": "elsewhere/", "include_ext": "pdf"})
+        with db.connect() as c:
+            cfg2 = _source(c, name)[2]
+        assert cfg2["prefix"] == "uploads/" and cfg2["staff"] is True and cfg2["include_ext"] == ["pdf"]
+    finally:
+        with db.connect() as c:
+            c.execute("delete from sources where id=%s", (sid,))
+
+
+def test_edit_refused_while_the_source_is_crawling(env):  # noqa: F811
+    db.init()
+    name, a = f"s3-{uuid.uuid4().hex[:8]}", client([ADMIN])
+    a.post("/admin/sources", data={"kind": "s3", "name": name, "acl_groups": "g1", "bucket": "refs-bkt"})
+    with db.connect() as c:
+        sid, _, cfg, _, enabled = _source(c, name)
+    try:
+        with db.connect(autocommit=True) as crawl:  # what a crawler holds for its whole run
+            crawl.execute("select pg_advisory_lock(2, %s)", (sid,))
+            r = a.post(f"/admin/sources/{sid}", data={"acl_groups": "g9", "prefix": "x/"})
+            html = a.post(f"/admin/sources/{sid}", data={"acl_groups": "g9"}, headers={"accept": "text/html"},
+                          follow_redirects=False)
+            crawl.execute("select pg_advisory_unlock(2, %s)", (sid,))
+        assert r.status_code == 409 and html.headers["location"] == "/admin/sources?notice=crawling"
+        with db.connect() as c:
+            assert _source(c, name)[2:] == (cfg, None, enabled)
+            assert c.execute("select acl_groups from sources where id=%s", (sid,)).fetchone()[0] == ["g1"]
+        assert [r[0] for r in _changes(sid)] == ["create"]
+        assert "A crawl is running" in a.get("/admin/sources?notice=crawling").text
+    finally:
+        with db.connect() as c:
+            c.execute("delete from sources where id=%s", (sid,))

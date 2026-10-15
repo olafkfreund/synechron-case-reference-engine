@@ -1,5 +1,6 @@
-import json
 import re
+import uuid
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -8,7 +9,7 @@ from psycopg.types.json import Jsonb
 
 from app import db
 from app.extract import EXTRACTION_VERSION
-from app.main import UPLOAD_MAGIC, User, require, upload_cap
+from app.main import UPLOAD_MAGIC, User, require, upload_cap, wants_html
 from app.ingest import reopen_merged
 from app.review import page
 
@@ -25,6 +26,7 @@ NOTICES = {  # allow-list: the query string picks a message, never supplies one
     "source": ("bad", "Upload refused: that source is not an enabled upload source"),
     "reextract": ("ok", "Older cases queued for re-extraction; they go back to review"),
     "capability": ("ok", "Capability drafts queued; they go to review"),
+    "crawling": ("bad", "A crawl is running for this source; try again when it finishes"),
 }
 # #222: cases extracted before the current EXTRACTION_VERSION; a merged parent has no document, so the join drops it
 REEXTRACT_BATCH = 25
@@ -45,8 +47,55 @@ SKIPPED = """from documents d where d.kind in ('proposal','deck','contract') and
 CAPABILITY_DRAFTS = ("insert into jobs(kind, payload) select 'extract', jsonb_build_object('document_id', d.id, 'basis', 'capability', "
                      "'basis_reason', '', 'checksum', d.checksum) " + SKIPPED + " order by d.id limit %s")
 DATA_CLASSES = ("confidential", "sanitised", "public")
-REQUIRED = {"s3": ("bucket",), "upload": ("bucket",), "sharepoint": ("tenant_id", "drive_id"),
-            "confluence": ("base_url", "spaces")}
+# #283: the config keys each kind has. The root names the source and is fixed once created (an upload
+# source's prefix is where staff files land); the scope can be edited
+ROOT = {"s3": ("bucket",), "upload": ("bucket", "prefix"), "sharepoint": ("tenant_id", "drive_id"),
+        "confluence": ("base_url",)}
+SCOPE = {"s3": ("prefix", "include_ext"), "upload": ("include_ext",), "sharepoint": ("include_ext",),
+         "confluence": ("spaces", "api_prefix")}
+
+
+def field(key: str, raw: str):
+    """One config value from its form text, or None to leave the key out (the crawler default)."""
+    v = raw.strip()
+    ok = False
+    if key == "bucket":
+        ok = bool(re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", v))
+    elif key == "prefix":
+        ok = not v.startswith("/") and ".." not in v.split("/") and len(v) <= 1024
+    elif key == "include_ext":
+        v = [e.strip().lower().lstrip(".") for e in v.split(",") if e.strip()] or None
+        ok = v is None or all(re.fullmatch(r"[a-z0-9]{1,10}", e) for e in v)
+    elif key == "tenant_id":
+        try:
+            v, ok = str(uuid.UUID(v)), True
+        except ValueError:
+            pass
+    elif key == "drive_id":
+        ok = bool(re.fullmatch(r"[A-Za-z0-9!_-]{1,200}", v))
+    elif key == "base_url":
+        try:
+            u = urlsplit(v)
+            ok = (u.scheme == "https" and bool(u.hostname) and not (u.username or u.password or u.query or u.fragment)
+                  and u.port in (None, 443))
+        except ValueError:
+            pass
+        v = v.rstrip("/")
+    elif key == "spaces":
+        v = [k.strip() for k in v.split(",") if k.strip()]
+        ok = bool(v) and all(re.fullmatch(r"~?[A-Za-z0-9_-]+", k) for k in v)
+    elif key == "api_prefix":
+        ok = v in ("", "/wiki")
+    if not ok:
+        raise HTTPException(400, f"invalid {key}")
+    return v
+
+
+def parse_config(kind: str, fields: dict[str, str]) -> dict:
+    """A kind's config from typed form fields: only the named keys can exist, so none can hold a secret (#283)."""
+    if kind not in JOB:
+        raise HTTPException(400, "invalid kind")
+    return {k: v for k in ROOT[kind] + SCOPE[kind] if (v := field(k, fields.get(k) or "")) is not None}
 
 # #64: flipping "contracts executed" re-triages what is already crawled
 QUEUE_CONTRACTS = """insert into jobs(kind, payload)
@@ -73,6 +122,11 @@ def log_class_change(conn, sid, old, new, who):
 def log_acl_change(conn, sid, old, new, who):
     conn.execute("insert into source_acl_changes(source_id, old_groups, new_groups, changed_by) values (%s,%s,%s,%s)",
                  (sid, old, new, who))
+
+
+def log_config_change(conn, sid, action, old, new, who):
+    conn.execute("insert into source_config_changes(source_id, action, old, new, changed_by) values (%s,%s,%s,%s,%s)",
+                 (sid, action, old and Jsonb(old), new and Jsonb(new), who))
 
 
 def groups(raw: str) -> list[str]:
@@ -114,50 +168,76 @@ def capability_drafts(user: User = Depends(require("admin"))):
 
 
 @router.post("/admin/sources")
-def create(kind: str = Form(), name: str = Form(), config: str = Form(), acl_groups: str = Form(),
-           data_class: str = Form("confidential"), executed_contracts: bool = Form(False),
+def create(kind: str = Form(), name: str = Form(), acl_groups: str = Form(),
+           data_class: str = Form("confidential"), executed_contracts: bool = Form(False), staff: bool = Form(False),
+           bucket: str = Form(""), prefix: str = Form(""), include_ext: str = Form(""), tenant_id: str = Form(""),
+           drive_id: str = Form(""), base_url: str = Form(""), spaces: str = Form(""), api_prefix: str = Form("/wiki"),
            user: User = Depends(require("admin"))):
-    try:
-        cfg = json.loads(config)
-    except ValueError:
-        raise HTTPException(400, "config must be JSON") from None
-    if kind not in JOB or not isinstance(cfg, dict) or any(not cfg.get(k) for k in REQUIRED[kind]):
-        raise HTTPException(400, f"config for {kind} needs: {', '.join(REQUIRED.get(kind, ()))}")
+    cfg = parse_config(kind, {"bucket": bucket, "prefix": prefix, "include_ext": include_ext, "tenant_id": tenant_id,
+                              "drive_id": drive_id, "base_url": base_url, "spaces": spaces, "api_prefix": api_prefix})
     if data_class not in DATA_CLASSES:
         raise HTTPException(400, "invalid data class")
     if executed_contracts:
         cfg["executed_contracts"] = True
+    if staff and kind == "upload":
+        cfg["staff"] = True
     if not groups(acl_groups):  # an empty ACL would make every document invisible, or worse, mislead
         raise HTTPException(400, "at least one access group is required")
-    if kind == "confluence" and (not isinstance(cfg["spaces"], list) or not all(
-            isinstance(k, str) and re.fullmatch(r"~?[A-Za-z0-9_-]+", k) for k in cfg["spaces"])):
-        raise HTTPException(400, "spaces must be a list of Confluence space keys")
     try:
         with db.connect() as conn:
             sid = conn.execute("insert into sources(kind, name, config, acl_groups, data_class) values (%s,%s,%s,%s,%s) "
                                "returning id", (kind, name.strip(), Jsonb(cfg), groups(acl_groups), data_class)).fetchone()[0]
             if data_class != "confidential":
                 log_class_change(conn, sid, None, data_class, user.sub)
+            log_config_change(conn, sid, "create", None, {"name": name.strip(), "config": cfg}, user.sub)
     except (UniqueViolation, CheckViolation):
         raise HTTPException(400, "invalid or duplicate source") from None
     return RedirectResponse("/admin/sources", status_code=303)
 
 
 @router.post("/admin/sources/{sid}")
-def update(sid: int, acl_groups: str = Form(), enabled: bool = Form(False), data_class: str = Form(""),
-           executed_contracts: bool = Form(False), user: User = Depends(require("admin"))):
+def update(request: Request, sid: int, acl_groups: str = Form(), enabled: bool = Form(False), data_class: str = Form(""),
+           executed_contracts: bool = Form(False), name: str | None = Form(None), prefix: str | None = Form(None),
+           include_ext: str | None = Form(None), spaces: str | None = Form(None), api_prefix: str | None = Form(None),
+           user: User = Depends(require("admin"))):
     if data_class and data_class not in DATA_CLASSES:  # empty: leave it as it is
         raise HTTPException(400, "invalid data class")
     if not groups(acl_groups):
         raise HTTPException(400, "at least one access group is required")
+    if name is not None and not name.strip():
+        raise HTTPException(400, "a name is required")
+    posted = {"prefix": prefix, "include_ext": include_ext, "spaces": spaces, "api_prefix": api_prefix}
     with db.connect() as conn:  # one transaction: the change and its log row commit together
-        old = conn.execute("select data_class, acl_groups, "
-                           "coalesce(config->'executed_contracts' = 'true', false) from sources where id=%s for update", (sid,)).fetchone()
+        # #283: the key every crawler holds for its whole run; an edit never races a crawl
+        if not conn.execute("select pg_try_advisory_xact_lock(2, %s)", (sid,)).fetchone()[0]:
+            if wants_html(request):
+                return RedirectResponse("/admin/sources?notice=crawling", status_code=303)
+            raise HTTPException(409, "a crawl is running for this source")
+        old = conn.execute("select data_class, acl_groups, coalesce(config->'executed_contracts' = 'true', false), "
+                           "kind, name, config, enabled from sources where id=%s for update", (sid,)).fetchone()
         if not old:
             raise HTTPException(404, "no such source")
-        conn.execute("update sources set acl_groups=%s, enabled=%s, data_class=coalesce(nullif(%s,''), data_class), "
-                     "config=jsonb_set(config, '{executed_contracts}', to_jsonb(%s::bool)) "
-                     "where id=%s", (groups(acl_groups), enabled, data_class, executed_contracts, sid))
+        kind, old_name, old_cfg, was_enabled = old[3:]
+        cfg = {**old_cfg, "executed_contracts": executed_contracts}  # unknown stored keys and the root are kept
+        for k in SCOPE[kind]:  # absent from the form: unchanged; the root is never read from it
+            if posted[k] is not None:
+                if (v := field(k, posted[k])) is None:
+                    cfg.pop(k, None)
+                else:
+                    cfg[k] = v
+        new_name = name.strip() if name is not None else old_name
+        rescope = any(cfg.get(k) != old_cfg.get(k) for k in SCOPE[kind])  # a full crawl applies the new scope
+        try:
+            conn.execute("update sources set acl_groups=%s, enabled=%s, data_class=coalesce(nullif(%s,''), data_class), "
+                         "config=%s, name=%s, cursor=case when %s then null else cursor end "
+                         "where id=%s", (groups(acl_groups), enabled, data_class, Jsonb(cfg), new_name, rescope, sid))
+        except UniqueViolation:
+            raise HTTPException(400, "a source with that name exists") from None
+        if (new_name, cfg) != (old_name, {**old_cfg, "executed_contracts": old[2]}):  # the flag was always written
+            log_config_change(conn, sid, "config", {"name": old_name, "config": old_cfg},
+                              {"name": new_name, "config": cfg}, user.sub)
+        if enabled != was_enabled:
+            log_config_change(conn, sid, "enable" if enabled else "disable", None, None, user.sub)
         # documents carry a copy of the groups: apply it in the same transaction, on every save, so a
         # re-save also repairs copies a crawl wrote back before #58. Documents before cases, the order
         # ingest and extract lock them in, so the untick below cannot deadlock with a running extract (#132)

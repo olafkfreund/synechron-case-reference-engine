@@ -228,6 +228,17 @@ create table if not exists source_acl_changes (
   changed_at timestamptz not null default now()
 );
 
+-- append-only (#283): a source created, its name or config edited, or it enabled or disabled; old and new hold {name, config}
+create table if not exists source_config_changes (
+  id bigserial primary key,
+  source_id bigint not null,
+  action text not null check (action in ('create','config','enable','disable')),
+  old jsonb,
+  new jsonb,
+  changed_by text not null,
+  changed_at timestamptz not null default now()
+);
+
 -- a session cookie issued at or before valid_after is refused (#47): logout and app.revoke_sessions move it
 create table if not exists session_cutoffs (
   sub text primary key,
