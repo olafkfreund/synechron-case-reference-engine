@@ -172,7 +172,7 @@ a.card:hover b{text-decoration:underline}
 .detail-panel[open]{padding-bottom:14px;background:var(--subtle)}
 
 /* key/value list */
-.status-list{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:0}
+.status-list{display:grid;grid-template-columns:minmax(0,max-content) 1fr;gap:6px 16px;margin:0}
 .status-list dt{color:var(--muted);font-size:13px}
 .conn-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;margin:0 0 16px}
 @media (min-width:900px){.conn-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -184,7 +184,7 @@ a.card:hover b{text-decoration:underline}
 .conn-pending{background:var(--warn-bg);color:var(--warn-fg);border-radius:var(--r-control);padding:10px 12px}
 .conn-pending p{margin:0 0 8px}
 .conn-foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--line)}
-.conn-card .field-help{overflow-wrap:anywhere}
+.conn-card .field-help,.status-list dt{overflow-wrap:anywhere}
 .status-list dd{margin:0;min-width:0;overflow-wrap:anywhere}
 
 /* checkbox with a 44px hit area */

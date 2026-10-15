@@ -137,3 +137,17 @@ docker compose run --rm app pytest     # full suite
 ## Rollback
 
 Revert the PR. The change is markup and CSS only.
+
+## Implementation notes
+
+- **Review fixes (Opus, Codex).**
+  - **A card with an open proposal is read-only.** Its fields can't be edited and it has no Save or Propose button. The save checks every setting on the card, so pressing Propose for the other model failed with 409. This replaces the plan's "shown only when at least one setting has no open proposal". Restore and Clear for the card's other settings stay.
+  - **The pending notices show only when editing is on.** They lose `role="status"`, which announced nothing at page load.
+  - **Accessible names contain the visible text,** for example "Clear client secret (GRAPH_CLIENT_SECRET)", for WCAG 2.5.3.
+  - **`.status-list`'s label column can shrink and wrap,** so the long `EXTRACT_MODEL_OPTIONS, DRAFT_MODEL_OPTIONS` label doesn't overflow at 390 px (Codex).
+  - **CSS beyond the plan's list:**
+    - `.conn-card form:not(.inline)` gives the field form the same column gap.
+    - `.conn-card .field{margin:0}`
+    - `.conn-pending p`
+  - **The pending notice names the setting** (for example "Extraction model") only on two-setting cards.
+  - **The primary-button test checks the status codes,** expects no button on a card with an open proposal, and checks that the save is refused (409).

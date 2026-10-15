@@ -115,11 +115,13 @@ def test_each_connection_card_has_one_primary_button(admins):  # noqa: F811
     a, _ = admins
     cards = _connections(a.get("/admin/settings").text).split('class="conn-card"')[1:]
     assert len(cards) == 7 and all(c.count("btn primary") == 1 for c in cards)
-    post(a, "openai", OPENAI_API_KEY="k")
-    post(a, "models", EXTRACT_MODEL="bedrock/m2")
+    assert post(a, "openai", OPENAI_API_KEY="k").status_code == 303
+    assert post(a, "models", EXTRACT_MODEL="bedrock/m2").status_code == 303
     cards = _connections(a.get("/admin/settings").text).split('class="conn-card"')[1:]
-    for c in cards:
-        assert c.count("btn primary") == (0 if "<h3>OpenAI</h3>" in c else 1)
+    for c in cards:  # a card with an open proposal can't be saved (the save checks every setting on it)
+        assert c.count("btn primary") == (0 if "<h3>OpenAI</h3>" in c or "<h3>Models</h3>" in c else 1)
+    assert 'id="conn-DRAFT_MODEL"' not in _connections(a.get("/admin/settings").text)
+    assert post(a, "models", DRAFT_MODEL="bedrock/m2").status_code == 409  # why the button is hidden
 
 
 def test_connections_has_no_nested_forms(admins):  # noqa: F811
