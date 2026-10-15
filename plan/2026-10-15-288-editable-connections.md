@@ -266,3 +266,8 @@ docker compose run --rm app pytest tests/test_conn_settings.py tests/test_settin
 - **Code:** revert the PR. Readers fall back to the environment only when `SETTINGS_SECRET_IDS` is unset.
 - **Infra:** revert the Terraform too, so that ECS injects the secrets again. The values set in the portal stay in the same secrets, so nothing is lost.
 - **Database:** the new tables are left in place, unused.
+
+## Implementation notes
+
+- **Step 1: unmanaged means environment for all ten names.** Without `SETTINGS_SECRET_IDS`, the plain values come from the environment too, not from `connection_settings`, and the page is read-only. Today's tests and a bare `docker run` are unchanged, and editing is never half on.
+- **Step 1: clearing stores `-`.** botocore refuses an empty `SecretString` (minimum length 1) before the call is sent, so real AWS would too. A cleared secret holds `conn_settings.CLEARED` (`-`), and `get()` reads it as not configured. Step 3's validation refuses `-` as a submitted value.

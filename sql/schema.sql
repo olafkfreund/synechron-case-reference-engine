@@ -239,6 +239,26 @@ create table if not exists source_config_changes (
   changed_at timestamptz not null default now()
 );
 
+-- connection settings an admin edits (#288): plain values only; secrets live in Secrets Manager
+create table if not exists connection_settings (
+  name text primary key,
+  value text not null,
+  changed_by text not null,
+  changed_at timestamptz not null default now()
+);
+
+-- append-only (#288): old and new hold plain values (null for a secret); a proposal is open until a later decision row
+create table if not exists connection_setting_changes (
+  id bigserial primary key,
+  name text not null,
+  action text not null check (action in ('proposed','applied','approved','rejected','withdrawn','restored','cleared')),
+  old text,
+  new text,
+  secret_version text,
+  actor text not null,
+  at timestamptz not null default now()
+);
+
 -- a session cookie issued at or before valid_after is refused (#47): logout and app.revoke_sessions move it
 create table if not exists session_cutoffs (
   sub text primary key,
