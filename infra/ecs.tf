@@ -34,23 +34,33 @@ locals {
     LITELLM_LOG        = "WARNING"
   })
 
-  web_env = merge(local.common_env, {
-    APP_ORIGIN           = var.app_origin
-    OIDC_REDIRECT_URI    = "${var.app_origin}/auth"
-    OIDC_METADATA_URL    = var.oidc_metadata_url
-    OIDC_CLIENT_ID       = var.oidc_client_id
-    OIDC_GROUPS_CLAIM    = var.oidc_groups_claim
-    FORWARDED_ALLOW_IPS  = var.vpc_cidr # uvicorn trusts X-Forwarded-* from the ALB only
-    SESSION_HTTPS_ONLY   = "true"
-    ROLE_USER_GROUPS     = var.role_user_groups
-    ROLE_REVIEWER_GROUPS = var.role_reviewer_groups
-    ROLE_ADMIN_GROUPS    = var.role_admin_groups
-  })
+  web_env = merge(
+    local.common_env,
+    {
+      APP_ORIGIN           = var.app_origin
+      OIDC_REDIRECT_URI    = "${var.app_origin}/auth"
+      OIDC_METADATA_URL    = var.oidc_metadata_url
+      OIDC_CLIENT_ID       = var.oidc_client_id
+      OIDC_GROUPS_CLAIM    = var.oidc_groups_claim
+      FORWARDED_ALLOW_IPS  = var.vpc_cidr # uvicorn trusts X-Forwarded-* from the ALB only
+      SESSION_HTTPS_ONLY   = "true"
+      ROLE_USER_GROUPS     = var.role_user_groups
+      ROLE_REVIEWER_GROUPS = var.role_reviewer_groups
+      ROLE_ADMIN_GROUPS    = var.role_admin_groups
+      MCP_ENABLED          = var.mcp_enabled ? "1" : "0"
+    },
+    var.mcp_enabled ? merge({
+      MCP_ISSUER     = var.mcp_issuer
+      MCP_AUDIENCE   = var.mcp_audience
+      MCP_CLIENT_IDS = var.mcp_client_ids
+      MCP_SCOPE      = var.mcp_scope
+    }, var.mcp_tenant_id == "" ? {} : { MCP_TENANT_ID = var.mcp_tenant_id }) : {},
+  )
 
-  web_secrets = {
+  web_secrets = merge({
     SESSION_SECRET     = local.secret_arn["session-secret"]
     OIDC_CLIENT_SECRET = local.secret_arn["oidc-client-secret"]
-  }
+  }, local.provider_secrets)
 
   worker_env = merge(
     local.common_env,
@@ -58,11 +68,11 @@ locals {
     var.confluence_email == "" ? {} : { CONFLUENCE_EMAIL = var.confluence_email },
   )
 
-  worker_secrets = {
+  worker_secrets = merge({
     GRAPH_CLIENT_SECRET = local.secret_arn["graph-client-secret"]
     CONFLUENCE_TOKEN    = local.secret_arn["confluence-token"]
     BRAVE_API_KEY       = local.secret_arn["brave-api-key"]
-  }
+  }, local.provider_secrets)
 
   tasks = {
     web = {
@@ -150,6 +160,17 @@ resource "aws_ecs_task_definition" "app" {
       }
     }
   }])
+
+  lifecycle {
+    precondition {
+      condition = each.key != "web" || !var.mcp_enabled || (
+        startswith(var.mcp_issuer, "https://") &&
+        trimspace(var.mcp_audience) != "" &&
+        trimspace(var.mcp_client_ids) != ""
+      )
+      error_message = "MCP requires an https:// mcp_issuer, mcp_audience, and mcp_client_ids; set mcp_enabled = false to disable it."
+    }
+  }
 }
 
 resource "aws_ecs_service" "web" {

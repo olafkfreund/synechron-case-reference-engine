@@ -13,8 +13,8 @@ data "aws_iam_policy_document" "ecs_tasks_assume" {
 
 locals {
   exec_secrets = {
-    web     = [local.secret_arn["session-secret"], local.secret_arn["oidc-client-secret"]]
-    worker  = [local.secret_arn["graph-client-secret"], local.secret_arn["confluence-token"], local.secret_arn["brave-api-key"]]
+    web     = concat([local.secret_arn["session-secret"], local.secret_arn["oidc-client-secret"]], values(local.provider_secrets))
+    worker  = concat([local.secret_arn["graph-client-secret"], local.secret_arn["confluence-token"], local.secret_arn["brave-api-key"]], values(local.provider_secrets))
     crawl   = []
     migrate = []
   }

@@ -85,8 +85,9 @@ def test_token_signed_by_unknown_key_refused(env):
         assert rpc(c, "tools/list", "2025-06-18", tok=forged).status_code == 401
 
 
-def test_mcp_is_404_when_disabled(env, monkeypatch):
-    monkeypatch.delenv("MCP_ENABLED")
+@pytest.mark.parametrize("off", ["0", "false", "No", " off "])
+def test_mcp_is_404_when_disabled(env, monkeypatch, off):
+    monkeypatch.setenv("MCP_ENABLED", off)
     with TestClient(main.create_app()) as c:
         assert rpc(c, "tools/list", "2025-06-18").status_code == 404
 
@@ -165,6 +166,16 @@ def test_guard_still_applies_beside_mcp(env):
         assert r.status_code == 413  # no content-length
 
 
+def test_mcp_is_on_when_the_switch_is_unset(env, monkeypatch):
+    monkeypatch.delenv("MCP_ENABLED")
+    with TestClient(main.create_app()) as c:
+        assert rpc(c, "tools/list", "2025-06-18").status_code == 401  # mounted, and still needs a token
+        assert c.get("/.well-known/oauth-protected-resource/mcp").status_code == 200
+    monkeypatch.delenv("MCP_ISSUER")
+    with pytest.raises(RuntimeError, match="MCP_ISSUER"):  # on by default never means open
+        main.create_app()
+
+
 def test_enabled_without_issuer_raises(env, monkeypatch):
     monkeypatch.delenv("MCP_ISSUER")
     with pytest.raises(RuntimeError, match="MCP_ISSUER"):
@@ -172,7 +183,7 @@ def test_enabled_without_issuer_raises(env, monkeypatch):
 
 
 def test_prm_is_404_when_disabled(env, monkeypatch):
-    monkeypatch.delenv("MCP_ENABLED")
+    monkeypatch.setenv("MCP_ENABLED", "0")
     with TestClient(main.create_app()) as c:
         assert c.get("/.well-known/oauth-protected-resource/mcp").status_code == 404
 

@@ -3,12 +3,13 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request
 
-from app import db
+from app import db, mcp_server
 from app.main import ROLES, User, _env_groups, require
 from app.review import page
 
 router = APIRouter()
-SECRETS = ("GRAPH_CLIENT_SECRET", "CONFLUENCE_TOKEN", "BRAVE_API_KEY", "OLLAMA_CLOUD_KEY", "OIDC_CLIENT_SECRET")
+SECRETS = ("GRAPH_CLIENT_SECRET", "CONFLUENCE_TOKEN", "BRAVE_API_KEY", "OLLAMA_CLOUD_KEY", "OIDC_CLIENT_SECRET",
+           "OPENAI_API_KEY", "GEMINI_API_KEY")
 COUNTS = ("new", "updated", "deleted", "failed")
 
 
@@ -36,7 +37,7 @@ def settings_page(request: Request, user: User = Depends(require("admin"))):
     values["OIDC_GROUPS_CLAIM"] = values["OIDC_GROUPS_CLAIM"] or "groups"
     for name in ("OIDC_METADATA_URL", "OIDC_REDIRECT_URI", "OLLAMA_API_BASE"):
         values[name] = public_url(os.environ.get(name, ""))
-    mcp_enabled = os.environ.get("MCP_ENABLED") == "1"
+    mcp_enabled = mcp_server.enabled()
     if mcp_enabled:
         values.update({name: os.environ.get(name, "") for name in
                        ("MCP_ISSUER", "MCP_AUDIENCE", "MCP_SCOPE", "MCP_CLIENT_IDS")})

@@ -1,13 +1,13 @@
 # Reference Engine over MCP
 
-The Reference Engine can be used from your own AI agent (Claude Code, VS Code, Cursor) through the
+The Reference Engine can be used from your own AI agent (Claude Code, Codex, Antigravity, VS Code, Cursor) through the
 [Model Context Protocol](https://modelcontextprotocol.io). You sign in with your Synechron account,
 and the agent sees exactly what you would see in the portal: the same access groups, the same
 anonymisation, the same approved cases. Everything the agent does is logged.
 
 Status: search and output tools, plus research, the library and briefs. Uploading and editing cases come later.
-The Entra steps below are **pending tenant verification**: they follow the Microsoft documentation and
-have not yet been run against a real tenant. The local mock IdP steps were run.
+The real Entra, Codex and Antigravity steps below are **unverified** (pending tenant verification): they follow the
+vendor documentation and have not yet been run against a real tenant. The local mock IdP steps were run.
 
 ## The tools
 
@@ -79,12 +79,13 @@ reviewer approves it; only then do other staff see it.
   the tool says "uploads are not configured". Remove the flag to turn uploads off without a deploy.
   The demo seed marks its first upload source.
 
-## Turning it on
+## Turning it on or off
 
-Set `MCP_ENABLED=1`. Without it `/mcp` does not exist (404). See `.env.example` for the other variables
-(`MCP_ISSUER` and `MCP_AUDIENCE` are required once enabled).
+MCP is on by default (`MCP_ENABLED` defaults to `1`; in Terraform, `mcp_enabled` defaults to `true`).
+When MCP is on, the server refuses to start without `MCP_ISSUER`, `MCP_AUDIENCE` and `MCP_CLIENT_IDS`.
+Set `MCP_ENABLED=0` (or `mcp_enabled = false` in Terraform) to turn it off; `/mcp` then does not exist (404).
 
-## Entra admin setup (pending tenant verification)
+## Entra admin setup (unverified)
 
 1. **App registration for the API** ("Reference Engine MCP").
    - Expose an API: Application ID URI `api://<app id>`; add the delegated scope `refs.access` with
@@ -97,13 +98,17 @@ Set `MCP_ENABLED=1`. Without it `/mcp` does not exist (404). See `.env.example` 
 2. **Enterprise application:** turn on **Assignment required** and assign the groups that may use it.
    Only assigned users can get a token.
 3. **Pre-authorise the client apps** (Expose an API > Authorized client applications) for `refs.access`:
-   the app ids of the clients you allow (Claude Code, VS Code, Cursor each register their own, or use one
+   the app ids of the clients you allow (Claude Code, Codex, Antigravity, VS Code, Cursor each register their own, or use one
    public client with the redirect URIs they need). Users then are not asked for consent.
-4. **Server settings**, from the registration:
+   Register each client's redirect URI on its public client app registration (unverified against a real tenant):
+   - **Claude Code** and **Codex:** `http://localhost:<port>/callback` (`http://127.0.0.1:<port>/callback` for loopback; `--callback-port <port>` pins the port in Claude Code if your registration needs a fixed one)
+   - **Antigravity:** `https://antigravity.google/oauth-callback`
+   - **VS Code:** `http://127.0.0.1:<port>/` and `https://vscode.dev/redirect`
+4. **Server settings**, from the registration (in Terraform: `mcp_enabled`, `mcp_issuer`, `mcp_audience`, `mcp_client_ids`, `mcp_tenant_id`, `mcp_scope`):
 
    | Variable | Value |
    | --- | --- |
-   | `MCP_ENABLED` | `1` |
+   | `MCP_ENABLED` | `1` (default; `0` turns MCP off) |
    | `MCP_ISSUER` | `https://login.microsoftonline.com/<tenant id>/v2.0` |
    | `MCP_AUDIENCE` | the API app's client id (the `aud` of its tokens) |
    | `MCP_CLIENT_IDS` | comma-separated app ids of the approved AI clients (the token's `azp`). Required: the server will not start without it. Any other client gets 403 "this AI client is not approved", even with a valid token. |
@@ -115,7 +120,7 @@ Set `MCP_ENABLED=1`. Without it `/mcp` does not exist (404). See `.env.example` 
 5. The server advertises `api://<app id>/refs.access` (`{MCP_AUDIENCE}/{MCP_SCOPE}`) in its protected
    resource metadata, so a client can request that scope as written.
 
-Open question: whether Entra accepts the RFC 8707 `resource` parameter that some clients send.
+Open question: whether Entra accepts the RFC 8707 `resource` parameter that some clients send (unverified).
 
 ## Reviewing from an AI client
 
@@ -157,22 +162,15 @@ A 409 means the case changed since you read it (someone else edited it, or it wa
 `get_review_case` again for the new `v`, check the field, and retry the edit. Editing an approved case that
 is due soon takes it back to *extracted*, as in the portal.
 
-Locally: `scripts/mcp_token.sh --review <user> <group>` asks the mock IdP for the `local-dev-review` client
-with both scopes, and `scripts/seed_demo.py` approves that client for 30 days. A reviewer only sees cases whose
-documents are open to one of their groups, and the mock puts one group in a token. The demo documents are in
-the groups `delivery` and `sales`, so give that group the reviewer role for the test:
+Locally: `scripts/mcp_token.sh --review <username> <group> [group2]` asks the mock IdP for the `local-dev-review`
+client with both scopes, and `scripts/seed_demo.py` approves that client for 30 days. A reviewer only sees cases whose
+documents are open to one of their groups, and the mock puts two groups in a token (`group2` defaults to `group`). The
+demo documents are in the groups `delivery` and `sales`, so pass the reviewer role group and a document group:
 
 ```sh
-cat > /tmp/reviewer.yml <<'EOF'
-services:
-  web:
-    environment:
-      ROLE_USER_GROUPS: delivery
-      ROLE_REVIEWER_GROUPS: delivery
-EOF
-MCP_ENABLED=1 docker compose -f docker-compose.yml -f /tmp/reviewer.yml up -d --build web
+docker compose up -d web
 docker compose run --rm worker python scripts/seed_demo.py     # the cases and the client's approval
-scripts/mcp_token.sh --review alice delivery                   # then call the three tools with this token
+scripts/mcp_token.sh --review alice refs-reviewers delivery    # then call the three tools with this token
 ```
 
 ## Revoking access
@@ -186,16 +184,46 @@ who logged in before MCP was enabled have two ids (the old `sub` and the new `oi
 Either resolves to both, but until every user has logged in again, pass both ids to `revoke_sessions`
 to be sure.
 
-## Claude Code
+## Claude Code (unverified against a real tenant)
 
 ```sh
 claude mcp add --transport http --client-id <client id> refs https://<host>/mcp
 ```
 
 Then run `/mcp` inside Claude Code and sign in to `refs`. (Flags checked against `claude mcp add --help`;
-`--callback-port <port>` pins the redirect port if your app registration needs a fixed one.)
+`--callback-port <port>` pins the redirect port if your app registration needs a fixed one. Real Entra
+sign-in is unverified.)
 
-## VS Code
+## Codex (unverified)
+
+```sh
+codex mcp add refs --url https://<host>/mcp --oauth-client-id <id>
+codex mcp login refs
+```
+
+Both commands and real Entra sign-in are unverified. If interactive OAuth sign-in is unavailable, set
+`bearer_token_env_var` under `[mcp_servers.refs]` in `~/.codex/config.toml` (unverified) and put a bearer
+token in that environment variable.
+
+## Antigravity (unverified)
+
+In `mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "refs": {
+      "serverUrl": "https://<host>/mcp",
+      "oauth": { "clientId": "<client id>" }
+    }
+  }
+}
+```
+
+Register `https://antigravity.google/oauth-callback` as a redirect URI on the Entra app registration.
+Both the real Entra sign-in flow and the `oauth.clientId` key name in `mcp_config.json` are unverified.
+
+## VS Code (unverified)
 
 In `.vscode/mcp.json` (or your user `mcp.json`):
 
@@ -211,28 +239,30 @@ In `.vscode/mcp.json` (or your user `mcp.json`):
 }
 ```
 
-The `oauth.clientId` key is unverified against a running VS Code; check VS Code's current MCP documentation
-if the sign-in prompt does not appear.
+The `oauth.clientId` key and real Entra sign-in are unverified against a running VS Code; check VS Code's
+current MCP documentation if the sign-in prompt does not appear.
 
 ## Local development
 
-Everything runs against the mock IdP in `docker-compose.yml`. **Dev only**: the mock mints a token for any
-user and group, with no secret.
+Everything runs against the mock IdP in `docker-compose.yml`, and MCP is on by default. **Dev only**: the
+mock mints a token for any user and two groups (`group` and `group2`, where `group2` defaults to `group`),
+with no secret.
 
 ```sh
-MCP_ENABLED=1 docker compose up web          # web, db, idp and s3
-scripts/mcp_token.sh alice refs-users        # prints a token; the second argument is one group
+docker compose up web                              # web, db, idp and s3 (MCP is on by default)
+scripts/mcp_token.sh alice refs-users sales        # role group and access group
 ```
 
-The group maps to a role as in the README (`refs-users`, `refs-reviewers`, `refs-admins`). Add
+The first group maps to a role as in the README (`refs-users`, `refs-reviewers`, `refs-admins`), and the
+second group gives access to documents in that group (such as the demo's `sales` and `delivery` cases). Add
 `127.0.0.1 idp.localhost` to `/etc/hosts` if it does not resolve.
 
 - **Claude Code** (dev token, no sign-in):
-  `claude mcp add --transport http --header "Authorization: Bearer $(scripts/mcp_token.sh alice refs-users)" refs http://localhost:8000/mcp`.
+  `claude mcp add --transport http --header "Authorization: Bearer $(scripts/mcp_token.sh alice refs-users sales)" refs http://localhost:8000/mcp`.
   Tokens last an hour; re-run the command (`claude mcp remove refs` first) for a new one.
 - **MCP Inspector:** `npx @modelcontextprotocol/inspector`, choose the *Streamable HTTP* transport, URL
   `http://localhost:8000/mcp`, and add the header `Authorization: Bearer <token>`.
-- **curl:** `curl -H "Authorization: Bearer $(scripts/mcp_token.sh)" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' http://localhost:8000/mcp`
+- **curl:** `curl -H "Authorization: Bearer $(scripts/mcp_token.sh alice refs-users sales)" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' http://localhost:8000/mcp`
 
 ## Troubleshooting
 
@@ -245,6 +275,6 @@ The group maps to a role as in the README (`refs-users`, `refs-reviewers`, `refs
 | 421 | The `Host` header is not the server's host. A proxy must forward `Host` unchanged and `APP_ORIGIN` must match. |
 | 403 for a browser tool | A foreign `Origin` header: only `APP_ORIGIN` is accepted. Clients that send no `Origin` are fine. |
 | 413 | The request body is over 1 MiB, or has no length. |
-| 404 on `/mcp` | `MCP_ENABLED` is not `1`. |
+| 404 on `/mcp` | `MCP_ENABLED` is `0`. |
 | a tool says "no such case" | The case is hidden from you, unapproved or past its review date. |
 | a tool says "slow down" | More than 60 calls in the last minute. |

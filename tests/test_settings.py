@@ -15,7 +15,8 @@ def test_settings_is_admin_only(env):  # noqa: F811
 
 def test_settings_redacts_secrets_and_urls(env, monkeypatch):  # noqa: F811
     db.init()
-    secret_names = ("GRAPH_CLIENT_SECRET", "CONFLUENCE_TOKEN", "BRAVE_API_KEY", "OLLAMA_CLOUD_KEY", "OIDC_CLIENT_SECRET")
+    secret_names = ("GRAPH_CLIENT_SECRET", "CONFLUENCE_TOKEN", "BRAVE_API_KEY", "OLLAMA_CLOUD_KEY", "OIDC_CLIENT_SECRET",
+                    "OPENAI_API_KEY", "GEMINI_API_KEY")
     sentinels = []
     for i, name in enumerate(secret_names):
         value = f"SECRET-SENTINEL-{i}"
@@ -31,6 +32,7 @@ def test_settings_redacts_secrets_and_urls(env, monkeypatch):  # noqa: F811
     html = client([ADMIN]).get("/admin/settings").text
     assert all(value not in html for value in sentinels)
     assert "Configured" in html
+    assert "OPENAI_API_KEY</td><td>Configured" in html and "GEMINI_API_KEY</td><td>Configured" in html
     assert "https://idp.example:8443/metadata" in html
     assert "https://app.example/auth" in html
     assert "https://models.example:11434/api" in html
@@ -80,3 +82,14 @@ def test_config_change_is_visible_on_audit(env):  # noqa: F811
         with db.connect() as conn:
             conn.execute("delete from source_config_changes where id=%s", (change_id,))
             conn.execute("delete from sources where id=%s", (sid,))
+
+
+def test_settings_shows_mcp_on_by_default(env, monkeypatch):  # noqa: F811
+    db.init()
+    monkeypatch.delenv("MCP_ENABLED", raising=False)
+    for k, v in dict(MCP_ISSUER="https://login.example/t/v2.0", MCP_AUDIENCE="api-aud", MCP_CLIENT_IDS="c-1").items():
+        monkeypatch.setenv(k, v)
+    html = client([ADMIN]).get("/admin/settings").text
+    assert "<dt>Enabled</dt><dd>Yes" in html and "api-aud" in html
+    monkeypatch.setenv("MCP_ENABLED", "0")
+    assert "<dt>Enabled</dt><dd>No" in client([ADMIN]).get("/admin/settings").text
