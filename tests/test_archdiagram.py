@@ -1,5 +1,6 @@
 import io
 import json
+import re
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -171,6 +172,12 @@ def test_svg_parses_and_is_inert():
     low = svg.lower()
     assert "<script" not in low and "href" not in low and "http" not in svg.replace("http://www.w3.org/2000/svg", "")
     assert "A&lt;script&gt;" in svg
+
+
+def test_svg_uses_only_house_palette():
+    svg = to_svg(layout(SAMPLES["typical"], "Source: Demo"))
+    colours = {colour.upper() for colour in re.findall(r"#[0-9a-fA-F]{6}\b", svg)}
+    assert colours <= {"#002535", "#0A5A78", "#FBF321", "#FFFFFF", "#000000", "#808285", "#F4F4F4"}
 
 
 @pytest.mark.parametrize("name", SAMPLES)

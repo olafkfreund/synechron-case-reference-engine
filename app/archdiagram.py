@@ -1,8 +1,8 @@
 """Layout and renderers for the solution architecture diagram (#246).
 
 layout() turns an Architecture into a Scene: boxes, lines, icon shapes and text on a 1600x900 canvas, with
-style keys instead of colours. Text is measured with the vendored IBM Plex Sans (brand/fonts), so the Scene is
-the same on every machine, and text is wrapped, never cut: no "…" anywhere.
+style keys instead of colours. Text is measured with Aptos installed in the app image, so text is wrapped,
+never cut: no "…" anywhere.
 Flows are routed on an 8 px grid around the cards (shortest path, few bends, parallel flows on their own track).
 """
 import heapq
@@ -18,8 +18,8 @@ from PIL import ImageFont
 from app.schema import Architecture
 
 W, H = 1600, 900
-FONTS = Path(__file__).resolve().parent.parent / "brand" / "fonts"
-WEIGHTS = {400: "Regular", 500: "Medium", 600: "SemiBold"}
+FONTS = Path("/usr/share/fonts/truetype/aptos")
+WEIGHTS = {400: "Aptos", 500: "Aptos-SemiBold", 600: "Aptos-Bold"}
 # style key -> (size px, weight)
 TEXT = {"title": (26, 600), "name": (15, 600), "role": (12, 400), "role-sm": (11, 400), "zone": (12, 600),
         "label": (11, 500), "callout": (13, 500), "legend": (11, 400), "footer": (11, 400), "badge": (12, 600),
@@ -94,7 +94,7 @@ class Scene:
 # --- text ------------------------------------------------------------------------------------
 @lru_cache(maxsize=None)
 def _font_px(style: str, px: int):
-    return ImageFont.truetype(str(FONTS / f"IBMPlexSans-{WEIGHTS[TEXT[style][1]]}.ttf"), px)
+    return ImageFont.truetype(str(FONTS / f"{WEIGHTS[TEXT[style][1]]}.ttf"), px)
 
 
 def _font(style: str):
@@ -632,13 +632,12 @@ def _build(arch: Architecture, footer: str, reserve: list) -> tuple[Scene, list]
 
 
 # --- renderers -------------------------------------------------------------------------------
-# brand palette (app/static/portal.css)
-INK, GROUND, ACCENT, BORDER, MUTED, WHITE = "#1B2430", "#F6F5F1", "#0B6A6A", "#DAD7CF", "#55606E", "#FFFFFF"
-KIND = {"user": "#3D4652", "app": "#0B6A6A", "service": "#1F5F8B", "queue": "#8A5A00", "store": "#5B4B8A",
-        "external": "#7A6F5F", "platform": "#3D4652"}
-MODE = {"api": "#0B6A6A", "event": "#8A5A00", "batch": "#5B4B8A", "file": "#7A6F5F", "ui": "#1F5F8B", "data": "#1E6B3A"}
+INK, GROUND, ACCENT, BORDER, MUTED, WHITE = "#002535", "#F4F4F4", "#0A5A78", "#808285", "#808285", "#FFFFFF"
+KIND = {"user": "#002535", "app": "#0A5A78", "service": "#000000", "queue": "#808285", "store": "#002535",
+        "external": "#808285", "platform": "#0A5A78"}
+MODE = {"api": "#0A5A78", "event": "#002535", "batch": "#000000", "file": "#808285", "ui": "#000000", "data": "#002535"}  # ui: black solid, apart from api (blue) and batch (black dashed)
 DASH = {"event": (3, 4), "batch": (9, 5), "file": (9, 5)}
-TEXT_COLOUR = {"role": MUTED, "role-sm": MUTED, "zone": MUTED, "legend": MUTED, "footer": MUTED, "note": MUTED, "badge": WHITE, "marker": WHITE}
+TEXT_COLOUR = {"role": MUTED, "role-sm": MUTED, "zone": MUTED, "legend": MUTED, "footer": MUTED, "note": MUTED, "badge": INK, "marker": WHITE}
 LINE_W = 1.5
 
 
@@ -646,7 +645,7 @@ def box_paint(style: str) -> tuple[str, str, int]:
     """(fill, stroke, corner radius) for a box style key."""
     kind, _, sub = style.partition("-")
     return {"zone": (GROUND, BORDER, 12), "card": (WHITE, KIND.get(sub, INK), 8), "glyph": (KIND.get(sub, INK),) * 2 + (5,),
-            "pill": (WHITE, MODE.get(sub, INK), 9), "callout": ("#E3F0F0", ACCENT, 8), "badge": (ACCENT, ACCENT, 11),
+            "pill": (WHITE, MODE.get(sub, INK), 9), "callout": (GROUND, ACCENT, 8), "badge": ("#FBF321", "#FBF321", 11),
             "marker": (MODE.get(sub, INK), MODE.get(sub, INK), 9)}[kind]
 
 
@@ -741,7 +740,7 @@ def to_svg(sc: Scene, title: str = "Solution architecture", crop: bool = True) -
     f = lambda v: f"{v:.1f}".rstrip("0").rstrip(".")
     pp = lambda pts: " ".join(f"{f(x)},{f(y)}" for x, y in pts)
     o = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {sc.width} {sc.height}" role="img" '
-         f'font-family="IBM Plex Sans, system-ui, sans-serif"><title>{escape(title)}</title>'
+         f'font-family="Aptos, sans-serif"><title>{escape(title)}</title>'
          f'<rect width="{sc.width}" height="{sc.height}" fill="{WHITE}"/>']
 
     def box(b: Box):
@@ -924,7 +923,7 @@ def to_pptx_shapes(slide, sc: Scene, left: int, top: int, width: int, height: in
         p.alignment = PP_ALIGN.CENTER if t.anchor == "middle" else PP_ALIGN.LEFT
         r = p.add_run()
         r.text = t.text
-        r.font.name = "IBM Plex Sans"
+        r.font.name = "Aptos"
         r.font.size = Pt(size * t.k * s / 12700)
         r.font.bold = weight >= 600
         r.font.color.rgb = rgb(TEXT_COLOUR.get(t.style, INK))

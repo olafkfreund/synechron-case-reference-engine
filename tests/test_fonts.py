@@ -1,20 +1,13 @@
-import hashlib
 from pathlib import Path
 
 import pytest
 from PIL import ImageFont
 
-FONTS = Path(__file__).resolve().parent.parent / "brand" / "fonts"
-TTFS = sorted(FONTS.glob("IBMPlexSans-*.ttf"))
-
-
-def test_three_weights_and_licence():
-    assert [p.stem for p in TTFS] == ["IBMPlexSans-Medium", "IBMPlexSans-Regular", "IBMPlexSans-SemiBold"]
-    assert (FONTS / "OFL.txt").is_file()
+FONTS = Path("/usr/share/fonts/truetype/aptos")
+TTFS = [FONTS / f"{name}.ttf" for name in ("Aptos", "Aptos-SemiBold", "Aptos-Bold", "Aptos-Mono")]
 
 
 @pytest.mark.parametrize("ttf", TTFS, ids=lambda p: p.stem)
-def test_font_loads_and_matches_sha(ttf):
+def test_aptos_font_exists_and_measures_text(ttf):
+    assert ttf.is_file()
     assert ImageFont.truetype(str(ttf), 20).getlength("Core banking") > 0
-    sums = dict(l.split()[::-1] for l in (FONTS / "SHA256SUMS").read_text().splitlines())
-    assert sums[ttf.name] == hashlib.sha256(ttf.read_bytes()).hexdigest()
