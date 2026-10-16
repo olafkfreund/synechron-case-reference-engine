@@ -1,15 +1,23 @@
 import json
+import logging
 import os
 from urllib.parse import urlparse
 
 import litellm
 from pydantic import BaseModel, ValidationError
 
-from app import db
+from app import conn_settings, db
 from app.schema import llm_schema
+
+log = logging.getLogger(__name__)
+ECHO_RETRIES = 0  # for tests
+SCHEMA_WORDS = {"$defs", "properties", "required", "additionalProperties", "type", "title"}
+CORRECTION = ("That was the schema, not the answer. Reply with one JSON object containing the data, "
+              "using the field names above. Do not include the schema.")
 
 litellm.turn_off_message_logging = True  # document text is never logged
 MAX_TOKENS = 8192  # a full ReferenceCase with quotes; Bedrock's default may cut it off
+PROVIDERS = {"openai/": "OPENAI_API_KEY", "gemini/": "GEMINI_API_KEY"}  # each key goes to its own provider only
 
 
 class PolicyError(Exception):
@@ -28,21 +36,33 @@ def profile(alias: str) -> dict:
     return opts
 
 
+def effective_base(model: str, opts: dict) -> str:
+    """Where LiteLLM sends the request: api_base, else OLLAMA_API_BASE (which LiteLLM reads) for Ollama models (#130)."""
+    if opts.get("api_base"):
+        return opts["api_base"]
+    return (os.environ.get("OLLAMA_API_BASE") or "http://localhost:11434") if model.startswith("ollama") else ""
+
+
+def _ollama_cloud(base: str) -> bool:
+    host = urlparse(base).hostname or ""
+    return host == "ollama.com" or host.endswith(".ollama.com")
+
+
 def destination(model: str, opts: dict) -> str:
     """local | our-cloud | third-party. Fails closed: anything unknown is third-party."""
     dest = opts.get("destination")
     if dest == "third-party":
         return dest
     if dest in ("local", "our-cloud"):
-        # an override may name a host the inference cannot see (Docker), never contradict a known third party
-        if "cloud" in model.lower() or urlparse(opts.get("api_base", "")).hostname == "ollama.com":
+        # an override may name a host the inference cannot see (Docker); only Ollama and Bedrock can be ours
+        if not model.startswith(("ollama", "bedrock/")) or "cloud" in model.lower() or _ollama_cloud(effective_base(model, opts)):
             raise RuntimeError(f"destination {dest!r} contradicts the model or api_base; fix the *_OPTIONS")
         return dest
     if model.startswith("bedrock/"):
         return "our-cloud"
     # "cloud" anywhere (name-cloud, name:cloud, any case): the local Ollama forwards those to ollama.com
     if model.startswith("ollama") and "cloud" not in model.lower():
-        base = opts.get("api_base") or os.environ.get("OLLAMA_API_BASE") or "http://localhost:11434"
+        base = effective_base(model, opts)
         if urlparse(base).hostname in ("localhost", "127.0.0.1", "::1"):
             return "local"
     return "third-party"
@@ -55,24 +75,80 @@ def allowed(dest: str, data_class: str, model: str) -> bool:
         return False
     with db.connect() as c:
         return c.execute(
-            "select 1 from model_approvals where model=%s and data_class=%s and expires_at > now()",
+            "select 1 from model_approvals where model=%s and data_class=%s and expires_at > now() and revoked_by is null",
             (model, data_class)).fetchone() is not None
 
 
-def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: type[M], *, data_class: str) -> M:
-    """alias is an env var name (EXTRACT_MODEL | DRAFT_MODEL) holding the LiteLLM model id."""
-    model = os.environ.get(alias)
+def _schema_echo(text: str, schema: dict) -> bool:
+    """True when a reply is the schema itself (or one key holding it), not data (#245). Never logs or returns content."""
+    try:
+        obj = json.loads(text or "")
+    except ValueError:
+        return False
+    if not isinstance(obj, dict):
+        return False
+    # required names that are no schema keyword: data (a Brief has a field "title", ReferenceCase too)
+    fields = set(schema.get("required", [])) - SCHEMA_WORDS
+    clash = set(schema.get("required", [])) & SCHEMA_WORDS
+
+    def echo(o):
+        if not isinstance(o, dict) or len(SCHEMA_WORDS & o.keys()) < 2 or fields & o.keys():
+            return False
+        # a keyword that is also a field name counts only next to a real schema body, not next to data
+        return not clash & o.keys() or isinstance(o.get("properties"), dict) or isinstance(o.get("$defs"), dict)
+    return echo(obj) or (len(obj) == 1 and echo(next(iter(obj.values()))))
+
+
+def _example(schema: dict) -> object:
+    """The schema's shape with a type label for every value, so none reads as a default answer (#245). Deterministic."""
+    defs = schema.get("$defs", {})
+
+    def build(n, seen=()):
+        if "$ref" in n:
+            ref = n["$ref"]
+            if ref in seen:  # a recursive model: stop at the cycle
+                return "<object>"
+            return build(schema if ref == "#" else defs[ref.rsplit("/", 1)[-1]], (*seen, ref))
+        if "enum" in n:
+            return "<one of: " + " | ".join(str(v) for v in n["enum"]) + ">"
+        for k in ("anyOf", "oneOf"):
+            if k in n:
+                return build(next((b for b in n[k] if b.get("type") != "null"), n[k][0]), seen)
+        t = n.get("type")
+        if t == "object" or "properties" in n:
+            return {k: build(v, seen) for k, v in n.get("properties", {}).items()}
+        if t == "array":
+            return [build(n.get("items", {}), seen)]
+        return {"string": "<string>", "integer": "<number>", "number": "<number>", "boolean": "<true or false>"}.get(t, "<string>")
+    return build(schema)
+
+
+def json_cue(schema: dict, shape_hint: bool = False) -> str:
+    """The JSON-mode instruction. The shape hint (#245) is only for calls measured to need it: it changed triage."""
+    if not shape_hint:
+        return f"\n\nReply with JSON matching this schema: {json.dumps(schema)}"
+    return ("\n\nReply with one JSON object that follows this JSON Schema. The schema describes the format; do not repeat it."
+            f"\nSchema: {json.dumps(schema)}"
+            f"\nExample of the shape (each value shows its type, not an answer): {json.dumps(_example(schema), ensure_ascii=False)}")
+
+
+def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: type[M], *, data_class: str, shape_hint: bool = False) -> M:
+    """alias is a connection setting (EXTRACT_MODEL | DRAFT_MODEL) holding the LiteLLM model id (conn_settings.get)."""
+    global ECHO_RETRIES
+    model = conn_settings.get(alias)
     if not model:
         raise RuntimeError(f"{alias} is not set; set it to a LiteLLM model id (e.g. bedrock/<model-id>)")
     opts = profile(alias)
     if not allowed(destination(model, opts), data_class, model):
         raise PolicyError(f"{alias} may not read {data_class} data")
     ollama = model.startswith("ollama")
-    json_mode = opts.get("mode", "json" if ollama else "schema") == "json"
+    provider = next((var for prefix, var in PROVIDERS.items() if model.startswith(prefix)), None)
+    # json mode for OpenAI and Gemini too: OpenAI's strict schema needs every field required, Writeup has defaults
+    json_mode = opts.get("mode", "json" if ollama or provider else "schema") == "json"
     schema = llm_schema(model_cls)
     extra = {}
     if json_mode:
-        system += f"\n\nReply with JSON matching this schema: {json.dumps(schema)}"
+        system += json_cue(schema, shape_hint)
         extra["response_format"] = {"type": "json_object"}
     else:
         extra["response_format"] = {"type": "json_schema", "json_schema": {
@@ -82,25 +158,57 @@ def complete_json[M: BaseModel](alias: str, system: str, user: str, model_cls: t
             if k in opts:
                 extra[k] = opts[k]
         # not OLLAMA_API_KEY: LiteLLM reads that one itself and sends it to every Ollama host
-        if urlparse(opts.get("api_base", "")).hostname == "ollama.com" and os.environ.get("OLLAMA_CLOUD_KEY"):
-            extra["api_key"] = os.environ["OLLAMA_CLOUD_KEY"]
-    resp = litellm.completion(
-        model=model,
-        messages=[
-            {"role": "system", "content": [
-                {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]},
-            {"role": "user", "content": user},
-        ],
-        temperature=0,
-        max_tokens=MAX_TOKENS,
-        **extra,
-    )
-    choice = resp.choices[0]
-    if getattr(choice, "finish_reason", None) == "length":
-        raise ValueError(f"{alias} reply truncated at max_tokens={MAX_TOKENS}")
-    try:
-        return model_cls.model_validate_json(choice.message.content or "")
-    except ValidationError as e:
-        # errors without input values: the reply quotes the document, and job errors are stored
-        detail = e.errors(include_input=False, include_url=False)
-        raise ValueError(f"{alias} reply is not a valid {model_cls.__name__}: {detail}") from None
+        if _ollama_cloud(effective_base(model, opts)) and (key := conn_settings.get("OLLAMA_CLOUD_KEY")):
+            extra["api_key"] = key
+    if provider:
+        extra["drop_params"] = True  # GPT-5 and Codex reject temperature=0
+        if key := conn_settings.get(provider):
+            extra["api_key"] = key
+
+    def too_long(more):  # Ollama drops the start of a prompt that overflows its context, without an error
+        est = (len(system) + len(user) + sum(len(m["content"]) for m in more)) // 3  # characters per token; size only
+        return ollama and "num_ctx" in opts and est + MAX_TOKENS > opts["num_ctx"], est
+
+    def _call(more=()):
+        resp = litellm.completion(
+            model=model,
+            messages=[
+                # cache_control is an Anthropic feature: plain text for OpenAI and Gemini
+                {"role": "system", "content": system if provider else [
+                    {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]},
+                {"role": "user", "content": user},
+                *more,
+            ],
+            temperature=0,
+            max_tokens=MAX_TOKENS,
+            **extra,
+        )
+        choice = resp.choices[0]
+        if getattr(choice, "finish_reason", None) == "length":
+            raise ValueError(f"{alias} reply truncated at max_tokens={MAX_TOKENS}")
+        return choice.message.content or ""
+
+    over, est = too_long(())
+    if over and alias == "EXTRACT_MODEL":  # research's worst case sits at the limit (#212 G1), so only extraction is refused
+        raise ValueError(f"{alias} prompt (~{est} tokens) does not fit num_ctx={opts['num_ctx']}")
+    text = _call()
+    retried = ""
+    for attempt in (0, 1):
+        try:
+            return model_cls.model_validate_json(text)
+        except ValidationError as e:
+            # errors without input values: the reply quotes the document, and job errors are stored
+            detail = e.errors(include_input=False, include_url=False)
+            err = ValueError(f"{alias} reply is not a valid {model_cls.__name__}: {detail}{retried}")
+            if attempt or not _schema_echo(text, schema):
+                raise err from None
+            more = ({"role": "assistant", "content": text}, {"role": "user", "content": CORRECTION})
+            if too_long(more)[0]:
+                raise err from None
+            ECHO_RETRIES += 1
+            log.warning("schema echo: alias=%s model=%s schema=%s", alias, model, model_cls.__name__)
+            retried = " (after a schema-echo retry)"
+            try:
+                text = _call(more)
+            except ValueError as e2:  # truncated: keep the marker
+                raise ValueError(f"{e2}{retried}") from None

@@ -2,8 +2,9 @@
 
     python scripts/recall.py --groups g-docs [--file tests/recall.yaml] [--min 0.90] [--samples]
 
-Format: see tests/recall.yaml. Exit code: 0 at or above --min (top-3 hit rate), 1 below it, 2 when
+Format: see tests/recall.yaml. Exit code: 0 at or above --min (top-20 hit rate), 1 below it, 2 when
 there is nothing to score. The LLM pick is deliberately not run: this measures retrieval.
+Top-20 is the gate: it is what the AI picks from. Top-3, what users see first, is reported (#24).
 """
 import argparse
 import sys
@@ -39,7 +40,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--file", default=str(Path(__file__).resolve().parent.parent / "tests" / "recall.yaml"))
     ap.add_argument("--groups", required=True, help="comma-separated groups of the user the search runs as")
-    ap.add_argument("--min", type=float, default=0.90, help="minimum top-3 hit rate")
+    ap.add_argument("--min", type=float, default=0.90, help="minimum top-20 hit rate (the gate)")
     ap.add_argument("--samples", action="store_true", help="also score the entries marked sample: true")
     args = ap.parse_args(argv)
     entries = yaml.safe_load(Path(args.file).read_text())["queries"]
@@ -54,11 +55,11 @@ def main(argv=None) -> int:
     results = evaluate(queries, user)
     top3 = sum(r["top3"] for r in results) / len(results)
     top20 = sum(r["top20"] for r in results) / len(results)
-    print(f"queries: {len(results)}  top-3: {top3:.0%}  top-20: {top20:.0%}  (minimum top-3: {args.min:.0%})")
+    print(f"queries: {len(results)}  top-3: {top3:.0%}  top-20: {top20:.0%}  (gate: top-20 ≥ {args.min:.0%})")
     for r in results:
         if not r["top3"]:
             print(f"MISS {r['id']}: expected {r['expected']}, {'in top 20 only' if r['top20'] else 'not in top 20'}, {r['returned']} returned")
-    return 0 if top3 >= args.min else 1
+    return 0 if top20 >= args.min else 1
 
 
 if __name__ == "__main__":

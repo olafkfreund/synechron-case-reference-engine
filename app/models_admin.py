@@ -15,7 +15,8 @@ APPROVAL_COLS = "id, model, data_class, approved_by, approved_at, expires_at, ex
 def models_page(request: Request, user: User = Depends(require("admin"))):
     with db.connect() as conn:
         rows = conn.execute(f"select {APPROVAL_COLS} from model_approvals order by id desc").fetchall()
-    return page(request, "models.html", user, approvals=rows)
+        max_day = conn.execute("select (now() + interval '12 months')::date").fetchone()[0]
+    return page(request, "models.html", user, approvals=rows, max_day=max_day.isoformat())
 
 
 @router.post("/admin/models")
@@ -32,8 +33,8 @@ def approve(model: str = Form(), data_class: str = Form(), expires: str = Form()
         # the bounds are checked in SQL so "12 months" means what Postgres says
         n = conn.execute(
             "insert into model_approvals(model, data_class, approved_by, expires_at, note) "
-            "select %s,%s,%s,e,%s from (select (%s::date + 1)::timestamptz as e) t "
-            "where e > now() and e <= now() + interval '12 months'",
+            "select %s,%s,%s,(d + 1)::timestamptz,%s from (select %s::date as d) t "
+            "where (d + 1)::timestamptz > now() and d <= (now() + interval '12 months')::date",
             (model.strip(), data_class, user.sub, note.strip(), day)).rowcount
     if not n:
         raise HTTPException(400, "expiry must be in the future and at most 12 months ahead")

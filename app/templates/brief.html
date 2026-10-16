@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block body %}
+<div class="page-head"><div><h1>Brief</h1><p>{{ body.title or title }}</p></div></div>
+{% if status == "queued" %}
+<div class="empty-state"><p>Writing&hellip; this page refreshes by itself.</p></div><meta http-equiv="refresh" content="5">
+{% elif status == "failed" %}<div class="note">The brief failed: {{ error }}</div>
+{% else %}
+<p class="muted" style="font-size:13px">Written only from the quotes you picked; [n] is the quote a sentence rests on. Check it before you rely on it.</p>
+{% if body.flags %}<div class="note"><b>{{ body.flags | length }} item(s) to fix before you can download:</b>
+<ul>{% for f in body.flags %}<li>{{ f.where }}: &ldquo;{{ f.sentence }}&rdquo; &mdash; {{ f.reason }}</li>{% endfor %}</ul></div>{% endif %}
+<form method="post" action="/briefs/{{ bid }}" class="section-card stack"><input type="hidden" name="v" value="{{ v }}">
+<label for="b-title">Title</label><input type="text" id="b-title" name="title" value="{{ body.title }}">
+<label for="b-take">Takeaways (one per line)</label><textarea id="b-take" name="takeaways" rows="6">{{ body.takeaways | join("\n") }}</textarea>
+{% for t in body.themes %}<label for="h{{ loop.index }}">Theme {{ loop.index }}</label><input type="text" id="h{{ loop.index }}" name="heading" value="{{ t.heading }}">
+<textarea name="text" rows="5" aria-label="Theme {{ loop.index }} text">{{ t.text }}</textarea>{% endfor %}
+<div class="row"><button class="btn primary">Save and check</button></div></form>
+<div class="section-card" id="diagram"><div class="card-head"><h2>Diagram</h2></div>
+{% if diagram.svg %}{% set u = "/brief/" ~ bid ~ "/diagram.png" %}<figure class="paper"><a href="{{ u }}" target="_blank" rel="noopener" class="zoom" aria-label="Open {{ diagram.a.title }} full size">{{ diagram.svg }}</a></figure>
+{% else %}<p class="muted">{{ diagram.note or "No diagram was proposed." }}</p>{% endif %}
+{% if diagram.errors %}<div role="alert" class="warn-line">{{ icon("alert") }}<span>Not saved. The earlier version is kept:</span></div><ul>{% for e in diagram.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+<form method="post" action="/brief/{{ bid }}/diagram" class="stack"><input type="hidden" name="v" value="{{ v }}">
+<label for="arch-text" class="field-help" style="display:block">One line each: title: ... / component: name | role | zone | kind | cite (source N) / flow: A -&gt; B | label | mode | cite. Empty removes the diagram.</label>
+<textarea id="arch-text" name="text" rows="10" maxlength="20000">{{ diagram.text }}</textarea>
+<div class="row"><button class="btn primary">Save diagram</button></div></form></div>
+<form method="post" action="/briefs/{{ bid }}/download" class="section-card stack">
+<div class="row"><label for="b-format">Format</label><select id="b-format" name="format" style="max-width:200px"><option value="docx">Word</option><option value="pdf_docx">PDF</option><option value="md">Markdown</option></select>
+<button class="btn primary"{% if body.flags %} disabled{% endif %}>Download</button></div></form>
+{% if not body.flags %}<form method="post" action="/library/save" class="section-card"><input type="hidden" name="brief_id" value="{{ bid }}">
+<div class="row"><label for="b-topic">Library topic</label><input type="text" id="b-topic" name="topic" maxlength="200" placeholder="Topic (defaults to the title)"><button class="btn">Save to library</button></div></form>{% endif %}
+{% endif %}
+{% endblock %}

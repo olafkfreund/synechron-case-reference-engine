@@ -1,15 +1,19 @@
 import hashlib
 import os
+import uuid
+from bisect import bisect_left
 from functools import lru_cache
 from io import BytesIO
 from pathlib import PurePosixPath
 from typing import Literal
 
 import boto3
+from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict
 
-from app import db
-from app.llm import complete_json
+from app import anonymise, db
+from app.diagrams import document_images_from
+from app.llm import PolicyError, complete_json
 
 TRIAGE_HEAD, TRIAGE_TAIL = 8000, 4000  # plain cuts, no tokenizer; signatures sit at the end
 
@@ -58,75 +62,294 @@ def triage_text(text: str, data_class: str) -> Triage:
 
 
 def basis_for(t: Triage, source_config: dict) -> str | None:
-    """'delivered', 'engagement', or None (not extracted)."""
+    """'delivered', 'engagement', 'capability' (an offering, #213), or None (not extracted)."""
     if t.kind == "case" or (t.kind in ("proposal", "deck") and t.describes_delivered_work):
         return "delivered"
     if t.kind == "contract" and (t.executed or (source_config or {}).get("executed_contracts") is True):
         return "engagement"
+    if t.kind in ("proposal", "deck", "contract"):  # not delivered work, not an executed contract
+        return "capability"
     return None
+
+
+def ingest_upload(source_id: int, key: str) -> str:
+    """One uploaded object, the same call the S3 crawl makes (#249)."""
+    with db.connect() as conn:
+        bucket = conn.execute("select config->>'bucket' from sources where id=%s", (source_id,)).fetchone()[0]
+    body = boto3.client("s3").get_object(Bucket=bucket, Key=key)["Body"].read()
+    from app import research  # lazily: research imports this module
+
+    def bounded(data, name):  # a plain user's file must not hold the worker: page cap, and a killable timeout
+        try:
+            return research.convert(data, name, int(os.environ.get("UPLOAD_MAX_PAGES", 300)),
+                                    int(os.environ.get("UPLOAD_CONVERT_TIMEOUT", 300)), None)
+        except research.ConvertTimeout as e:
+            raise PolicyError("conversion took too long") from e  # the worker does not retry these
+    return ingest(source_id, key, key.rsplit("/", 1)[-1], body, convert=bounded)
+
+
+UPLOAD_QUOTA = (20, 200 * 1024 * 1024)  # files and bytes per user over a rolling 24 h
+QUOTA_MSG = "daily upload limit reached (20 files or 200 MiB)"
+
+
+def staff_source(conn):
+    """(id, config, acl_groups) of the source plain users' uploads go to, or None: uploads are off (#249)."""
+    return conn.execute("select id, config, acl_groups from sources where kind='upload' and enabled "
+                        "and config->>'staff' = 'true' order by id limit 1").fetchone()
+
+
+def upload_used(conn, sub: str) -> tuple[int, int]:
+    return conn.execute("select count(*), coalesce(sum(bytes), 0) from uploads "
+                        "where user_key=%s and created_at > now() - interval '24 hours'", (sub,)).fetchone()
+
+
+def check_quota(conn, sub: str, size: int) -> None:
+    files, used = upload_used(conn, sub)
+    if files >= UPLOAD_QUOTA[0] or used + size > UPLOAD_QUOTA[1]:
+        raise HTTPException(429, QUOTA_MSG)
+
+
+def accept_upload(conn, user, name: str | None, data: bytes) -> int:
+    """Checks, counts against the quota, stores the file and queues one ingest job. Returns the upload id."""
+    from app.main import check_file  # lazily: app.main imports this module's neighbours
+    name = check_file(name, data)
+    src = staff_source(conn)
+    if not src:
+        raise HTTPException(503, "uploads are not configured")
+    prefix = src[1].get("prefix", "")
+    if prefix and not prefix.endswith("/"):
+        prefix += "/"
+    key = f"{prefix}{uuid.uuid4().hex}/{name}"
+    # the lock holds until the transaction ends; a user's parallel requests never wait on it (a burst must not pin the pool)
+    if not conn.execute("select pg_try_advisory_xact_lock(hashtext('upload:'||%s))", (user.sub,)).fetchone()[0]:
+        raise HTTPException(429, "another upload of yours is in progress; try again")
+    check_quota(conn, user.sub, len(data))
+    bucket = src[1]["bucket"]
+    boto3.client("s3").put_object(Bucket=bucket, Key=key, Body=data)
+    try:  # crawl_s3 reads this prefix: an object without its uploads row would be ingested uncounted
+        job = conn.execute("insert into jobs(kind, payload) values ('ingest_upload', "
+                           "jsonb_build_object('source_id', %s::bigint, 'key', %s::text)) returning id", (src[0], key)).fetchone()[0]
+        uid = conn.execute("insert into uploads(user_key, user_name, source_id, s3_key, bytes, job_id) "
+                           "values (%s, %s, %s, %s, %s, %s) returning id",
+                           (user.sub, user.name, src[0], key, len(data), job)).fetchone()[0]
+        conn.commit()
+        return uid
+    except BaseException:
+        try:
+            boto3.client("s3").delete_object(Bucket=bucket, Key=key)
+        except Exception:  # noqa: BLE001 - best effort; the original error is the one to raise
+            pass
+        raise
+
+
+STATUS_COLS = ("j.id, j.status, d.id, coalesce(p.status, c.status), x.id, x.status, extract(epoch from now() - j.started_at), coalesce(p.basis, c.basis)")  # a merged case reads its parent
+STATUS_FROM = ("from uploads u left join jobs j on j.id = u.job_id "
+               "left join documents d on d.source_id = u.source_id and d.external_id = u.s3_key "
+               "left join cases c on c.document_id = d.id left join cases p on p.id = c.merged_into "
+               "left join lateral (select id, status from jobs where kind='extract' "
+               "and (payload->>'document_id')::bigint = d.id order by id desc limit 1) x on true")
+
+FAILED = ("failed", "Couldn't process", "The file could not be read or converted. Try again, or ask an admin.")
+STAGES = {
+    "in_review": ("In review", "A reviewer will check it before it appears in search."),
+    "approved": ("Approved", "Visible to staff in search."),
+    "rejected": ("Not used", "A reviewer decided not to use it."),
+    "indexed": ("Stored, not a case study", "Stored, but not a case study or capability document."),
+}
+CAPABILITY = {  # #213: an offering document is shown apart from delivery evidence
+    "in_review": "A reviewer will check it; it will be shown as a capability document (not delivery evidence).",
+    "approved": "Approved as a capability document: listed under Capability in search.",
+}
+
+
+def queue_ahead(conn, job_id: int, cache: dict) -> int:
+    """Queued jobs the worker takes first (it works in id order); a count, never names. One query per render."""
+    if "queued" not in cache:
+        cache["queued"] = [r[0] for r in conn.execute("select id from jobs where status='queued' order by id")]
+    return bisect_left(cache["queued"], job_id)
+
+
+def extract_estimate(conn, cache: dict) -> str:
+    """'about A-B minutes' from the 25th/75th percentile of the last 20 finished extractions' run time (not their wait)."""
+    if "estimate" not in cache:
+        n, q = conn.execute("select count(*), percentile_cont(array[0.25, 0.75]) within group (order by s) from "
+                            "(select extract(epoch from updated_at - started_at) s from jobs "
+                            "where kind='extract' and status='done' and started_at is not null order by id desc limit 20) t").fetchone()
+        if n < 5:
+            cache["estimate"] = "usually a few minutes"
+        else:
+            lo, hi = (max(1, round(v / 60)) for v in q)
+            cache["estimate"] = f"about {lo}\u2013{hi} minutes" if hi > lo else f"about {lo} minutes"
+    return cache["estimate"]
+
+
+def stage(conn, job_id, job, doc, case, ext_id, extract, age=None, basis=None, cache=None) -> tuple[str, str, str]:
+    """(code, label, detail) from the upload's jobs, document and case; cache holds the queue and estimate for one render."""
+    cache = {} if cache is None else cache
+
+    def wait(i):
+        return "queued", "Waiting", f"Waiting in line: {queue_ahead(conn, i, cache)} ahead of yours."
+    if doc is None:  # the document decides first: a vanished job row must not hide it
+        if job == "failed" or job == "done":
+            return FAILED
+        if job == "running":
+            return "reading", "Reading the document", "Converting the file." + (" Usually under a minute." if (age or 0) < 300 else " This is taking longer than usual.")
+        return wait(job_id or 0)  # queued, or the job row was deleted
+    if case is None and extract == "queued":  # triage has not decided yet: not "not a case" yet
+        return wait(ext_id)
+    if case is None and extract == "running":
+        return "writing", "Writing the case", f"The model is drafting the case: {extract_estimate(conn, cache)}."
+    if case is None and extract == "failed":
+        return "failed", "Couldn't process", "Writing the case failed. Upload it again or ask an admin."
+    code = {"extracted": "in_review", "approved": "approved", "rejected": "rejected"}.get(case, "indexed")
+    if basis == "capability" and code in CAPABILITY:
+        return code, STAGES[code][0], CAPABILITY[code]
+    return code, *STAGES[code]
+
+
+def upload_status(conn, user, upload_id: int) -> tuple[str, str, str]:
+    """(code, label, detail): code is queued | reading | writing | failed | indexed | in_review | approved | rejected; owner only."""
+    row = conn.execute(f"select {STATUS_COLS} {STATUS_FROM} where u.id=%s and u.user_key=%s", (upload_id, user.sub)).fetchone()
+    if not row:
+        raise HTTPException(404, "no such upload")
+    return stage(conn, *row)
+
+
+def my_uploads(conn, user, limit: int = 50) -> list[tuple[int, str, object, tuple[str, str, str]]]:
+    """(id, file name, when, (code, label, detail)) of the user's newest uploads."""
+    rows = conn.execute(f"select u.id, u.s3_key, u.created_at, {STATUS_COLS} {STATUS_FROM} "
+                        "where u.user_key=%s order by u.id desc limit %s", (user.sub, limit)).fetchall()
+    cache = {}  # the queue and the estimate are read at most once per render
+    return [(r[0], r[1].rsplit("/", 1)[-1], r[2], stage(conn, *r[3:], cache=cache)) for r in rows]
 
 
 def reopen_merged(conn, doc_ids: list[int]) -> None:
     """A merged engagement whose member document changed or was retired goes back to review (#55)."""
-    conn.execute("update cases set status = 'extracted' where status = 'approved' and id in "
+    conn.execute("update cases set status = 'extracted' where status <> 'rejected' and id in "
                  "(select merged_into from cases where document_id = any(%s) and merged_into is not null)",
                  (doc_ids,))
 
 
-def ingest(source_id: int, external_id: str, title: str, data: bytes, source_version: str | None = None) -> str:
+def ingest(source_id: int, external_id: str, title: str, data: bytes, source_version: str | None = None,
+           links: tuple[str | None, str | None] = (None, None), convert=None) -> str:
     """Returns 'skipped' (same bytes), 'updated' (new version) or 'new'."""
     checksum = hashlib.sha256(data).hexdigest()
+    missing = None  # set when the bytes are unchanged: does the document still need its image candidates?
     with db.connect() as conn:
         row = conn.execute(
             "select id, checksum from documents where source_id=%s and external_id=%s",
             (source_id, external_id)).fetchone()
         if row and row[1] == checksum:
-            # same bytes; ACLs may still have changed, and a reappeared file is not deleted
+            # same bytes; ACLs may still have changed, a reappeared file is not deleted,
+            # and a renamed file shows its new name (#162)
             conn.execute("update documents set acl_groups=(select acl_groups from sources where id=%s for share), "
-                         "deleted_at=null, source_version=%s where id=%s", (source_id, source_version, row[0]))
-            return "skipped"
-        src = conn.execute("select data_class, config from sources where id=%s", (source_id,)).fetchone()
-        if not src:
-            raise LookupError(f"source {source_id} no longer exists")
-        data_class, config = src
+                         "deleted_at=null, source_version=%s, title=%s, web_url=coalesce(%s, web_url), "
+                         "folder_url=coalesce(%s, folder_url) where id=%s",
+                         (source_id, source_version, title, *links, row[0]))
+            # a document whose images were read by an older version gets the new candidates once: it has a live case
+            # and images_version < IMAGES_VERSION. store_images bumps the version, even when nothing is found.
+            missing = conn.execute(
+                "select exists(select 1 from cases where document_id=%s and status <> 'rejected') "
+                "and (select images_version from documents where id=%s) < %s", (row[0], row[0], IMAGES_VERSION)).fetchone()[0]
+        else:
+            src = conn.execute("select data_class from sources where id=%s", (source_id,)).fetchone()
+            if not src:
+                raise LookupError(f"source {source_id} no longer exists")
+    if missing is not None:  # outside the transaction: decoding holds no lock
+        if missing:
+            store_images(row[0], data, title or PurePosixPath(external_id).name, True, add_only=True)
+        return "skipped"
 
     key = f"originals/{checksum}"
     boto3.client("s3").put_object(Bucket=os.environ["S3_BUCKET"], Key=key, Body=data)
-    text = to_markdown(data, title or PurePosixPath(external_id).name)  # title carries the extension; SharePoint/Confluence ids do not
+    text = (convert or to_markdown)(data, title or PurePosixPath(external_id).name)  # title carries the extension; SharePoint/Confluence ids do not
+    with db.connect() as conn:  # conversion can take minutes; an admin may have raised the class (#158)
+        src = conn.execute("select data_class from sources where id=%s", (source_id,)).fetchone()
+    if not src:
+        raise LookupError(f"source {source_id} no longer exists")
+    data_class = src[0]
     triage = triage_text(text, data_class)
 
-    basis = basis_for(triage, config)
-    reason = {"delivered": "", "engagement": "executed contract" if triage.executed else "source marked executed"}.get(basis)
     with db.connect() as conn:
+        # the flag is read under the lock an admin's save takes, so a toggle during triage applies here (#133)
+        cfg = conn.execute("select config from sources where id=%s for share", (source_id,)).fetchone()
+        if not cfg:
+            raise LookupError(f"source {source_id} no longer exists")
+        basis = basis_for(triage, cfg[0])
+        reason = {"delivered": "", "capability": "", "engagement": "executed contract" if triage.executed else "source marked executed"}.get(basis)
         # upsert: an upload and a crawl of the same item may race past the select above
         # the groups are read from the source here, under for share, so a concurrent save is never overwritten
         got = conn.execute(
-            "insert into documents(source_id, external_id, title, checksum, s3_key, text, kind, source_version, acl_groups) "
-            "select %s,%s,%s,%s,%s,%s,%s,%s, s.acl_groups from (select acl_groups from sources where id=%s for share) s "
+            "insert into documents(source_id, external_id, title, checksum, s3_key, text, kind, source_version, web_url, folder_url, acl_groups) "
+            "select %s,%s,%s,%s,%s,%s,%s,%s,%s,%s, s.acl_groups from (select acl_groups from sources where id=%s for share) s "
             "on conflict (source_id, external_id) do update set "
             "title=excluded.title, checksum=excluded.checksum, s3_key=excluded.s3_key, text=excluded.text, "
             "kind=excluded.kind, source_version=excluded.source_version, acl_groups=excluded.acl_groups, "
-            "deleted_at=null returning id",
-            (source_id, external_id, title, checksum, key, text, triage.kind, source_version, source_id)).fetchone()
+            "web_url=coalesce(excluded.web_url, documents.web_url), folder_url=coalesce(excluded.folder_url, documents.folder_url), "
+            "updated_at=now(), deleted_at=null, images_version=1 returning id",
+            (source_id, external_id, title, checksum, key, text, triage.kind, source_version, *links, source_id)).fetchone()
         if not got:
             raise LookupError(f"source {source_id} no longer exists")
         doc_id = got[0]
+        conn.execute("delete from document_images where document_id=%s", (doc_id,))  # new content: no stale candidate is offered meanwhile
         # a changed document re-opens its case for review, or retires it when it no longer
         # describes delivered work (a stale case must not stay approvable)
-        conn.execute("update cases set status=%s where document_id=%s",
-                     ("extracted" if basis else "rejected", doc_id))
+        conn.execute("update cases set status=%s, retired_by=%s where document_id=%s",
+                     ("extracted" if basis else "rejected", None if basis else "retriage", doc_id))
         reopen_merged(conn, [doc_id])
         if basis:
             conn.execute("insert into jobs(kind, payload) values ('extract', jsonb_build_object("
-                         "'document_id', %s::bigint, 'basis', %s::text, 'basis_reason', %s::text))",
-                         (doc_id, basis, reason))
+                         "'document_id', %s::bigint, 'basis', %s::text, 'basis_reason', %s::text, 'checksum', %s::text))",
+                         (doc_id, basis, reason, checksum))  # checksum: a retry must not outlive its version (#120)
+    store_images(doc_id, data, title or PurePosixPath(external_id).name, basis is not None)
     return "updated" if row else "new"
 
 
-def skip_unchanged(source_id: int, external_id: str, source_version: str) -> bool:
-    """The checksum skip without the download: same source version, so un-withdraw and refresh the groups."""
+IMAGES_LOCK = 234  # first key of the advisory lock that serialises store_images per document
+IMAGES_VERSION = 2  # 2: EMF/WMF drawings are converted (#234)
+
+
+def store_images(doc_id: int, data: bytes, name: str, wanted: bool, add_only: bool = False) -> None:
+    """Replace the document's diagram candidates (#212). After the document is saved and outside its transaction:
+    decoding can take seconds, and a failure here must never fail the ingest. `add_only` (the backfill of an
+    unchanged document) deletes nothing and skips a PNG already stored, so an image the reviewer used or
+    dismissed keeps its id. A failure leaves images_version as it was, so the next crawl tries again."""
+    meta: dict = {}
+    try:
+        if wanted:
+            with db.connect() as conn:
+                clients = anonymise.load_clients(conn)
+            images = document_images_from(data, name, clients, meta)  # hints are anonymised here, once
+        else:
+            images = []  # a document that gets no case gets no candidates
+        hashes = meta.get("src_hashes") or [None] * len(images)
+        with db.connect() as conn:
+            # two runs on one document (an upload and a crawl, two workers) must not both add the same image
+            conn.execute("select pg_advisory_xact_lock(%s::int, %s::int)", (IMAGES_LOCK, doc_id & 0x7FFFFFFF))
+            if not add_only:
+                conn.execute("delete from document_images where document_id=%s", (doc_id,))
+            for (png, w, h, hint), src in zip(images, hashes):
+                # the same source entry, or (older rows have no src_hash) the same PNG bytes
+                conn.execute("insert into document_images(document_id, png, width, height, hint, src_hash) "
+                             "select %s::bigint,%s::bytea,%s::int,%s::int,%s::text,%s::text where not exists "
+                             "(select 1 from document_images where document_id=%s::bigint "
+                             "and (src_hash = %s::text or md5(png)=md5(%s::bytea)))",
+                             (doc_id, png, w, h, hint, src, doc_id, src, png))
+            if not meta.get("vector_failed"):  # a failed conversion leaves the version, so the next crawl tries again
+                conn.execute("update documents set images_version=%s where id=%s", (IMAGES_VERSION, doc_id))
+    except Exception as e:  # noqa: BLE001 - the class only: a message could echo document text
+        print(f"document {doc_id} images not stored: {type(e).__name__}", flush=True)
+
+
+def skip_unchanged(source_id: int, external_id: str, source_version: str, title: str,
+                   links: tuple[str | None, str | None] = (None, None)) -> bool:
+    """The checksum skip without the download: same source version, so un-withdraw, refresh the groups and the title."""
     with db.connect() as conn:
         return conn.execute(
-            "update documents set acl_groups=(select acl_groups from sources where id=%s for share), deleted_at=null "
-            "where source_id=%s and external_id=%s and source_version=%s returning id",
-            (source_id, source_id, external_id, source_version)).fetchone() is not None
+            "update documents set acl_groups=(select acl_groups from sources where id=%s for share), deleted_at=null, title=%s, "
+            "web_url=coalesce(%s, web_url), folder_url=coalesce(%s, folder_url) "
+            "where source_id=%s and external_id=%s and source_version=%s "
+            # a document whose images were read by an older version is downloaded once for the backfill
+            "and not (exists(select 1 from cases c where c.document_id=documents.id and c.status <> 'rejected') "
+            "and images_version < %s) returning id",
+            (source_id, title, *links, source_id, external_id, source_version, IMAGES_VERSION)).fetchone() is not None

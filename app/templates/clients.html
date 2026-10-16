@@ -5,9 +5,9 @@
 <p>Names and aliases are replaced by the label in outputs unless the client is referenceable.</p>
 <details class="help-link"><summary>How aliases work</summary>
 <p class="muted">Add every spelling people use as an alias: abbreviations, former names and the email/web domain stem
-(e.g. <code>acmebank</code> for acmebank.co.uk). Short all-caps aliases match case-sensitively.</p>
+(e.g. <code>acmebank</code> for acmebank.co.uk). Aliases match in any case, so a short alias that is also a word (<code>ACE</code>) also replaces that word.</p>
 <p class="muted"><b>Avoid aliases that are ordinary words</b> (“Apex”): they would be replaced wherever the word appears.
-Enter one alias per line. Only referenceable clients that no case uses can be deleted.</p></details></div>
+Enter one alias per line. Saving a non-referenceable client keeps any name you remove as an alias, so it stays hidden. Only referenceable clients that no case uses can be deleted.</p></details></div>
 <div class="page-head-actions"><details class="detail-panel head-panel"><summary>+ Add client</summary>
 <form method="post" action="/admin/clients">
 <div class="field"><label for="new-name">Name</label><input type="text" id="new-name" name="name" required></div>
@@ -19,16 +19,17 @@ Enter one alias per line. Only referenceable clients that no case uses can be de
 <label class="check"><input type="checkbox" name="logo_allowed"> Logo allowed</label></div>
 <div class="action-row"><button class="btn primary">Add client</button></div>
 </form></details></div></div>
-
+{% if kept %}<p class="badge ok" role="status">Kept {{ kept }} former name(s) as aliases, so they stay hidden.</p>{% endif %}
 <div class="section-card client-list">
 <div class="card-head"><h2>Clients ({{ clients | length }})</h2></div>
 {% if not clients %}<div class="empty-state">{{ icon("users") }}<p>No clients yet.</p><p>Use “+ Add client” above.</p></div>{% endif %}
-{% for id, name, aliases, label, ref, logo, v in clients %}
+{% for id, name, aliases, label, ref, logo, v, logo_state, logo_reason in clients %}
 <div class="client-row">
 <span class="avatar" aria-hidden="true">{% for w in name.split()[:2] %}{{ w[0] | upper }}{% endfor %}</span>
 <div class="who"><b>{{ name }}</b><span>{{ label }}</span></div>
 <div class="chips"><span class="badge {{ 'ok' if ref else 'neutral' }}">{{ "Referenceable" if ref else "Not referenceable" }}</span>
-<span class="badge {{ 'ok' if logo else 'neutral' }}">{{ "Logo allowed" if logo else "No logo" }}</span></div>
+<span class="badge {{ 'ok' if logo else 'neutral' }}">{{ "Logo allowed" if logo else "No logo" }}</span>
+{% if logo_state == 'ready' %}<span class="badge ok">Logo ready</span>{% endif %}</div>
 <details class="mini edit"><summary class="btn-sm" aria-label="Edit {{ name }}">Edit</summary>
 <form id="c{{ id }}" method="post" action="/admin/clients/{{ id }}"><input type="hidden" name="v" value="{{ v }}">
 <div class="field"><label for="c{{ id }}-name">Name</label><input type="text" id="c{{ id }}-name" name="name" value="{{ name }}"></div>
@@ -37,7 +38,19 @@ Enter one alias per line. Only referenceable clients that no case uses can be de
 <div class="row"><label class="check"><input type="checkbox" name="referenceable" {{ "checked" if ref }}> Referenceable</label>
 <label class="check"><input type="checkbox" name="logo_allowed" {{ "checked" if logo }}> Logo allowed</label></div>
 <div class="action-row"><button class="btn primary" aria-label="Save {{ name }}">Save</button></div>
-</form></details>
+</form>
+<div class="field"><b>Logo</b>
+{% if logo_state == 'ready' %}<img src="/admin/clients/{{ id }}/logo.png" alt="Logo of {{ name }}" class="logo-lg">
+<span class="field-help">{{ "Shown in outputs." if ref and logo else "Not shown: the client must be referenceable and logo allowed." }}</span>
+{% elif logo_state == 'pending' %}<span class="field-help">Being processed…</span>
+{% elif logo_state == 'rejected' %}<span class="badge bad">Rejected: {{ logo_reason }}</span>
+{% else %}<span class="field-help">No logo uploaded.</span>{% endif %}</div>
+<form method="post" action="/admin/clients/{{ id }}/logo" enctype="multipart/form-data" class="row">
+<label class="mini-label" for="c{{ id }}-logo">Logo file</label><input type="file" id="c{{ id }}-logo" name="file" accept="image/png,image/jpeg" required>
+<button class="btn" aria-label="Upload logo for {{ name }}">Upload</button>
+<span class="field-help">PNG or JPEG, at most 1 MiB, 64 px or more on the short side.</span></form>
+{% if logo_state %}<form method="post" action="/admin/clients/{{ id }}/logo/remove"><div class="action-row"><button aria-label="Remove logo of {{ name }}">Remove logo</button></div></form>{% endif %}
+</details>
 {% if not ref %}<span class="slot" aria-hidden="true"></span>{% endif %}
 {% if ref %}<details class="mini del"><summary class="btn-sm" aria-label="Delete {{ name }}…">Delete…</summary>
 <form id="d{{ id }}" method="post" action="/admin/clients/{{ id }}/delete"><input type="hidden" name="v" value="{{ v }}">

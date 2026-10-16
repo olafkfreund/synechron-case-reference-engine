@@ -3,22 +3,26 @@ import sys
 import threading
 import time
 
-from app import crawl, db, extract, llm, research
+from app import brief, crawl, db, diagrams, extract, ingest, llm, research
 
 MAX_ATTEMPTS = 3
 HEARTBEAT = 60  # seconds; 15 ticks inside the shortest stale window
 HANDLERS = {
-    "extract": lambda p: extract.extract(p["document_id"], p.get("basis", "delivered"), p.get("basis_reason", "")),
+    "extract": lambda p: extract.extract(p["document_id"], p.get("basis", "delivered"), p.get("basis_reason", ""), p.get("checksum")),
     "crawl_s3": lambda p: crawl.crawl_s3(p["source_id"]),
     "crawl_sharepoint": lambda p: crawl.crawl_sharepoint(p["source_id"]),
     "crawl_confluence": lambda p: crawl.crawl_confluence(p["source_id"]),
+    "ingest_upload": lambda p: ingest.ingest_upload(p["source_id"], p["key"]),
     "research": lambda p: research.run(p["research_id"]),
+    "diagram": lambda p: diagrams.process(p["diagram_id"]),
+    "logo": lambda p: diagrams.process_logo(p["client_id"]),
+    "brief": lambda p: brief.run(p["brief_id"]),
 }
 
 # a running job this old belongs to a dead worker; first crawls can run for hours, and the
 # daily schedule re-runs a crawl whose worker died, so crawls get a long window
 CLAIM = """
-update jobs set status='running', attempts=attempts+1, updated_at=now()
+update jobs set status='running', attempts=attempts+1, updated_at=now(), started_at=coalesce(started_at, now())
 where id = (select id from jobs
             where status='queued' or (status='running' and updated_at < now() -
                   case when kind like 'crawl%%' then interval '6 hours' else interval '15 min' end)

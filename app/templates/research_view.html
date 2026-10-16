@@ -7,30 +7,59 @@
 {% elif status == "failed" %}<div class="note">Research failed: {{ error }}</div>
 {% else %}
 {% if note %}<div class="note">{{ note }}</div>{% endif %}
+{% if omitted %}<div class="note">{{ omitted }} statement(s) not shown: they named a protected client.</div>{% endif %}
 <p class="muted" style="font-size:13px">Public sources only. This is industry context, not our own delivery.</p>
 {% if claims %}
-<div class="section-card"><div class="card-head"><h2>What public sources say</h2></div>
-<p class="muted" style="font-size:13px">The quote is what the source says; the summary and type are the AI's reading of it. Rely on the quote.</p>
-{% for c in claims %}<div class="claim"><q>{{ c.quote }}</q>
-<div class="meta">{% if c.url.startswith(("http://", "https://")) %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.publisher }}</a>{% else %}<span>{{ c.publisher }}</span>{% endif %}
-<span>retrieved {{ c.retrieved_at[:10] }}</span><span class="badge neutral">{{ c.type | replace("_", " ") }}</span></div>
-<p>{{ c.statement }}</p></div>{% endfor %}</div>
-<div class="section-card"><div class="card-head"><h2>Comparison</h2></div>
-<div class="table-box"><table><thead><tr><th>Who</th><th>What they say</th></tr></thead><tbody>
-{% if ours %}<tr><td><b>Our approach</b></td><td>{{ ours }}</td></tr>{% endif %}
-{% for publisher, items in groups.items() %}<tr><td>{{ publisher }}</td><td>{% for c in items %}<q>{{ c.quote }}</q> <small>({{ c.type | replace("_", " ") }})</small><br>{% endfor %}</td></tr>{% endfor %}
-</tbody></table></div></div>
+<div class="section-card"><div class="card-head"><h2>Use these sources</h2></div>
+<p><b>1. Tick quotes below</b>, then choose what to do with them.</p>
+<div class="trio">
+<div class="stack"><h3>Export</h3><div class="row"><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="md">Markdown</button><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="csv">CSV</button><button class="btn" form="pick" formaction="/research/{{ research_id }}/export" name="format" value="copy">Copy</button></div></div>
+<div class="stack"><h3>Write a brief</h3><label for="brief-title">Brief title</label><input type="text" id="brief-title" name="title" form="pick" maxlength="200" placeholder="optional">
+<div class="row"><button class="btn" form="pick" formaction="/research/{{ research_id }}/brief">Write a brief</button></div></div>
+<div class="stack"><h3>Save to library</h3><label for="lib-topic">Topic</label><input type="text" id="lib-topic" name="topic" form="pick" maxlength="200" placeholder="defaults to the search">
+<div class="row"><button class="btn" form="pick" formaction="/library/save">Save to library</button></div></div></div></div>
 <form method="post" action="/generate" class="section-card stack">
-<div class="card-head"><h2>Download with an "Industry context" section</h2></div><input type="hidden" name="research_id" value="{{ research_id }}">
+<div class="card-head"><h2>Download all (industry context only)</h2></div><input type="hidden" name="research_id" value="{{ research_id }}">
 {% if case_id %}<label class="check"><input type="checkbox" name="case_ids" value="{{ case_id }}" checked> Include the reference case this research started from</label>{% endif %}
 <label class="check"><input type="checkbox" name="industry_context_ack"> I understand the industry context section contains public statements by third parties, not our delivery evidence (required when no case is included).</label>
 <div class="row"><label for="dl-format">Format</label><select id="dl-format" name="format" style="max-width:200px"><option value="docx">Word</option><option value="pptx">PowerPoint</option><option value="pdf_docx">PDF</option><option value="pdf_pptx">PDF slides</option><option value="md">Markdown</option></select>
+<button class="btn" formaction="/preview">Preview</button>
 <button class="btn primary">Download</button></div></form>
+<form id="pick" method="post"><input type="hidden" name="research_id" value="{{ research_id }}">
+<div class="section-card"><div class="card-head"><h2>What public sources say</h2></div>
+<p class="muted" style="font-size:13px">The quote is the source; the reading under it is the AI's. Rely on the quote.</p>
+{% for c in claims %}<div class="claim"><label class="check"><input type="checkbox" name="n" value="{{ c.n }}" form="pick"> Select</label>{% if c.type == "technical_note" %}<pre>{{ c.quote }}</pre>{% else %}<q>{{ c.quote }}</q>{% endif %}
+<div class="meta">{% if (c.url or "").startswith(("http://", "https://")) %}<a href="{{ c.url }}" rel="noopener noreferrer">{{ c.publisher }}</a>{% else %}<span>{{ c.publisher }}</span>{% endif %}
+<span>retrieved {{ (c.retrieved_at or "")[:10] }}</span></div>
+{% if c.type == "technical_note" %}<p class="muted">Technical note copied from the page, no AI reading.</p>{% else %}<p>AI reading: {{ c.statement }}</p>{% endif %}</div>{% endfor %}
+{% if attach_cases %}<div class="row"><label for="attach-to">Attach the selected quotes as public sources to</label>
+<select id="attach-to" name="target" style="max-width:320px"><option value=""{% if not attach_cases | selectattr(2) | list %} selected{% endif %}>Choose a case&hellip;</option>{% for value, title, origin in attach_cases %}<option value="{{ value }}"{% if origin %} selected{% endif %}>{{ title }}</option>{% endfor %}</select>
+<button class="btn" formaction="/sources/attach">Attach</button></div>{% endif %}</div>
+</form>
+<div class="section-card"><div class="card-head"><h2>Comparison</h2></div>
+<div class="table-box"><table><thead><tr><th>Who</th><th>What they say</th></tr></thead><tbody>
+{% if ours %}<tr><td><b>Our approach</b></td><td>{{ ours }}</td></tr>{% endif %}
+{% for publisher, items in groups.items() %}<tr><td>{{ publisher }}</td><td>{% for c in items %}{% if c.type == "technical_note" %}<pre>{{ c.quote }}</pre>{% else %}<q>{{ c.quote }}</q><br>{% endif %}{% endfor %}</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endif %}
+{% if images %}<div class="section-card"><div class="card-head"><h2>Images on the cited pages</h2></div>
+<p class="muted" style="font-size:13px">Copyright of its owner. Shown to you only; it reaches no output unless a reviewer confirms the right to use it.</p>
+{% if attach_cases and not claims %}<form id="pick" method="post"><input type="hidden" name="research_id" value="{{ research_id }}">
+<div class="row"><label for="attach-to">Attach the ticked images to</label>
+<select id="attach-to" name="target" style="max-width:320px">{% for value, title, origin in attach_cases %}<option value="{{ value }}"{% if origin %} selected{% endif %}>{{ title }}</option>{% endfor %}</select>
+<button class="btn" formaction="/sources/attach">Attach</button></div></form>{% endif %}
+{% for i in images %}<div class="claim"><img src="/research/{{ research_id }}/images/{{ i.id }}.png" alt="{{ i.alt }}" width="240">
+<div class="meta">{% if i.page_url.startswith(("http://", "https://")) %}<a href="{{ i.page_url }}" rel="noopener noreferrer">{{ i.page_url }}</a>{% endif %}</div>
+{% if i.alt %}<p>{{ i.alt }}</p>{% endif %}
+{% if attach_cases %}<label class="check"><input type="checkbox" name="img" value="{{ i.id }}" form="pick"> Use in the case selected under the quotes</label>
+<label class="check"><input type="checkbox" name="rights_ok_{{ i.id }}" form="pick"> We have the right to use this image</label>
+<label class="check"><input type="checkbox" name="no_logo_{{ i.id }}" form="pick"> No client name or logo shows</label>
+<label for="basis-{{ i.id }}">Basis for the right (at most 200 characters)</label><input type="text" id="basis-{{ i.id }}" name="basis_{{ i.id }}" form="pick" maxlength="200">{% endif %}</div>{% endfor %}</div>
 {% endif %}
 <div class="section-card"><div class="card-head"><h2>Sources</h2></div>
 {% for p in pages %}<p style="margin:0 0 6px"><b>{{ p.publisher }}</b> &middot; <a href="{{ p.url }}" rel="noopener noreferrer">{{ p.url }}</a>
 &middot; retrieved {{ p.retrieved_at[:10] }}</p>{% endfor %}
 {% if not pages %}<p class="muted" style="margin:0">No usable sources found.</p>{% endif %}
-{% if skipped %}<p><small>{{ skipped | length }} source(s) skipped.</small></p>{% endif %}</div>
+{% if skipped %}<p><small>{{ skipped }} source(s) skipped{% if skip_reasons %}: {% for r, n in skip_reasons %}{{ n }} {{ r }}{{ ", " if not loop.last }}{% endfor %}{% endif %}.</small></p>{% endif %}</div>
 {% endif %}
 {% endblock %}

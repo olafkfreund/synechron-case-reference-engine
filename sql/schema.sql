@@ -73,10 +73,13 @@ alter table documents add constraint documents_kind_check
 -- is not downloaded again; null means unknown, and the item is downloaded as before
 alter table documents add column if not exists source_version text;
 
+-- which reading of a document's images was stored (app/ingest.py IMAGES_VERSION): an older one is read again once
+alter table documents add column if not exists images_version int not null default 1;
+
 -- what a case claims: work delivered, or scope contracted (signed SOW / change order)
 alter table cases add column if not exists basis text not null default 'delivered';
 alter table cases drop constraint if exists cases_basis_check;
-alter table cases add constraint cases_basis_check check (basis in ('delivered','engagement'));
+alter table cases add constraint cases_basis_check check (basis in ('delivered','engagement','capability'));
 
 -- a merged engagement (#55) has no document of its own; its member cases point to it
 alter table cases alter column document_id drop not null;
@@ -88,6 +91,12 @@ alter table cases add constraint cases_merge_check check (
   and (member_count is null or member_count >= 2)
   and (merged_into is null or document_id is not null));
 create index if not exists cases_merged_into_idx on cases (merged_into);
+alter table cases add column if not exists retired_by text;  -- 'untick': rejected by the source flag (#160)
+alter table cases add column if not exists merged_version text;  -- md5(data) of a member when merged (#190)
+update cases set merged_version = md5(data::text) where merged_into is not null and merged_version is null;
+-- public claims a reviewer accepted for this case (#199): copied, so they outlive the research row;
+-- never in data or search_text (research text must not reach search)
+alter table cases add column if not exists public_sources jsonb not null default '[]';
 
 create table if not exists jobs (
   id bigserial primary key,
@@ -100,6 +109,7 @@ create table if not exists jobs (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table jobs add column if not exists started_at timestamptz;  -- first claim; the upload page's estimate excludes the queue wait
 create index if not exists jobs_queued_idx on jobs (id) where status = 'queued';
 
 create table if not exists research (
@@ -119,6 +129,51 @@ alter table research add column if not exists results jsonb not null default '{}
 alter table research add column if not exists case_id bigint references cases(id) on delete set null;
 create index if not exists research_query_idx on research (query, retrieved_at);
 
+-- images found on fetched research pages (#231 c); shown to the owner, used in outputs only after a reviewer confirms rights
+create table if not exists research_images (
+  id bigserial primary key,
+  research_id bigint not null references research(id) on delete cascade,
+  page_url text not null,
+  image_url text not null,
+  alt text not null default '',
+  png bytea not null,
+  width int not null,
+  height int not null,
+  created_at timestamptz not null default now(),
+  rights_by text,
+  rights_at timestamptz,
+  rights_basis text
+);
+create index if not exists research_images_research_idx on research_images (research_id);
+
+-- a cited brief written from picked research quotes (#214): the quotes are copied, so it outlives the research row
+create table if not exists briefs (
+  id bigserial primary key,
+  research_id bigint references research(id) on delete set null,
+  created_by text not null,
+  title text not null,
+  quotes jsonb not null,
+  body jsonb not null default '{}',
+  status text not null default 'queued' check (status in ('queued','done','failed')),
+  error text,
+  created_at timestamptz not null default now()
+);
+
+-- the shared knowledge library (#214): quotes and briefs saved from research, copied verbatim so an item does not
+-- depend on the research row. Not joined into cases.tsv or search_text: its text must never reach case search.
+create table if not exists library_items (
+  id bigserial primary key,
+  topic text not null,
+  kind text not null check (kind in ('brief','quotes')),
+  query text not null default '',
+  body jsonb not null,
+  created_by text not null,
+  created_at timestamptz not null default now(),
+  checked_at timestamptz not null default now()
+);
+create index if not exists library_items_topic_idx on library_items (lower(topic));
+alter table library_items add column if not exists created_by_name text not null default '';
+
 create table if not exists generations (
   id bigserial primary key,
   user_id text not null,
@@ -130,6 +185,8 @@ create table if not exists generations (
 );
 -- which research (if any) fed an output's industry context: part of what was generated and for whom
 alter table generations add column if not exists research_id bigint references research(id) on delete set null;
+-- which library items (#235) went into an output
+alter table generations add column if not exists library_ids bigint[];
 
 -- how sensitive a source's documents are: decides which models may read them (app/llm.py)
 alter table sources add column if not exists data_class text not null default 'confidential';
@@ -171,14 +228,135 @@ create table if not exists source_acl_changes (
   changed_at timestamptz not null default now()
 );
 
+-- append-only (#283): a source created, its name or config edited, or it enabled or disabled; old and new hold {name, config}
+create table if not exists source_config_changes (
+  id bigserial primary key,
+  source_id bigint not null,
+  action text not null check (action in ('create','config','enable','disable')),
+  old jsonb,
+  new jsonb,
+  changed_by text not null,
+  changed_at timestamptz not null default now()
+);
+
+-- connection settings an admin edits (#288): plain values only; secrets live in Secrets Manager
+create table if not exists connection_settings (
+  name text primary key,
+  value text not null,
+  changed_by text not null,
+  changed_at timestamptz not null default now()
+);
+
+-- append-only (#288): old and new hold plain values (null for a secret); a proposal is open until a later decision row
+create table if not exists connection_setting_changes (
+  id bigserial primary key,
+  name text not null,
+  action text not null check (action in ('proposed','applied','approved','rejected','withdrawn','restored','cleared')),
+  old text,
+  new text,
+  secret_version text,
+  actor text not null,
+  at timestamptz not null default now()
+);
+
 -- a session cookie issued at or before valid_after is refused (#47): logout and app.revoke_sessions move it
 create table if not exists session_cutoffs (
   sub text primary key,
   valid_after timestamptz not null
 );
 
+-- identity moved from the ID token's per-application `sub` to `oid` (#249): which old key became which
+create table if not exists user_keys (
+  old_sub text primary key,
+  oid text not null,
+  migrated_at timestamptz not null default now()
+);
+create index if not exists user_keys_oid_idx on user_keys (oid);
+
+-- one row per MCP tool call (#249), append-only for the app. Never the arguments, the text or a token.
+create table if not exists tool_calls (
+  id bigserial primary key,
+  user_key text not null,
+  client_id text not null default '',
+  tool text not null,
+  object_ids bigint[] not null default '{}',
+  outcome text not null check (outcome in ('ok','denied','not_found','error','rate_limited')),
+  ms int not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists tool_calls_user_idx on tool_calls (user_key, created_at);
+
+-- one row per accepted upload (#249), append-only for the app: the quota and the owner-only status read it
+create table if not exists uploads (
+  id bigserial primary key,
+  user_key text not null,
+  user_name text not null default '',
+  source_id bigint not null,
+  s3_key text not null,
+  bytes bigint not null,
+  job_id bigint not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists uploads_user_idx on uploads (user_key, created_at);
+-- the oid backfill and ownership checks look rows up by user (#249)
+create index if not exists research_created_by_idx on research (created_by);
+create index if not exists library_items_created_by_idx on library_items (created_by);
+create index if not exists briefs_created_by_idx on briefs (created_by);
+create index if not exists generations_user_idx on generations (user_id);
+
 -- documents carry a copy of their source's groups; repair any copy a crawl wrote back before #58
 -- (idempotent; re-run the migration once old worker tasks have stopped after a deploy)
 -- for share, as every other write: an unlocked read could write back groups a concurrent save replaced
 update documents d set acl_groups = s.acl_groups from (select id, acl_groups from sources for share) s
   where d.source_id = s.id and d.acl_groups is distinct from s.acl_groups;
+
+-- reviewer-uploaded case diagrams (#200): raw until the worker re-encodes it, then png
+create table if not exists diagrams (
+  id bigserial primary key,
+  case_id bigint not null references cases(id) on delete cascade,
+  raw bytea,
+  png bytea,
+  created_by text not null,
+  created_at timestamptz not null default now()
+);
+
+-- images found inside a document's own docx/pptx (#212): already re-encoded PNGs, candidates for a case's diagrams
+create table if not exists document_images (
+  id bigserial primary key,
+  document_id bigint not null references documents(id) on delete cascade,
+  png bytea not null,
+  width int not null,
+  height int not null,
+  hint text not null default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists document_images_document_idx on document_images (document_id);
+-- sha256 of the original entry: the re-encoded PNG can change with a library upgrade, the source does not (null for older rows)
+alter table document_images add column if not exists src_hash text;
+-- a candidate that is not from a document: a library brief's diagram offered to one case (#231), with the credit it carries
+alter table document_images alter column document_id drop not null;
+alter table document_images add column if not exists case_id bigint references cases(id) on delete cascade;
+alter table document_images add column if not exists credit text not null default '';
+alter table document_images drop constraint if exists document_images_owner_check;
+alter table document_images add constraint document_images_owner_check check (document_id is not null or case_id is not null);
+create index if not exists document_images_case_idx on document_images (case_id) where case_id is not null;
+
+alter table documents add column if not exists updated_at timestamptz;
+update documents set updated_at = created_at where updated_at is null;  -- keep the real age of existing documents
+alter table documents alter column updated_at set default now(), alter column updated_at set not null;
+alter table documents add column if not exists web_url text;
+alter table documents add column if not exists folder_url text;
+create index if not exists documents_updated_idx on documents (updated_at desc, id desc);
+create index if not exists cases_approved_idx on cases (approved_at desc, id desc)
+  where status = 'approved' and merged_into is null;
+
+-- an approval below the completeness minimum, with the reviewer's reason (#222); no foreign key, so it survives case deletion
+create table if not exists case_approval_overrides (id bigserial primary key, case_id bigint not null, reason text not null, score text not null, approved_by text not null, approved_at timestamptz not null default now());
+
+-- who changed a case's architecture, and how (#246); no foreign key, so it survives case deletion
+create table if not exists architecture_changes (id bigserial primary key, case_id bigint not null, action text not null, changed_by text not null, changed_at timestamptz not null default now());
+
+-- a client's logo (#267): raw is the upload until the worker decodes it, png the clean copy; one row per client
+create table if not exists client_logos (client_id bigint primary key references clients(id) on delete cascade, raw bytea, png bytea, width int not null default 0, height int not null default 0, reason text not null default '', updated_at timestamptz not null default now());
+-- who changed a client's logo; no foreign key, so it survives client deletion
+create table if not exists client_logo_changes (id bigserial primary key, client_id bigint not null, action text not null, changed_by text not null, changed_at timestamptz not null default now());

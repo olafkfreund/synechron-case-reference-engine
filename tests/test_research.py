@@ -1,3 +1,4 @@
+import functools
 import ipaddress
 import json
 import multiprocessing
@@ -45,6 +46,15 @@ def test_query_refused_when_a_name_would_remain_or_nothing_is_left(monkeypatch):
 
 
 # --- the pages --------------------------------------------------------------------------------------
+
+def test_skip_reason():
+    assert rs.skip_reason("ConnectError") == "couldn't be reached"
+    assert rs.skip_reason("ReadTimeout") == "didn't respond in time"
+    assert rs.skip_reason(None) is None
+    assert rs.skip_reason("Zzz") == "other errors"
+    assert [rs.skip_reason(n) for n in ("TooLarge", "BadContentType", "ConvertFailed", "ResearchError", "ConvertTimeout")] == [
+        "too large", "not a web page or PDF", "not a web page or PDF", "refused by the server", "didn't respond in time"]
+
 
 @pytest.fixture
 def reg(env, monkeypatch):  # noqa: F811
@@ -96,6 +106,8 @@ class Web:
         self.db_host = conninfo_to_dict(db.url()).get("host")  # read once: with DB_SECRET_ARN, url() calls AWS
         self.pages = {}   # (host, path) -> (status, headers, body)
         self.seen = []    # (host, path)
+        self.slow = set()  # (host, path) that block until the test ends
+        self.gate = threading.Event()
         self.brave_calls = []
         self.brave_replies = []  # popped per call: an exception to raise or an httpx.Response
         monkeypatch.setattr(rs.socket, "getaddrinfo", self.getaddrinfo)
@@ -123,6 +135,8 @@ class Web:
             return httpx.Response(200, json={"web": {"results": [{"url": u, "title": "T"} for u in self.results]}})
         host = request.headers["host"].split(":")[0]
         self.seen.append((host, request.url.path))
+        if (host, request.url.path) in self.slow:
+            self.gate.wait(3)  # Event.wait: time.sleep is patched out
         status, headers, body = self.pages.get((host, request.url.path), (404, {}, b""))
         return httpx.Response(status, headers=headers, content=body)
 
@@ -135,7 +149,9 @@ def web(monkeypatch):
     monkeypatch.setenv("BRAVE_API_KEY", KEY)
     monkeypatch.setattr(ingest, "to_markdown", lambda data, name, **kw: data.decode())
     monkeypatch.setattr(ingest, "warm", lambda: None)
-    return Web(monkeypatch)
+    w = Web(monkeypatch)
+    yield w
+    w.gate.set()  # let blocked threads end
 
 
 @pytest.mark.parametrize("host,ip", [("a.example", "127.0.0.1"), ("b.example", "10.1.2.3"), ("meta.example", "169.254.169.254"),
@@ -177,6 +193,80 @@ def test_redirect_limit_and_normal_redirect(web):
     web.html("ok.example", "/b", "final")
     body, ctype, final = rs.Fetcher().fetch("https://ok.example/a")
     assert body == b"final" and final.endswith("/b")
+
+
+def test_slow_headers_hit_the_wall_clock_limit(web, monkeypatch):
+    monkeypatch.setattr(rs, "TIMEOUT", 0.3)
+    web.html("slow.example", "/robots.txt", "")
+    web.html("slow.example", "/p")
+    web.slow.add(("slow.example", "/p"))
+    t = time.monotonic()
+    with pytest.raises(rs.ResearchError, match="took too long"):
+        rs.Fetcher().fetch("https://slow.example/p")
+    assert time.monotonic() - t < 1.5
+
+
+def _self_signed(tmp_path, host):
+    """A cert for `host` and a client context that trusts it."""
+    import datetime as dt
+    import ssl
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, host)])
+    now = dt.datetime.now(dt.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+            .serial_number(1).not_valid_before(now - dt.timedelta(days=1)).not_valid_after(now + dt.timedelta(days=1))
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName(host)]), critical=False)
+            .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+            .sign(key, hashes.SHA256()))
+    (tmp_path / "c.pem").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    (tmp_path / "k.pem").write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                                       serialization.NoEncryption()))
+    server = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server.load_cert_chain(tmp_path / "c.pem", tmp_path / "k.pem")
+    return server, ssl.create_default_context(cafile=tmp_path / "c.pem")
+
+
+@pytest.mark.parametrize("scheme", ["http", "https"])
+def test_header_stall_frees_the_thread_at_the_limit(monkeypatch, tmp_path, scheme):  # #207: real sockets, no web fixture
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen()
+        port, held = server.getsockname()[1], []
+        if scheme == "https":  # finish the TLS handshake, then send nothing: the stall is in the headers
+            tls, trust = _self_signed(tmp_path, "stall.example")
+            monkeypatch.setattr(rs.httpx, "HTTPTransport", functools.partial(httpx.HTTPTransport, verify=trust))
+            threading.Thread(target=lambda: held.append(tls.wrap_socket(server.accept()[0], server_side=True)),
+                             daemon=True).start()
+        monkeypatch.setattr(rs, "public_ip", lambda host, port: "127.0.0.1")
+        monkeypatch.setattr(rs, "vet_url", lambda url: (httpx.URL(url), 443))  # the real one refuses the port
+        fetcher = rs.Fetcher()  # httpx's per-read timeout stays the real 10 s
+        monkeypatch.setattr(rs, "TIMEOUT", 0.5)  # only the wall-clock give-up is short
+        before = set(threading.enumerate())
+        with pytest.raises(rs.Stalled):
+            fetcher._get(f"{scheme}://stall.example:{port}/p", 1000)  # straight to _get: no robots.txt
+        assert held or scheme == "http"  # the handshake finished, so the stall was past TLS
+        for t in set(threading.enumerate()) - before:  # the fetch thread is gone, not blocked for another 10 s
+            t.join(1)
+            assert not t.is_alive()
+
+
+def test_fetcher_tracks_sockets_on_the_real_transport():  # a renamed httpx internal must fail here (#207)
+    assert rs.TRANSPORT is None
+    assert isinstance(rs.Fetcher().http._transport._pool._network_backend, rs._Sockets)
+
+
+def test_slow_robots_txt_is_disallowed(web, monkeypatch):
+    monkeypatch.setattr(rs, "TIMEOUT", 0.3)
+    web.html("slow.example", "/robots.txt", "")
+    web.html("slow.example", "/p")
+    web.slow.add(("slow.example", "/robots.txt"))
+    t = time.monotonic()
+    assert rs.Fetcher().allowed("https://slow.example/p") is False
+    assert time.monotonic() - t < 1.5
 
 
 def test_size_content_type_and_robots(web, monkeypatch):
@@ -253,11 +343,48 @@ def test_run_stores_pages_skips_bad_ones_and_never_stores_the_key(web, cleanup):
     assert KEY not in json.dumps(results) and KEY not in json.dumps(error)
 
 
+# the slow hop thread is still alive when Docling forks for the other page; the child never touches it
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
+def test_run_skips_a_slow_page_and_keeps_the_others(web, cleanup, monkeypatch):
+    monkeypatch.setattr(rs, "TIMEOUT", 0.3)
+    q = f"research test {uuid.uuid4().hex}"
+    web.results = ["https://slow.example/p", "https://docs.example/guide"]
+    for h in ("slow.example", "docs.example"):
+        web.html(h, "/robots.txt", "")
+    web.html("slow.example", "/p")
+    web.html("docs.example", "/guide", "<h1>Guide</h1>")
+    web.slow.add(("slow.example", "/p"))
+    rid = make_row(q)
+    t = time.monotonic()
+    rs.run(rid)
+    assert time.monotonic() - t < 1.5  # main waits out the slow page (3 s) before its own check fires
+    status, error, results = row(rid)
+    assert status == "done" and error is None
+    assert [p["publisher"] for p in results["pages"]] == ["docs.example"]
+    assert results["skipped"] == [{"domain": "slow.example", "error": "Stalled"}]
+
+
 def test_run_failure_is_recorded_without_the_key(web, cleanup, monkeypatch):
     monkeypatch.delenv("BRAVE_API_KEY")
     rid = make_row(f"research test {uuid.uuid4().hex}")
     rs.run(rid)
     assert row(rid)[:2] == ("failed", "BRAVE_API_KEY is not set")
+
+
+def test_empty_run_is_not_reused_from_cache(web, cleanup):
+    """A run where every page failed is retried, not served for 30 days (#141)."""
+    q = f"research test {uuid.uuid4().hex}"
+    web.results = ["https://docs.example/guide"]
+    web.html("docs.example", "/robots.txt", "User-agent: *\nDisallow: /\n")
+    first = make_row(q)
+    rs.run(first)
+    assert row(first)[0] == "done" and row(first)[2]["pages"] == []
+    assert row(first)[2]["skipped"][0]["error"] == "RobotsDisallowed"  # the empty run keeps its reasons
+    web.html("docs.example", "/robots.txt", "")
+    web.html("docs.example", "/guide")
+    second = make_row(q)
+    rs.run(second)
+    assert len(web.brave_calls) == 2 and len(row(second)[2]["pages"]) == 1
 
 
 def test_cache_hit_within_30_days_skips_brave(web, cleanup):
@@ -291,6 +418,18 @@ def test_identifiers_stripped_from_query():
     for bad in ("jane", "acme", "intranet", "7946", "1234567"):
         assert bad not in q, bad
     assert "kyc" in q
+
+
+def test_finalize_is_a_fixed_point():
+    q = rs.finalize("Basel 2023 Zorp 2024 reporting", REG)
+    assert rs.finalize(q, REG) == q and "2023" not in q
+
+
+def test_finalize_cap_cannot_leave_a_name_fragment():
+    pad = "x " * 98
+    assert len(pad) + len("zorp") == rs.MAX_QUERY  # the cap cuts "zorpers" to "zorp"
+    q = rs.finalize(pad + "zorpers", REG)
+    assert "zorp" not in q and rs.finalize(q, REG) == q
 
 
 def test_nat64_metadata_address_refused(web):

@@ -129,9 +129,58 @@ def test_spacing_dash_accent_and_domain_variants_are_caught():
     assert an.blocked(an.apply("Acme-Bank and AcmeBank", reg), reg) == []
 
 
-def test_short_caps_alias_is_case_sensitive():
+def test_short_caps_alias_matches_any_case():
     reg = [C("Acme Corporate Bank", ["ACB"], label="a bank")]
-    assert an.apply("ACB and acb", reg) == "a bank and acb"
+    out = an.apply("ACB and acb", reg)
+    assert out == "a bank and a bank"
+    assert an.blocked(out, reg) == []
+
+
+def test_hyphenated_name_matches_spaced_joined_and_dashed():
+    reg = [C("Zorp-Tek", [], label="a maker")]
+    for form in ("Zorp-Tek", "Zorp Tek", "ZorpTek", "Zorp\u2013Tek"):
+        assert an.apply(f"{form} won", reg) == "a maker won", form
+        assert an.blocked(form, reg) == ["Zorp-Tek"], form
+
+
+def test_punctuation_variants_of_a_name():
+    reg = [C("Zorpo's Bank", label="a bank")]
+    assert an.apply("We helped Zorpo’s Bank", reg) == "We helped a bank"
+    assert an.blocked("Zorpo’s Bank", reg) == ["Zorpo's Bank"]
+    assert "zorpo" not in an.scrub("core banking for Zorpo’s Bank", reg)
+    assert an.blocked("Zorpo's Bank", [C("Zorpo’s Bank")]) == ["Zorpo’s Bank"]
+    assert an.apply("Zorp Inc said", [C("Zorp Inc.", label="a firm")]) == "a firm said"
+    assert an.apply("Zorp, Inc. said", [C("Zorp Inc", label="a firm")]) == "a firm. said"
+    assert an.blocked("C Ltd", [C("C++ Ltd")]) == []
+    assert an.blocked("plain text. more", [C(".", label="x")]) == []
+    assert an.blocked("tell us about it", [C("Zorp Holdings", ["U.S.", "I.T."])]) == []
+    assert an.blocked("U.S. arm", [C("Zorp Holdings", ["U.S."])]) == ["U.S."]
+
+
+def test_dot_after_a_word_in_text():
+    reg = [C("St James's Bank", label="a bank")]
+    assert an.apply("We helped St. James's Bank", reg) == "We helped a bank"
+    assert an.blocked("ST. JAMES'S BANK", reg) == ["St James's Bank"]
+    assert "james" not in an.scrub("core banking for St. James's Bank", reg)
+    assert an.blocked("Zorp. Co", [C("Zorp Co")]) == ["Zorp Co"]
+    assert an.apply("with Zorp Co. They", [C("Zorp Co", label="a firm")]) == "with a firm. They"
+    assert an.blocked("U.S. Bank", [C("US Bank")]) == []
+    assert an.blocked("us bank", [C("U.S. Bank")]) == []
+    for t in ("St. James's Bank", "ST. JAMES'S BANK", "St.James's Bank"):
+        assert an.blocked(an.apply(t, reg), reg) == []
+
+
+@pytest.mark.parametrize("t,reg", [(t, [C("St James's Bank", label="a bank")])
+                                   for t in ("St . James's Bank", "ST . JAMES'S BANK", "St .James's Bank")]
+                         + [("St . James's Trust", [C("Zorpale Bank", ["St. James's Trust"], label="a bank")])])
+def test_space_before_a_dot_in_text(t, reg):
+    out = an.apply(t, reg)
+    assert "james" not in out.lower() and an.blocked(t, reg) and an.blocked(out, reg) == []
+    assert "james" not in an.scrub(t, reg)
+
+
+def test_dash_only_name_does_not_match_everything():
+    assert an.blocked("plain text", [C("-", [], label="x")]) == []
 
 
 @pytest.fixture
@@ -174,6 +223,93 @@ def test_create_update_and_validation(reg):
     # stale version -> 409, unknown id -> 404
     assert c.post(f"/admin/clients/{cid}", data={"name": name, "anonymised_label": "z", "v": v}).status_code == 409
     assert c.post("/admin/clients/999999999", data={"name": name, "anonymised_label": "z", "v": v}).status_code == 404
+
+
+def _add(c, name, label, ref=False, aliases=""):
+    data = {"name": name, "anonymised_label": label, "aliases": aliases, **({"referenceable": "on"} if ref else {})}
+    return c.post("/admin/clients", data=data, follow_redirects=False)
+
+
+def _row(tag, name):
+    return next(r for r in find(tag) if r[1] == name)
+
+
+def test_new_protected_name_in_another_label_refused(reg):
+    c = client([ADMIN])
+    zl = f"Zorp Logistics {reg}"
+    assert _add(c, zl, f"a Quill{reg} partner", ref=True).status_code == 303
+    r = _add(c, f"Quill{reg}", "a publisher")
+    assert r.status_code == 400 and zl in r.json()["detail"]
+    assert [x[1] for x in find(reg)] == [zl]
+    zp = f"Zorp Packaging {reg}"  # a protected client's label counts too
+    assert _add(c, zp, f"a Quill{reg} supplier").status_code == 303
+    r = _add(c, f"Quill{reg}", "a publisher")
+    assert r.status_code == 400 and zp in r.json()["detail"]
+
+
+def test_unticking_referenceable_refused_when_name_in_a_label(reg):
+    c = client([ADMIN])
+    q = f"Quill{reg}"
+    assert _add(c, q, "a publisher", ref=True).status_code == 303
+    assert _add(c, f"Zorp Logistics {reg}", f"a {q} partner", ref=True).status_code == 303
+    cid, *_, v = _row(reg, q)
+    r = c.post(f"/admin/clients/{cid}", data={"name": q, "anonymised_label": "a publisher", "v": v})
+    assert r.status_code == 400 and f"Zorp Logistics {reg}" in r.json()["detail"]
+    assert _row(reg, q)[4] is True
+
+
+def test_new_alias_in_another_label_refused(reg):
+    c = client([ADMIN])
+    pine = f"Pine{reg}"
+    assert _add(c, pine, "a sawmill").status_code == 303
+    assert _add(c, f"Cedar {reg}", f"a Fir{reg} firm", ref=True).status_code == 303
+    cid, *_, v = _row(reg, pine)
+    r = c.post(f"/admin/clients/{cid}", data={"name": pine, "aliases": f"Fir{reg}", "anonymised_label": "a sawmill", "v": v})
+    assert r.status_code == 400 and f"Cedar {reg}" in r.json()["detail"] and _row(reg, pine)[2] == []
+
+
+def test_label_recheck_leaves_other_saves_alone(reg):
+    c = client([ADMIN])
+    oak = f"Oak {reg}"
+    assert _add(c, oak, "a joinery").status_code == 303
+    cid, *_, v = _row(reg, oak)
+    assert c.post(f"/admin/clients/{cid}", data={"name": oak, "anonymised_label": "a carpenter", "v": v},
+                  follow_redirects=False).status_code == 303
+    elm = f"Elm {reg}"
+    assert _add(c, elm, "a nursery", ref=True).status_code == 303
+    assert _add(c, f"Birch {reg}", f"an {elm} unit", ref=True).status_code == 303
+    cid, *_, v = _row(reg, elm)  # referenceable: its name may appear in another label
+    assert c.post(f"/admin/clients/{cid}", data={"name": elm, "anonymised_label": "a grower", "referenceable": "on",
+                                                 "v": v}, follow_redirects=False).status_code == 303
+
+
+def _rename(c, reg, old, new, aliases="", ref=False, new_ref=False):
+    assert _add(c, old, "a lender", ref=ref, aliases=aliases).status_code == 303
+    cid, *_, v = _row(reg, old)
+    return c.post(f"/admin/clients/{cid}", data={"name": new, "anonymised_label": "a lender", "v": v,
+                                                 **({"referenceable": "on"} if new_ref else {})}, follow_redirects=False)
+
+
+def test_renaming_a_protected_client_keeps_the_old_name(reg):
+    c = client([ADMIN])
+    r = _rename(c, reg, f"Zorp Bank {reg}", f"Zorp Financial {reg}", aliases=f"ZB{reg}")
+    assert (r.status_code, r.headers["location"]) == (303, "/admin/clients?kept=2")
+    (_, name, aliases, label, *_), = find(reg)
+    assert aliases == [f"Zorp Bank {reg}", f"ZB{reg}"]
+    assert "Kept 2 former name(s)" in c.get("/admin/clients?kept=2").text
+    assert an.apply(f"Zorp Bank {reg} said", [C(name, aliases, label)]) == "a lender said"
+
+
+def test_renaming_a_referenceable_client_keeps_nothing(reg):
+    r = _rename(client([ADMIN]), reg, f"Zorp Bank {reg}", f"Zorp Financial {reg}", ref=True, new_ref=True)
+    assert (r.status_code, r.headers["location"]) == (303, "/admin/clients")
+    assert find(reg)[0][2] == []
+
+
+def test_case_only_rename_keeps_nothing(reg):
+    r = _rename(client([ADMIN]), reg, f"zorp bank {reg}", f"Zorp Bank {reg}")
+    assert (r.status_code, r.headers["location"]) == (303, "/admin/clients")
+    assert find(reg)[0][2] == []
 
 
 def test_alias_with_comma_is_one_alias(reg):
@@ -244,3 +380,70 @@ def test_name_or_alias_shared_with_another_client_refused(reg):
     c.post("/admin/clients", data={"name": f"Insurer {reg}", "aliases": f"Acme {reg}", "anonymised_label": "an insurer"})
     r = c.post("/admin/clients", data={"name": f"acme-{reg}", "anonymised_label": "a bank"})
     assert r.status_code == 400 and "already used" in r.text
+
+
+@pytest.mark.parametrize("ch", ["\u00ad", "\u200b", "\u2060", "\ufeff", "\u202e"])
+def test_invisible_characters_inside_a_name(ch):
+    reg = [C("Zorp Bank", ["Zorp"], label="a bank")]
+    t = f"Run for Zo{ch}rp"
+    assert an.blocked(t, reg) == ["Zorp"]
+    assert an.apply(t, reg) == "Run for a bank"
+
+
+def test_apply_keeps_superscripts_and_fractions():
+    t = "up to 10⁶ messages/day across 5,000 m²; saved ½"
+    assert an.apply(t, []) == t
+    reg = [C("Zorp Bank", label="a bank")]
+    assert an.apply("Zorp Bank cut 10⁶ to 10³", reg) == "a bank cut 10⁶ to 10³"
+
+
+def test_apply_replaces_folded_spellings():
+    reg = [C("Société Zorpale", label="a bank"), C("Straße AG", label="a firm")]
+    for t, label in [("Societe Zorpale", "a bank"), ("SOCIETE ZORPALE", "a bank"), ("Sociéte Zorpale", "a bank"),
+                     ("STRASSE AG", "a firm")]:
+        assert an.apply(f"Équipe: {t} paid 10⁶ m² ½", reg) == f"Équipe: {label} paid 10⁶ m² ½", t
+
+
+def test_apply_then_blocked_is_empty():
+    reg = [C("Société Zorpale", ["Zorp"], label="a bank"), C("Straße AG", label="a firm")]
+    for t in ["Société Zorpale", "Societe Zorpale", "SOCIÉTÉ ZORPALE", "Socie\u0301te\u0301 Zorpale",
+              "Ｓｏｃｉｅｔｅ Ｚｏｒｐａｌｅ", "Soc\u200biété Zorpale", "Zo­rp", "Straße AG", "STRASSE AG", "strasse ag"]:
+        out = an.apply(f"{t} won", reg)
+        assert an.blocked(out, reg) == [] and out.endswith(" won"), t
+    assert an.apply("Zorp\u0301 won", reg) == "a bank won"  # the trailing mark goes with the name
+    two = [C("Zorp Bank", label="a bank"), C("Bank Ltd", label="a firm")]
+    assert an.blocked(an.apply("Zorp Bank Ltd", two), two) == []  # a label re-forms a name a longer hit hid
+
+
+@pytest.mark.parametrize("t", ["Zorpale\u2122 Bank", "Zorpale\u00ae Bank", "Zorpale Bank\u2122", "Zorpale Bank\u2120",
+                               "ZorpaleBank\u2122", "Z\u20ddorpale Bank", "Zorpale\u20dd Bank", "Zorpale\u20e3 Bank",
+                               "Zorpale\u0488 Bank"])
+def test_trademark_signs_and_enclosing_marks_in_a_name(t):
+    reg = [C("Zorpale Bank", label="a bank")]
+    assert an.blocked(t, reg) == ["Zorpale Bank"]
+    out = an.apply(f"{t} won", reg)
+    assert out.startswith("a bank") and out.endswith(" won") and an.blocked(out, reg) == [], out
+
+
+def test_signs_outside_a_name_stay():
+    reg = [C("Zorpale Bank", label="a bank")]
+    assert an.apply("Acme\u2122 Cloud and Zorpale Bank\u00ae win", reg) == "Acme\u2122 Cloud and a bank\u00ae win"
+    assert an.apply("Zorpale/Bank", reg) == "Zorpale/Bank" and an.blocked("Zorpale/Bank", reg) == []  # decided: not a separator
+
+
+@pytest.mark.parametrize("t", ["Acme\u00aeZorpale Bank", "Zorpale Bank\u00aeHoldings", "Acme\u2122Zorpale Bank",
+                               "A\u20ddZorpale Bank", "Zorpale Bank\u20ddx"])
+def test_a_sign_or_mark_between_the_name_and_another_word(t):
+    reg = [C("Zorpale Bank", label="a bank")]
+    assert an.blocked(t, reg) == ["Zorpale Bank"]  # a mark glued to both words is withheld, not replaced
+    assert "zorpale" not in an.scrub(t, reg) and an.has_name(t, ["Zorpale Bank"])
+    if "\u20dd" not in t:
+        assert an.blocked(an.apply(t, reg), reg) == []
+
+
+def test_scrub_reads_a_mark_inside_a_word():
+    reg = [C("Zorpale Bank", ["St. James's Trust"], label="a bank")]
+    assert an.scrub("Z\u20ddorpale Bank results", reg) == "results"
+    out = an.scrub("Z\u20ddorpale Bank, St . James's Trust", reg)
+    assert "zorpale" not in out and "james" not in out
+    assert "orpale" not in an.scrub("Z\u20ddorpale Acme Bank", reg + [C("Acme")])  # re-formed after Acme goes

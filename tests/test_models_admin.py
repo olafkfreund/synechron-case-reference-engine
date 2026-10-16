@@ -1,6 +1,8 @@
 import uuid
 from datetime import date, timedelta
 
+import pytest
+
 from app import db
 from tests.test_auth import ADMIN, REV, client, env  # noqa: F401
 from tests.test_review import DOCS, R, make  # noqa: F401
@@ -38,10 +40,28 @@ def test_approvals_admin_only_bounded_and_revocable(env):  # noqa: F811
         cleanup(model)
 
 
+def test_expiry_exactly_12_months_ahead_is_accepted(env):  # noqa: F811
+    db.init()
+    model, a = f"openai/m-{uuid.uuid4().hex[:8]}", client([ADMIN])
+    with db.connect() as c:
+        limit = c.execute("select (now() + interval '12 months')::date").fetchone()[0]
+    form = lambda d: {"model": model, "data_class": "confidential", "expires": d.isoformat()}  # noqa: E731
+    try:
+        ok = a.post("/admin/models", data=form(limit), follow_redirects=False).status_code
+        over = a.post("/admin/models", data=form(limit + timedelta(days=1))).status_code
+        page = a.get("/admin/models").text
+        with db.connect() as c:
+            if c.execute("select (now() + interval '12 months')::date").fetchone()[0] != limit:
+                pytest.skip("the date changed mid-test (midnight)")
+        assert ok == 303 and over == 400 and f'max="{limit.isoformat()}"' in page
+    finally:
+        cleanup(model)
+
+
 def test_source_data_class_saved_and_validated(env):  # noqa: F811
     db.init()
     name, a = f"s3-{uuid.uuid4().hex[:8]}", client([ADMIN])
-    base = {"kind": "s3", "name": name, "config": '{"bucket": "b"}', "acl_groups": "g1"}
+    base = {"kind": "s3", "name": name, "bucket": "bkt", "acl_groups": "g1"}
     assert a.post("/admin/sources", data={**base, "data_class": "secret"}).status_code == 400
     assert a.post("/admin/sources", data=base, follow_redirects=False).status_code == 303
     def get():
@@ -64,7 +84,7 @@ def test_source_data_class_saved_and_validated(env):  # noqa: F811
 def test_lowering_a_source_class_is_logged_and_audited(env):  # noqa: F811
     db.init()
     name, a = f"s3-{uuid.uuid4().hex[:8]}", client([ADMIN])
-    a.post("/admin/sources", data={"kind": "s3", "name": name, "config": '{"bucket": "b"}', "acl_groups": "g1"})
+    a.post("/admin/sources", data={"kind": "s3", "name": name, "bucket": "bkt", "acl_groups": "g1"})
     with db.connect() as c:
         sid = c.execute("select id from sources where name=%s", (name,)).fetchone()[0]
     try:

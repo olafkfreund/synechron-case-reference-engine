@@ -8,7 +8,7 @@
 <div class="card-head"><h2>Differing fields</h2></div>
 {% if fields %}<p class="muted">Choose which contract each differing field comes from.</p>
 {% for f in fields %}<fieldset class="pick"><legend>{{ f.label }}</legend>
-{% for cid, value, quote in f.options %}<label class="check"><input type="radio" name="pick_{{ f.field }}" value="{{ cid }}"{% if loop.first %} checked{% endif %}> <span>{{ value or "(empty)" }} <small class="muted">{{ quote }}</small></span></label><br>{% endfor %}
+{% for cid, value, quote in f.options %}<label class="check"><input type="radio" name="pick_{{ f.field }}" value="{{ cid }}"{% if cid == f.default %} checked{% endif %}> <span>{{ value or "(empty)" }} <small class="muted">{{ quote }}</small></span></label><br>{% endfor %}
 </fieldset>{% endfor %}
 {% else %}<p class="muted">The contracts do not differ in any single-value field.</p>{% endif %}
 <p class="note">The merged case needs a new summary and a fresh approval; capabilities and tech are combined, outcomes are dropped.</p>

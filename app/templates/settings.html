@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="page-head"><div><h1>Settings</h1><p>Connection credentials and models are edited here; source, sign-in and access settings are read-only.</p></div></div>
+{% macro changed(name) %}{% if last[name] %}{{ last[name][0] }} by {{ last[name][1] }}, {{ last[name][2].strftime("%Y-%m-%d %H:%M") }}{% else %}Never changed{% endif %}{% endmacro %}
+<div class="section-card">
+<div class="card-head"><h2>Connections</h2></div>
+{% if editable %}<p class="muted">Secrets are write-only. Leave a field blank to keep its value.<br>Changes reach every container within a minute.<br>Model keys and models need a second admin. A Bedrock model also needs its ARN in <code>bedrock_model_arns</code>.</p>
+{% else %}<p class="muted">Editing needs Secrets Manager (SETTINGS_SECRET_IDS), so these values come from the environment.</p>{% endif %}
+<div class="conn-grid">
+{% for label, group, names in connectors %}{% set secret_names = names | reject("in", plain) | list %}{% set open = names | select("in", proposals) | list %}
+<div class="conn-card">
+<header class="conn-head"><h3>{{ label }}</h3>{% if secret_names %}{% if secret_names | select("in", configured) | list | length == secret_names | length %}<span class="badge ok">Configured</span>{% else %}<span class="badge neutral">Not configured</span>{% endif %}{% endif %}{% if names[0] in two_admin %}<span class="badge neutral">Two admins</span>{% endif %}</header>
+{% if editable %}<form id="conn-{{ group }}" method="post" action="/admin/settings/connections/{{ group }}">{% endif %}
+{% for name in names %}<div class="field">
+{% if editable and not open %}<label for="conn-{{ name }}">{{ labels[name] }}</label>
+{% if name in ("EXTRACT_MODEL", "DRAFT_MODEL") %}<select id="conn-{{ name }}" name="{{ name }}"><option value="">Unchanged</option>{% for m in model_choices %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select>
+{% elif name in plain %}<input id="conn-{{ name }}" name="{{ name }}" type="text" value="{{ values[name] }}" autocomplete="off">
+{% else %}<input id="conn-{{ name }}" name="{{ name }}" type="password" placeholder="Leave blank to keep it" autocomplete="new-password">{% endif %}
+{% else %}<span class="fname">{{ labels[name] }}</span>{% endif %}
+<span class="field-help"><code>{{ name }}</code>{% if name in ("EXTRACT_MODEL", "DRAFT_MODEL") %} · now {{ values[name] or "not configured" }}{% endif %} · {% if name in proposals %}waiting for approval{% else %}{{ changed(name) }}{% endif %}</span>
+</div>{% endfor %}
+{% if editable %}</form>{% endif %}
+{% if editable %}{% for name in open %}<div class="conn-pending"><p>{% if names | length > 1 %}<strong>{{ labels[name] }}</strong> · {% endif %}Waiting for approval: proposed by {{ proposals[name][0] }}, {{ proposals[name][1].strftime("%Y-%m-%d %H:%M") }}{% if proposals[name][2] %}: {{ proposals[name][2] }}{% endif %}</p>
+<div class="action-row">{% for action, text in (("approve", "Approve"), ("reject", "Reject"), ("withdraw", "Withdraw")) %}<form class="inline" method="post" action="/admin/settings/connections/{{ name }}/{{ action }}"><input type="hidden" name="proposal" value="{{ proposals[name][3] }}"><button class="btn-sm" aria-label="{{ text }} the change to {{ name }}">{{ text }}</button></form>{% endfor %}</div></div>{% endfor %}{% endif %}
+{% if editable and (not open or names | reject("in", proposals) | list) %}<div class="action-row conn-foot">
+{% for name in names if name not in proposals %}{% set l = labels[name] %}{% set what = " " ~ ((l[:1] | lower ~ l[1:]) if l[1:2].islower() else l) if names | length > 1 else "" %}{% if names | length == 1 or name in two_admin %}<form class="inline" method="post" action="/admin/settings/connections/{{ name }}/restore"><button class="btn-sm" aria-label="Restore previous{{ what }} ({{ name }})">Restore previous{% if what %}<span>{{ what }}</span>{% endif %}</button></form>{% endif %}{% if name not in plain %}<form class="inline" method="post" action="/admin/settings/connections/{{ name }}/clear"><button class="btn-sm" aria-label="Clear{{ what }} ({{ name }})">Clear{% if what %}<span>{{ what }}</span>{% endif %}</button></form>{% endif %}{% endfor %}
+{% if not open %}<button class="btn primary" form="conn-{{ group }}" aria-label="{{ 'Propose' if names[0] in two_admin else 'Save' }} {{ label }}">{{ "Propose" if names[0] in two_admin else "Save" }}</button>{% endif %}
+</div>{% endif %}
+</div>
+{% endfor %}</div>
+<h3>Set in Terraform</h3>
+<dl class="status-list"><dt>S3_BUCKET</dt><dd>{{ values.S3_BUCKET or "Not configured" }} — the task roles are bound to this bucket</dd>
+<dt>OLLAMA_API_BASE</dt><dd>{{ values.OLLAMA_API_BASE or "Not configured" }} — a host URL decides where documents are sent</dd>
+<dt>EXTRACT_MODEL_OPTIONS, DRAFT_MODEL_OPTIONS</dt><dd>Not shown — set per model alias</dd></dl>
+</div>
+
+<div class="section-card">
+<div class="card-head"><h2>Sources</h2></div>
+{% if not sources %}<p class="muted">No sources configured.</p>{% else %}
+<div class="table-box"><table><thead><tr><th>Source</th><th>Name</th><th>Kind</th><th>Enabled</th><th>Last run</th><th>New</th><th>Updated</th><th>Deleted</th><th>Failed</th><th>Last failed crawl</th><th>Changed in</th></tr></thead><tbody>
+{% for id, name, kind, enabled, last_run, counts, failed_at in sources %}<tr><td><a href="/admin/sources">Source #{{ id }}</a></td><td>{{ name }}</td><td>{{ kind }}</td><td>{{ "Yes" if enabled else "No" }}</td><td>{{ last_run.strftime("%Y-%m-%d %H:%M") if last_run else "Never" }}</td><td>{{ counts.new }}</td><td>{{ counts.updated }}</td><td>{{ counts.deleted }}</td><td>{{ counts.failed }}</td><td>{{ failed_at.strftime("%Y-%m-%d %H:%M") if failed_at else "Never" }}</td><td>Sources page</td></tr>{% endfor %}
+</tbody></table></div>{% endif %}
+</div>
+
+<div class="section-card">
+<div class="card-head"><h2>Single sign-on</h2></div>
+<p class="muted">These settings are set in Terraform and Secrets Manager because a wrong value here could lock every admin out.</p>
+<div class="table-box"><table><thead><tr><th>Setting</th><th>Value</th><th>Changed in</th></tr></thead><tbody>
+<tr><td>OIDC_METADATA_URL</td><td>{{ values.OIDC_METADATA_URL or "Not configured" }}</td><td>Terraform variable</td></tr>
+<tr><td>OIDC_REDIRECT_URI</td><td>{{ values.OIDC_REDIRECT_URI or "Not configured" }}</td><td>Terraform variable</td></tr>
+<tr><td>OIDC_CLIENT_ID</td><td>{{ values.OIDC_CLIENT_ID or "Not configured" }}</td><td>Terraform variable</td></tr>
+<tr><td>OIDC_GROUPS_CLAIM</td><td>{{ values.OIDC_GROUPS_CLAIM }}</td><td>Terraform variable</td></tr>
+<tr><td>OIDC_CLIENT_SECRET</td><td>{{ "Configured" if secrets.OIDC_CLIENT_SECRET else "Not configured" }}</td><td>Secrets Manager</td></tr>
+</tbody></table></div></div>
+
+<div class="section-card">
+<div class="card-head"><h2>Roles</h2></div>
+<div class="table-box"><table><thead><tr><th>Role</th><th>Groups</th><th>Changed in</th></tr></thead><tbody>
+{% for role, groups in roles %}<tr><td>{{ role }}</td><td>{% for group, mine in groups %}<span class="badge {{ 'ok' if mine else 'neutral' }}">{{ group }}{% if mine %} (your group){% endif %}</span>{{ " " if not loop.last }}{% else %}<span class="muted">None</span>{% endfor %}</td><td>Terraform variable (ROLE_{{ role | upper }}_GROUPS)</td></tr>{% endfor %}
+</tbody></table></div></div>
+
+<div class="section-card">
+<div class="card-head"><h2>MCP</h2></div>
+<dl class="status-list"><dt>Enabled</dt><dd>{{ "Yes" if mcp_enabled else "No" }} — Terraform variable (MCP_ENABLED)</dd>
+{% if mcp_enabled %}{% for key in ("MCP_ISSUER", "MCP_AUDIENCE", "MCP_SCOPE", "MCP_CLIENT_IDS") %}<dt>{{ key }}</dt><dd>{{ values[key] or "Not configured" }} — Terraform variable</dd>{% endfor %}{% endif %}</dl>
+</div>
+{% endblock %}

@@ -35,6 +35,7 @@ class Site:
     def __init__(self):
         self.delta, self.files, self.perms, self.statuses, self.calls, self.forms = {}, {}, {}, {}, [], []
         self.root_perms, self.perm_errors = ROOT_PERMS, {}
+        self.meta, self.folders, self.drive_url = {}, {}, "https://contoso.sharepoint.com/sites/x/Shared Documents"
 
     def __call__(self, request):
         url = str(request.url).split("?")[0] if "token=" not in str(request.url) else str(request.url)
@@ -45,6 +46,8 @@ class Site:
                                   json={"access_token": "tok"})
         assert request.headers["authorization"] == "Bearer tok"
         path = request.url.path
+        if path.endswith("/drives/D1"):
+            return httpx.Response(200, json={"webUrl": self.drive_url}) if self.drive_url else httpx.Response(404)
         if path.endswith("/root/permissions"):
             return httpx.Response(200, json={"value": self.root_perms})
         if "/items/" in path:
@@ -54,7 +57,9 @@ class Site:
                     return httpx.Response(self.perm_errors[iid])
                 return httpx.Response(200, json={"value": self.perms.get(iid, inherited())})
             if not path.endswith("/content"):  # item metadata (retry by id)
-                return httpx.Response(200, json=f(iid)) if iid in self.files else httpx.Response(404)
+                if iid in self.folders:
+                    return httpx.Response(200, json={"id": iid, "webUrl": self.folders[iid]})
+                return httpx.Response(200, json={**f(iid), **self.meta.get(iid, {})}) if iid in self.files else httpx.Response(404)
             queue = self.statuses.get(iid, [])
             if queue:
                 code, headers = queue.pop(0) if len(queue) > 1 or queue[0][0] != 503 else queue[0]
@@ -114,6 +119,89 @@ def first_run(sp):
     sp.delta[ROOT] = (200, page([f("f1")], nxt=f"{ROOT}?token=p2"))
     sp.delta[f"{ROOT}?token=p2"] = (200, page([{"id": "dir", "name": "x", "folder": {}}, f("f2", "b.pdf")], delta=f"{ROOT}?token=d1"))
     return crawl.crawl_sharepoint(sp.sid)
+
+
+def test_sharepoint_withdrawn_file_returns_with_new_text(sp, monkeypatch):
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "15")
+    first_run(sp)
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([f("f1", size=20)], delta=f"{ROOT}?token=d2"))
+    assert crawl.crawl_sharepoint(sp.sid)["skipped_too_large"] == 1
+    assert docs(sp.sid)["f1"][0] is True
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "1000")
+    sp.files["f1"] = b"brand new text"
+    sp.delta[f"{ROOT}?token=d2"] = (200, page([f("f1", size=20)], delta=f"{ROOT}?token=d3"))
+    assert crawl.crawl_sharepoint(sp.sid)["updated"] == 1
+    assert docs(sp.sid)["f1"][0] is False
+    with db.connect() as c:
+        assert c.execute("select text from documents where source_id=%s and external_id='f1'", (sp.sid,)).fetchone()[0] == "brand new text"
+
+
+def skip_f1(sp, monkeypatch):
+    """Cap 15, f1 offered at size 20: skipped and remembered. The cursor is then at d2."""
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "15")
+    first_run(sp)
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([f("f1", size=20)], delta=f"{ROOT}?token=d2"))
+    assert crawl.crawl_sharepoint(sp.sid)["skipped_too_large"] == 1
+    assert docs(sp.sid)["f1"][0] is True
+    assert source(sp.sid)[1]["too_large"] == {"f1": 20}
+    sp.delta[f"{ROOT}?token=d2"] = (200, page([], delta=f"{ROOT}?token=d3"))
+    sp.calls.clear()
+
+
+def test_raised_cap_returns_an_unchanged_file(sp, monkeypatch):
+    skip_f1(sp, monkeypatch)
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "1000")
+    counts = crawl.crawl_sharepoint(sp.sid)
+    assert counts["updated"] + counts["skipped"] == 1
+    assert docs(sp.sid)["f1"][0] is False
+    assert source(sp.sid)[1]["too_large"] == {}
+
+
+def test_same_cap_makes_no_extra_call(sp, monkeypatch):
+    skip_f1(sp, monkeypatch)
+    crawl.crawl_sharepoint(sp.sid)
+    assert not [c for c in sp.calls if "/items/f1" in c]
+    assert docs(sp.sid)["f1"][0] is True
+    assert source(sp.sid)[1]["too_large"] == {"f1": 20}
+
+
+def test_still_too_large_after_a_small_raise(sp, monkeypatch):
+    skip_f1(sp, monkeypatch)
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "18")
+    crawl.crawl_sharepoint(sp.sid)
+    assert not [c for c in sp.calls if "/items/f1" in c]
+    assert docs(sp.sid)["f1"][0] is True
+    assert source(sp.sid)[1]["too_large"] == {"f1": 20}
+
+
+def test_deleted_while_skipped_is_forgotten(sp, monkeypatch):
+    skip_f1(sp, monkeypatch)
+    sp.delta[f"{ROOT}?token=d2"] = (200, page([{"id": "f1", "deleted": {}}], delta=f"{ROOT}?token=d3"))
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "1000")
+    crawl.crawl_sharepoint(sp.sid)
+    assert not [c for c in sp.calls if "/items/f1" in c]  # delta said deleted: not fetched again
+    assert docs(sp.sid)["f1"][0] is True
+    assert source(sp.sid)[1]["too_large"] == {}
+
+
+def test_404_on_refetch_is_forgotten(sp, monkeypatch):
+    skip_f1(sp, monkeypatch)
+    del sp.files["f1"]
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "1000")
+    crawl.crawl_sharepoint(sp.sid)
+    assert [c for c in sp.calls if c.endswith("/items/f1")]  # it was looked up, and the 404 forgot it
+    assert source(sp.sid)[1]["retry_ids"] == []  # a 404 is final, not retried
+    assert docs(sp.sid)["f1"][0] is True
+    assert source(sp.sid)[1]["too_large"] == {}
+
+
+def test_download_over_cap_is_remembered(sp, monkeypatch):
+    monkeypatch.setenv("SHAREPOINT_MAX_BYTES", "15")
+    first_run(sp)
+    sp.files["f3"] = b"x" * 20  # the listing says 5 bytes, the download is 20
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([f("f3", size=5)], delta=f"{ROOT}?token=d2"))
+    assert crawl.crawl_sharepoint(sp.sid)["skipped_too_large"] == 1
+    assert source(sp.sid)[1]["too_large"] == {"f3": 20}
 
 
 def test_full_crawl_follows_pages_and_stores_delta_link(sp):
@@ -224,6 +312,16 @@ def test_type_and_size_filters(sp):
     assert (c["new"], c["skipped_type"], c["skipped_too_large"]) == (1, 1, 1)
 
 
+def test_sharepoint_item_grown_past_cap_is_withdrawn(sp):
+    first_run(sp)
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([f("f1", size=10**9)], delta=f"{ROOT}?token=d2"))
+    sp.calls.clear()
+    c = crawl.crawl_sharepoint(sp.sid)
+    assert c["skipped_too_large"] == 1
+    assert docs(sp.sid)["f1"][0] is True and docs(sp.sid)["f2"][0] is False
+    assert sp.content_calls() == []
+
+
 def test_concurrent_crawl_reports_running(sp):
     with db.connect(autocommit=True) as other:
         other.execute("select pg_advisory_lock(2, %s)", (sp.sid,))
@@ -283,6 +381,25 @@ def test_failed_item_is_retried_next_run(sp):
     counts = crawl.crawl_sharepoint(sp.sid)
     assert counts["new"] == 1 and source(sp.sid)[1]["retry_ids"] == [] and docs(sp.sid)["f1"][0] is False
 
+
+def test_timeout_on_retried_item_does_not_stop_the_crawl(sp, monkeypatch):
+    sp.files = {"f1": b"one", "f2": b"two"}
+    sp.statuses["f1"] = [(503, {"Retry-After": "1"})]
+    sp.delta[ROOT] = (200, page([f("f1")], delta=f"{ROOT}?token=d1"))
+    assert crawl.crawl_sharepoint(sp.sid)["failed"] == 1 and source(sp.sid)[1]["retry_ids"] == ["f1"]
+
+    def boom(request):
+        if request.url.path.endswith("/items/f1"):
+            raise httpx.ReadTimeout("t")
+
+    monkeypatch.setattr(crawl, "TRANSPORT", httpx.MockTransport(lambda r: boom(r) or sp(r)))
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([f("f2", "b.pdf")], delta=f"{ROOT}?token=d2"))
+    counts = crawl.crawl_sharepoint(sp.sid)
+    assert counts["new"] == 1 and "f2" in docs(sp.sid)
+    cursor, last, _ = source(sp.sid)
+    assert last["retry_ids"] == ["f1"] and cursor.endswith("token=d2")
+
+
 def _change_groups_after_first_ingest(monkeypatch, sid):
     """As an admin's save does mid-crawl: new groups on the source and on its documents already written."""
     real, done = crawl.ingest, []
@@ -302,3 +419,104 @@ def test_crawl_does_not_write_back_groups_changed_mid_crawl(sp, monkeypatch):
     _change_groups_after_first_ingest(monkeypatch, sp.sid)
     first_run(sp)
     assert [v[1] for v in docs(sp.sid).values()] == [["g-new"], ["g-new"]]
+
+
+HOST = "https://contoso.sharepoint.com/sites/x/Shared%20Documents"
+
+
+def test_safe_link_accepts_only_the_hosts_own_https():
+    ok = "https://h.example/a/b?c=1"
+    assert crawl.safe_link(ok, "h.example") == ok
+    assert crawl.safe_link("https://H.Example/a", "h.example")
+    for bad in ("http://h.example/a", "javascript:alert(1)", "https://evil.example/a", "https://evil@h.example/a",
+                "https://u:p@h.example/a", "https://h.example:8443/a", "https://h.example:x/a", "https://h.example.evil.com/a",
+                "https://h.example/" + "a" * 2000, "", None, 5):
+        assert crawl.safe_link(bad, "h.example") is None, bad
+    assert crawl.safe_link(ok, None) is None
+
+
+def links(sid):
+    with db.connect() as c:
+        return {r[0]: r[1:] for r in c.execute("select external_id, web_url, folder_url from documents where source_id=%s", (sid,))}
+
+
+def linked(iid, url, parent="dir1"):
+    return dict(f(iid), webUrl=url, parentReference={"id": parent})
+
+
+def test_links_stored_and_parent_fetched_once_for_two_files(sp):
+    sp.files = {"f1": b"one", "f2": b"two"}
+    sp.folders["dir1"] = f"{HOST}/Cases"
+    sp.delta[ROOT] = (200, page([linked("f1", f"{HOST}/Cases/a.docx"), linked("f2", f"{HOST}/Cases/b.docx")], delta=f"{ROOT}?token=d1"))
+    crawl.crawl_sharepoint(sp.sid)
+    assert links(sp.sid) == {k: (f"{HOST}/Cases/{n}.docx", f"{HOST}/Cases") for k, n in (("f1", "a"), ("f2", "b"))}
+    assert sum(c.endswith("/items/dir1") for c in sp.calls) == 1
+
+
+def test_foreign_or_insecure_urls_are_stored_as_null(sp):
+    sp.files = {"f1": b"one", "f2": b"two"}
+    sp.folders["dir1"] = "http://contoso.sharepoint.com/Cases"
+    sp.delta[ROOT] = (200, page([linked("f1", "http://contoso.sharepoint.com/a.docx"),
+                                 linked("f2", "https://evil.example/b.docx")], delta=f"{ROOT}?token=d1"))
+    crawl.crawl_sharepoint(sp.sid)
+    assert links(sp.sid) == {"f1": (None, None), "f2": (None, None)}
+
+
+def test_unreadable_drive_host_nulls_all_links_and_the_crawl_goes_on(sp):
+    sp.drive_url = None
+    sp.files = {"f1": b"one"}
+    sp.delta[ROOT] = (200, page([linked("f1", f"{HOST}/a.docx")], delta=f"{ROOT}?token=d1"))
+    assert crawl.crawl_sharepoint(sp.sid)["new"] == 1
+    assert links(sp.sid) == {"f1": (None, None)}
+
+
+def test_backfill_fills_null_links_without_a_new_version_and_a_failure_withdraws_nothing(sp):
+    first_run(sp)  # f1, f2 stored with no links (the fake gives no webUrl)
+    with db.connect() as c:
+        before = c.execute("select external_id, updated_at from documents where source_id=%s order by 1", (sp.sid,)).fetchall()
+    sp.meta["f1"] = {"webUrl": f"{HOST}/a.docx", "parentReference": {"id": "dir1"}}
+    sp.folders["dir1"] = f"{HOST}/Cases"
+    sp.perm_errors = {}
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([], delta=f"{ROOT}?token=d2"))
+    # f2: the metadata call fails (item no longer answers) - it stays live and unlinked
+    del sp.files["f2"]
+    sp.statuses = {}
+    c = crawl.crawl_sharepoint(sp.sid)
+    assert links(sp.sid)["f1"] == (f"{HOST}/a.docx", f"{HOST}/Cases")
+    assert links(sp.sid)["f2"] == (None, None)
+    assert c["withdrawn_on_recheck"] == 0 and c["updated"] == 0 and docs(sp.sid)["f2"][0] is False
+    with db.connect() as cc:
+        assert cc.execute("select external_id, updated_at from documents where source_id=%s order by 1", (sp.sid,)).fetchall() == before
+    assert sum(x.endswith("/items/f1") for x in sp.calls[-30:]) >= 1
+
+
+def test_backfill_adds_one_metadata_call_and_no_second_permission_check(sp):
+    first_run(sp)
+    sp.meta["f1"] = {"webUrl": f"{HOST}/a.docx", "parentReference": {"id": "dir1"}}
+    sp.folders["dir1"] = f"{HOST}/Cases"
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([], delta=f"{ROOT}?token=d2"))
+    sp.calls.clear()
+    crawl.crawl_sharepoint(sp.sid)
+    assert sum(c.endswith("/items/f1/permissions") for c in sp.calls) == 1  # the backfill is not a permission check
+    assert sum(c.endswith("/items/f1") for c in sp.calls) == 1
+
+
+def test_no_drive_host_means_no_backfill_calls(sp):
+    first_run(sp)
+    sp.drive_url = None
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([], delta=f"{ROOT}?token=d2"))
+    sp.calls.clear()
+    crawl.crawl_sharepoint(sp.sid)
+    assert not [c for c in sp.calls if c.endswith(("/items/f1", "/items/f2"))]
+
+
+def test_folder_link_is_retried_when_the_parent_lookup_failed_once(sp):
+    sp.files = {"f1": b"one"}
+    sp.delta[ROOT] = (200, page([linked("f1", f"{HOST}/a.docx")], delta=f"{ROOT}?token=d1"))
+    crawl.crawl_sharepoint(sp.sid)  # dir1 does not answer: the web link is stored, the folder link is not
+    assert links(sp.sid)["f1"] == (f"{HOST}/a.docx", None)
+    sp.meta["f1"] = {"webUrl": f"{HOST}/a.docx", "parentReference": {"id": "dir1"}}
+    sp.folders["dir1"] = f"{HOST}/Cases"
+    sp.delta[f"{ROOT}?token=d1"] = (200, page([], delta=f"{ROOT}?token=d2"))
+    crawl.crawl_sharepoint(sp.sid)
+    assert links(sp.sid)["f1"] == (f"{HOST}/a.docx", f"{HOST}/Cases")

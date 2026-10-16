@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "_macros.html" import age %}
+{% from "_icons.html" import icon %}
+{% block body %}
+<div class="page-head"><div><h1>Library</h1><p>Briefs and quotes from public research, saved for the next bid. Public statements by third parties, not our delivery evidence.</p></div></div>
+<form method="get" action="/library" class="section-card">
+<div class="row filters"><div class="field"><label for="lib-q">Search the library</label>
+<input type="search" id="lib-q" name="q" value="{{ q }}" maxlength="200" placeholder="Topic or words in a quote, e.g. CMDB"></div>
+<div class="field"><label for="lib-kind">Type</label><select id="lib-kind" name="kind"><option value="">All</option>
+<option value="brief"{% if kind == "brief" %} selected{% endif %}>Briefs</option><option value="quotes"{% if kind == "quotes" %} selected{% endif %}>Quotes</option></select></div>
+<label class="check"><input type="checkbox" name="due" value="1"{% if due %} checked{% endif %}> Needs re-check</label>
+{% if topic %}<input type="hidden" name="topic" value="{{ topic }}">{% endif %}
+<button class="btn primary">Search</button>{% if q or topic or kind or due %} <a class="btn" href="/library">Clear</a>{% endif %}</div>
+{% if topics %}<div class="row" aria-label="Topics">{% for t, n in topics %}<a class="badge{{ '' if t.lower() == topic.lower() else ' neutral' }}" href="/library?{{ {'q': q, 'topic': t, 'kind': kind, 'due': due} | urlencode }}">{{ t }} ({{ n }})</a> {% endfor %}</div>{% endif %}</form>
+<form method="post" action="/research" class="section-card"><div class="row"><div class="field"><label for="lib-research">Research a new topic</label>
+<input type="text" id="lib-research" name="question" maxlength="1000" required value="{{ q }}" placeholder="e.g. How do banks run KYC onboarding on AWS?"></div>
+<button class="btn">Research this</button></div></form>
+{% if items %}<div class="section-card"><div class="card-head"><h2>{% if q %}Results for &ldquo;{{ q }}&rdquo;{% else %}Saved items{% endif %}</h2><span class="muted">{{ items | length }}</span></div>
+{% for i in items %}<div class="other-row">
+<a href="/library/{{ i.id }}"><b>{{ i.topic }}</b></a>
+<span class="badge neutral">{{ "Brief" if i.kind == "brief" else "Quotes" }}</span>
+{% if i.stale %}<span class="badge">re-check</span>{% endif %}
+<span class="muted push">saved by {{ i.by }} &middot; {{ i.sources }} source{{ "" if i.sources == 1 else "s" }} &middot; {{ age(i.age) }}{% if i.age %} old{% endif %}</span>
+</div>{% endfor %}</div>
+{% elif q %}<div class="empty-state">{{ icon("search") }}<p><b>Nothing matches &ldquo;{{ q }}&rdquo;</b></p><p>Try another word, or <a href="/library">see everything saved</a>.</p></div>
+{% else %}<div class="empty-state">{{ icon("database") }}<p><b>Nothing saved yet</b></p>
+<p>Run <a href="/research">online research</a>, tick the quotes you want, then choose <b>Save to library</b>, or write a brief first and save that.</p></div>{% endif %}
+{% endblock %}

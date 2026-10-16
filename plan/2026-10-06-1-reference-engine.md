@@ -16,7 +16,7 @@ spec: spec/2026-10-06-1-reference-engine.md
   - researches capabilities online, with cited public sources
 - **No vector DB / chunk RAG.** Extract once at ingest → Postgres jsonb +
   `tsvector` full-text + filters → top 20 → LLM picks and tailors the top 3.
-  `pgvector` on `summary` only if recall on the 50-query set is < 90%.
+  `pgvector` on `summary` only if top-20 recall on the 50-query set is < 90% (#24).
 - **Every extracted field and research claim carries a verbatim `source_quote`**.
   A quote not found in the source text (after whitespace normalisation) is
   marked `unsourced` (cases) or dropped (research).
@@ -687,16 +687,12 @@ access yet):
     - The section "Industry context (public sources)" opens with the
       disclaimer "These are public statements by third parties, not
       Synechron delivery evidence."
-      - Each item is a fixed phrase from the approved wording ("Supported out
-        of the box", "Available through configuration", "Common industry
-        practice", "Vendor statement"), then the VERBATIM quote, then
-        publisher, URL and date. Links are inline rather than footnoted.
-      - The phrase comes from an AI-chosen type, so it never appears without
-        its quote in any format, slides included: a reader can always check
-        it.
+      - Each item is the source's host, then `states:`, then the VERBATIM quote,
+        URL and date (#23: neutral wording replaced the AI-typed phrases, which
+        could overstate the quote). The claim type only filters claims. Links are
+        inline rather than footnoted. The quote stays next to its source in
+        every format, slides included: a reader can always check it.
       - The AI's own statement and page markdown never reach an output.
-      - We kept the approved type phrases instead of the reviewer's neutral
-        "X states:". The lead flagged this to the user.
     - Anonymisation applies to the quote only. Publisher and URL are never
       rewritten, since that would forge the citation. A claim that still
       matches `blocked()` (including a protected client's own site as the
@@ -788,11 +784,12 @@ access yet):
     - Open for step 22: a non-superuser DB role for the app (it uses the RDS
       master user today), alarms and dashboards, ALB access logs.
 22. **Recall set + hardening.** Add `tests/recall.yaml` (50 bid queries →
-    expected case IDs) and `scripts/recall.py` to report top-3 hit rate. Add an
+    expected case IDs) and `scripts/recall.py` to report top-3 and top-20 hit rates. Add an
     audit view, review-due reminders (email list on the review page), and a log
     check that no document text is logged.
 
-    → verify recall ≥ 90% before org rollout. Below that, add `pgvector` on
+    → verify top-20 recall ≥ 90% before org rollout (#24: top-20 is
+    what the AI picks from). Below that, add `pgvector` on
     `summary` and re-measure.
     Done (deviations after security review):
     - Recall:
@@ -802,9 +799,9 @@ access yet):
         user without the LLM pick, matches on document external_id or title,
         reports top-3 and top-20, and exits 0, 1 (below `--min`) or 2
         (nothing to score).
-      - Gate as written: top-3 ≥ 90% of FTS ranking. Top-20 measures the
-        retrieval that the pgvector decision is really about. If they
-        disagree, decide with the bid team.
+      - Gate as first written: top-3 ≥ 90% of FTS ranking. Superseded by
+        #24: top-20 is the gate, since it measures the retrieval that the
+        pgvector decision is really about. Top-3 is reported.
       - Prefer external_id over title in expectations, since titles can
         repeat.
     - `/admin/audit` (admin): paged and filterable; case links go to the
@@ -836,7 +833,7 @@ access yet):
 
 - `docker compose run app pytest` is green, covering every test named above.
 - CI runs pytest plus a brand render test on every PR.
-- `python scripts/recall.py` reports ≥ 0.90 top-3 recall.
+- `python scripts/recall.py` reports ≥ 0.90 top-20 recall.
 - Staging smoke test: SSO login → crawl a test site → approve → generate docx,
   pptx, pdf and md → research one question → check the "Industry context" section.
 

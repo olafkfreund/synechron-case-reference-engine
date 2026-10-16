@@ -2,10 +2,11 @@ import json
 import re
 import time
 import uuid
-from base64 import b64encode
+from base64 import b64decode, b64encode
 
 import boto3
 import pytest
+from fastapi.responses import RedirectResponse
 from fastapi.testclient import TestClient
 from itsdangerous import TimestampSigner
 from moto import mock_aws
@@ -243,9 +244,38 @@ def test_login_after_cutoff_works(env):
 
 def test_cookie_without_iat(env):
     sub = fresh()
-    assert client([USER], sub=sub, iat=False).get("/me").status_code == 200  # pre-deploy cookie, no row
+    assert client([USER], sub=sub, iat=False).get("/me").status_code == 401  # fail closed (#145)
     cut(sub)
     assert client([USER], sub=sub, iat=False).get("/me").status_code == 401
+
+
+def test_session_expires_after_max_age(env):
+    """Rolling renewal must not keep groups the IdP removed: a session has an absolute lifetime (#145)."""
+    old = time.time() - main.SESSION_MAX_AGE - 5
+    sub = fresh()  # no cutoff row: only the age can refuse it
+    assert client([USER], sub=sub, iat=old).get("/me").status_code == 401
+    r = client([USER], sub=sub, iat=old).get("/me", headers={"Accept": "text/html"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login" and "session=null" in r.headers["set-cookie"]
+    assert client([USER], sub=fresh(), iat=time.time() - main.SESSION_MAX_AGE + 60).get("/me").status_code == 200
+    for bad in (time.time() + 3600, float("inf"), float("nan")):  # a forged iat cannot make a session endless
+        assert client([USER], sub=fresh(), iat=bad).get("/me").status_code == 401
+
+
+def test_login_drops_existing_user(env, monkeypatch):
+    for k, v in dict(OIDC_METADATA_URL="http://idp/.well-known", OIDC_CLIENT_ID="c",
+                     OIDC_CLIENT_SECRET="s").items():
+        monkeypatch.setenv(k, v)
+    c = client([USER])
+
+    async def fake(request, redirect_uri):
+        request.session["_state_oidc_x"] = {"data": {}}  # as authlib does
+        return RedirectResponse("http://idp/authorize", status_code=302)
+    monkeypatch.setattr(c.app.state.oauth.oidc, "authorize_redirect", fake)
+    assert c.get("/me").status_code == 200
+    r = c.get("/login", follow_redirects=False)
+    assert r.status_code == 302
+    sent = json.loads(b64decode(TimestampSigner(SECRET).unsign(r.cookies["session"])))
+    assert "_state_oidc_x" in sent and "user" not in sent
 
 
 def test_cut_sessions_is_per_user(env):
@@ -272,6 +302,73 @@ def test_revoke_sessions_command(env):
     assert c.get("/me").status_code == 200
     assert revoke_sessions.main([sub]) == 0
     assert c.get("/me").status_code == 401
+
+
+def seed_rows(sub):
+    with db.connect() as conn:
+        conn.execute("insert into research (query, created_by) values ('q', %s)", (sub,))
+        conn.execute("insert into library_items (topic, kind, body, created_by) values ('t', 'quotes', '{\"quotes\": []}', %s)", (sub,))
+        conn.execute("insert into briefs (created_by, title, quotes) values (%s, 't', '[]')", (sub,))
+        conn.execute("insert into generations (user_id, format) values (%s, 'md')", (sub,))
+
+
+def owned(sub):
+    with db.connect() as conn:
+        return [conn.execute(f"select count(*) from {t} where {c} = %s", (sub,)).fetchone()[0]
+                for t, c in main.USER_COLUMNS]
+
+
+def oid_login(monkeypatch, old, oid):
+    c = oidc_app(monkeypatch, {"sub": old, "oid": oid, "name": "N", "groups": [USER]})
+    assert c.get("/auth", follow_redirects=False).status_code == 303
+    return c
+
+
+def test_oid_login_moves_the_old_sub_rows_once(env, monkeypatch):
+    db.init()
+    old, oid = fresh(), fresh()
+    seed_rows(old)
+    c = oid_login(monkeypatch, old, oid)
+    assert c.get("/me").json()["sub"] == oid  # the session key is the oid
+    assert owned(old) == [0] * 4 and owned(oid) == [1] * 4
+    with db.connect() as conn:
+        assert conn.execute("select oid from user_keys where old_sub = %s", (old,)).fetchone() == (oid,)
+    oid_login(monkeypatch, old, oid)  # a second login changes nothing
+    assert owned(oid) == [1] * 4
+    seed_rows(old)  # written by a pre-deploy session: the next login catches it
+    oid_login(monkeypatch, old, oid)
+    assert owned(oid) == [2] * 4
+
+
+def test_oid_login_keeps_the_later_cutoff_and_revokes_by_either_id(env, monkeypatch):
+    db.init()
+    old, oid = fresh(), fresh()
+    cut(old)
+    with db.connect() as conn:  # the oid already has a later cutoff
+        conn.execute("insert into session_cutoffs values (%s, now() + interval '1 hour')", (oid,))
+        later = conn.execute("select valid_after from session_cutoffs where sub = %s", (oid,)).fetchone()[0]
+    oid_login(monkeypatch, old, oid)
+    with db.connect() as conn:
+        assert conn.execute("select valid_after from session_cutoffs where sub = %s", (oid,)).fetchone()[0] == later
+    old2, oid2 = fresh(), fresh()
+    oid_login(monkeypatch, old2, oid2)
+    for key in (old2, oid2):  # revoking by either id ends sessions held under both
+        a, b = client([USER], sub=old2), client([USER], sub=oid2)
+        assert a.get("/me").status_code == 200 and b.get("/me").status_code == 200
+        cut(key)
+        assert a.get("/me").status_code == 401 and b.get("/me").status_code == 401
+        time.sleep(0.01)
+
+
+def test_login_without_oid_is_unchanged(env, monkeypatch):
+    db.init()
+    sub = fresh()
+    seed_rows(sub)
+    c = oidc_app(monkeypatch, {"sub": sub, "name": "N", "groups": [USER]})
+    assert c.get("/auth", follow_redirects=False).status_code == 303
+    assert c.get("/me").json()["sub"] == sub and owned(sub) == [1] * 4
+    with db.connect() as conn:
+        assert conn.execute("select count(*) from user_keys where old_sub = %s", (sub,)).fetchone()[0] == 0
 
 
 HTML = {"Accept": "text/html"}
@@ -342,3 +439,21 @@ def test_upload_browser_without_source(env):
         c.execute("delete from sources where kind='upload'")
         r = cl.post("/admin/upload", files={"file": ("a.pdf", PDF)}, headers=HTML, follow_redirects=False)
         assert r.status_code == 303 and r.headers["location"] == "/admin/sources?notice=nosource"
+
+
+def test_cookie_with_the_old_sub_resolves_to_the_oid_after_the_backfill(env, monkeypatch):
+    db.init()
+    old, oid = fresh(), fresh()
+    seed_rows(old)
+    stale = client([USER], sub=old)  # a pre-deploy cookie, still carrying the old sub
+    assert stale.get("/me").json()["sub"] == old
+    oid_login(monkeypatch, old, oid)  # the next login moved the rows
+    assert stale.get("/me").json()["sub"] == oid  # so the old cookie reads them under the oid
+    cut(oid)
+    assert stale.get("/me").status_code == 401  # and a cutoff on either id still ends it
+
+
+def test_malformed_groups_claim_is_refused_with_403(env, monkeypatch):
+    db.init()
+    c = oidc_app(monkeypatch, {"sub": "u1", "groups": 5})
+    assert c.get("/auth", follow_redirects=False).status_code == 403

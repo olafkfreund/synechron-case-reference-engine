@@ -1,0 +1,9 @@
+{# Shared bits. Use: {% from "_macros.html" import age %}{{ age(3) }} #}
+{% macro age(n) -%}{{ "today" if n == 0 else (n ~ " day" ~ ("" if n == 1 else "s")) }}{%- endmacro %}
+{# An image that opens at full size in a new tab, with a visible hint link under it. #}
+{% macro zoom(url, alt) -%}
+<a href="{{ url }}" target="_blank" rel="noopener" class="zoom" aria-label="Open {{ alt }} full size"><img src="{{ url }}" alt="{{ alt }}"></a>
+{%- endmacro %}
+{% macro zoom_hint(url, alt) -%}
+<a href="{{ url }}" target="_blank" rel="noopener" class="zoom-hint muted small" aria-label="Open {{ alt }} full size">Open full size &#8599;</a>
+{%- endmacro %}

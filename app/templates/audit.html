@@ -33,6 +33,21 @@
 </div>
 
 <div class="section-card">
+<div class="card-head"><h2>Source configuration changes</h2></div>
+{% if not config_changes %}<p class="muted">No source configuration changes recorded.</p>{% else %}
+<div class="table-box"><table><thead><tr><th>When</th><th>Source</th><th>Action</th><th>Changes</th><th>By</th></tr></thead><tbody>
+{% for at, name, action, summary, by in config_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ action }}</td><td>{{ summary }}</td><td>{{ by }}</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+</div>
+
+<div class="section-card">
+<div class="card-head"><h2>Connection changes</h2></div>
+{% if not conn_changes %}<p class="muted">No connection changes recorded.</p>{% else %}
+<div class="table-box"><table><thead><tr><th>When</th><th>Setting</th><th>Action</th><th>From</th><th>To</th><th>By</th></tr></thead><tbody>
+{% for at, name, action, old, new, by in conn_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ action }}</td><td>{{ old or "" }}</td><td>{{ new or "" }}</td><td>{{ by }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+</div>
+
+<div class="section-card">
 <div class="card-head"><h2>Source data class changes</h2></div>
 <p class="muted">Lowering a source to sanitised or public lets its documents reach any model.</p>
 {% if not class_changes %}<p class="muted">No data-class changes recorded.</p>{% else %}
@@ -42,11 +57,45 @@
 </div>
 
 <div class="section-card">
+<div class="card-head"><h2>Approvals below the minimum</h2></div>
+<p class="muted">Cases approved with fewer completeness checks than the minimum, with the reviewer's reason.</p>
+{% if not overrides %}<p class="muted">No approvals below the minimum recorded.</p>{% else %}
+<div class="table-box"><table><thead><tr><th>When</th><th>Case</th><th>Score</th><th>Reason</th><th>By</th></tr></thead><tbody>
+{% for at, cid, score, reason, by in overrides %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ cid }}</td><td>{{ score }}</td><td>{{ reason }}</td><td>{{ by }}</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+</div>
+
+<div class="section-card">
+<div class="card-head"><h2>Architecture changes</h2></div>
+{% if not arch_changes %}<p class="muted">No architecture changes recorded.</p>{% else %}
+<div class="table-box"><table><thead><tr><th>When</th><th>Case</th><th>Action</th><th>By</th></tr></thead><tbody>
+{% for at, cid, action, by in arch_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ cid }}</td><td>{{ action }}</td><td>{{ by }}</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+</div>
+
+<div class="section-card">
+<div class="card-head"><h2>Client logo changes</h2></div>
+{% if not logo_changes %}<p class="muted">No logo changes recorded.</p>{% else %}
+<div class="table-box"><table><thead><tr><th>When</th><th>Client</th><th>Action</th><th>By</th></tr></thead><tbody>
+{% for at, name, action, by in logo_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ action }}</td><td>{{ by }}</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+</div>
+
+<div class="section-card">
 <div class="card-head"><h2>Access group changes</h2></div>
 <p class="muted">Changes to a source's access groups apply to its documents at once.</p>
 {% if not acl_changes %}<p class="muted">No access-group changes recorded.</p>{% else %}
 <div class="table-box"><table><thead><tr><th>When</th><th>Source</th><th>From</th><th>To</th><th>By</th></tr></thead><tbody>
 {% for at, name, old, new, by in acl_changes %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ name }}</td><td>{{ (old or [])|join(", ") }}</td><td>{{ new|join(", ") }}</td><td>{{ by }}</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+</div>
+<div class="section-card">
+<div class="card-head"><h2>Tool calls</h2></div>
+<p class="muted">Calls from AI clients over MCP. Only who, which tool, which cases and the outcome are kept, never the question or the answer.</p>
+{% if not tool_rows %}<p class="muted">No tool calls recorded.</p>{% else %}
+<p class="muted">Last 30 days: {% for t, n in tool_counts %}<b>{{ t }}</b> {{ n }}{{ ", " if not loop.last }}{% endfor %}</p>
+<div class="table-box"><table><thead><tr><th>When</th><th>User</th><th>Client</th><th>Tool</th><th>Outcome</th><th>ms</th></tr></thead><tbody>
+{% for at, who_, client_id, tool, outcome, ms in tool_rows %}<tr><td>{{ at.strftime("%Y-%m-%d %H:%M:%S") }}</td><td>{{ who_ }}</td><td>{{ client_id }}</td><td>{{ tool }}</td><td><span class="badge {{ 'ok' if outcome == 'ok' else 'warn' }}">{{ outcome }}</span></td><td>{{ ms }}</td></tr>{% endfor %}</tbody></table></div>
 {% endif %}
 </div>
 {% endblock %}

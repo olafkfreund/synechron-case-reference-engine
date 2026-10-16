@@ -24,14 +24,17 @@ daily crawl schedule, optional DataSync. Nothing is applied by CI; run it from a
 4. `terraform apply -target=aws_ecr_repository.app -var-file=prod.tfvars`, then **build and push the image**
    (`docker build`, tag it with `image_tag`, push to the `ecr_repository_url` output; tags are immutable).
 5. `terraform apply -var-file=prod.tfvars` creates everything else. The services will not become healthy yet:
-6. **Set the secret values** (outputs `secret_arns_to_fill`). A task cannot start while a secret it uses is empty:
+6. **Set the required secret values** (outputs `secret_arns_to_fill`). A task cannot start while its session, OIDC or database secret has no value:
    ```
    aws secretsmanager put-secret-value --secret-id reference-engine/session-secret --secret-string "$(openssl rand -base64 48)"
    aws secretsmanager put-secret-value --secret-id reference-engine/oidc-client-secret --secret-string '...'
    aws secretsmanager put-secret-value --secret-id reference-engine/db-app-password \
      --secret-string "{\"password\": \"$(openssl rand -base64 36 | tr -d '/+=')\"}"
-   # graph-client-secret, confluence-token, brave-api-key likewise (put a placeholder if unused)
    ```
+   Set `graph-client-secret`, `confluence-token`, `brave-api-key`, `ollama-cloud-key`, `openai-api-key` and
+   `gemini-api-key` in the portal or Secrets Manager console when needed. All six are always created and may remain
+   unset. The web task role can read and write them; the worker task role can read them. Changing their values does
+   not require a task restart.
 7. **Run the migrate task** (creates the tables and the restricted database role `refs_app`, with the password from
    `db-app-password`). Wait for it to stop and check its exit code; do this again after any release that changes `sql/`:
    ```
@@ -44,6 +47,8 @@ daily crawl schedule, optional DataSync. Nothing is applied by CI; run it from a
 
 ## Things to know
 
+- **MCP is on by default.** Set `mcp_issuer` (Entra v2 HTTPS issuer), `mcp_audience`, and `mcp_client_ids` before planning; an incomplete setup fails the plan. Set `mcp_enabled = false` to disable MCP. `mcp_scope` defaults to `refs.access`; `mcp_tenant_id` is optional.
+- **Connection secrets are read at runtime.** The six secrets above are not injected into tasks. Add selectable models with `model_choices`; each Bedrock model also needs its ARN in `bedrock_model_arns`.
 - **The web task has HTTPS egress through the NAT** (decided 2026-10-07): the OIDC login calls Entra ID server-side
   (metadata, token, keys), which has no small stable address range. The web task never parses untrusted documents;
   the worker does. Bedrock, Secrets Manager, ECR, logs and STS still go through VPC endpoints, S3 through the gateway.

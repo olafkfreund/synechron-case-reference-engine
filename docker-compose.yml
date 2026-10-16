@@ -15,7 +15,8 @@ services:
       - "127.0.0.1:8080:8080"
     environment:
       SERVER_PORT: "8080"
-      JSON_CONFIG: '{"interactiveLogin": true}'
+      # refs-mcp: dev tokens for /mcp (scripts/mcp_token.sh). Claims come from the request: $${username}, and $${groups} plus $${group2} (scripts/mcp_token.sh sends both).
+      JSON_CONFIG: '{"interactiveLogin": true, "tokenCallbacks": [{"issuerId": "refs-mcp", "tokenExpiry": 3600, "requestMappings": [{"requestParam": "client_id", "match": "local-dev", "claims": {"sub": "$${username}", "oid": "$${username}", "aud": ["refs-mcp"], "scp": "refs.access", "azp": "local-dev", "groups": ["$${groups}", "$${group2}"]}}, {"requestParam": "client_id", "match": "local-dev-review", "claims": {"sub": "$${username}", "oid": "$${username}", "aud": ["refs-mcp"], "scp": "refs.access refs.review", "azp": "local-dev-review", "groups": ["$${groups}", "$${group2}"]}}]}]}'
     networks:
       default:
         aliases:
@@ -33,11 +34,18 @@ services:
       AWS_ENDPOINT_URL: http://s3:5000
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
+      # the six connection secrets (#288): seeded from the shell once; after that the Settings page edits them
+      GRAPH_CLIENT_SECRET: ${GRAPH_CLIENT_SECRET:-}
+      CONFLUENCE_TOKEN: ${CONFLUENCE_TOKEN:-}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      OLLAMA_CLOUD_KEY: ${OLLAMA_CLOUD_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     entrypoint:
       - python
       - -c
       - |
-        import boto3, time
+        import boto3, os, time
         c = boto3.client("s3", region_name="eu-west-1")
         for _ in range(30):
             try:
@@ -50,10 +58,18 @@ services:
                 time.sleep(1)
         else:
             raise SystemExit("s3 never answered")
+        sm = boto3.client("secretsmanager", region_name="eu-west-1")
+        for name in ("GRAPH_CLIENT_SECRET", "CONFLUENCE_TOKEN", "BRAVE_API_KEY", "OLLAMA_CLOUD_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"):
+            value = os.environ.get(name)
+            try:
+                sm.create_secret(Name=f"refs-local/{name}", **({"SecretString": value} if value else {}))
+            except sm.exceptions.ResourceExistsException:
+                pass  # set in the portal since: keep it
   app:
     build: .
     environment:
       DATABASE_URL: postgresql://postgres:dev@db/refs
+      MCP_ENABLED: "0"  # most tests build the app without MCP settings; the MCP tests turn it on themselves
     depends_on:
       db:
         condition: service_healthy
@@ -67,12 +83,16 @@ services:
       EXTRACT_MODEL_OPTIONS: ${EXTRACT_MODEL_OPTIONS:-}
       DRAFT_MODEL: ${DRAFT_MODEL:-}
       DRAFT_MODEL_OPTIONS: ${DRAFT_MODEL_OPTIONS:-}
-      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      SETTINGS_SECRET_IDS: '{"GRAPH_CLIENT_SECRET":"refs-local/GRAPH_CLIENT_SECRET","CONFLUENCE_TOKEN":"refs-local/CONFLUENCE_TOKEN","BRAVE_API_KEY":"refs-local/BRAVE_API_KEY","OLLAMA_CLOUD_KEY":"refs-local/OLLAMA_CLOUD_KEY","OPENAI_API_KEY":"refs-local/OPENAI_API_KEY","GEMINI_API_KEY":"refs-local/GEMINI_API_KEY"}'  # moto (s3 service); edits are lost when it restarts
+      MODEL_CHOICES: ${MODEL_CHOICES:-${EXTRACT_MODEL:-},${DRAFT_MODEL:-}}
+      GRAPH_CLIENT_ID: ${GRAPH_CLIENT_ID:-}
+      CONFLUENCE_EMAIL: ${CONFLUENCE_EMAIL:-}
       AWS_ENDPOINT_URL: http://s3:5000
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       AWS_DEFAULT_REGION: eu-west-1
       S3_BUCKET: refs-local
+      MCP_ISSUER: ${MCP_ISSUER:-http://idp.localhost:8080/refs-mcp}  # scripts/seed_demo.py approves the dev MCP client only against the mock
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -92,7 +112,10 @@ services:
       EXTRACT_MODEL_OPTIONS: ${EXTRACT_MODEL_OPTIONS:-}
       DRAFT_MODEL: ${DRAFT_MODEL:-}
       DRAFT_MODEL_OPTIONS: ${DRAFT_MODEL_OPTIONS:-}
-      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      SETTINGS_SECRET_IDS: '{"GRAPH_CLIENT_SECRET":"refs-local/GRAPH_CLIENT_SECRET","CONFLUENCE_TOKEN":"refs-local/CONFLUENCE_TOKEN","BRAVE_API_KEY":"refs-local/BRAVE_API_KEY","OLLAMA_CLOUD_KEY":"refs-local/OLLAMA_CLOUD_KEY","OPENAI_API_KEY":"refs-local/OPENAI_API_KEY","GEMINI_API_KEY":"refs-local/GEMINI_API_KEY"}'  # moto (s3 service); edits are lost when it restarts
+      MODEL_CHOICES: ${MODEL_CHOICES:-${EXTRACT_MODEL:-},${DRAFT_MODEL:-}}
+      GRAPH_CLIENT_ID: ${GRAPH_CLIENT_ID:-}
+      CONFLUENCE_EMAIL: ${CONFLUENCE_EMAIL:-}
       AWS_ENDPOINT_URL: http://s3:5000
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
@@ -103,6 +126,12 @@ services:
       OIDC_METADATA_URL: http://idp.localhost:8080/refs/.well-known/openid-configuration
       OIDC_CLIENT_ID: refs-local
       OIDC_CLIENT_SECRET: dev-only-not-a-secret
+      # MCP at /mcp: on unless MCP_ENABLED=0 (see docs/mcp.md); the issuer is the mock IdP's refs-mcp
+      MCP_ENABLED: ${MCP_ENABLED:-1}
+      MCP_ISSUER: ${MCP_ISSUER:-http://idp.localhost:8080/refs-mcp}
+      MCP_AUDIENCE: refs-mcp
+      MCP_CLIENT_IDS: local-dev,local-dev-review  # the mock's azp values
+      MCP_JWKS_URL: http://idp:8080/refs-mcp/jwks
       ROLE_USER_GROUPS: refs-users
       ROLE_REVIEWER_GROUPS: refs-reviewers
       ROLE_ADMIN_GROUPS: refs-admins

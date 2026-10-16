@@ -21,14 +21,16 @@ class Conf:
 
     def __init__(self):
         self.pages, self.restricted, self.atts, self.files, self.queue = {}, set(), {}, {}, {}
-        self.calls, self.auth, self.cqls = [], [], []
+        self.calls, self.auth, self.cqls, self.expands = [], [], [], []
 
-    def page(self, pid, html="<p>hello</p>", when="2026-01-01T00:00:00.000Z", ancestors=(), title=None):
+    def page(self, pid, html="<p>hello</p>", when="2026-01-01T00:00:00.000Z", ancestors=(), title=None, space="ENG"):
         # ancestors: ids, or (id, type) for non-page ancestors such as folders
         anc = [a if isinstance(a, tuple) else (a, "page") for a in ancestors]
         self.pages[pid] = {"id": pid, "type": "page", "title": title or f"Page {pid}", "status": "current",
                            "version": {"when": when}, "body": {"storage": {"value": html}},
-                           "ancestors": [{"id": i} for i, t in anc if t == "page"], "_v2": anc}
+                           "ancestors": [{"id": i, "_links": {"webui": f"/spaces/{space}/pages/{i}"}} for i, t in anc if t == "page"],
+                           "_v2": anc, "space": {"key": space},
+                           "_links": {"webui": f"/spaces/{space}/pages/{pid}", "base": "https://evil.example/wiki"}}
 
     def attach(self, pid, aid, title="spec.docx", data=b"att", size=None, when="2026-01-01T00:00:00.000Z", number=None):
         self.atts.setdefault(pid, []).append({
@@ -40,6 +42,7 @@ class Conf:
     def __call__(self, request):
         path, q = request.url.path, dict(request.url.params)
         self.calls.append(path)
+        self.expands.append(q.get("expand"))
         self.auth.append(request.headers.get("authorization"))
         if self.queue.get(path):
             code, headers = self.queue[path][0] if len(self.queue[path]) == 1 and self.queue[path][0][0] >= 500 else self.queue[path].pop(0)
@@ -58,7 +61,11 @@ class Conf:
             since = re.search(r'lastmodified > "([^"]+)"', q["cql"])
             floor = datetime.strptime(since[1], "%Y/%m/%d %H:%M") if since else None
             items = [p for _, p in sorted(self.pages.items())] + [a for _, al in sorted(self.atts.items()) for a in al]
-            hits = [p for p in items if p["status"] == "current"  # CQL: current content only
+            scope = {k.replace('\\"', '"').casefold() for k in
+                     re.findall(r'"((?:[^"\\]|\\.)*)"', re.search(r"space in \(([^)]*)\)", q["cql"])[1])}
+            space = lambda p: (p if p["type"] == "page" else self.pages.get(p["container"]["id"], {})).get("space", {}).get("key", "")  # noqa: E731
+            hits = [p for p in items if p["status"] == "current"  # CQL: current content only, in the listed spaces
+                    and space(p).casefold() in scope
                     and (not floor or datetime.fromisoformat(p["version"]["when"]).replace(tzinfo=None) > floor)]
             start = int(q.get("start", 0))
             if start + 2 < len(hits):
@@ -220,6 +227,109 @@ def test_unchanged_attachment_is_not_downloaded_again(cf):
     assert "att:p1:a1" in live(cf.sid) and version(cf.sid) == "1:2026-01-01T00:00:00.000Z"
 
 
+def test_unchanged_attachment_with_older_images_is_downloaded_once_for_the_backfill(cf, monkeypatch):
+    calls = []
+    monkeypatch.setattr(ing, "document_images_from", lambda *a, **k: calls.append(1) or [(b"png", 500, 400, "")])
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"spec bytes", number=1)
+    crawl.crawl_confluence(cf.sid)
+    with db.connect() as c:  # as if read by version 1, with a live case
+        did = c.execute("select id from documents where source_id=%s and external_id='att:p1:a1'", (cf.sid,)).fetchone()[0]
+        c.execute("insert into cases(document_id,status) values (%s,'extracted') on conflict do nothing", (did,))
+        c.execute("update documents set images_version=1 where id=%s", (did,))
+        c.execute("delete from document_images where document_id=%s", (did,))
+    calls.clear()
+    cf.calls.clear()
+    offer_again(cf)
+    crawl.crawl_confluence(cf.sid)
+    assert DL in cf.calls and len(calls) == 1  # downloaded, and its images stored
+    cf.calls.clear()
+    offer_again(cf)
+    crawl.crawl_confluence(cf.sid)
+    assert DL not in cf.calls and len(calls) == 1  # skipped again
+
+
+def test_confluence_attachment_grown_past_cap_is_withdrawn(cf):
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"spec bytes")
+    crawl.crawl_confluence(cf.sid)
+    assert "att:p1:a1" in live(cf.sid)
+    cf.atts["p1"][0]["extensions"]["fileSize"] = 10**9
+    offer_again(cf)
+    crawl.crawl_confluence(cf.sid)
+    assert "att:p1:a1" not in live(cf.sid) and "page:p1" in live(cf.sid)
+    assert DL not in cf.calls
+
+
+def test_confluence_withdrawn_attachment_returns_with_new_text(cf, monkeypatch):
+    monkeypatch.setenv("CONFLUENCE_MAX_BYTES", "15")
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"spec bytes", number=1)
+    crawl.crawl_confluence(cf.sid)
+    cf.atts["p1"][0]["extensions"]["fileSize"] = 20
+    offer_again(cf)
+    crawl.crawl_confluence(cf.sid)
+    assert "att:p1:a1" not in live(cf.sid)
+    monkeypatch.setenv("CONFLUENCE_MAX_BYTES", "1000")
+    cf.atts["p1"][0]["version"] = {"when": "2026-03-01T00:00:00.000Z", "number": 2}
+    cf.files[DL] = b"brand new text"
+    offer_again(cf, "2026-03-01T00:00:00.000Z")
+    crawl.crawl_confluence(cf.sid)
+    assert "att:p1:a1" in live(cf.sid)
+    with db.connect() as c:
+        assert c.execute("select text from documents where source_id=%s and external_id='att:p1:a1'", (cf.sid,)).fetchone()[0] == "brand new text"
+
+
+def skip_a1(cf, monkeypatch):
+    """Cap 15, a1 is 20 bytes: skipped and remembered. A later page p2 moves the cursor past p1 (CURSOR_SLACK)."""
+    monkeypatch.setenv("CONFLUENCE_MAX_BYTES", "15")
+    cf.page("p1", when="2026-01-01T00:00:00.000Z")
+    cf.attach("p1", "a1", "spec.docx", b"spec bytes", size=20, when="2026-01-01T00:00:00.000Z")
+    crawl.crawl_confluence(cf.sid)
+    assert "att:p1:a1" not in live(cf.sid) and src(cf.sid)[1]["too_large"] == {"att:p1:a1": 20}
+    cf.page("p2", when="2026-03-01T00:00:00.000Z")
+    crawl.crawl_confluence(cf.sid)
+    cf.calls.clear()
+
+
+def test_confluence_raised_cap_returns_an_unchanged_attachment(cf, monkeypatch):
+    skip_a1(cf, monkeypatch)
+    monkeypatch.setenv("CONFLUENCE_MAX_BYTES", "1000")
+    crawl.crawl_confluence(cf.sid)
+    assert "att:p1:a1" in live(cf.sid) and DL in cf.calls
+    assert src(cf.sid)[1]["too_large"] == {}
+
+
+def test_confluence_same_cap_makes_no_extra_page_fetch(cf, monkeypatch):
+    skip_a1(cf, monkeypatch)
+    crawl.crawl_confluence(cf.sid)
+    assert DL not in cf.calls and "att:p1:a1" not in live(cf.sid)
+    assert f"{API}/p1/child/attachment" not in cf.calls  # p1 was not crawled again
+    assert src(cf.sid)[1]["too_large"] == {"att:p1:a1": 20}
+
+
+def test_confluence_download_over_cap_is_remembered(cf, monkeypatch):
+    monkeypatch.setenv("CONFLUENCE_MAX_BYTES", "15")
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"x" * 20, size=5)  # the listing says 5 bytes, the download is 20
+    assert crawl.crawl_confluence(cf.sid)["skipped_too_large"] == 1
+    assert src(cf.sid)[1]["too_large"] == {"att:p1:a1": 20}
+
+
+def test_confluence_restricted_page_drops_its_still_too_large_attachment(cf, monkeypatch):
+    monkeypatch.setenv("CONFLUENCE_MAX_BYTES", "15")
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"x" * 20)
+    cf.attach("p1", "a2", "plan.docx", b"y" * 30)
+    crawl.crawl_confluence(cf.sid)
+    cf.page("p2", when="2026-03-01T00:00:00.000Z")
+    crawl.crawl_confluence(cf.sid)  # the cursor moves past p1
+    cf.restricted.add("p1")
+    monkeypatch.setenv("CONFLUENCE_MAX_BYTES", "25")  # a1 now fits, a2 does not
+    crawl.crawl_confluence(cf.sid)
+    assert src(cf.sid)[1]["too_large"] == {}  # p1 was crawled again, found restricted: nothing carried
+
+
 def test_changed_attachment_is_downloaded_and_version_stored(cf):
     cf.page("p1")
     cf.attach("p1", "a1", "spec.docx", b"spec bytes", number=1)
@@ -306,6 +416,38 @@ def test_failure_withdraws_and_is_retried_next_run(cf):
     assert "page:p1" in live(cf.sid) and src(cf.sid)[1]["retry_ids"] == []
 
 
+def _timeout_on_page_fetch(monkeypatch, cf):
+    def boom(request):
+        if request.url.path == f"{API}/p1":
+            raise httpx.ReadTimeout("t")
+
+    monkeypatch.setattr(crawl, "TRANSPORT", httpx.MockTransport(lambda r: boom(r) or cf(r)))
+
+
+def test_timeout_on_retried_page_does_not_stop_the_crawl(cf, monkeypatch):
+    cf.page("p1", when="2026-01-01T00:00:00.000Z")
+    crawl.crawl_confluence(cf.sid)
+    cf.pages["p1"]["version"]["when"] = "2026-01-02T00:00:00.000Z"
+    cf.queue[f"{API}/p1/restriction/byOperation/read"] = [(500, {})]
+    assert crawl.crawl_confluence(cf.sid)["failed"] == 1 and src(cf.sid)[1]["retry_ids"] == ["p1"]
+    cf.queue.clear()
+    cf.pages["p1"]["version"]["when"] = "2025-01-01T00:00:00.000Z"  # CQL will not offer it
+    _timeout_on_page_fetch(monkeypatch, cf)
+    crawl.crawl_confluence(cf.sid)
+    assert src(cf.sid)[1]["retry_ids"] == ["p1"]
+
+
+def test_timeout_on_attachment_page_fetch_is_a_page_failure(cf, monkeypatch):
+    cf.page("p1")
+    cf.pages["p1"]["status"] = "historical"  # in ENG but not offered by search (#127); only its attachment is
+    cf.attach("p1", "a1")  # its page is fetched by id
+    _timeout_on_page_fetch(monkeypatch, cf)
+    last = crawl.crawl_confluence(cf.sid)
+    assert last["failed"] == 1
+    last = src(cf.sid)[1]
+    assert last["failed_keys"][0]["error"] == "ReadTimeout" and "p1" in last["retry_ids"]
+
+
 def test_concurrent_crawl_reports_running(cf):
     with db.connect(autocommit=True) as other:
         other.execute("select pg_advisory_lock(2, %s)", (cf.sid,))
@@ -315,7 +457,8 @@ def test_concurrent_crawl_reports_running(cf):
 def test_worker_and_sources_know_confluence():
     from app import sources
     assert "crawl_confluence" in worker.HANDLERS
-    assert sources.JOB["confluence"] == "crawl_confluence" and sources.REQUIRED["confluence"] == ("base_url", "spaces")
+    assert sources.JOB["confluence"] == "crawl_confluence" and sources.ROOT["confluence"] == ("base_url",) \
+        and sources.SCOPE["confluence"] == ("spaces", "api_prefix")
 
 
 def test_page_under_folder_fails_closed(cf):
@@ -323,6 +466,44 @@ def test_page_under_folder_fails_closed(cf):
     cf.page("p1", ancestors=[("f9", "folder")])
     c = crawl.crawl_confluence(cf.sid)
     assert c["skipped_restricted"] == 1 and "page:p1" not in live(cf.sid)
+
+
+def test_page_moved_out_of_scope_is_withdrawn(cf):
+    cf.page("p1")
+    cf.attach("p1", "a1")
+    crawl.crawl_confluence(cf.sid)
+    assert {"page:p1", "att:p1:a1"} <= set(live(cf.sid))
+    cf.pages["p1"]["space"] = {"key": "HR"}  # same id, another space: CQL on ENG no longer offers it
+    crawl.crawl_confluence(cf.sid)
+    assert live(cf.sid) == {}
+
+
+def test_retry_of_moved_page_is_not_ingested(cf):
+    cf.page("p1")
+    cf.queue[f"{API}/p1/restriction/byOperation/read"] = [(500, {})]
+    crawl.crawl_confluence(cf.sid)
+    assert src(cf.sid)[1]["retry_ids"] == ["p1"]
+    cf.queue.clear()
+    cf.pages["p1"]["space"] = {"key": "HR"}
+    crawl.crawl_confluence(cf.sid)
+    assert "page:p1" not in live(cf.sid)
+
+
+def test_space_key_matches_case_insensitively(cf):
+    with db.connect() as c:
+        c.execute("""update sources set config = config || '{"spaces": ["eng"]}' where id=%s""", (cf.sid,))
+    cf.page("p1")
+    crawl.crawl_confluence(cf.sid)
+    assert "page:p1" in live(cf.sid)
+
+
+def test_page_fetches_expand_space(cf):
+    cf.page("p1")
+    cf.attach("p1", "a1")
+    crawl.crawl_confluence(cf.sid)
+    crawl.crawl_confluence(cf.sid)  # the second run re-checks live documents by id
+    got = [e for e in cf.expands if e and "ancestors" in e]
+    assert got and all("space" in e for e in got)
 
 
 def test_attachment_moved_to_another_page_is_withdrawn(cf):
@@ -345,6 +526,7 @@ def test_new_attachment_on_unchanged_page_is_found(cf):
     crawl.crawl_confluence(cf.sid)
     assert "att:p3:a7" in live(cf.sid)
 
+
 def _change_groups_after_first_ingest(monkeypatch, sid):
     """As an admin's save does mid-crawl: new groups on the source and on its documents already written."""
     real, done = crawl.ingest, []
@@ -365,3 +547,57 @@ def test_crawl_does_not_write_back_groups_changed_mid_crawl(cf, monkeypatch):
     _change_groups_after_first_ingest(monkeypatch, cf.sid)
     crawl.crawl_confluence(cf.sid)
     assert live(cf.sid) == {k: ["g-new"] for k in ("page:p1", "page:p2", "page:p3", "att:p1:a1")}
+
+
+def test_renamed_attachment_with_same_version_shows_new_title(cf):
+    cf.page("p1")
+    cf.attach("p1", "a1", "spec.docx", b"spec bytes", number=1)
+    crawl.crawl_confluence(cf.sid)
+    cf.atts["p1"][0]["title"] = "renamed.docx"
+    offer_again(cf)
+    counts = crawl.crawl_confluence(cf.sid)
+    with db.connect() as c:
+        title = c.execute("select title from documents where source_id=%s and external_id=%s", (cf.sid, "att:p1:a1")).fetchone()[0]
+    assert title == "renamed.docx"
+    assert not any("/download/" in u for u in cf.calls) and counts["skipped"] >= 2  # the page and the attachment
+
+
+def urls(sid):
+    with db.connect() as c:
+        return {r[0]: r[1:] for r in c.execute(
+            "select external_id, web_url, folder_url from documents where source_id=%s", (sid,))}
+
+
+def test_links_are_built_on_the_configured_base_not_the_forged_one(cf):
+    cf.page("p1", ancestors=["top", "mid"])
+    cf.page("top")
+    cf.page("mid")
+    cf.attach("p1", "a1")
+    crawl.crawl_confluence(cf.sid)
+    u = urls(cf.sid)
+    page = f"{BASE}/wiki/spaces/ENG/pages/p1"  # /wiki once, and not evil.example
+    assert u["page:p1"] == (page, f"{BASE}/wiki/spaces/ENG/pages/mid")
+    assert u["att:p1:a1"] == (page, page)
+    assert u["page:top"][1] is None
+
+
+def test_recheck_backfills_missing_links(cf):
+    seed(cf)
+    crawl.crawl_confluence(cf.sid)
+    with db.connect() as c:
+        c.execute("update documents set web_url=null, folder_url=null where source_id=%s", (cf.sid,))
+    crawl.crawl_confluence(cf.sid)  # nothing changed: every document goes through the re-check
+    u = urls(cf.sid)
+    assert u["page:p2"][0] == f"{BASE}/wiki/spaces/ENG/pages/p2"
+    assert u["att:p1:a1"][0] == f"{BASE}/wiki/spaces/ENG/pages/p1"
+
+
+def test_unchanged_attachment_skip_passes_its_links(cf):
+    when = "2026-01-01T00:00:00.000Z"
+    cf.page("p1", when=when)
+    cf.attach("p1", "a1", when=when, number=1)
+    crawl.crawl_confluence(cf.sid)
+    with db.connect() as c:
+        c.execute("update documents set web_url=null, folder_url=null where external_id='att:p1:a1' and source_id=%s", (cf.sid,))
+    assert crawl.crawl_confluence(cf.sid)["skipped"] >= 1  # the attachment took the skip_unchanged path
+    assert urls(cf.sid)["att:p1:a1"] == (f"{BASE}/wiki/spaces/ENG/pages/p1",) * 2

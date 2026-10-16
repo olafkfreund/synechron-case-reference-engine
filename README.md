@@ -23,6 +23,7 @@ Both are private until shared from their Share menu.
 
 - Crawled files larger than `S3_MAX_BYTES`, `SHAREPOINT_MAX_BYTES` or `CONFLUENCE_MAX_BYTES` (50 MB by default)
   are skipped before download and counted as `skipped_too_large` on the sources page.
+  Raising the cap brings back, on the next crawl, files skipped as too large since this was added (#206).
 - Only `docx`, `pptx` and `pdf` are read; other files are counted as `skipped_type`. For S3 and SharePoint
   sources, `include_ext` in the source config widens the list. Legacy `.doc` is not supported.
 - Uploads are capped by `UPLOAD_MAX_BYTES` (50 MB by default) and go through the S3 crawler, so keep it at or
@@ -65,7 +66,7 @@ paste the claims JSON from the table.
 - Port 8080 appears in three places: the `idp` port, its `SERVER_PORT`, and `OIDC_METADATA_URL` in
   `docker-compose.yml`. Change all three together.
 - Check all four logins with `scripts/check_local_login.sh` (`BASE` overrides `http://localhost:8000`).
-- Uploads go to an in-memory S3 (`s3`), lost when it restarts; `docker compose up -d s3-init` recreates the bucket.
+- Uploads and connection secrets edited on the Settings page go to the in-memory moto server (`s3`), so edits are lost when the local moto server restarts; `docker compose up -d s3-init` recreates the bucket and re-seeds the secrets.
   As admin, add an upload source with config `{"bucket": "refs-local"}` first, then use Upload on its row of the Sources page.
 - **Local only:** this provider logs anyone in as anything. Never expose it.
 
@@ -93,7 +94,9 @@ sees the demo sources:
 The seed adds two
 sources ("Demo: Bid library" for `sales`, "Demo: Delivery archive" for `delivery`), ten clients and 14 cases
 (9 approved, 5 waiting for review, including a Fabrikam statement of work and change order to merge).
-Running `up` again leaves existing rows alone. The S3 originals are in memory and are put again each time.
+Each case is a full case study with points, written sections, technical references and, for most, a diagram.
+
+Running `up` again refreshes the demo cases in place: when a demo document's text has changed in `demo/cases.json`, the seed updates that document and its case, and a case you approved or edited by hand goes back to its scripted state. A document that has not changed is left alone, and nothing is deleted. The seed only ever touches sources named "Demo: ..." and their own documents and cases; any other source is never touched. The S3 originals are in memory and are put again each time.
 
 **Online research** also needs a Brave Search key: `demo.sh` reads `/run/agenix/api-brave-search` if it exists, or uses an exported `BRAVE_API_KEY`.
 
@@ -104,7 +107,7 @@ and review still work. Rows are made with no LLM call.
 Walkthrough:
 
 1. **Sales:** log in as `sales`, search for a bid text (try "claims" or "payments"), open a case, pick cases and draft an output.
-2. **Reviewer:** as `reviewer`, open the review list. Fix the case with an outcome named "metric", look at the unsourced field, and approve one.
+2. **Reviewer:** as `reviewer`, open the review list. Open "Contoso fraud scoring": its solution text names a product no quote supports, so approval is blocked until you edit it. "Northwind loyalty platform" has an unsourced region. Approve one.
 3. **Admin:** as `admin`, look at sources and clients, and merge the two Fabrikam cases.
 4. **Live upload:** as `admin`, upload a document with Upload on the "Demo: Bid library" row of the Sources page and watch it extract (needs a model).
 5. **Nobody:** log in as `nobody` and see that there is no access.
@@ -172,3 +175,8 @@ Docker run it with `--network host`:
 ```sh
 python scripts/eval_extraction.py --docs ~/presale --models ollama_chat/qwen3:14b [--data-class confidential]
 ```
+
+**Diagrams from documents:** images inside a crawled .docx or .pptx are offered to the reviewer as diagram
+candidates. Vector EMF and WMF drawings are converted to PNG with LibreOffice (isolated, time-limited) and cropped
+to their content; SVG is never converted and relies on the PNG fallback Office stores next to it. `eval_extraction.py`
+prints the candidate count as `images=`.

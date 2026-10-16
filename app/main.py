@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import db
+from app import db, diagrams, mcp_server
 
 ROLES = ("user", "reviewer", "admin")  # each implies the ones before it
 SESSION_MAX_AGE = 8 * 3600
@@ -22,6 +22,8 @@ SESSION_MAX_AGE = 8 * 3600
 UPLOAD_MAGIC = {".docx": b"PK\x03\x04", ".pptx": b"PK\x03\x04", ".pdf": b"%PDF"}
 BODY_CAP = 1024 * 1024  # non-upload POSTs (forms)
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+# clickjacking: a sibling subdomain could frame /review and borrow a reviewer's click (#146)
+NO_FRAME = {"X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'"}
 
 
 @dataclass(frozen=True)
@@ -47,17 +49,54 @@ def current_user(request: Request) -> User:
     s = request.session.get("user")
     if not s:
         raise HTTPException(401, "login required")
+    iat = s.get("iat")  # SessionMiddleware renews the cookie on use, so only iat bounds a session (#145)
+    if not isinstance(iat, (int, float)) or not 0 <= time.time() - iat <= SESSION_MAX_AGE:  # NaN and future fail too
+        request.session.clear()  # the browser drops the dead cookie
+        raise HTTPException(401, "session expired; log in again")
     with db.connect() as conn:
-        row = conn.execute("select valid_after from session_cutoffs where sub = %s", (s["sub"],)).fetchone()
-    if row and s.get("iat", 0) <= row[0].timestamp():
+        # a cookie from before the oid change still carries the old sub, whose rows have moved to the oid (#249)
+        moved = conn.execute("select oid from user_keys where old_sub = %s", (s["sub"],)).fetchone()
+        key = moved[0] if moved else s["sub"]
+        row = conn.execute("select max(valid_after) from session_cutoffs where sub = any(%s)", ([s["sub"], key],)).fetchone()
+    if row[0] and s.get("iat", 0) <= row[0].timestamp():
         request.session.clear()  # the browser drops the dead cookie
         raise HTTPException(401, "session ended; log in again")
-    return User(s["sub"], s["name"], frozenset(s["groups"]), roles_for(s["groups"]))
+    return User(key, s["name"], frozenset(s["groups"]), roles_for(s["groups"]))
+
+
+def claim_groups(value) -> set[str]:
+    """The groups claim as a set; anything but a string or a list of strings is refused (ValueError)."""
+    if isinstance(value, str):
+        return {value}
+    if isinstance(value, (list, tuple)) and all(isinstance(g, str) for g in value):
+        return set(value)
+    raise ValueError("groups claim must be a string or a list of strings")
+
+
+# every column that holds the signed-in user's key; audit trails (approved_by, changed_by) keep what was written then
+USER_COLUMNS = (("research", "created_by"), ("library_items", "created_by"), ("briefs", "created_by"),
+                ("generations", "user_id"))
+
+
+def adopt_oid(conn, old_sub: str, oid: str) -> None:
+    """The key moved from the ID token's pairwise `sub` to `oid` (#249): rewrite the user's rows to it. Idempotent,
+    and run on every login so rows a pre-deploy session wrote under the old key are caught too."""
+    if old_sub == oid:
+        return
+    conn.execute("insert into user_keys (old_sub, oid) values (%s, %s) on conflict do nothing", (old_sub, oid))
+    for table, col in USER_COLUMNS:  # UPDATE locks the rows it rewrites
+        conn.execute(f"update {table} set {col} = %s where {col} = %s", (oid, old_sub))
+    # the cutoff is copied, not moved: a session cookie still carrying the old sub is checked against the old row
+    conn.execute("insert into session_cutoffs (sub, valid_after) select %s, valid_after from session_cutoffs "
+                 "where sub = %s on conflict (sub) do update "
+                 "set valid_after = greatest(session_cutoffs.valid_after, excluded.valid_after)", (oid, old_sub))
 
 
 def cut_sessions(conn, *subs: str) -> None:
-    """Refuse every session of these users issued until now (#47); app clock, same as iat."""
+    """Refuse every session of these users issued until now (#47); app clock, same as iat. Either key works."""
     now = datetime.now(timezone.utc)
+    subs = tuple({k for sub in subs for k in (sub, *(x for row in conn.execute(
+        "select old_sub, oid from user_keys where old_sub = %s or oid = %s", (sub, sub)) for x in row))})
     for sub in subs:
         conn.execute("insert into session_cutoffs (sub, valid_after) values (%s, %s) on conflict (sub) "
                      "do update set valid_after = greatest(session_cutoffs.valid_after, excluded.valid_after)",
@@ -77,6 +116,25 @@ def safe_name(filename: str | None) -> str:
     name = re.sub(r"[^A-Za-z0-9._-]", "_", name).lstrip(".")
     stem, suffix = PurePosixPath(name or "file").stem, PurePosixPath(name).suffix
     return (stem[:100] + suffix[:10]) or "file"  # S3 keys cap at 1,024 bytes
+
+
+class UploadRefused(HTTPException):
+    def __init__(self, code: str, status: int, detail: str):
+        super().__init__(status, detail)
+        self.code = code  # the /admin/sources notice
+
+
+def check_file(filename: str | None, data: bytes) -> str:
+    """The safe name, or UploadRefused: the type, the cap and the magic bytes (/admin/upload and accept_upload)."""
+    name = safe_name(filename)
+    magic = UPLOAD_MAGIC.get(PurePosixPath(name).suffix.lower())
+    if magic is None:
+        raise UploadRefused("type", 400, f"allowed types: {', '.join(sorted(UPLOAD_MAGIC))}")
+    if len(data) > upload_cap():
+        raise UploadRefused("size", 413, f"file larger than {upload_cap()} bytes")
+    if not data.startswith(magic):
+        raise UploadRefused("content", 400, "file content does not match its extension")
+    return name
 
 
 def upload_cap() -> int:
@@ -105,10 +163,18 @@ def create_app() -> FastAPI:
     if not origin:
         raise RuntimeError("APP_ORIGIN is required (e.g. https://references.example.com), for CSRF checks")
 
+    mcp_app = mcp_manager = mcp_routes = None
+    if mcp_server.enabled():
+        mcp_app, mcp_manager, mcp_routes = mcp_server.build(origin)
+
     @asynccontextmanager
     async def lifespan(_):
         db.init_if_requested()
-        yield
+        if mcp_manager:  # a mounted app's own lifespan does not run
+            async with mcp_manager.run():
+                yield
+        else:
+            yield
 
     app = FastAPI(lifespan=lifespan)
 
@@ -121,17 +187,29 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def guard(request: Request, call_next):
         """Runs before any body is read or any route/auth dependency runs."""
+        response = None
+        path = request.url.path
+        is_mcp = path == "/mcp" or path.startswith("/mcp/")  # bearer token, no cookie: nothing to forge
         if request.method not in SAFE_METHODS:
             # CSRF: SameSite=lax still sends the cookie from sibling subdomains, so check the origin
             o = request.headers.get("origin")
-            if (o or "").rstrip("/") != origin and not (o is None and request.headers.get("sec-fetch-site") == "same-origin"):
-                return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
-            # size before parsing: FastAPI spools a multipart body before auth runs
-            cap = upload_cap() if request.url.path == "/admin/upload" else BODY_CAP
-            length = request.headers.get("content-length")
-            if length is None or not length.isdigit() or int(length) > cap + 64 * 1024:
-                return JSONResponse({"detail": f"body missing a length or larger than {cap} bytes"}, status_code=413)
-        return await call_next(request)
+            if not is_mcp and (o or "").rstrip("/") != origin and not (o is None and request.headers.get("sec-fetch-site") == "same-origin"):
+                response = JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
+            else:
+                # size before parsing: FastAPI spools a multipart body before auth runs
+                cap = (upload_cap() if path in ("/admin/upload", "/upload") or path.startswith("/mcp/upload/")
+                       else diagrams.MAX_BYTES if re.fullmatch(r"/review/\d+/diagrams", path)
+                       else diagrams.LOGO_MAX_BYTES if re.fullmatch(r"/admin/clients/\d+/logo", path) else BODY_CAP)
+                length = request.headers.get("content-length")
+                if length is None or not length.isdigit() or int(length) > cap + 64 * 1024:
+                    response = JSONResponse({"detail": f"body missing a length or larger than {cap} bytes"}, status_code=413)
+        if response is None:
+            response = await call_next(request)
+        csp = response.headers.get("content-security-policy")  # a route's own policy (diagram PNGs) keeps its directives, after ours: it cannot override framing
+        response.headers.update(NO_FRAME)  # one exit: a new refusal cannot skip it
+        if csp:
+            response.headers["Content-Security-Policy"] = f"{NO_FRAME['Content-Security-Policy']}; {csp}"
+        return response
 
     @app.exception_handler(401)
     async def unauthorized(request: Request, exc):
@@ -153,10 +231,20 @@ def create_app() -> FastAPI:
     app.include_router(sources.router)
     from app import research
     app.include_router(research.router)
+    from app import brief
+    app.include_router(brief.router)
+    from app import library
+    app.include_router(library.router)
     from app import audit
     app.include_router(audit.router)
+    from app import settings
+    app.include_router(settings.router)
     from app import models_admin
     app.include_router(models_admin.router)
+    if mcp_app:
+        app.router.routes.extend(mcp_routes)  # before the mount: the root PRM path and the download link
+        app.mount("/mcp", mcp_app)
+        app.add_middleware(mcp_server.ExactMcpPath)  # last added, outermost: before the guard and the router
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
     oauth = OAuth()
     app.state.oauth = oauth
@@ -173,6 +261,7 @@ def create_app() -> FastAPI:
 
     @app.get("/login")
     async def login(request: Request):
+        request.session.pop("user", None)  # starting a sign-in ends the old one (#145)
         # fixed callback in production: behind the ALB, url_for would build http:// unless
         # FORWARDED_ALLOW_IPS trusts the ALB
         redirect = os.environ.get("OIDC_REDIRECT_URI") or request.url_for("auth")
@@ -185,18 +274,24 @@ def create_app() -> FastAPI:
         except OAuthError:  # cancelled login, stale state
             raise HTTPException(401, "login failed; start again at /login")
         claims = token["userinfo"]
+        key = claims.get("oid") or claims["sub"]  # Entra's sub differs per application, oid does not; the mock IdP has no oid
         claim = os.environ.get("OIDC_GROUPS_CLAIM", "groups")
         if claim in claims.get("_claim_names", {}):
             # Entra "groups overage" (>200 groups): no groups in the token, so no roles; fail loudly
-            print(f"login refused for {claims['sub']}: groups overage", flush=True)
+            print(f"login refused for {key}: groups overage", flush=True)
             raise HTTPException(403, "too many groups in the token; assign groups to the application in the IdP")
-        groups = claims.get(claim, [])
-        groups = {groups} if isinstance(groups, str) else set(groups)
+        try:
+            groups = claim_groups(claims.get(claim, []))
+        except ValueError:
+            raise HTTPException(403, "the groups claim in the token is malformed") from None
         request.session.clear()  # fresh session on login
+        if key != claims["sub"]:
+            with db.connect() as conn:
+                adopt_oid(conn, claims["sub"], key)
         request.session["user"] = {
-            "sub": claims["sub"], "name": claims.get("name", claims["sub"]),
+            "sub": key, "name": claims.get("name", key),
             "groups": sorted(groups & known_groups()), "iat": time.time()}
-        print(f"login sub={claims['sub']!r} name={request.session['user']['name']!r}", flush=True)
+        print(f"login sub={key!r} name={request.session['user']['name']!r}", flush=True)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/logout")  # POST: a cross-site link must not log people out
@@ -219,16 +314,12 @@ def create_app() -> FastAPI:
                 return RedirectResponse(f"/admin/sources?notice={code}", status_code=303)
             raise HTTPException(status, detail)
 
-        cap = upload_cap()  # the guard middleware already refused oversize bodies before parsing
-        name = safe_name(file.filename)
-        magic = UPLOAD_MAGIC.get(PurePosixPath(name).suffix.lower())
-        if magic is None:
-            return refuse("type", 400, f"allowed types: {', '.join(sorted(UPLOAD_MAGIC))}")
-        data = file.file.read(cap + 1)
-        if len(data) > cap:
-            return refuse("size", 413, f"file larger than {cap} bytes")
-        if not data.startswith(magic):
-            return refuse("content", 400, "file content does not match its extension")
+        # the guard middleware already refused oversize bodies before parsing
+        data = file.file.read(upload_cap() + 1)
+        try:
+            name = check_file(file.filename, data)
+        except UploadRefused as e:
+            return refuse(e.code, e.status_code, e.detail)
         with db.connect() as conn:
             src = conn.execute("select id, config, name from sources where kind='upload' and enabled "
                                "and (%s::bigint is null or id = %s) order by id limit 1",
@@ -249,5 +340,43 @@ def create_app() -> FastAPI:
             return RedirectResponse(
                 f"/admin/sources?notice=uploaded&source={src[0]}&job={job_id}", status_code=303)
         return JSONResponse({"job_id": job_id}, status_code=202)
+
+    UPLOAD_NOTICES = {  # allow-list: the query string picks a message, never supplies one
+        "uploaded": ("ok", "File received. It is waiting to be processed; this page updates by itself."),
+        "quota": ("bad", "Upload refused: daily upload limit reached (20 files or 200 MiB)"),
+        "busy": ("bad", "Another upload of yours is in progress; try again in a moment"),
+        "off": ("bad", "Uploads are not configured"),
+        "type": ("bad", f"Upload refused: allowed types are {', '.join(sorted(UPLOAD_MAGIC))}"),
+        "size": ("bad", "Upload refused: the file is larger than the limit"),
+        "content": ("bad", "Upload refused: the file content does not match its extension"),
+    }
+
+    @app.get("/upload")
+    def upload_page(request: Request, notice: str = "", user: User = Depends(require("user"))):
+        from app import ingest
+        from app.review import page
+        with db.connect() as conn:
+            on = ingest.staff_source(conn) is not None
+            mine = ingest.my_uploads(conn, user) if on else []
+        pending = any(m[3][0] in ("queued", "reading", "writing") for m in mine)
+        return page(request, "upload.html", user, on=on, mine=mine, pending=pending, notice=UPLOAD_NOTICES.get(notice),
+                    upload_cap=upload_cap(), upload_types=sorted(UPLOAD_MAGIC))
+
+    @app.post("/upload")
+    def upload_post(request: Request, file: UploadFile, user: User = Depends(require("user"))):
+        from app import ingest
+        data = file.file.read(upload_cap() + 1)
+        try:
+            with db.connect() as conn:
+                ingest.accept_upload(conn, user, file.filename, data)
+        except HTTPException as e:
+            if not wants_html(request) or e.status_code not in (400, 413, 429, 503):
+                raise
+            code = e.code if isinstance(e, UploadRefused) else (
+                "off" if e.status_code == 503 else "quota" if e.detail == ingest.QUOTA_MSG else "busy")
+            return RedirectResponse(f"/upload?notice={code}", status_code=303)
+        if wants_html(request):
+            return RedirectResponse("/upload?notice=uploaded", status_code=303)
+        return JSONResponse({"ok": True}, status_code=202)
 
     return app

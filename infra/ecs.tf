@@ -26,42 +26,44 @@ locals {
 
   # No HTTP_PROXY/HTTPS_PROXY anywhere: the research fetcher vets addresses itself and ignores them.
   common_env = merge(local.db_env, {
-    S3_BUCKET          = aws_s3_bucket.originals.bucket
-    EXTRACT_MODEL      = var.extract_model
-    DRAFT_MODEL        = var.draft_model
-    AWS_REGION_NAME    = var.region
-    AWS_DEFAULT_REGION = var.region
-    LITELLM_LOG        = "WARNING"
+    S3_BUCKET           = aws_s3_bucket.originals.bucket
+    EXTRACT_MODEL       = var.extract_model
+    DRAFT_MODEL         = var.draft_model
+    MODEL_CHOICES       = join(",", distinct(concat(var.model_choices, [var.extract_model, var.draft_model])))
+    SETTINGS_SECRET_IDS = jsonencode(local.conn_secret_ids)
+    GRAPH_CLIENT_ID     = var.graph_client_id
+    CONFLUENCE_EMAIL    = var.confluence_email
+    AWS_REGION_NAME     = var.region
+    AWS_DEFAULT_REGION  = var.region
+    LITELLM_LOG         = "WARNING"
   })
 
-  web_env = merge(local.common_env, {
-    APP_ORIGIN           = var.app_origin
-    OIDC_REDIRECT_URI    = "${var.app_origin}/auth"
-    OIDC_METADATA_URL    = var.oidc_metadata_url
-    OIDC_CLIENT_ID       = var.oidc_client_id
-    OIDC_GROUPS_CLAIM    = var.oidc_groups_claim
-    FORWARDED_ALLOW_IPS  = var.vpc_cidr # uvicorn trusts X-Forwarded-* from the ALB only
-    SESSION_HTTPS_ONLY   = "true"
-    ROLE_USER_GROUPS     = var.role_user_groups
-    ROLE_REVIEWER_GROUPS = var.role_reviewer_groups
-    ROLE_ADMIN_GROUPS    = var.role_admin_groups
-  })
+  web_env = merge(
+    local.common_env,
+    {
+      APP_ORIGIN           = var.app_origin
+      OIDC_REDIRECT_URI    = "${var.app_origin}/auth"
+      OIDC_METADATA_URL    = var.oidc_metadata_url
+      OIDC_CLIENT_ID       = var.oidc_client_id
+      OIDC_GROUPS_CLAIM    = var.oidc_groups_claim
+      FORWARDED_ALLOW_IPS  = var.vpc_cidr # uvicorn trusts X-Forwarded-* from the ALB only
+      SESSION_HTTPS_ONLY   = "true"
+      ROLE_USER_GROUPS     = var.role_user_groups
+      ROLE_REVIEWER_GROUPS = var.role_reviewer_groups
+      ROLE_ADMIN_GROUPS    = var.role_admin_groups
+      MCP_ENABLED          = var.mcp_enabled ? "1" : "0"
+    },
+    var.mcp_enabled ? merge({
+      MCP_ISSUER     = var.mcp_issuer
+      MCP_AUDIENCE   = var.mcp_audience
+      MCP_CLIENT_IDS = var.mcp_client_ids
+      MCP_SCOPE      = var.mcp_scope
+    }, var.mcp_tenant_id == "" ? {} : { MCP_TENANT_ID = var.mcp_tenant_id }) : {},
+  )
 
   web_secrets = {
     SESSION_SECRET     = local.secret_arn["session-secret"]
     OIDC_CLIENT_SECRET = local.secret_arn["oidc-client-secret"]
-  }
-
-  worker_env = merge(
-    local.common_env,
-    var.graph_client_id == "" ? {} : { GRAPH_CLIENT_ID = var.graph_client_id },
-    var.confluence_email == "" ? {} : { CONFLUENCE_EMAIL = var.confluence_email },
-  )
-
-  worker_secrets = {
-    GRAPH_CLIENT_SECRET = local.secret_arn["graph-client-secret"]
-    CONFLUENCE_TOKEN    = local.secret_arn["confluence-token"]
-    BRAVE_API_KEY       = local.secret_arn["brave-api-key"]
   }
 
   tasks = {
@@ -79,8 +81,8 @@ locals {
       cpu     = var.worker_cpu
       memory  = var.worker_memory
       command = ["python", "-m", "app.worker"]
-      env     = local.worker_env
-      secrets = local.worker_secrets
+      env     = local.common_env
+      secrets = {}
       role    = aws_iam_role.worker.arn
       ports   = []
       stop    = 120 # SIGTERM requeues the running job; give it time
@@ -150,6 +152,17 @@ resource "aws_ecs_task_definition" "app" {
       }
     }
   }])
+
+  lifecycle {
+    precondition {
+      condition = each.key != "web" || !var.mcp_enabled || (
+        startswith(var.mcp_issuer, "https://") &&
+        trimspace(var.mcp_audience) != "" &&
+        trimspace(var.mcp_client_ids) != ""
+      )
+      error_message = "MCP requires an https:// mcp_issuer, mcp_audience, and mcp_client_ids; set mcp_enabled = false to disable it."
+    }
+  }
 }
 
 resource "aws_ecs_service" "web" {

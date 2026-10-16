@@ -34,8 +34,9 @@ Knowing which facts are backed by the source document.
 **Steps**
 
 1. On a case page, read the **Needs attention** box above **Fields**: it lists the fields that need a look first. Then read the **Fields** section.
-2. Check the badge on each field: "sourced", "unsourced", "empty", or "no quote (generated)".
+2. Check the badge on each field: "sourced", "unsourced", "empty", "written by reviewer", or "no quote (generated)".
 3. Compare the value with its **Source quote**.
+4. For implementation, configuration or lessons learned that the document doesn't describe, write the text, tick **I wrote this: no document quote** and Save. Approving keeps it; outputs show it without a mark.
 
 **What you see**
 
@@ -71,6 +72,25 @@ Fixing lists such as capabilities, technologies and outcomes.
 **What you see**
 
 The list shows the change after the page reloads. A blank item is refused.
+
+## Add diagrams
+
+**What it's for**
+
+Adding a picture, such as an architecture diagram, to a case. A case can have up to 5. Nothing is
+taken from the documents: you upload each one yourself.
+
+**Steps**
+
+1. On a case page, find the **Diagrams** section. Choose a PNG or JPEG file of up to 5 MB, type a caption, and press **Add diagram**.
+2. The diagram shows "Processing: reload in a moment". Reload the page until it shows the picture. If it shows "Rejected", the reason is given and the picture is not used.
+3. To change a caption, edit it and press **Save caption**. To drop a diagram, press **Remove**.
+4. Look at every picture. Before **Approve (unsourced fields are emptied)** you must tick **I have checked every diagram: no client name, logo, person or identifying detail**.
+
+**What you see**
+
+Ready diagrams are added to the Word, PowerPoint and PDF outputs, and their captions are listed in the Markdown.
+Approval waits while a diagram is still processing. Adding, changing or removing a diagram takes an approved case back to review, so you must approve it again.
 
 ## Decide: approve or reject
 
@@ -118,11 +138,32 @@ Joining several contracts for the same client into one case.
 3. On **Merge contracts**, look at **Differing fields** and choose which contract each value comes from.
 4. Press **Merge**.
 5. To undo, open the merged case and press **Un-merge (the contracts go back to the queue)**.
+6. If a contract changes or is withdrawn after the merge, the merged case shows it. Press **Re-merge with the current contracts** to rebuild the
+   case from the current versions. Your field choices are kept, your edits are not, and the case needs a new summary and approval.
 
 **What you see**
 
 One new case that needs a new summary and a fresh approval. Capabilities and technologies are
 combined and outcomes are dropped.
+
+## Attach public sources
+
+**What it's for**
+
+Keeping the public best-practice statements you accept with the case, so every download of it can cite them.
+
+**Steps**
+
+1. On the search result, press **Research this (public sources)**, or open a finished research result or a library item.
+2. Tick the quotes you accept.
+3. Choose the case in "Attach the selected quotes as public sources to" (any case you may review, not only the one the research started from) and press **Attach**. A case holds at most 20.
+4. To take one off, open the case on the review page and press Remove on it under "Public sources (not delivery evidence)".
+
+**What you see**
+
+Every download of the case shows the attached sources under "Best practice and public sources", marked as
+statements by third parties, not our delivery. Attaching or removing does not change the case's approval.
+In a case study download the same sources come after the case, under "Approach and industry practice", with the same disclaimer.
 
 ## Re-review
 
@@ -134,7 +175,8 @@ approved again.
 **Steps**
 
 1. Check **Due for re-review within 30 days** on the queue page.
-2. Open each case and review it as above.
+2. Open each case. Approve it as it is to renew it for 12 months; it stays in search. If you edit it,
+   it leaves search until you approve it again.
 
 **What you see**
 

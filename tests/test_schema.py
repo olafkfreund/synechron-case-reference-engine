@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from app.schema import Outcome, ReferenceCase, Sourced, llm_schema, numbers, quote_in, sourced
+from app.schema import Extraction, Outcome, ReferenceCase, Sourced, llm_schema, numbers, plain, quote_in, sourced
 
 DOC = "The bank cut onboarding from 12 days to\n3 days.  Team “Alpha” – 8 people."
 
@@ -158,6 +158,15 @@ def test_assemble_takes_the_first_number_only():
     assert case.duration_months.value == 18 and case.team_size.value == 1200
 
 
+def test_assemble_skips_runaway_numbers():
+    from app.schema import Extraction, Item, assemble
+    for runaway in ("1" * 4301, "1" * 13):
+        case, notes = assemble(Extraction(items=[Item(field="team_size", value=runaway, quote="q")]))
+        assert case.team_size.value is None and "1 malformed" in notes[0]
+    case, _ = assemble(Extraction(items=[Item(field="team_size", value="1,000,000", quote="q")]))
+    assert case.team_size.value == 1000000
+
+
 def test_null_values_do_not_fail_the_reply():
     from app.schema import Extraction
     x = Extraction.model_validate_json('{"items": [{"field": "industry", "value": null, "quote": null}], "summary": ""}')
@@ -178,3 +187,249 @@ def test_basis_hidden_from_llm_and_search():
     c.basis, c.basis_reason = "engagement", "ZZREASON"
     assert "engagement" not in c.search_text() and "ZZREASON" not in c.search_text()
     assert "ZZREASON" not in "".join(c.quotes())
+
+
+def test_old_case_data_validates_without_new_sections():
+    # rows written before #198 have none of the new keys, nor by_reviewer
+    d = {"title": {"value": "T", "source_quote": "q", "unsourced": False, "document_id": None}}
+    c = ReferenceCase.model_validate(d)
+    assert not c.implementation.value and not c.lessons_learned.by_reviewer
+    assert c.title.by_reviewer is False
+
+
+def test_by_reviewer_hidden_from_llm_schema():
+    assert "by_reviewer" not in json.dumps(llm_schema())
+    assert "by_reviewer" not in json.dumps(llm_schema(Extraction))
+
+
+def test_reviewer_text_does_not_vouch_for_summary_numbers():
+    c = make()
+    c.implementation = Sourced[str](value="Rolled out in 9 weeks", by_reviewer=True)
+    c.summary = "Delivered in 9 weeks."
+    assert not c.summary_sourced()
+
+
+def test_diagrams_hidden_from_llm_schema():
+    assert "diagrams" not in ReferenceCase.model_json_schema()["properties"]
+    assert "diagrams" not in json.dumps(llm_schema())
+    old = {"title": {"value": "T"}}  # data saved before #200 has no diagrams key
+    assert ReferenceCase.model_validate(old).diagrams == []
+
+
+def test_points_keep_every_distinct_item_and_stay_hidden():
+    from app.schema import MAX_POINTS, Extraction, Item, assemble
+    its = [Item(field="challenge", value=v, quote=v) for v in ("Slow  intake", "slow intake", "Manual triage")]
+    its += [Item(field="solution", value=f"s{i}", quote=f"s{i}") for i in range(MAX_POINTS + 3)]
+    c, _ = assemble(Extraction(items=its))
+    assert c.challenge.value == "Slow  intake"  # headline: first wins
+    assert [p.value for p in c.points["challenge"]] == ["Slow  intake", "Manual triage"]
+    assert len(c.points["solution"]) == MAX_POINTS
+    assert "Manual triage" in c.quotes() and "Manual triage" in c.search_text()
+    assert "points" not in json.dumps(llm_schema())
+    assert ReferenceCase.model_validate({"title": {"value": "T"}}).points == {}
+    assert ReferenceCase.model_validate(c.model_dump()).points == c.points
+
+
+def test_prose_round_trips_is_searchable_and_hidden():
+    from app.schema import Prose
+    c = make()
+    assert c.prose == {} and ReferenceCase.model_validate({"title": {"value": "T"}}).prose == {}
+    c.prose = {"challenge": Prose(text="Zanzibar intake was slow.", by_reviewer=True, flags=["Zanzibar"])}
+    assert ReferenceCase.model_validate(c.model_dump()).prose == c.prose
+    assert "Zanzibar intake" in c.search_text()
+    assert "prose" not in json.dumps(llm_schema())
+
+
+def test_references_are_not_a_main_extraction_field_and_stay_searchable():
+    from app.schema import FIELDS, Extraction, Item, References, assemble
+    assert "reference" not in FIELDS and "tech_references" not in json.dumps(llm_schema(Extraction))
+    c, notes = assemble(Extraction(items=[Item(field="reference", value="ISO 20022", quote="ISO 20022 messaging")]))
+    assert c.tech_references == [] and notes  # an unknown field is skipped and counted
+    c.tech_references = [Sourced[str](value="ISO 20022", source_quote="ISO 20022 messaging")]
+    assert "ISO 20022 messaging" in c.quotes() and "ISO 20022" in c.search_text()
+    assert ReferenceCase.model_validate({"title": {"value": "T"}}).tech_references == []
+    assert ReferenceCase.model_validate(c.model_dump()).tech_references == c.tech_references
+    r = References.model_validate_json('{"items": [{"value": null, "quote": "q", "extra": 1}]}')
+    assert r.items[0].value == "" and "items" in llm_schema(References)["required"]
+
+
+@pytest.mark.parametrize("raw,want", [
+    ("**Zor**pale runs it", "Zorpale runs it"),
+    ("see [the docs](https://x.io/a_b) now", "see the docs now"),
+    ("![diagram of flow](https://x.io/i.png) shows it", "diagram of flow shows it"),
+    ("see [the docs][1] now", "see the docs now"),
+    ("cited [1][2] twice", "cited [1][2] twice"),
+    ("go to <https://x.io/a> today", "go to https://x.io/a today"),
+    ("it is __very__ fast and *really* good", "it is very fast and really good"),
+    ("set `max_conn` to 5", "set max_conn to 5"),
+    ("snake_case_name stays and 2*3*4 too", "snake_case_name stays and 2*3*4 too"),
+    ("## Heading text", "Heading text"),
+    ("> a quoted line\n> another line", "a quoted line another line"),
+    ('""Quoted"" inside text', '"Quoted" inside text'),
+    ('"A whole wrapped quote here"', "A whole wrapped quote here"),
+    ("\u201cCurly wrapped quote here\u201d", "Curly wrapped quote here"),
+    ('"One" and "two" stay', '"One" and "two" stay'),
+    ("  many \n\t spaces  ", "many spaces"),
+])
+def test_plain(raw, want):
+    assert plain(raw) == want
+
+
+def test_plain_is_fast_on_hostile_input():
+    import time
+    for bad in ("[" * 6000, "*a " * 2000):
+        t = time.perf_counter()
+        out = plain(bad)
+        assert time.perf_counter() - t < 0.05
+        assert out == " ".join(bad.split())  # over the cap: whitespace-collapsed, never cut
+
+
+def test_plain_leaves_no_link_behind_nested_markup():
+    assert plain("[[x](y)](javascript:z)") == "x"
+
+
+def _arch(**kw):
+    from app.schema import Architecture
+    comp = lambda i: {"id": f"c{i}", "name": f"N{i}", "zone": "core", "kind": "service"}
+    return Architecture.model_validate({"components": [comp(i) for i in range(15)], **kw})
+
+
+def test_architecture_caps_keep_the_first_n_and_drop_unknown_endpoints():
+    flow = lambda s, d: {"src": s, "dst": d, "mode": "api"}
+    a = _arch(flows=[flow("c0", "zz"), flow("c0", "c14"), *[flow("c0", "c1")] * 20],
+              callouts=[{"text": "x", "outcome": 0}] * 5)
+    assert [c.id for c in a.components] == [f"c{i}" for i in range(12)]
+    assert len(a.flows) == 14 and all(f.dst == "c1" for f in a.flows)  # zz and the capped-out c14 are gone
+    assert len(a.callouts) == 3
+
+
+def test_architecture_rejects_unknown_keys_and_enums():
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        _arch(extra=1)
+    with pytest.raises(ValidationError):
+        _arch(components=[{"id": "a", "name": "A", "zone": "moon", "kind": "app"}])
+
+
+def test_architecture_hidden_from_llm_schema_old_json_loads_and_searchable():
+    assert "architecture" not in llm_schema()["properties"]
+    assert "Arch" not in json.dumps(llm_schema())
+    d = {"title": {"value": "T", "source_quote": "q"}}
+    assert ReferenceCase.model_validate(d).architecture is None
+    d["architecture"] = {"components": [{"id": "a", "name": "Ledger", "role": "books", "zone": "core", "kind": "store"}]}
+    c = ReferenceCase.model_validate(d)
+    assert "Ledger" in c.search_text() and "Solution architecture" in c.search_text()
+    assert ReferenceCase.model_validate_json(c.model_dump_json()) == c
+
+
+# --- check_architecture (#246 A6) ---
+def _checked(**arch):
+    from app.schema import Architecture, check_architecture
+    pts = {"solution": [Sourced[str](value="An intake API for web and mobile", source_quote="An intake API accepts claims from the web and mobile app")],
+           "configuration": [Sourced[str](value="Kafka carries events", source_quote="Kafka carries the claim events, 30 days")]}
+    c = ReferenceCase(title=Sourced[str](value="T", source_quote="T"), points=pts,
+                      tech_stack=[Sourced[str](value="Kafka", source_quote="Kafka carries the claim events")],
+                      outcomes=[Outcome(metric="handling time", value="11 days to 4 days", source_quote="fell from 11 days to 4 days")])
+    base = {"components": [{"id": "a", "name": "Intake API", "role": "Accepts claims", "zone": "integration", "kind": "service", "cite": "solution 1"},
+                           {"id": "k", "name": "Kafka events", "role": "Carries claim events", "zone": "data", "kind": "queue", "cite": "configuration 1"}],
+            "flows": [{"src": "a", "dst": "k", "label": "Publish claim", "mode": "event", "cite": "configuration 1"}],
+            "callouts": [{"text": "Handling from 11 days to 4", "outcome": 0}]}
+    base.update(arch)
+    c.architecture = Architecture.model_validate(base)
+    return c, check_architecture
+
+
+def test_a_clean_architecture_passes_and_none_is_clean():
+    c, check = _checked()
+    assert check(c) == []
+    c.architecture = None
+    assert check(c) == []
+
+
+def test_architecture_unsourced_name_number_price_and_cite_are_flagged():
+    def comp(**kw):
+        return {"id": "a", "name": "Intake API", "role": "Accepts claims", "zone": "core", "kind": "app", "cite": "solution 1", **kw}
+    c, check = _checked(components=[comp(name="Snowflake store")], flows=[], callouts=[])
+    assert any("Snowflake" in f for f in check(c))  # a name no quote supports
+    c, check = _checked(components=[comp(role="Handles 99 claims a day")], flows=[], callouts=[])
+    assert any("number 99" in f for f in check(c))
+    c, check = _checked(components=[comp(role="Costs EUR 50,000 per year")], flows=[], callouts=[])
+    assert any("price" in f for f in check(c))
+    c, check = _checked(components=[comp(cite="solution 9")], flows=[], callouts=[])
+    assert any("no sourced point" in f for f in check(c))
+    c, check = _checked(callouts=[{"text": "Handling from 11 days to 3", "outcome": 0}])
+    assert any("number 3" in f for f in check(c))  # a callout's number must match its outcome
+    c, check = _checked(callouts=[{"text": "Fewer days", "outcome": 4}])
+    assert any("outcome 4" in f for f in check(c))
+
+
+def test_a_tech_stack_match_is_accepted_without_a_cite_and_a_bare_name_is_not():
+    from app.schema import prune_architecture
+    def comp(i, name, cite):
+        return {"id": i, "name": name, "role": "x", "zone": "core", "kind": "app", "cite": cite}
+    c, check = _checked(components=[comp("k", "Kafka cluster", ""), comp("m", "Mystery box", "")],
+                        flows=[{"src": "k", "dst": "m", "label": "x", "mode": "api", "cite": "configuration 1"}], callouts=[])
+    flags = check(c)
+    assert any("Mystery box" in f and "no cite" in f for f in flags) and not any("Kafka cluster" in f for f in flags)
+    prune_architecture(c)
+    assert [x.id for x in c.architecture.components] == ["k"] and c.architecture.flows == []
+
+
+def test_an_invented_product_is_flagged_even_as_the_first_word():
+    def comp(name, cite="configuration 1"):
+        return {"id": "k", "name": name, "role": "Carries claim events", "zone": "data", "kind": "queue", "cite": cite}
+    c, check = _checked(components=[comp("Snowflake events")], flows=[], callouts=[])
+    assert any("'Snowflake'" in f for f in check(c))  # "events" overlaps the quote; "Snowflake" is in no quote, tech or reference
+    c, check = _checked(components=[comp("Kafka events")], flows=[], callouts=[])
+    assert check(c) == []
+    c, check = _checked(components=[comp("The Kafka events")], flows=[], callouts=[])
+    assert check(c) == []  # an ordinary opener is exempt
+    c, check = _checked(components=[comp("Postgres14 store")], flows=[], callouts=[])
+    assert any("Postgres14" in f for f in check(c))  # a word with a digit is a product too
+
+
+def test_no_cite_and_no_tech_match_is_one_flag():
+    c, check = _checked(components=[{"id": "m", "name": "Mystery box", "role": "x", "zone": "core", "kind": "app", "cite": ""}], flows=[], callouts=[])
+    flags = check(c)
+    assert sum("has no cite" in f for f in flags) == 1 and not any("matches neither" in f for f in flags)
+
+
+def test_a_lowercase_product_in_a_component_name_is_flagged_but_generic_words_are_not():
+    def comp(name):
+        return {"id": "k", "name": name, "role": "Carries claim events", "zone": "data", "kind": "queue", "cite": "configuration 1"}
+    c, check = _checked(components=[comp("salesforce event bus")], flows=[], callouts=[])
+    assert any("'salesforce'" in f for f in check(c)) and not any("'event'" in f or "'bus'" in f for f in check(c))
+    for ok in ("Kafka event bus", "claim events"):
+        c, check = _checked(components=[comp(ok)], flows=[], callouts=[])
+        assert check(c) == [], ok
+    c, check = _checked(components=[{**comp("Mobile app"), "cite": "solution 1"}], flows=[], callouts=[])
+    assert check(c) == []
+
+
+def test_a_capitalised_first_word_in_a_role_label_callout_or_title_is_checked():
+    def comp(role):
+        return {"id": "k", "name": "Kafka events", "role": role, "zone": "data", "kind": "queue", "cite": "configuration 1"}
+    c, check = _checked(components=[comp("Salesforce receives events")], flows=[], callouts=[])
+    assert any("'Salesforce'" in f for f in check(c))
+    c, check = _checked(flows=[{"src": "a", "dst": "k", "label": "Marketo sync", "mode": "event", "cite": "configuration 1"}])
+    assert any("'Marketo'" in f for f in check(c))
+    c, check = _checked(callouts=[{"text": "Tableau view of 11 days to 4", "outcome": 0}])
+    assert any("'Tableau'" in f for f in check(c))
+    c, check = _checked(title="Workday claims")
+    assert any("'Workday'" in f for f in check(c))
+    c, check = _checked(components=[comp("The events carrier")], flows=[], callouts=[], title="Solution architecture")
+    assert check(c) == []  # an ordinary opener and the default title pass
+
+
+def test_architecture_flags_and_pruning_equal_those_the_pre_evidence_code_gave():
+    """tests/arch_flags_main.json holds what check_architecture and prune_architecture returned on main (494cc8b), before Evidence."""
+    import json
+    from pathlib import Path
+    from app.schema import check_architecture, evidence_of_case, prune_architecture
+    expected = json.loads((Path(__file__).parent / "arch_flags_main.json").read_text())
+    assert expected["bad"]["flags"]  # the fixture is not empty
+    for name, e in expected.items():
+        c, _ = _checked(**e["arch"])
+        assert check_architecture(c) == e["flags"] == check_architecture(evidence_of_case(c), c.architecture), name
+        prune_architecture(evidence_of_case(c), c.architecture)
+        assert [x.id for x in c.architecture.components] == e["pruned"], name

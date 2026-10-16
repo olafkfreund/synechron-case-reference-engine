@@ -9,6 +9,7 @@ check approvals for a third-party model on confidential documents. EXTRACT_MODEL
 `destination` here (it would override the policy for every model in --models); in Docker use --network host.
 """
 import argparse
+from collections import Counter
 import json
 import os
 import sys
@@ -18,14 +19,25 @@ from pathlib import Path
 import httpx
 
 from app import extract, ingest
+from app.diagrams import document_images_from
 from app.llm import PolicyError, profile
-from app.schema import vague_metric
+from app.schema import POINT_FIELDS, vague_metric
 
 ROOT = Path(__file__).resolve().parents[1]
 SUFFIXES = {".docx", ".pptx", ".pdf"}
 SCALARS = ("title", "client_mention", "industry", "region", "engagement_type", "challenge", "solution",
            "duration_months", "team_size")
 OLLAMA = "http://localhost:11434"
+
+
+def flag_kind(flag: str) -> str:
+    """The category of a check_architecture flag, from its fixed wording: the flag text itself holds document terms."""
+    for kind, hit in (("price", "price or payment term"), ("callout", "callout '"), ("cite", "no sourced point"),
+                      ("no_match", "matches no technology"), ("no_match", "matches neither"),
+                      ("number", " is in no quote"), ("term", ", which ")):
+        if hit in flag:
+            return kind
+    return "other"
 
 
 def ollama_ps(base: str) -> list[dict]:
@@ -104,9 +116,18 @@ def main(argv: list[str] | None = None) -> int:
             vram = ps[0].get("size_vram", 0) / 1e9 if ps else 0
             secs = time.time() - t
             bad = sum(vague_metric(o) for o in case.outcomes)
+            pts = {f: len(case.points.get(f, [])) for f in POINT_FIELDS}  # counts only
+            words = {f: len(p.text.split()) for f, p in case.prose.items()}  # counts only
+            flagged = sum(bool(p.flags) for p in case.prose.values())
+            arch = case.architecture  # counts only
+            arch_counts = {"components": len(arch.components), "flows": len(arch.flows), "flags": len(arch.flags),
+                           "cited": sum(bool(c.cite.strip()) for c in arch.components),
+                           "flag_kinds": dict(Counter(map(flag_kind, arch.flags)))} if arch else {}
+            images = len(document_images_from(p.read_bytes(), p.name))  # a count only; the images are not kept
             rows.append((sourced, len(items), secs, vram, bad))
             print(f"{model} {p.name[:30]} kind={tri.kind} executed={tri.executed} basis={basis} sourced={sourced}/{len(items)} caps={len(case.capabilities)} "
-                  f"tech={len(case.tech_stack)} outcomes={len(case.outcomes)} bad_metrics={bad} notes={case.needs_attention} "
+                  f"tech={len(case.tech_stack)} refs={len(case.tech_references)} outcomes={len(case.outcomes)} points={pts} prose_words={words} flagged={flagged} architecture={arch_counts} images={images} "
+                  f"parts={len(extract.split(text[:extract.MAX_CHARS]))} summary={'kept' if case.summary else 'blank'} bad_metrics={bad} notes={case.needs_attention} "
                   f"{secs:.0f}s vram={vram:.1f}GB\n    fields: {filled}", flush=True)
         if rows:
             n = len(rows)

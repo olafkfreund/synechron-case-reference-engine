@@ -70,5 +70,15 @@ def test_output_has_metrics_and_no_document_text(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr()
     assert "kind=case" in out.out and "sourced=3/3" in out.out and "1 malformed" in out.out and "== bedrock/m" in out.out
     assert "bad_metrics=1" in out.out and "mean bad_metrics" in out.out
+    assert "points={'challenge': " in out.out and "parts=1 summary=" in out.out and "prose_words={" in out.out and "flagged=" in out.out and "images=0" in out.out and "architecture={}" in out.out and "refs=0" in out.out
     for text in (out.out, out.err):
         assert "Zorbulon" not in text and "settlement" not in text.lower()
+
+
+def test_flag_kinds_come_from_the_fixed_wording_not_the_document_terms():
+    from tests.test_schema import _checked
+    c, check = _checked(components=[{"id": "a", "name": "Zorbulon engine", "role": "Costs EUR 50,000 per year, 99 claims", "zone": "core",
+                                     "kind": "app", "cite": "solution 9"}], flows=[], callouts=[{"text": "Fewer days", "outcome": 4}])
+    kinds = {ev.flag_kind(f) for f in check(c)}
+    assert {"price", "number", "cite", "callout", "term"} <= kinds and "other" not in kinds
+    assert all("Zorbulon" not in k for k in kinds)

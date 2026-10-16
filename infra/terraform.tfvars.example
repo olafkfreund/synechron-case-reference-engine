@@ -10,6 +10,11 @@ alb_allowed_cidrs = ["10.20.0.0/16"] # VPN / corporate ranges only; keep the VPC
 # foundation-model ARN in every EU destination region (wildcard region) in bedrock_model_arns.
 extract_model = "bedrock/eu.anthropic.<small-claude-model-id>"
 draft_model   = "bedrock/eu.anthropic.<mid-claude-model-id>"
+# Other models admins may select in the portal; include each Bedrock model's ARN below.
+# model_choices = ["openai/gpt-5", "gemini/gemini-2.5-pro"]
+# Alternatives for either model (set the matching secret in the portal or Secrets Manager console):
+# extract_model = "openai/gpt-5"
+# draft_model   = "gemini/gemini-2.5-pro"
 bedrock_model_arns = [
   "arn:aws:bedrock:eu-west-2:<account>:inference-profile/eu.anthropic.<small-claude-model-id>",
   "arn:aws:bedrock:eu-west-2:<account>:inference-profile/eu.anthropic.<mid-claude-model-id>",
@@ -19,6 +24,13 @@ bedrock_model_arns = [
 
 oidc_metadata_url = "https://login.microsoftonline.com/<tenant>/v2.0/.well-known/openid-configuration"
 oidc_client_id    = "<app registration client id>"
+
+# MCP is on by default. Supply these values, or set mcp_enabled = false.
+mcp_issuer     = "https://login.microsoftonline.com/<tenant>/v2.0"
+mcp_audience   = "<MCP API app registration client id>" # the aud of v2 tokens; not the api:// URI
+mcp_client_ids = "<allowed MCP client ids, comma-separated>"
+# mcp_tenant_id = "<tenant>"
+# mcp_scope     = "refs.access"
 
 role_user_groups     = "<entra group object id>"
 role_reviewer_groups = "<entra group object id>"

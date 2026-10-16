@@ -32,8 +32,9 @@ Finding approved cases that fit a bid.
 
 1. Open **Find references**. The page is titled **Find reference cases**.
 2. Paste the requirement into **Bid context**, for example "card payments platform for a retail bank".
-3. If you like, narrow the search with **Industry**, **Region** or **Technology**.
-4. Press **Search**.
+3. If you like, narrow the search with **Industry**, **Region** or **Technology**. Press **Filter** to apply them
+   to the list of approved cases the page opens on; they also apply to the bid search.
+4. Press **Search with bid text**.
 
 **What you see**
 
@@ -58,6 +59,8 @@ Judging whether a case suits your bid.
 
 The suggested wording is marked "not in downloads". Downloads hold the approved case record only.
 
+Each card has a collapsed "Source documents" list (with the number of documents) with **Open** and **Open folder** links to where the case came from. For a client you may not name, it shows only the number of documents. A file that was uploaded shows "Stored in the engine. Ask a reviewer for a copy."
+
 ## Download a case
 
 **What it's for**
@@ -66,11 +69,12 @@ Getting a case into a document for your bid.
 
 **Steps**
 
-1. On a result, press **Download Word** for a Word file.
-2. For another format, open **Other formats** and press one of **Download this case (PowerPoint)**,
-   **Download this case (PDF)**, **Download this case (PDF slides)** or **Download this case (Markdown)**.
-3. With several results, **Download all (Word)** gets them in one file. Its **Other formats** work the same way, for
-   example **Download all (PDF)**.
+1. Press **Preview** to see the content the download will contain. The preview page has the same download buttons.
+2. On a result, press **Download Word** for a Word file.
+3. For another format, open **Other formats** and press one of **PowerPoint**,
+   **PDF**, **PDF slides** or **Markdown**.
+4. With several results, **Preview all** shows them together and **Download all (Word)** gets them in one file. Its
+   **Other formats** work the same way.
 
 **What you see**
 
@@ -111,9 +115,13 @@ Adding an "Industry context" section to a download.
 1. On the research result, find "Download with an "Industry context" section".
 2. Choose a **Format**.
 3. Tick "I understand the industry context section contains public statements by third parties, not our delivery evidence (required when no case is included)."
-4. Press **Download**.
+4. Press **Preview** to check it first.
+5. Press **Download**.
 
 **What you see**
 
 A file with the industry context section. You must tick the acknowledgement when no case is included,
 because public statements must never be shown as our delivery.
+
+A case can carry public sources that a reviewer attached. Its downloads then use the heading "Best practice and
+public sources" and list those first. Downloads with research only keep "Industry context (public sources)".
